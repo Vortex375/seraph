@@ -1,0 +1,11 @@
+go 1.22.0
+
+use (
+	./api-gateway
+	./config
+	./file-provider
+	./file-provider-dir
+	./log-viewer
+	./logging
+	./messaging
+)
