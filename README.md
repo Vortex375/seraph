@@ -22,6 +22,7 @@ Other things that would be cool:
 - automatic image tagging and face recognition like [PhotoPrism](https://www.photoprism.app/)
 - federated cloud features
 - media stream transcoding
+- file versioning / backup features
 
 Things that probably won't be implemented:
 - file synchronization - there are great alternatives like [Syncthing](https://syncthing.net/) available
