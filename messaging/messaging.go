@@ -19,7 +19,10 @@
 package messaging
 
 import (
+	"sync/atomic"
+
 	"github.com/nats-io/nats.go"
+	"github.com/spf13/viper"
 	"go.uber.org/fx"
 )
 
@@ -27,11 +30,43 @@ var Module = fx.Module("messaging",
 	fx.Provide(
 		NewNats,
 	),
+	fx.Supply(&NatsHolder{}),
 )
 
-func NewNats(lc fx.Lifecycle) (*nats.Conn, error) {
+type NatsHolder struct {
+	nc atomic.Value
+}
+
+func (h *NatsHolder) Get() *nats.Conn {
+	v := h.nc.Load()
+	if v == nil {
+		return nil
+	}
+	return v.(*nats.Conn)
+}
+
+type Params struct {
+	fx.In
+
+	Holder *NatsHolder
+	Viper  *viper.Viper `optional:"true"`
+}
+
+type Result struct {
+	Nc *nats.Conn
+}
+
+func NewNats(p Params, lc fx.Lifecycle) (*nats.Conn, error) {
+	url := nats.DefaultURL
+	if p.Viper != nil {
+		configUrl := p.Viper.GetString("nats.url")
+		if configUrl != "" {
+			url = configUrl
+		}
+	}
+
 	closeChan := make(chan bool)
-	conn, err := nats.Connect(nats.DefaultURL, nats.ClosedHandler(func(*nats.Conn) {
+	conn, err := nats.Connect(url, nats.ClosedHandler(func(*nats.Conn) {
 		close(closeChan)
 	}))
 
@@ -41,6 +76,8 @@ func NewNats(lc fx.Lifecycle) (*nats.Conn, error) {
 			<-closeChan
 		}))
 	}
+
+	p.Holder.nc.Store(conn)
 
 	return conn, err
 }

@@ -5,7 +5,7 @@ This project is in very early development. It is mostly a fun side-project for m
 
 The goal for this project is to become a self-hosted alternative to commercial cloud providers. Unlike software like [Nextcloud](https://nextcloud.com/), Seraph does not aim to be a collaboration platform. Instead, it is targeted at single-user or home / family use-cases.
 
-## Goals
+# Goals
 
 - support WebDAV, CardDAV, CalDAV and Subsonic protocols
 - support access management using "spaces" - spaces group together resources (files, calendars etc.) and assign them to users and roles

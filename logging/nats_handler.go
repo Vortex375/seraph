@@ -23,18 +23,18 @@ import (
 	"encoding/json"
 	"log/slog"
 
-	"github.com/nats-io/nats.go"
+	"umbasa.net/seraph/messaging"
 )
 
 type NatsHandler struct {
-	nc     *nats.Conn
+	holder *messaging.NatsHolder
 	attrs  []slog.Attr
 	groups []string
 }
 
-func NewNatsHandler(nc *nats.Conn) *NatsHandler {
+func NewNatsHandler(holder *messaging.NatsHolder) *NatsHandler {
 	return &NatsHandler{
-		nc,
+		holder,
 		make([]slog.Attr, 0),
 		make([]string, 0),
 	}
@@ -48,6 +48,11 @@ func (h *NatsHandler) Enabled(ctx context.Context, level slog.Level) bool {
 }
 
 func (h *NatsHandler) Handle(ctx context.Context, r slog.Record) error {
+	nc := h.holder.Get()
+	if nc == nil {
+		return nil
+	}
+
 	m := make(map[string]any)
 	m["time"] = r.Time
 	m["level"] = r.Level
@@ -67,7 +72,7 @@ func (h *NatsHandler) Handle(ctx context.Context, r slog.Record) error {
 		return err
 	}
 
-	h.nc.Publish("seraph.log", j)
+	nc.Publish("seraph.log", j)
 
 	return nil
 }

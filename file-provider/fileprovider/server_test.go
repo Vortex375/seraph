@@ -150,6 +150,8 @@ func setup() {
 	var err error
 	natsServer, err = server.NewServer(opts)
 
+	natsServer.Start()
+
 	if err != nil {
 		panic(err)
 	}
@@ -627,7 +629,7 @@ func doTest(t *testing.T, mockFs *MockFileSystem, request FileProviderRequest, e
 	data, _ := msgApi.Marshal(FileProviderRequestSchema, &request)
 	msg, err := nc.Request(FileProviderTopicPrefix+testServer.ProviderId, data, 5*time.Second)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 
 	mockFs.AssertExpectations(t)

@@ -294,6 +294,7 @@ func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.F
 			log.Error("unknown request", "req", request.Request)
 		}
 	})
+	log.Info("fileprovider active", "topic", providerTopic)
 
 	return &provider
 }
