@@ -85,6 +85,7 @@ func (server *webDavServer) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 		}
 		handler := server.getHandler(providerId)
 		handler.ServeHTTP(ctx.Writer, ctx.Request)
+		ctx.Abort()
 	}))
 
 	app.Any("/dav/:providerId/*path", func(*gin.Context) {

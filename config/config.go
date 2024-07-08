@@ -19,6 +19,7 @@
 package config
 
 import (
+	"log/slog"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -65,6 +66,10 @@ func New(p Params) (Result, error) {
 	} else {
 		log.Info("loaded configuration file", "file", v.ConfigFileUsed())
 	}
+
+	level := slog.LevelInfo
+	level.UnmarshalText([]byte(v.GetString("log.level")))
+	p.Logger.SetLevel(level)
 
 	return Result{
 		Viper: v,

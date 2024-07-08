@@ -118,10 +118,22 @@ func (c *client) Mkdir(ctx context.Context, name string, perm os.FileMode) error
 }
 
 func (c *client) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (webdav.File, error) {
+	return &lazyFile{
+		client: c,
+		name:   name,
+		flag:   flag,
+		perm:   perm,
+		file:   nil,
+	}, nil
+}
+
+func (c *client) doOpenFile(name string, flag int, perm os.FileMode) (webdav.File, error) {
 	request := FileProviderRequest{
 		Uid: uuid.NewString(),
 		Request: OpenFileRequest{
 			Name: name,
+			Flag: flag,
+			Perm: perm,
 		},
 	}
 
@@ -137,7 +149,14 @@ func (c *client) OpenFile(ctx context.Context, name string, flag int, perm os.Fi
 		c.log.Error("openFile failed", "uid", request.Uid, "req", request.Request, "error", resp.Error)
 		return nil, errors.New(resp.Error)
 	}
-	return &file{c.log, c.nc, c.msgApi, c.providerId, name, resp.FileId}, nil
+	return &file{
+			log:        c.log,
+			nc:         c.nc,
+			msgApi:     c.msgApi,
+			providerId: c.providerId,
+			name:       name,
+			fileId:     resp.FileId},
+		nil
 }
 
 func (c *client) RemoveAll(ctx context.Context, name string) error {
@@ -241,8 +260,8 @@ type file struct {
 	nc         *nats.Conn
 	msgApi     avro.API
 	providerId string
-	name       string
 	fileId     string
+	name       string
 }
 
 func (f *file) Close() error {
@@ -419,4 +438,78 @@ func readWithTimeout[T any](c chan T, timeout time.Duration) (T, bool) {
 	case <-timer.C:
 		return v, false
 	}
+}
+
+type lazyFile struct {
+	client *client
+	name   string
+	flag   int
+	perm   os.FileMode
+	file   webdav.File
+}
+
+func (f *lazyFile) Close() error {
+	if f.file != nil {
+		ret := f.file.Close()
+		f.file = nil
+		return ret
+	}
+	return nil
+}
+
+func (f *lazyFile) Read(p []byte) (n int, err error) {
+	if f.file == nil {
+		err := f.doOpen()
+		if err != nil {
+			return 0, err
+		}
+
+	}
+
+	return f.file.Read(p)
+}
+
+func (f *lazyFile) Seek(offset int64, whence int) (int64, error) {
+	if f.file == nil {
+		err := f.doOpen()
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	return f.file.Seek(offset, whence)
+}
+
+func (f *lazyFile) Readdir(count int) ([]fs.FileInfo, error) {
+	if f.file == nil {
+		err := f.doOpen()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return f.file.Readdir(count)
+}
+
+func (f *lazyFile) Stat() (fs.FileInfo, error) {
+	return f.client.Stat(context.Background(), f.name)
+}
+
+func (f *lazyFile) Write(p []byte) (n int, err error) {
+	if f.file == nil {
+		err := f.doOpen()
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	return f.file.Write(p)
+}
+
+func (f *lazyFile) doOpen() error {
+	file, err := f.client.doOpenFile(f.name, f.flag, f.perm)
+	if err == nil {
+		f.file = file
+	}
+	return err
 }

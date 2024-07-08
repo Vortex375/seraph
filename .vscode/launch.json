@@ -9,7 +9,10 @@
       "type": "go",
       "request": "launch",
       "mode": "debug",
-      "program": "${workspaceFolder}/api-gateway/main.go"
+      "program": "${workspaceFolder}/api-gateway/main.go",
+      "env": {
+        "SERAPH_AUTH_DISABLED": "true"
+      }
     },
     {
       "name": "file-provider-dir",
@@ -17,6 +20,14 @@
       "request": "launch",
       "mode": "debug",
       "program": "${workspaceFolder}/file-provider-dir/main.go"
+    },
+    {
+      "name": "file-provider-smb",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${workspaceFolder}/file-provider-smb/main.go",
+      "console": "integratedTerminal"
     }
 
   ]
