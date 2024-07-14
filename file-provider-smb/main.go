@@ -58,7 +58,10 @@ func main() {
 			}
 
 			fs := smbprovider.NewSmbFileSystem(logger, addr, sharename, username, password)
-			fileprovider.NewFileProviderServer(id, nc, fs, logger)
+
+			lc.Append(fx.StartHook(func() {
+				fileprovider.NewFileProviderServer(id, nc, fs, logger)
+			}))
 
 			lc.Append(fx.StopHook(func() {
 				fs.Close()

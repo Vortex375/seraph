@@ -37,7 +37,7 @@ func main() {
 		logging.Module,
 		messaging.Module,
 		config.Module,
-		fx.Invoke(func(nc *nats.Conn, viper *viper.Viper, logger *logging.Logger) error {
+		fx.Invoke(func(nc *nats.Conn, viper *viper.Viper, logger *logging.Logger, lc fx.Lifecycle) error {
 			id := viper.GetString("fileprovider.id")
 			dir := viper.GetString("fileprovider.dir")
 
@@ -50,7 +50,10 @@ func main() {
 			}
 
 			fs := webdav.Dir(dir)
-			fileprovider.NewFileProviderServer(id, nc, fs, logger)
+
+			lc.Append(fx.StartHook(func() {
+				fileprovider.NewFileProviderServer(id, nc, fs, logger)
+			}))
 
 			return nil
 		}),

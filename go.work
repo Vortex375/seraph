@@ -1,14 +1,17 @@
-go 1.22.4
+go 1.22.5
 
 use (
 	./api-gateway
 	./config
+	./events
+	./file-indexer
 	./file-provider
 	./file-provider-dir
 	./file-provider-smb
 	./log-viewer
 	./logging
 	./messaging
+	./mongodb
 	./taglib
 	./test
 )

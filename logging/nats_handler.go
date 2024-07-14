@@ -58,7 +58,8 @@ func (h *NatsHandler) Handle(ctx context.Context, r slog.Record) error {
 	m["level"] = r.Level
 	m["msg"] = r.Message
 
-	recordAttrs := make([]slog.Attr, r.NumAttrs())
+	recordAttrs := make([]slog.Attr, r.NumAttrs()+len(h.attrs))
+	recordAttrs = append(recordAttrs, h.attrs...)
 	r.Attrs(func(a slog.Attr) bool {
 		recordAttrs = append(recordAttrs, a)
 		return true

@@ -29,6 +29,7 @@ import (
 var Module = fx.Module("messaging",
 	fx.Provide(
 		NewNats,
+		NewJetStream,
 	),
 	fx.Supply(&NatsHolder{}),
 )

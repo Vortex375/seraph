@@ -1,0 +1,35 @@
+[
+  {
+    "type": "record",
+    "name": "Event",
+    "namespace": "seraph.events",
+    "fields": [
+      {"name": "id", "type": "string"},
+      {"name": "version", "type": "int"}
+    ]
+  },
+  {
+    "type": "record",
+    "name": "FileProviderEvent",
+    "namespace": "seraph.events",
+    "fields": [
+      {"name": "providerId", "type": "string"}
+    ]
+  },
+  {
+    "type": "record",
+    "name": "FileInfoEvent",
+    "namespace": "seraph.events",
+    "fields": [
+			{"name": "event", "type": "Event"},
+			{"name": "fileProviderEvent", "type": "FileProviderEvent"},
+      {"name": "readdir", "type": "string"},
+      {"name": "last", "type": "boolean"},
+      {"name": "name", "type": "string"},
+      {"name": "size", "type": "long"},
+      {"name": "mode", "type": "long"},
+      {"name": "modTime", "type": "long"},
+      {"name": "isDir", "type": "boolean"}
+    ]
+  }
+]

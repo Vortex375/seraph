@@ -20,11 +20,13 @@ package fileprovider
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
 	"golang.org/x/net/webdav"
+	"umbasa.net/seraph/events"
 	"umbasa.net/seraph/logging"
 )
 
@@ -121,6 +123,26 @@ func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.F
 				response.Size = fileInfo.Size()
 				response.Mode = fileInfo.Mode()
 				response.ModTime = fileInfo.ModTime().Unix()
+
+				fileInfoEvent := events.FileInfoEvent{
+					Event: events.Event{
+						ID:      uuid.NewString(),
+						Version: 1,
+					},
+					FileProviderEvent: events.FileProviderEvent{
+						ProviderID: providerId,
+					},
+					Readdir: "",
+					Last:    false,
+					Name:    req.Name,
+					IsDir:   fileInfo.IsDir(),
+					Size:    fileInfo.Size(),
+					Mode:    int64(fileInfo.Mode()),
+					ModTime: fileInfo.ModTime().Unix(),
+				}
+				fileInfoEventData, _ := events.Api.Marshal(events.Schema, fileInfoEvent)
+				nc.Publish(fmt.Sprintf(events.FileProviderFileInfoTopicPattern, providerId), fileInfoEventData)
+
 			} else {
 				response.Error = err.Error()
 			}
@@ -237,7 +259,7 @@ func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.F
 						if err == nil {
 							for i, fileInfo := range fileInfos {
 								fileInfoResponse := FileInfoResponse{
-									Name:    fileInfo.Name(),
+									Name:    req.Name + "/" + fileInfo.Name(),
 									IsDir:   fileInfo.IsDir(),
 									Size:    fileInfo.Size(),
 									Mode:    fileInfo.Mode(),
@@ -254,6 +276,24 @@ func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.F
 									err = e
 									break
 								}
+								fileInfoEvent := events.FileInfoEvent{
+									Event: events.Event{
+										ID:      uuid.NewString(),
+										Version: 1,
+									},
+									FileProviderEvent: events.FileProviderEvent{
+										ProviderID: providerId,
+									},
+									Readdir: fileRequest.Uid,
+									Last:    fileReq.Count <= 0 || len(fileInfos) < fileReq.Count,
+									Name:    fileInfo.Name(),
+									IsDir:   fileInfo.IsDir(),
+									Size:    fileInfo.Size(),
+									Mode:    int64(fileInfo.Mode()),
+									ModTime: fileInfo.ModTime().Unix(),
+								}
+								fileInfoEventData, _ := events.Api.Marshal(events.Schema, fileInfoEvent)
+								nc.Publish(fmt.Sprintf(events.FileProviderFileInfoTopicPattern, providerId), fileInfoEventData)
 							}
 						}
 						var fileResponseData []byte

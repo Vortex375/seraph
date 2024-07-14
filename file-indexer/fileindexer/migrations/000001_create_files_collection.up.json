@@ -1,0 +1,18 @@
+[
+  {
+    "create": "files"
+  },
+  {
+    "createIndexes": "files",
+    "indexes": [
+      {
+        "key": {
+          "providerId": 1,
+          "path": 1
+        },
+        "name": "files_providerId_path_idx",
+        "unique": true
+      }
+    ]
+  }
+]
