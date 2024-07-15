@@ -2,8 +2,9 @@ package fileindexer
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
+	"path"
+	"strings"
 
 	"github.com/nats-io/nats.go/jetstream"
 	"go.mongodb.org/mongo-driver/bson"
@@ -61,23 +62,32 @@ func NewConsumer(js jetstream.JetStream, db *mongo.Database, logger *logging.Log
 func (c *consumer) Start() error {
 	ctx, err := c.consumer.Consume(func(msg jetstream.Msg) {
 		var rawEvent any
-		fmt.Println("data:", msg.Data())
+
 		err := events.Api.Unmarshal(events.Schema, msg.Data(), &rawEvent)
 		if err != nil {
 			c.log.Error("failed to deserialize message", "error", err)
 			return
 		}
+
 		fileInfoEvent, ok := rawEvent.(events.FileInfoEvent)
 		if !ok {
 			c.log.Error("unexpected event type", "event", rawEvent)
+			msg.TermWithReason("unexpected event type")
 			return
 		}
 
-		if fileInfoEvent.IsDir {
-			//TODO: it's a dir
-		} else {
-			err = c.UpsertFile(fileInfoEvent)
+		if !strings.HasPrefix(fileInfoEvent.Name, "/") {
+			c.log.Error("error processing FileInfoEvent: path is not absolute", "event", fileInfoEvent)
+			msg.TermWithReason("path is not absolute")
+			return
 		}
+
+		_, err = c.UpsertFile(&File{
+			ProviderId: fileInfoEvent.FileProviderEvent.ProviderID,
+			Path:       path.Clean(fileInfoEvent.Name),
+			IsDir:      fileInfoEvent.IsDir,
+		})
+
 		if err != nil {
 			c.log.Error("error processing FileInfoEvent", "error", err, "event", fileInfoEvent)
 			return
@@ -99,19 +109,33 @@ func (c *consumer) Stop() {
 	}
 }
 
-func (c *consumer) UpsertFile(e events.FileInfoEvent) error {
+func (c *consumer) UpsertFile(file *File) (*File, error) {
+
+	if file.Path != "/" { // if it's not the root dir
+		dirName := path.Dir(file.Path)
+		parent, err := c.UpsertFile(&File{
+			ProviderId: file.ProviderId,
+			Path:       dirName,
+			IsDir:      true,
+		})
+		if err != nil {
+			return nil, err
+		}
+		file.ParentDir = parent.Id
+	}
+
 	filter := bson.M{
-		"providerId": e.FileProviderEvent.ProviderID,
-		"path":       e.Name,
+		"providerId": file.ProviderId,
+		"path":       file.Path,
 	}
 	update := bson.M{
-		"$set": bson.M{
-			"providerId": e.FileProviderEvent.ProviderID,
-			"path":       e.Name,
-		},
+		"$set": file,
 	}
-	opts := options.Update().SetUpsert(true)
-	_, err := c.files.UpdateOne(context.Background(), filter, update, opts)
+	opts := options.FindOneAndUpdate().SetUpsert(true).SetReturnDocument(options.After)
+	result := c.files.FindOneAndUpdate(context.Background(), filter, update, opts)
 
-	return err
+	var updatedFile File
+	err := result.Decode(&updatedFile)
+
+	return &updatedFile, err
 }

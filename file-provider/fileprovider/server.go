@@ -21,6 +21,7 @@ package fileprovider
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -134,7 +135,7 @@ func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.F
 					},
 					Readdir: "",
 					Last:    false,
-					Name:    req.Name,
+					Name:    ensureAbsolutePath(req.Name),
 					IsDir:   fileInfo.IsDir(),
 					Size:    fileInfo.Size(),
 					Mode:    int64(fileInfo.Mode()),
@@ -259,7 +260,7 @@ func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.F
 						if err == nil {
 							for i, fileInfo := range fileInfos {
 								fileInfoResponse := FileInfoResponse{
-									Name:    req.Name + "/" + fileInfo.Name(),
+									Name:    fileInfo.Name(),
 									IsDir:   fileInfo.IsDir(),
 									Size:    fileInfo.Size(),
 									Mode:    fileInfo.Mode(),
@@ -286,7 +287,7 @@ func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.F
 									},
 									Readdir: fileRequest.Uid,
 									Last:    fileReq.Count <= 0 || len(fileInfos) < fileReq.Count,
-									Name:    fileInfo.Name(),
+									Name:    ensureAbsolutePath(req.Name + "/" + fileInfo.Name()),
 									IsDir:   fileInfo.IsDir(),
 									Size:    fileInfo.Size(),
 									Mode:    int64(fileInfo.Mode()),
@@ -337,4 +338,11 @@ func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.F
 	log.Info("fileprovider active", "topic", providerTopic)
 
 	return &provider
+}
+
+func ensureAbsolutePath(p string) string {
+	if !strings.HasPrefix(p, "/") {
+		return "/" + p
+	}
+	return p
 }
