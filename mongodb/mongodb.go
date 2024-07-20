@@ -4,9 +4,12 @@ import (
 	"context"
 
 	"github.com/spf13/viper"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/bsoncodec"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.uber.org/fx"
+	"umbasa.net/seraph/entities"
 )
 
 var Module = fx.Module("mongodb",
@@ -29,9 +32,17 @@ type ClientResult struct {
 	Client *mongo.Client
 }
 
+func getCustomRegistry() *bsoncodec.Registry {
+	r := bson.NewRegistry()
+
+	entities.RegisterEncoders(r)
+
+	return r
+}
+
 func NewClient(p ClientParams) (ClientResult, error) {
 	uri := p.Viper.GetString("mongo.url")
-	client, err := mongo.Connect(context.Background(), options.Client().ApplyURI(uri))
+	client, err := mongo.Connect(context.Background(), options.Client().ApplyURI(uri).SetRegistry(getCustomRegistry()))
 
 	if err != nil {
 		return ClientResult{}, err

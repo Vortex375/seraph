@@ -96,7 +96,12 @@ func makeGroup(groups []string, attrs []slog.Attr, m map[string]any) {
 		if value.Kind() == slog.KindGroup {
 			makeGroup([]string{key}, value.Group(), current)
 		} else {
-			current[key] = value.Any()
+			val := value.Any()
+			if e, ok := val.(error); ok {
+				current[key] = e.Error()
+			} else {
+				current[key] = value.Any()
+			}
 		}
 	}
 }

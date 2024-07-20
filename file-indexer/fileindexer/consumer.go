@@ -2,14 +2,18 @@ package fileindexer
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"path"
 	"strings"
 
+	"github.com/google/uuid"
+	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.uber.org/fx"
 	"umbasa.net/seraph/events"
 	"umbasa.net/seraph/logging"
 )
@@ -21,23 +25,33 @@ type Consumer interface {
 
 type consumer struct {
 	log      *slog.Logger
+	nc       *nats.Conn
 	js       jetstream.JetStream
 	consumer jetstream.Consumer
 	ctx      jetstream.ConsumeContext
 
 	files *mongo.Collection
-	dirs  *mongo.Collection
 }
 
-func NewConsumer(js jetstream.JetStream, db *mongo.Database, logger *logging.Logger, _ Migrations) (Consumer, error) {
-	log := logger.GetLogger("fileindexer")
+type Params struct {
+	fx.In
+
+	Nc     *nats.Conn
+	Js     jetstream.JetStream
+	Db     *mongo.Database
+	Logger *logging.Logger
+	Mig    Migrations
+}
+
+func NewConsumer(p Params) (Consumer, error) {
+	log := p.Logger.GetLogger("fileindexer")
 
 	cfg := jetstream.StreamConfig{
 		Name:     "SERAPH_FILE_INFO",
 		Subjects: []string{events.FileProviderFileInfoTopic},
 	}
 
-	stream, err := js.CreateOrUpdateStream(context.Background(), cfg)
+	stream, err := p.Js.CreateOrUpdateStream(context.Background(), cfg)
 
 	if err != nil {
 		return nil, err
@@ -47,15 +61,14 @@ func NewConsumer(js jetstream.JetStream, db *mongo.Database, logger *logging.Log
 		Durable: "SERAPH_FILE_INDEXER",
 	})
 
-	files := db.Collection("files")
-	dirs := db.Collection("dirs")
+	files := p.Db.Collection("files")
 
 	return &consumer{
 		log:      log,
-		js:       js,
+		nc:       p.Nc,
+		js:       p.Js,
 		consumer: c,
 		files:    files,
-		dirs:     dirs,
 	}, nil
 }
 
@@ -76,21 +89,46 @@ func (c *consumer) Start() error {
 			return
 		}
 
-		if !strings.HasPrefix(fileInfoEvent.Name, "/") {
+		if !strings.HasPrefix(fileInfoEvent.Path, "/") {
 			c.log.Error("error processing FileInfoEvent: path is not absolute", "event", fileInfoEvent)
 			msg.TermWithReason("path is not absolute")
 			return
 		}
 
-		_, err = c.UpsertFile(&File{
-			ProviderId: fileInfoEvent.FileProviderEvent.ProviderID,
-			Path:       path.Clean(fileInfoEvent.Name),
-			IsDir:      fileInfoEvent.IsDir,
-		})
+		file := FilePrototype{}
+		file.ProviderId.Set(fileInfoEvent.ProviderID)
+		file.Path.Set(path.Clean(fileInfoEvent.Path))
+		file.IsDir.Set(fileInfoEvent.IsDir)
+		if fileInfoEvent.ModTime != 0 || fileInfoEvent.Mode != 0 || fileInfoEvent.Size != 0 {
+			file.ModTime.Set(fileInfoEvent.ModTime)
+			file.Mode.Set(fileInfoEvent.Mode)
+			file.Size.Set(fileInfoEvent.Size)
+		}
+		if fileInfoEvent.Readdir != "" {
+			file.Readdir.Set(fileInfoEvent.Readdir)
+		}
+
+		newFile, change, err := c.upsertFile(&file)
 
 		if err != nil {
 			c.log.Error("error processing FileInfoEvent", "error", err, "event", fileInfoEvent)
 			return
+		}
+
+		if change != "" {
+			err = c.publishChange(newFile, change)
+			if err != nil {
+				c.log.Error("error publishing FileChangedEvent", "error", err, "event", fileInfoEvent)
+				return
+			}
+		}
+
+		if fileInfoEvent.Readdir != "" && fileInfoEvent.Last {
+			err = c.handleReaddirLast(newFile)
+			if err != nil {
+				c.log.Error("error handling readdir", "error", err, "event", fileInfoEvent)
+				return
+			}
 		}
 
 		c.log.Debug("successfully processed file event", "event", fileInfoEvent)
@@ -109,33 +147,127 @@ func (c *consumer) Stop() {
 	}
 }
 
-func (c *consumer) UpsertFile(file *File) (*File, error) {
-
-	if file.Path != "/" { // if it's not the root dir
-		dirName := path.Dir(file.Path)
-		parent, err := c.UpsertFile(&File{
-			ProviderId: file.ProviderId,
-			Path:       dirName,
-			IsDir:      true,
-		})
+func (c *consumer) upsertFile(file *FilePrototype) (newFile *File, change string, err error) {
+	if file.Path.Get() != "/" { // if it's not the root dir
+		dirName := path.Dir(file.Path.Get())
+		parentDir := FilePrototype{}
+		parentDir.ProviderId.Set(file.ProviderId.Get())
+		parentDir.Path.Set(dirName)
+		parentDir.IsDir.Set(true)
+		var parent *File
+		parent, _, err = c.upsertFile(&parentDir)
 		if err != nil {
-			return nil, err
+			return
 		}
-		file.ParentDir = parent.Id
+		file.ParentDir.Set(parent.Id)
+		if parent.Readdir != "" && file.Readdir.IsDefined() && file.Readdir.Get() != parent.Readdir {
+			file.Readdir.Unset()
+		}
 	}
 
-	filter := bson.M{
-		"providerId": file.ProviderId,
-		"path":       file.Path,
-	}
+	filter := FilePrototype{}
+	filter.ProviderId.Set(file.ProviderId.Get())
+	filter.Path.Set(file.Path.Get())
+
 	update := bson.M{
 		"$set": file,
 	}
-	opts := options.FindOneAndUpdate().SetUpsert(true).SetReturnDocument(options.After)
+	opts := options.FindOneAndUpdate().SetUpsert(true).SetReturnDocument(options.Before)
 	result := c.files.FindOneAndUpdate(context.Background(), filter, update, opts)
+	resultNew := c.files.FindOne(context.Background(), filter)
 
-	var updatedFile File
-	err := result.Decode(&updatedFile)
+	newFile = &File{}
+	err = resultNew.Decode(newFile)
 
-	return &updatedFile, err
+	if err != nil {
+		return
+	}
+
+	if result.Err() == mongo.ErrNoDocuments {
+		// file was newly created
+		change = events.FileChangedEventCreated
+	} else {
+		var oldFile File
+		err = result.Decode(&oldFile)
+		if err != nil {
+			return
+		}
+		if oldFile.ModTime != newFile.ModTime ||
+			oldFile.Size != newFile.Size ||
+			oldFile.Mode != newFile.Mode {
+			change = events.FileChangedEventChanged
+		}
+	}
+	return
+}
+
+func (c *consumer) publishChange(file *File, change string) error {
+	ev := events.FileChangedEvent{
+		Event: events.Event{
+			ID:      uuid.NewString(),
+			Version: 1,
+		},
+		Change:     change,
+		FileID:     file.Id.Hex(),
+		ProviderID: file.ProviderId,
+		Path:       file.Path,
+		Size:       file.Size,
+		Mode:       file.Mode,
+		ModTime:    file.ModTime,
+		IsDir:      file.IsDir,
+	}
+
+	data, err := events.Api.Marshal(events.Schema, ev)
+
+	if err != nil {
+		return err
+	}
+
+	topic := fmt.Sprintf(events.FileChangedTopicPattern, file.Id.Hex())
+
+	c.nc.Publish(topic, data)
+
+	return nil
+}
+
+func (c *consumer) handleReaddirLast(file *File) error {
+	var parentFilter FilePrototype
+	parentFilter.Id.Set(file.ParentDir)
+	parentResult := c.files.FindOne(context.Background(), parentFilter)
+
+	if parentResult.Err() != nil {
+		return parentResult.Err()
+	}
+
+	var parentDir File
+	err := parentResult.Decode(&parentDir)
+	if err != nil {
+		return err
+	}
+
+	if parentDir.Readdir == "" {
+		return fmt.Errorf("readdir has ended but parent directory '%s' has no active readdir", parentDir.Path)
+	}
+
+	if parentDir.Readdir != file.Readdir {
+		// the readdir that ended is not the active readdir ... there ought to be another one ending
+		return nil
+	}
+
+	deleteFilter := bson.M{
+		"parentDir": parentDir.Id,
+		"readdir": bson.M{
+			"$ne": parentDir.Readdir,
+		},
+	}
+	_, err = c.files.DeleteMany(context.Background(), deleteFilter)
+	if err != nil {
+		return err
+	}
+
+	var newParent FilePrototype
+	newParent.Readdir.Set("")
+	c.files.UpdateOne(context.Background(), parentFilter, newParent)
+
+	return nil
 }

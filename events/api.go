@@ -22,6 +22,6 @@ func init() {
 	}.Freeze()
 
 	Api.Register("seraph.events.Event", Event{})
-	Api.Register("seraph.events.FileProviderEvent", FileProviderEvent{})
 	Api.Register("seraph.events.FileInfoEvent", FileInfoEvent{})
+	Api.Register("seraph.events.FileChangedEvent", FileChangedEvent{})
 }

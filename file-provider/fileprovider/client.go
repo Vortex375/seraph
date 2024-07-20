@@ -356,31 +356,36 @@ func (f *file) Readdir(count int) ([]fs.FileInfo, error) {
 	responseChan := make(chan *nats.Msg, chanSize)
 	readdirChan := make(chan []FileInfoResponse)
 	sub, _ := f.nc.ChanSubscribe(FileProviderReaddirTopicPrefix+request.Uid, responseChan)
+	defer sub.Unsubscribe()
 
 	go readReaddirResponses(f.msgApi, responseChan, readdirChan)
 
 	response, err := exchangeFile(f.nc, f.msgApi, f.fileId, &request)
 	if err != nil {
 		f.log.Error("readdir failed", "uid", request.Uid, "req", request.Request, "error", err)
-		sub.Unsubscribe()
 		return nil, err
 	}
-
-	fileInfoResponses := <-readdirChan
-	sub.Unsubscribe()
 
 	resp := response.Response.(ReaddirResponse)
 	if resp.Error != "" {
 		f.log.Error("readdir failed", "uid", request.Uid, "req", request.Request, "error", resp.Error)
 		return nil, errors.New(resp.Error)
 	}
-	if fileInfoResponses == nil {
-		f.log.Error("readdir failed", "uid", request.Uid, "req", request.Request, "error", "no response within timeout")
-	}
 
-	ret := make([]fs.FileInfo, len(fileInfoResponses))
-	for i, info := range fileInfoResponses {
-		ret[i] = &fileInfo{info}
+	var ret []fs.FileInfo
+	if resp.Count == 0 {
+		close(responseChan)
+		ret = make([]fs.FileInfo, 0)
+	} else {
+		fileInfoResponses := <-readdirChan
+		if fileInfoResponses == nil {
+			f.log.Error("readdir failed", "uid", request.Uid, "req", request.Request, "error", "no response within timeout")
+		}
+
+		ret = make([]fs.FileInfo, len(fileInfoResponses))
+		for i, info := range fileInfoResponses {
+			ret[i] = &fileInfo{info}
+		}
 	}
 
 	return ret, nil
@@ -420,6 +425,10 @@ func readReaddirResponses(msgApi avro.API, responseChan chan *nats.Msg, finalCha
 		m, ok := readWithTimeout(responseChan, defaultTimeout)
 		if !ok {
 			finalChan <- nil
+			return
+		}
+		if m == nil {
+			// directory was empty
 			return
 		}
 		msgApi.Unmarshal(FileInfoResponseSchema, m.Data, &r)
@@ -492,6 +501,16 @@ func (f *lazyFile) Readdir(count int) ([]fs.FileInfo, error) {
 }
 
 func (f *lazyFile) Stat() (fs.FileInfo, error) {
+	// if the file is new, then we must actually open it to do Stat()
+	if (f.flag & os.O_CREATE) != 0 {
+		if f.file == nil {
+			err := f.doOpen()
+			if err != nil {
+				return nil, err
+			}
+		}
+		return f.file.Stat()
+	}
 	return f.client.Stat(context.Background(), f.name)
 }
 

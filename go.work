@@ -3,6 +3,7 @@ go 1.22.5
 use (
 	./api-gateway
 	./config
+	./entities
 	./events
 	./file-indexer
 	./file-provider

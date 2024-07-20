@@ -8,20 +8,28 @@ type Event struct {
 	Version int    `avro:"version"`
 }
 
-// FileProviderEvent is a generated struct.
-type FileProviderEvent struct {
-	ProviderID string `avro:"providerId"`
-}
-
 // FileInfoEvent is a generated struct.
 type FileInfoEvent struct {
-	Event             Event             `avro:"event"`
-	FileProviderEvent FileProviderEvent `avro:"fileProviderEvent"`
-	Readdir           string            `avro:"readdir"`
-	Last              bool              `avro:"last"`
-	Name              string            `avro:"name"`
-	Size              int64             `avro:"size"`
-	Mode              int64             `avro:"mode"`
-	ModTime           int64             `avro:"modTime"`
-	IsDir             bool              `avro:"isDir"`
+	Event      Event  `avro:"event"`
+	ProviderID string `avro:"providerId"`
+	Readdir    string `avro:"readdir"`
+	Last       bool   `avro:"last"`
+	Path       string `avro:"path"`
+	Size       int64  `avro:"size"`
+	Mode       int64  `avro:"mode"`
+	ModTime    int64  `avro:"modTime"`
+	IsDir      bool   `avro:"isDir"`
+}
+
+// FileChangedEvent is a generated struct.
+type FileChangedEvent struct {
+	Event      Event  `avro:"event"`
+	FileID     string `avro:"fileId"`
+	ProviderID string `avro:"providerId"`
+	Change     string `avro:"change"`
+	Path       string `avro:"path"`
+	Size       int64  `avro:"size"`
+	Mode       int64  `avro:"mode"`
+	ModTime    int64  `avro:"modTime"`
+	IsDir      bool   `avro:"isDir"`
 }

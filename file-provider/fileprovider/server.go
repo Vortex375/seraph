@@ -130,16 +130,14 @@ func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.F
 						ID:      uuid.NewString(),
 						Version: 1,
 					},
-					FileProviderEvent: events.FileProviderEvent{
-						ProviderID: providerId,
-					},
-					Readdir: "",
-					Last:    false,
-					Name:    ensureAbsolutePath(req.Name),
-					IsDir:   fileInfo.IsDir(),
-					Size:    fileInfo.Size(),
-					Mode:    int64(fileInfo.Mode()),
-					ModTime: fileInfo.ModTime().Unix(),
+					ProviderID: providerId,
+					Readdir:    "",
+					Last:       false,
+					Path:       ensureAbsolutePath(req.Name),
+					IsDir:      fileInfo.IsDir(),
+					Size:       fileInfo.Size(),
+					Mode:       int64(fileInfo.Mode()),
+					ModTime:    fileInfo.ModTime().Unix(),
 				}
 				fileInfoEventData, _ := events.Api.Marshal(events.Schema, fileInfoEvent)
 				nc.Publish(fmt.Sprintf(events.FileProviderFileInfoTopicPattern, providerId), fileInfoEventData)
@@ -258,6 +256,20 @@ func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.F
 							log.Error("readdir failed", "uid", request.Uid, "fileId", fileRequest.FileId, "req", fileReq, "error", err)
 						}
 						if err == nil {
+							fileInfoEvent := events.FileInfoEvent{
+								Event: events.Event{
+									ID:      uuid.NewString(),
+									Version: 1,
+								},
+								ProviderID: providerId,
+								Readdir:    fileRequest.Uid,
+								Last:       false,
+								Path:       ensureAbsolutePath(req.Name),
+								IsDir:      true,
+							}
+							fileInfoEventData, _ := events.Api.Marshal(events.Schema, fileInfoEvent)
+							nc.Publish(fmt.Sprintf(events.FileProviderFileInfoTopicPattern, providerId), fileInfoEventData)
+
 							for i, fileInfo := range fileInfos {
 								fileInfoResponse := FileInfoResponse{
 									Name:    fileInfo.Name(),
@@ -282,16 +294,14 @@ func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.F
 										ID:      uuid.NewString(),
 										Version: 1,
 									},
-									FileProviderEvent: events.FileProviderEvent{
-										ProviderID: providerId,
-									},
-									Readdir: fileRequest.Uid,
-									Last:    fileReq.Count <= 0 || len(fileInfos) < fileReq.Count,
-									Name:    ensureAbsolutePath(req.Name + "/" + fileInfo.Name()),
-									IsDir:   fileInfo.IsDir(),
-									Size:    fileInfo.Size(),
-									Mode:    int64(fileInfo.Mode()),
-									ModTime: fileInfo.ModTime().Unix(),
+									ProviderID: providerId,
+									Readdir:    fileRequest.Uid,
+									Last:       (fileReq.Count <= 0 || len(fileInfos) < fileReq.Count) && i == len(fileInfos)-1,
+									Path:       ensureAbsolutePath(req.Name + "/" + fileInfo.Name()),
+									IsDir:      fileInfo.IsDir(),
+									Size:       fileInfo.Size(),
+									Mode:       int64(fileInfo.Mode()),
+									ModTime:    fileInfo.ModTime().Unix(),
 								}
 								fileInfoEventData, _ := events.Api.Marshal(events.Schema, fileInfoEvent)
 								nc.Publish(fmt.Sprintf(events.FileProviderFileInfoTopicPattern, providerId), fileInfoEventData)

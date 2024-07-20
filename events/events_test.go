@@ -16,14 +16,12 @@ func TestFileProviderEvent(t *testing.T) {
 			ID:      uuid.NewString(),
 			Version: 2,
 		},
-		FileProviderEvent: events.FileProviderEvent{
-			ProviderID: "testprovider",
-		},
-		Name:    "testfile",
-		Size:    14,
-		Mode:    42,
-		ModTime: time.Now().Unix(),
-		IsDir:   true,
+		ProviderID: "testprovider",
+		Path:       "testfile",
+		Size:       14,
+		Mode:       42,
+		ModTime:    time.Now().Unix(),
+		IsDir:      true,
 	}
 
 	doTest(t, events.Api, events.Schema, input, events.FileInfoEvent{})
