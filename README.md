@@ -25,7 +25,7 @@ Other things that would be cool:
 - file versioning / backup features
 
 Things that probably won't be implemented:
-- file synchronization - there are great alternatives like [Syncthing](https://syncthing.net/) available
+- file synchronization (with the exception of photo upload) - there are great alternatives like [Syncthing](https://syncthing.net/) available
 - collaborative editing / online editing of documents in general
 
 # License
