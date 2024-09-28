@@ -11,7 +11,7 @@
       "mode": "debug",
       "program": "${workspaceFolder}/api-gateway/main.go",
       "env": {
-        "SERAPH_AUTH_DISABLED": "true"
+        // "SERAPH_AUTH_DISABLED": "true"
       }
     },
     {

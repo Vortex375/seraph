@@ -1,11 +1,12 @@
-package fileindexer
+package auth
 
 import (
 	"embed"
 
-	_ "github.com/golang-migrate/migrate/v4/database/mongodb"
 	"github.com/spf13/viper"
 	"umbasa.net/seraph/mongodb"
+
+	_ "github.com/golang-migrate/migrate/v4/database/mongodb"
 )
 
 //go:embed migrations/*.json

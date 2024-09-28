@@ -1,0 +1,24 @@
+[
+  {
+    "create": "tokens"
+  },
+  {
+    "createIndexes": "tokens",
+    "indexes": [
+      {
+        "key": {
+          "username": 1
+        },
+        "name": "tokens_username_idx",
+        "unique": true
+      },
+      {
+        "key": {
+          "userId": 1
+        },
+        "name": "tokens_userId_idx",
+        "unique": true
+      }
+    ]
+  }
+]

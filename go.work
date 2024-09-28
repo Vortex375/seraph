@@ -14,5 +14,4 @@ use (
 	./messaging
 	./mongodb
 	./taglib
-	./test
 )

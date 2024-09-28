@@ -32,6 +32,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
 	cachecontrol "go.eigsys.de/gin-cachecontrol/v2"
+	"go.mongodb.org/mongo-driver/mongo"
 
 	"github.com/google/uuid"
 	"go.uber.org/fx"
@@ -51,6 +52,9 @@ type Params struct {
 
 	Log   *logging.Logger
 	Viper *viper.Viper
+
+	Db  *mongo.Database
+	Mig Migrations
 }
 
 type Result struct {
@@ -73,8 +77,6 @@ type oidcAuth struct {
 	verifier      *oidc.IDTokenVerifier
 	tokenStore    TokenStore
 }
-
-type noAuth struct{}
 
 func New(p Params) (Result, error) {
 	log := p.Log.GetLogger("auth")
@@ -127,7 +129,7 @@ func New(p Params) (Result, error) {
 		Scopes: []string{oidc.ScopeOpenID, oidc.ScopeOfflineAccess, "profile", "email"},
 	}
 
-	auth := &oidcAuth{log, provider, &oauth2Config, &offlineConfig, verifier, NewTokenStore()}
+	auth := &oidcAuth{log, provider, &oauth2Config, &offlineConfig, verifier, NewTokenStore(p.Db)}
 
 	return Result{Auth: auth, Handler: auth}, nil
 }
@@ -178,7 +180,7 @@ func (a *oidcAuth) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 			}{}
 			idToken.Claims(&claims)
 			a.log.Info("Registering new auth password", "username", claims.Username)
-			a.tokenStore.registerTokenWithPassword(idToken.Subject, claims.Username, password, oauth2Token.RefreshToken)
+			a.tokenStore.registerTokenWithPassword(ctx, idToken.Subject, claims.Username, password, oauth2Token.RefreshToken)
 		} else {
 			storeTokenToSession(sess, oauth2Token)
 		}
@@ -296,9 +298,17 @@ func (a *oidcAuth) PasswordAuthMiddleware(realm string) func(*gin.Context) {
 	return func(ctx *gin.Context) {
 		sess := sessions.Default(ctx)
 
-		token, _ := getTokenFromSession(sess)
+		token, err := getTokenFromSession(sess)
+		if err != nil {
+			ctx.AbortWithError(http.StatusInternalServerError, err)
+			return
+		}
 		if token == nil {
-			token = a.getTokenFromPassword(ctx)
+			token, err = a.getTokenFromPassword(ctx)
+			if err != nil {
+				ctx.AbortWithError(http.StatusInternalServerError, err)
+				return
+			}
 		}
 
 		if token != nil {
@@ -313,10 +323,6 @@ func (a *oidcAuth) PasswordAuthMiddleware(realm string) func(*gin.Context) {
 				}
 			}
 		}
-
-		// if username, password, ok := ctx.Request.BasicAuth(); ok {
-		// 	//TODO: verify
-		// }
 
 		a.sendPasswordAuth(ctx, realm)
 	}
@@ -337,17 +343,20 @@ func (a *oidcAuth) sendPasswordAuth(ctx *gin.Context, realm string) {
 	ctx.AbortWithStatus(http.StatusUnauthorized)
 }
 
-func (a *oidcAuth) getTokenFromPassword(ctx *gin.Context) *oauth2.Token {
+func (a *oidcAuth) getTokenFromPassword(ctx *gin.Context) (*oauth2.Token, error) {
 	if username, password, ok := ctx.Request.BasicAuth(); ok {
-		refreshToken := a.tokenStore.getTokenWithPassword(username, password)
+		refreshToken, err := a.tokenStore.getTokenWithPassword(ctx, username, password)
+		if err != nil {
+			return nil, err
+		}
 		if refreshToken == "" {
-			return nil
+			return nil, nil
 		}
 		return &oauth2.Token{
 			RefreshToken: refreshToken,
-		}
+		}, nil
 	}
-	return nil
+	return nil, nil
 }
 
 func storeTokenToSession(sess sessions.Session, token *oauth2.Token) error {
@@ -378,16 +387,4 @@ func getTokenFromSession(sess sessions.Session) (*oauth2.Token, error) {
 		return nil, err
 	}
 	return token.WithExtra(map[string]any{"id_token": rawIdToken}), nil
-}
-
-func (a *noAuth) AuthMiddleware() func(*gin.Context) {
-	return func(ctx *gin.Context) { /* no-op */ }
-}
-
-func (a *noAuth) PasswordAuthMiddleware(realm string) func(*gin.Context) {
-	return func(ctx *gin.Context) { /* no-op */ }
-}
-
-func (a *noAuth) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
-	/* no-op */
 }

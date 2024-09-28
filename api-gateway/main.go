@@ -26,6 +26,7 @@ import (
 	"umbasa.net/seraph/config"
 	"umbasa.net/seraph/logging"
 	"umbasa.net/seraph/messaging"
+	"umbasa.net/seraph/mongodb"
 )
 
 func main() {
@@ -36,6 +37,8 @@ func main() {
 		gateway.Module,
 		auth.Module,
 		webdav.Module,
+		mongodb.Module,
+		fx.Provide(auth.NewMigrations),
 		fx.Invoke(func(g gateway.Gateway) {
 			// required to bootstrap the Gateway
 		}),
