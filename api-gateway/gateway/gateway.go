@@ -97,7 +97,7 @@ func (g *gateway) Start(handlers []handler.GatewayHandler) {
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
 	})
-	engine.Use(sessions.Sessions("mysession", store))
+	engine.Use(sessions.Sessions("seraphsession", store))
 
 	apiGroup := engine.Group("/api", cachecontrol.New(cachecontrol.NoCachePreset), g.auth.AuthMiddleware())
 	apiGroup.GET("/test", getTest)

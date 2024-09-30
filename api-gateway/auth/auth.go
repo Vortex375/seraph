@@ -194,26 +194,49 @@ func (a *oidcAuth) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 		}
 	})
 
-	//TODO: for testing
 	authGroup.GET("/password", func(ctx *gin.Context) {
-		// body := struct {
-		// 	Nonce    string `json:"nonce"`
-		// 	Scope    string `json:"scope"`
-		// 	Password string `json:"password"`
-		// }{}
-		// err := ctx.ShouldBindBodyWithJSON(&body)
+		nonce := uuid.NewString()
+		resp := struct {
+			Nonce string `json:"nonce"`
+		}{nonce}
 
-		// if err != nil {
-		// 	ctx.AbortWithError(http.StatusBadRequest, err)
-		// 	return
-		// }
-
-		//TODO: verify nonce
+		data, err := json.Marshal(resp)
+		if err != nil {
+			ctx.AbortWithError(http.StatusInternalServerError, err)
+			return
+		}
 
 		sess := sessions.Default(ctx)
+		sess.Set("auth_register_password_nonce", nonce)
+		sess.Save()
+
+		ctx.Data(http.StatusOK, gin.MIMEJSON, data)
+	})
+
+	authGroup.POST("/password", func(ctx *gin.Context) {
+		body := struct {
+			Nonce    string `json:"nonce"`
+			Password string `json:"password"`
+		}{}
+		err := ctx.ShouldBindBodyWithJSON(&body)
+
+		if err != nil {
+			ctx.AbortWithError(http.StatusBadRequest, err)
+			return
+		}
+
+		sess := sessions.Default(ctx)
+
+		nonce := sess.Get("auth_register_password_nonce")
+		sess.Delete("auth_register_password_nonce")
+		if nonce == "" || nonce != body.Nonce {
+			ctx.AbortWithError(http.StatusBadRequest, errors.New("invalid nonce"))
+			return
+		}
+
 		state := uuid.New().String()
 		sess.Set("auth_state", state)
-		sess.Set("auth_register_password", "test")
+		sess.Set("auth_register_password", body.Password)
 		sess.Save()
 		ctx.Redirect(http.StatusFound, a.offlineConfig.AuthCodeURL(state))
 	})

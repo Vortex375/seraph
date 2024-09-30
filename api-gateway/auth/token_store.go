@@ -78,9 +78,7 @@ func (store *tokenStore) registerTokenWithPassword(context context.Context, user
 	token.Password.Set(string(hashedPw))
 	token.RefreshToken.Set(refreshToken)
 
-	options := options.Update().SetUpsert(true)
-
-	_, err = store.tokens.UpdateOne(context, &filter, bson.M{"$set": &token}, options)
+	_, err = store.tokens.UpdateOne(context, &filter, bson.M{"$set": &token}, options.Update().SetUpsert(true))
 	return err
 }
 
