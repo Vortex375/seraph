@@ -21,6 +21,7 @@ package fileprovider
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -42,7 +43,7 @@ type fileHolder struct {
 	subscription *nats.Subscription
 }
 
-func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.FileSystem, logger *logging.Logger) *FileProviderServer {
+func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.FileSystem, readOnly bool, logger *logging.Logger) *FileProviderServer {
 	log := logger.GetLogger("fileprovider." + providerId)
 	provider := FileProviderServer{
 		ProviderId: providerId,
@@ -60,6 +61,16 @@ func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.F
 		switch req := request.Request.(type) {
 
 		case MkdirRequest:
+			if readOnly {
+				responseData, _ := msgApi.Marshal(FileProviderResponseSchema, FileProviderResponse{
+					Uid: request.Uid,
+					Response: MkdirResponse{
+						Error: "read only",
+					},
+				})
+				msg.Respond(responseData)
+				break
+			}
 			err := fileSystem.Mkdir(context, req.Name, req.Perm)
 			var errStr string
 			if err == nil {
@@ -77,6 +88,16 @@ func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.F
 			msg.Respond(responseData)
 
 		case RemoveAllRequest:
+			if readOnly {
+				responseData, _ := msgApi.Marshal(FileProviderResponseSchema, FileProviderResponse{
+					Uid: request.Uid,
+					Response: RemoveAllResponse{
+						Error: "read only",
+					},
+				})
+				msg.Respond(responseData)
+				break
+			}
 			err := fileSystem.RemoveAll(context, req.Name)
 			var errStr string
 			if err == nil {
@@ -94,6 +115,16 @@ func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.F
 			msg.Respond(responseData)
 
 		case RenameRequest:
+			if readOnly {
+				responseData, _ := msgApi.Marshal(FileProviderResponseSchema, FileProviderResponse{
+					Uid: request.Uid,
+					Response: RenameResponse{
+						Error: "read only",
+					},
+				})
+				msg.Respond(responseData)
+				break
+			}
 			err := fileSystem.Rename(context, req.OldName, req.NewName)
 			var errStr string
 			if err == nil {
@@ -152,7 +183,11 @@ func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.F
 			msg.Respond(responseData)
 
 		case OpenFileRequest:
-			file, err := fileSystem.OpenFile(context, req.Name, req.Flag, req.Perm)
+			flag := req.Flag
+			if readOnly {
+				flag = os.O_RDONLY
+			}
+			file, err := fileSystem.OpenFile(context, req.Name, flag, req.Perm)
 			if err == nil {
 				log.Debug("openFile", "uid", request.Uid, "req", req)
 			} else {
@@ -213,6 +248,16 @@ func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.F
 						fileMsg.Respond(fileResponseData)
 
 					case FileWriteRequest:
+						if readOnly {
+							fileResponseData, _ := msgApi.Marshal(FileProviderFileResponseSchema, FileProviderFileResponse{
+								Uid: fileRequest.Uid,
+								Response: FileWriteResponse{
+									Error: "read only",
+								},
+							})
+							fileMsg.Respond(fileResponseData)
+							break
+						}
 						len, err := file.Write(fileReq.Payload)
 						var errStr string
 						if err == nil {

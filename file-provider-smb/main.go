@@ -43,6 +43,7 @@ func main() {
 			username := viper.GetString("fileprovider.username")
 			password := viper.GetString("fileprovider.password")
 			sharename := viper.GetString("fileprovider.sharename")
+			readOnly := viper.GetBool("fileprovider.readOnly")
 
 			if id == "" {
 				return errors.New("missing fileprovider.id argument")
@@ -60,7 +61,7 @@ func main() {
 			fs := smbprovider.NewSmbFileSystem(logger, addr, sharename, username, password)
 
 			lc.Append(fx.StartHook(func() {
-				fileprovider.NewFileProviderServer(id, nc, fs, logger)
+				fileprovider.NewFileProviderServer(id, nc, fs, readOnly, logger)
 			}))
 
 			lc.Append(fx.StopHook(func() {

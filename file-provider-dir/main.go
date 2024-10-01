@@ -40,6 +40,7 @@ func main() {
 		fx.Invoke(func(nc *nats.Conn, viper *viper.Viper, logger *logging.Logger, lc fx.Lifecycle) error {
 			id := viper.GetString("fileprovider.id")
 			dir := viper.GetString("fileprovider.dir")
+			readOnly := viper.GetBool("fileprovider.readOnly")
 
 			if id == "" {
 				return errors.New("missing fileprovider.id argument")
@@ -52,7 +53,7 @@ func main() {
 			fs := webdav.Dir(dir)
 
 			lc.Append(fx.StartHook(func() {
-				fileprovider.NewFileProviderServer(id, nc, fs, logger)
+				fileprovider.NewFileProviderServer(id, nc, fs, readOnly, logger)
 			}))
 
 			return nil

@@ -164,7 +164,7 @@ func shutdown() {
 	}
 }
 
-func getServer(t *testing.T, fs webdav.FileSystem) (*FileProviderServer, *nats.Conn) {
+func getServer(t *testing.T, fs webdav.FileSystem, readOnly bool) (*FileProviderServer, *nats.Conn) {
 	nc, err := nats.Connect(natsServer.ClientURL())
 	if err != nil {
 		t.Error(err)
@@ -173,7 +173,7 @@ func getServer(t *testing.T, fs webdav.FileSystem) (*FileProviderServer, *nats.C
 	logger := logging.New(logging.Params{})
 	logger.SetLevel(slog.LevelDebug)
 
-	return NewFileProviderServer("testprovider", nc, fs, logger), nc
+	return NewFileProviderServer("testprovider", nc, fs, readOnly, logger), nc
 }
 
 func TestMkdir(t *testing.T) {
@@ -196,7 +196,7 @@ func TestMkdir(t *testing.T) {
 
 	mockFs.On("Mkdir", mock.Anything, "testdir", fs.FileMode(0644)).Return(nil)
 
-	doTest(t, &mockFs, request, responseEquals(expected))
+	doTest(t, &mockFs, false, request, responseEquals(expected))
 }
 
 func TestMkdirError(t *testing.T) {
@@ -219,7 +219,28 @@ func TestMkdirError(t *testing.T) {
 
 	mockFs.On("Mkdir", mock.Anything, "testdir", fs.FileMode(0644)).Return(errors.New("request failed"))
 
-	doTest(t, &mockFs, request, responseEquals(expected))
+	doTest(t, &mockFs, false, request, responseEquals(expected))
+}
+
+func TestMkdirReadOnly(t *testing.T) {
+	mockFs := MockFileSystem{}
+
+	request := FileProviderRequest{
+		Uid: uuid.NewString(),
+		Request: MkdirRequest{
+			Name: "testdir",
+			Perm: 0644,
+		},
+	}
+
+	expected := FileProviderResponse{
+		Uid: request.Uid,
+		Response: MkdirResponse{
+			Error: "read only",
+		},
+	}
+
+	doTest(t, &mockFs, true, request, responseEquals(expected))
 }
 
 func TestRemoveAll(t *testing.T) {
@@ -241,7 +262,7 @@ func TestRemoveAll(t *testing.T) {
 
 	mockFs.On("RemoveAll", mock.Anything, "testdir").Return(nil)
 
-	doTest(t, &mockFs, request, responseEquals(expected))
+	doTest(t, &mockFs, false, request, responseEquals(expected))
 }
 
 func TestRemoveAllError(t *testing.T) {
@@ -263,7 +284,27 @@ func TestRemoveAllError(t *testing.T) {
 
 	mockFs.On("RemoveAll", mock.Anything, "testdir").Return(errors.New("removeAll failed"))
 
-	doTest(t, &mockFs, request, responseEquals(expected))
+	doTest(t, &mockFs, false, request, responseEquals(expected))
+}
+
+func TestRemoveAllReadOnly(t *testing.T) {
+	mockFs := MockFileSystem{}
+
+	request := FileProviderRequest{
+		Uid: uuid.NewString(),
+		Request: RemoveAllRequest{
+			Name: "testdir",
+		},
+	}
+
+	expected := FileProviderResponse{
+		Uid: request.Uid,
+		Response: RemoveAllResponse{
+			Error: "read only",
+		},
+	}
+
+	doTest(t, &mockFs, true, request, responseEquals(expected))
 }
 
 func TestRename(t *testing.T) {
@@ -286,7 +327,7 @@ func TestRename(t *testing.T) {
 
 	mockFs.On("Rename", mock.Anything, "foo", "bar").Return(nil)
 
-	doTest(t, &mockFs, request, responseEquals(expected))
+	doTest(t, &mockFs, false, request, responseEquals(expected))
 }
 
 func TestRenameError(t *testing.T) {
@@ -309,7 +350,28 @@ func TestRenameError(t *testing.T) {
 
 	mockFs.On("Rename", mock.Anything, "foo", "bar").Return(errors.New("rename failed"))
 
-	doTest(t, &mockFs, request, responseEquals(expected))
+	doTest(t, &mockFs, false, request, responseEquals(expected))
+}
+
+func TestRenameReadOnly(t *testing.T) {
+	mockFs := MockFileSystem{}
+
+	request := FileProviderRequest{
+		Uid: uuid.NewString(),
+		Request: RenameRequest{
+			OldName: "foo",
+			NewName: "bar",
+		},
+	}
+
+	expected := FileProviderResponse{
+		Uid: request.Uid,
+		Response: RenameResponse{
+			Error: "read only",
+		},
+	}
+
+	doTest(t, &mockFs, true, request, responseEquals(expected))
 }
 
 func TestStat(t *testing.T) {
@@ -343,7 +405,7 @@ func TestStat(t *testing.T) {
 		isDir:   true,
 	}, nil)
 
-	doTest(t, &mockFs, request, responseEquals(expected))
+	doTest(t, &mockFs, false, request, responseEquals(expected))
 }
 
 func TestStatError(t *testing.T) {
@@ -366,7 +428,7 @@ func TestStatError(t *testing.T) {
 	var null *MockFileInfo = nil
 	mockFs.On("Stat", mock.Anything, "testfile").Return(null, errors.New("stat failed"))
 
-	doTest(t, &mockFs, request, responseEquals(expected))
+	doTest(t, &mockFs, false, request, responseEquals(expected))
 }
 
 func TestOpenFile(t *testing.T) {
@@ -384,7 +446,7 @@ func TestOpenFile(t *testing.T) {
 	var null *os.File = nil
 	mockFs.On("OpenFile", mock.Anything, "testfile", os.O_CREATE, fs.FileMode(0444)).Return(null, nil)
 
-	doTest(t, &mockFs, request, func(t *testing.T, actual FileProviderResponse) {
+	doTest(t, &mockFs, false, request, func(t *testing.T, actual FileProviderResponse) {
 		assert.IsType(t, OpenFileResponse{}, actual.Response)
 		openFileResponse := actual.Response.(OpenFileResponse)
 		assert.NotEmpty(t, openFileResponse.FileId)
@@ -407,7 +469,7 @@ func TestOpenFileError(t *testing.T) {
 	var null *os.File = nil
 	mockFs.On("OpenFile", mock.Anything, "testfile", os.O_CREATE, fs.FileMode(0444)).Return(null, errors.New("open file failed"))
 
-	doTest(t, &mockFs, request, func(t *testing.T, actual FileProviderResponse) {
+	doTest(t, &mockFs, false, request, func(t *testing.T, actual FileProviderResponse) {
 		assert.IsType(t, OpenFileResponse{}, actual.Response)
 		openFileResponse := actual.Response.(OpenFileResponse)
 		assert.Empty(t, openFileResponse.FileId)
@@ -415,9 +477,32 @@ func TestOpenFileError(t *testing.T) {
 	})
 }
 
+func TestOpenFileReadOnly(t *testing.T) {
+	mockFs := MockFileSystem{}
+
+	request := FileProviderRequest{
+		Uid: uuid.NewString(),
+		Request: OpenFileRequest{
+			Name: "testfile",
+			Flag: os.O_CREATE,
+			Perm: 0444,
+		},
+	}
+
+	var null *os.File = nil
+	mockFs.On("OpenFile", mock.Anything, "testfile", os.O_RDONLY, fs.FileMode(0444)).Return(null, nil)
+
+	doTest(t, &mockFs, true, request, func(t *testing.T, actual FileProviderResponse) {
+		assert.IsType(t, OpenFileResponse{}, actual.Response)
+		openFileResponse := actual.Response.(OpenFileResponse)
+		assert.NotEmpty(t, openFileResponse.FileId)
+		assert.Empty(t, openFileResponse.Error)
+	})
+}
+
 func TestFile(t *testing.T) {
 	mockFs := MockFileSystem{}
-	testServer, nc := getServer(t, &mockFs)
+	testServer, nc := getServer(t, &mockFs, false)
 	msgApi := NewMessageApi()
 	defer nc.Close()
 
@@ -621,8 +706,8 @@ func TestFile(t *testing.T) {
 	})
 }
 
-func doTest(t *testing.T, mockFs *MockFileSystem, request FileProviderRequest, expectation func(*testing.T, FileProviderResponse)) {
-	testServer, nc := getServer(t, mockFs)
+func doTest(t *testing.T, mockFs *MockFileSystem, readOnly bool, request FileProviderRequest, expectation func(*testing.T, FileProviderResponse)) {
+	testServer, nc := getServer(t, mockFs, readOnly)
 	msgApi := NewMessageApi()
 	defer nc.Close()
 
