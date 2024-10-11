@@ -19,6 +19,8 @@
 package main
 
 import (
+	"github.com/spf13/viper"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.uber.org/fx"
 	"umbasa.net/seraph/api-gateway/auth"
 	"umbasa.net/seraph/api-gateway/gateway"
@@ -39,6 +41,10 @@ func main() {
 		webdav.Module,
 		mongodb.Module,
 		fx.Provide(auth.NewMigrations),
+		fx.Decorate(func(client *mongo.Client, viper *viper.Viper) *mongo.Client {
+			viper.SetDefault("mongo.db", "seraph-auth")
+			return client
+		}),
 		fx.Invoke(func(g gateway.Gateway) {
 			// required to bootstrap the Gateway
 		}),

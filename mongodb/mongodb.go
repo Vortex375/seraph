@@ -41,6 +41,7 @@ func getCustomRegistry() *bsoncodec.Registry {
 }
 
 func NewClient(p ClientParams) (ClientResult, error) {
+	p.Viper.SetDefault("mongo.url", "mongodb://localhost:27017/")
 	uri := p.Viper.GetString("mongo.url")
 	client, err := mongo.Connect(context.Background(), options.Client().ApplyURI(uri).SetRegistry(getCustomRegistry()))
 

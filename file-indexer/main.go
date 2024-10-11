@@ -19,6 +19,10 @@ func main() {
 		config.Module,
 		messaging.Module,
 		mongodb.Module,
+		fx.Decorate(func(client *mongo.Client, viper *viper.Viper) *mongo.Client {
+			viper.SetDefault("mongo.db", "seraph-files")
+			return client
+		}),
 		fx.Invoke(func(nc *nats.Conn, js jetstream.JetStream, db *mongo.Database, log *logging.Logger, viper *viper.Viper, lc fx.Lifecycle) error {
 
 			mig, err := fileindexer.NewMigrations(viper)

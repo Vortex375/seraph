@@ -1,0 +1,101 @@
+volumes:
+  nats-data:
+  mongo-data:
+
+networks:
+  internal:
+
+services:
+  nats:
+    image: nats
+    restart: always
+    command:
+      - "--js"
+      - "--sd=/data"
+    networks:
+      - internal
+    # ports:
+    #   - 4222:4222 # for debugging
+    #   - 8222:8222 # for debugging
+    volumes:
+      - nats-data:/data
+
+  mongodb: 
+    image: mongodb/mongodb-community-server
+    restart: always
+    networks:
+      - internal
+    # ports:
+    #   - 27017:27017 # for debugging
+    volumes:
+      - mongo-data:/data/db
+  
+  api-gateway:
+    image: seraph
+    restart: always
+    command: 
+      - api-gateway
+    depends_on:
+      - nats
+      - mongodb
+    networks:
+      - internal
+    ports:
+      - 8080:8080
+    environment:
+      GIN_MODE: release
+      SERAPH_NATS_URL: nats://nats:4222
+      SERAPH_MONGO_URL: mongodb://mongodb:27017/
+      # SERAPH_AUTH_DISABLED: true
+      SERAPH_AUTH_CONFIGURL: https://localhost:8081/realms/seraph
+      SERAPH_AUTH_REDIRECTURL: http://localhost:8080/auth/callback
+      SERAPH_AUTH_CLIENTID: seraph
+
+  file-indexer:
+    image: seraph
+    restart: always
+    command: 
+      - file-indexer
+    depends_on:
+      - nats
+      - mongodb
+    networks:
+      - internal
+    environment:
+      SERAPH_NATS_URL: nats://nats:4222
+      SERAPH_MONGO_URL: mongodb://mongodb:27017/
+    
+  file-provider-dir:
+    image: seraph
+    restart: always
+    command: 
+      - file-provider-dir
+    depends_on:
+      - nats
+    networks:
+      - internal
+    # volumes:
+    #   - /some/local/dir:/data
+    environment:
+      SERAPH_NATS_URL: nats://nats:4222
+      SERAPH_FILEPROVIDER_ID: dirtest
+      SERAPH_FILEPROVIDER_DIR: /data
+      SERAPH_FILEPROVIDER_READONLY: true
+
+  file-provider-smb:
+    image: seraph
+    restart: always
+    command: 
+      - file-provider-smb
+    depends_on:
+      - nats
+    networks:
+      - internal
+    environment:
+      SERAPH_NATS_URL: nats://nats:4222
+      SERAPH_FILEPROVIDER_ID: smbtest
+      SERAPH_FILEPROVIDER_ADDR: host:445
+      SERAPH_FILEPROVIDER_USERNAME:
+      SERAPH_FILEPROVIDER_PASSWORD:
+      SERAPH_FILEPROVIDER_SHARENAME: foo
+      SERAPH_FILEPROVIDER_READONLY: true

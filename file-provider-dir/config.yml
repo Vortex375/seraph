@@ -1,3 +1,4 @@
 fileprovider:
   id: foo
   dir: /home/vortex/loeschen/test/wallpaper
+  readOnly: true
