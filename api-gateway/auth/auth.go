@@ -103,7 +103,7 @@ func New(p Params) (Result, error) {
 	clientID := p.Viper.GetString("auth.clientId")
 	clientSecret := p.Viper.GetString("auth.clientSecret")
 
-	redirectURL := "http://localhost:8080/auth/callback"
+	redirectURL := p.Viper.GetString("auth.redirectURL")
 
 	oauth2Config := oauth2.Config{
 		ClientID:     clientID,
