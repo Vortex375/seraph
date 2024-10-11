@@ -205,8 +205,10 @@ func (s *shareFactory) closeSession() {
 func retry[T any](factory *shareFactory, f func(*smb2.Share) (T, error)) (T, error) {
 	var ret T
 	share, err := factory.getShare()
-	if errors.Is(err, &smb2.TransportError{}) {
-		share, err = factory.refresh()
+	if err != nil {
+		if errors.Is(err, &smb2.TransportError{}) {
+			share, err = factory.refresh()
+		}
 		if err != nil {
 			return ret, err
 		}
