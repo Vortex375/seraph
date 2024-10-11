@@ -21,7 +21,7 @@ services:
       - nats-data:/data
 
   mongodb: 
-    image: mongodb/mongodb-community-server
+    image: mongo
     restart: always
     networks:
       - internal
