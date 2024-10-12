@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// makes GET requests faster by using a larger buffer size than the default 32kb of io.CopyN()
 type fastResponseWriter struct {
 	gin.ResponseWriter
 }

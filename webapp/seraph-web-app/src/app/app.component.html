@@ -1,0 +1,8 @@
+<h1>Seraph</h1>
+
+<h2>Set WebDAV Password</h2>
+<form #pwForm method="post" action="/auth/password">
+  <input type="hidden" name="nonce" [(ngModel)]="nonce">
+  <input type="password" name="password" [(ngModel)]="password">
+  <input type="button" value="Set Password" (click)="changePassword()">
+</form>

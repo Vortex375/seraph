@@ -215,10 +215,10 @@ func (a *oidcAuth) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 
 	authGroup.POST("/password", func(ctx *gin.Context) {
 		body := struct {
-			Nonce    string `json:"nonce"`
-			Password string `json:"password"`
+			Nonce    string `json:"nonce" form:"nonce" binding:"required"`
+			Password string `json:"password" form:"password" binding:"required"`
 		}{}
-		err := ctx.ShouldBindBodyWithJSON(&body)
+		err := ctx.ShouldBind(&body)
 
 		if err != nil {
 			ctx.AbortWithError(http.StatusBadRequest, err)

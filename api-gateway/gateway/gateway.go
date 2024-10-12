@@ -71,6 +71,7 @@ type gateway struct {
 func New(p Params) Result {
 	p.Viper.SetDefault("gateway.cookie.secret", "secret")
 	p.Viper.SetDefault("gateway.address", ":8080")
+	p.Viper.SetDefault("gateway.webappLocation", "/srv/webapp")
 
 	gateway := &gateway{
 		log:   p.Log.GetLogger("api-gateway"),
@@ -101,6 +102,10 @@ func (g *gateway) Start(handlers []handler.GatewayHandler) {
 
 	apiGroup := engine.Group("/api", cachecontrol.New(cachecontrol.NoCachePreset), g.auth.AuthMiddleware())
 	apiGroup.GET("/test", getTest)
+
+	webAppGroup := engine.Group("/webapp", g.auth.AuthMiddleware())
+	webAppLocation := g.viper.GetString("gateway.webappLocation")
+	webAppGroup.Static("/", webAppLocation)
 
 	engine.GET("/", getRoot)
 

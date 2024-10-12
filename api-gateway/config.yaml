@@ -1,5 +1,11 @@
 auth:
   disabled: false
+  configUrl: http://localhost:8081/realms/seraph
+  redirectUrl: http://localhost:8080/auth/callback
+  client: seraph
+
+gateway:
+  webappLocation: ../webapp/seraph-web-app/dist/seraph-web-app/browser
 
 mongo:
   url: mongodb://localhost:27017/
