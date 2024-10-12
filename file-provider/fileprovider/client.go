@@ -24,6 +24,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
+	"path"
 	"time"
 
 	"github.com/akyoto/cache"
@@ -45,6 +46,7 @@ type client struct {
 	msgApi     avro.API
 
 	//TODO: replace with centralized cache and event handling
+	//for now, this provides a good speedup because Stat() after Readdir() is returned from cache
 	fileInfoCache *cache.Cache
 }
 
@@ -214,7 +216,10 @@ func (c *client) Rename(ctx context.Context, oldName string, newName string) err
 func (c *client) Stat(ctx context.Context, name string) (os.FileInfo, error) {
 	fromCache, found := c.fileInfoCache.Get(name)
 	if found {
+		c.log.Debug("returning from cache", "name", name)
 		return fromCache.(os.FileInfo), nil
+	} else {
+		c.log.Debug("not found in cache", "name", name)
 	}
 
 	request := FileProviderRequest{
@@ -239,6 +244,7 @@ func (c *client) Stat(ctx context.Context, name string) (os.FileInfo, error) {
 
 	fileInfo := &fileInfo{resp}
 
+	c.log.Debug("caching", "name", name)
 	c.fileInfoCache.Set(name, fileInfo, defaultTimeout)
 
 	return fileInfo, nil
@@ -399,7 +405,9 @@ func (f *file) Readdir(count int) ([]fs.FileInfo, error) {
 		ret = make([]fs.FileInfo, len(fileInfoResponses))
 		for i, info := range fileInfoResponses {
 			ret[i] = &fileInfo{info}
-			f.c.fileInfoCache.Set(ret[i].Name(), ret[i], defaultTimeout)
+			filePath := path.Join(f.name, ret[i].Name())
+			f.c.log.Debug("caching", "name", filePath)
+			f.c.fileInfoCache.Set(filePath, ret[i], defaultTimeout)
 		}
 	}
 
