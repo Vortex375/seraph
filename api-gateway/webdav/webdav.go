@@ -84,7 +84,7 @@ func (server *webDavServer) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 			return
 		}
 		handler := server.getHandler(providerId)
-		handler.ServeHTTP(ctx.Writer, ctx.Request)
+		handler.ServeHTTP(&fastResponseWriter{ctx.Writer}, ctx.Request)
 		ctx.Abort()
 	}))
 
