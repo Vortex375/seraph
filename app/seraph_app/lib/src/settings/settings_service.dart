@@ -1,17 +1,36 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-/// A service that stores and retrieves user settings.
-///
-/// By default, this class does not persist user settings. If you'd like to
-/// persist the user settings locally, use the shared_preferences package. If
-/// you'd like to store settings on a web server, use the http package.
 class SettingsService {
-  /// Loads the User's preferred ThemeMode from local or remote storage.
-  Future<ThemeMode> themeMode() async => ThemeMode.system;
 
-  /// Persists the user's preferred ThemeMode to local or remote storage.
+  static const keyThemeMode = 'theme_mode'; 
+  static const keyServerUrl = 'server_url'; 
+
+  Future<ThemeMode> themeMode() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    var themeMode = prefs.getString(keyThemeMode);
+    if (themeMode != null) {
+      for (final m in ThemeMode.values) {
+        if (m.toString() == themeMode) {
+          return m;
+        }
+      }
+    }
+    return ThemeMode.system;
+  }
+
   Future<void> updateThemeMode(ThemeMode theme) async {
-    // Use the shared_preferences package to persist settings locally or the
-    // http package to persist settings over the network.
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setString(keyThemeMode, theme.toString());
+  }
+
+  Future<String> serverUrl() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    return prefs.getString(keyServerUrl) ?? '';
+  }
+
+  Future<void> updateServerUrl(String serverUrl) async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setString(keyServerUrl, serverUrl);
   }
 }

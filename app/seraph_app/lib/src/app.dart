@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:seraph_app/src/file_browser/file_browser_list_view.dart';
+import 'package:go_router/go_router.dart';
+import 'package:seraph_app/src/gallery/gallery_view.dart';
 
 import 'settings/settings_controller.dart';
 import 'settings/settings_view.dart';
@@ -17,6 +19,22 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final router = GoRouter(
+      routes: [
+        GoRoute(
+          path: FileBrowserListView.routeName,
+          builder: (context, state) => const FileBrowserListView(),
+        ),
+        GoRoute(
+          path: GalleryView.routeName,
+          builder: (context, state) => GalleryView(),
+        ),
+        GoRoute(
+          path: SettingsView.routeName,
+          builder: (context, state) => SettingsView(settings: settingsController),
+        ),
+      ],
+    );
     // Glue the SettingsController to the MaterialApp.
     //
     // The ListenableBuilder Widget listens to the SettingsController for changes.
@@ -24,7 +42,7 @@ class MyApp extends StatelessWidget {
     return ListenableBuilder(
       listenable: settingsController,
       builder: (BuildContext context, Widget? child) {
-        return MaterialApp(
+        return MaterialApp.router(
           // Providing a restorationScopeId allows the Navigator built by the
           // MaterialApp to restore the navigation stack when a user leaves and
           // returns to the app after it has been killed while running in the
@@ -63,24 +81,7 @@ class MyApp extends StatelessWidget {
           ),
           themeMode: settingsController.themeMode,
 
-          // Define a function to handle named routes in order to support
-          // Flutter web url navigation and deep linking.
-          onGenerateRoute: (RouteSettings routeSettings) {
-            return MaterialPageRoute<void>(
-              settings: routeSettings,
-              builder: (BuildContext context) {
-                switch (routeSettings.name) {
-                  case SettingsView.routeName:
-                    return SettingsView(controller: settingsController);
-                  // case SampleItemDetailsView.routeName:
-                  //   return const SampleItemDetailsView();
-                  case FileBrowserListView.routeName:
-                  default:
-                    return const FileBrowserListView();
-                }
-              },
-            );
-          },
+          routerConfig: router,
         );
       },
     );

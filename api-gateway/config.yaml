@@ -1,5 +1,5 @@
 auth:
-  disabled: false
+  disabled: true
   configUrl: http://localhost:8081/realms/seraph
   redirectUrl: http://localhost:8080/auth/callback
   client: seraph
