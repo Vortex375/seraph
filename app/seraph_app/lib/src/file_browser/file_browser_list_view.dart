@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:go_router/go_router.dart';
 import 'package:seraph_app/src/app_bar/app_bar.dart';
 import 'package:seraph_app/src/file_browser/file_service.dart';
@@ -44,7 +45,13 @@ class _FileBrowserListViewState extends State<FileBrowserListView> {
    }
 
   Future<void> loadFiles() async {
-    var files = await widget.fileService.readDir(_path);
+    List<File> files;
+    try {
+      files = await widget.fileService.readDir(_path);
+    } catch (err) {
+      showError("Load failed: ${err.toString()}");
+      return;
+    }
     setState(() {
       if (_path == '/') {
         _items = files;
@@ -52,6 +59,25 @@ class _FileBrowserListViewState extends State<FileBrowserListView> {
         _items = [File(name: '..', isDir: true), ...files];
       }
     });
+  }
+
+  void showError(String msg) {
+    showErr() {
+        ScaffoldMessenger.of(context).showMaterialBanner(MaterialBanner(
+          content: Text(msg),
+          backgroundColor: Colors.amber[800],
+          actions: [
+            TextButton(onPressed: () {
+              ScaffoldMessenger.of(context).clearMaterialBanners();
+            }, child: const Text('DISMISS'))
+          ],
+        ));
+      }
+      if (mounted) {
+        showErr();
+      } else {
+        SchedulerBinding.instance.addPostFrameCallback((_) =>showErr());
+      }
   }
 
   @override
