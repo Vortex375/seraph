@@ -1,39 +1,71 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:seraph_app/src/app_bar/app_bar.dart';
+import 'package:seraph_app/src/file_browser/file_service.dart';
+import 'package:webdav_client/webdav_client.dart';
 
-
+import '../settings/settings_controller.dart';
 import '../settings/settings_view.dart';
-import 'file_item.dart';
 
-class MyAppState extends ChangeNotifier {
-  var current = 'foo';
+class FileBrowserListView extends StatefulWidget {
+  FileBrowserListView({super.key, required this.settings, required this.path})
+      : fileService = FileService(settings.serverUrl);
+
+  static const routeName = '/files';
+
+  final SettingsController settings;
+  final FileService fileService;
+  final String path;
+
+  @override
+  createState() => _FileBrowserListViewState();
 }
 
+class _FileBrowserListViewState extends State<FileBrowserListView> {
+  
+  late String _path;
+  late List<File> _items;
 
-/// Displays a list of SampleItems.
-class FileBrowserListView extends StatelessWidget {
-  const FileBrowserListView({
-    super.key,
-    this.items = const [FileItem(1), FileItem(2)],
-  });
+  @override
+  void initState() {
+    super.initState();
+    _path = widget.path.endsWith('/') ? widget.path : '${widget.path}/';
+    _items = [];
+    loadFiles();
+  }
 
-  static const routeName = '/';
+   @override
+   void didUpdateWidget(FileBrowserListView old) {
+    super.didUpdateWidget(old);
+    if (widget.path != _path) {
+      _path = widget.path;
+      loadFiles();
+    }
+   }
 
-  final List<FileItem> items;
+  Future<void> loadFiles() async {
+    var files = await widget.fileService.readDir(_path);
+    setState(() {
+      if (_path == '/') {
+        _items = files;
+      } else {
+        _items = [File(name: '..', isDir: true), ...files];
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
-      appBar: seraphAppBar(context, 'Cloud Files', routeName, [
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () {
-              GoRouter.of(context).push(SettingsView.routeName);
-            },
-          ),
-        ]),
+      appBar:
+          seraphAppBar(context, 'Cloud Files', FileBrowserListView.routeName, [
+        IconButton(
+          icon: const Icon(Icons.settings),
+          onPressed: () {
+            GoRouter.of(context).push(SettingsView.routeName);
+          },
+        ),
+      ]),
 
       // To work with lists that may contain a large number of items, it’s best
       // to use the ListView.builder constructor.
@@ -46,25 +78,32 @@ class FileBrowserListView extends StatelessWidget {
         // scroll position when a user leaves and returns to the app after it
         // has been killed while running in the background.
         restorationId: 'sampleItemListView',
-        itemCount: items.length,
+        itemCount: _items.length,
         itemBuilder: (BuildContext context, int index) {
-          final item = items[index];
+          final item = _items[index];
 
           return ListTile(
-            title: Text('SampleItem ${item.id}'),
-            leading: const CircleAvatar(
-              // Display the Flutter Logo image asset.
-              foregroundImage: AssetImage('assets/images/flutter_logo.png'),
-            ),
-            onTap: () {
-              // Navigate to the details page. If the user leaves and returns to
-              // the app after it has been killed while running in the
-              // background, the navigation stack is restored.
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                  content: Text("Item Selected"),
-              ));
-            }
-          );
+              title: Text('${item.name}'),
+              leading: const CircleAvatar(
+                // Display the Flutter Logo image asset.
+                foregroundImage: AssetImage('assets/images/flutter_logo.png'),
+              ),
+              onTap: () {
+                if (item.isDir ?? false) {
+                  if (item.name == '..') {
+                    var parent = _path.substring(0, _path.lastIndexOf('/'));
+                    if (parent == '') {
+                      parent = '/';
+                    }
+                    GoRouter.of(context).replace('${FileBrowserListView.routeName}?path=$parent');
+                  } else {
+                  GoRouter.of(context).replace('${FileBrowserListView.routeName}?path=$_path${item.name}');
+                  }
+                }
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text("${item.name} Selected"),
+                ));
+              });
         },
       ),
     );

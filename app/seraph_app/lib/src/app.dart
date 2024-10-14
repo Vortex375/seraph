@@ -20,10 +20,12 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final router = GoRouter(
+      debugLogDiagnostics: true,
+      initialLocation: '/files',
       routes: [
         GoRoute(
           path: FileBrowserListView.routeName,
-          builder: (context, state) => const FileBrowserListView(),
+          builder: (context, state) => FileBrowserListView(settings: settingsController, path: state.uri.queryParameters['path'] ?? '/')
         ),
         GoRoute(
           path: GalleryView.routeName,
