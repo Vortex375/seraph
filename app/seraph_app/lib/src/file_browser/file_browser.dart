@@ -70,7 +70,8 @@ class _FileBrowserState extends State<FileBrowser> {
     });
     if (_refreshing && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('List refreshed')
+        content: Text('List refreshed'),
+        duration: Durations.extralong4,
       ));
     }
     _refreshing = false;
