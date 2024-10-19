@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:seraph_app/src/gallery/gallery_view.dart';
 
-import '../file_browser/file_browser_list_view.dart';
+import '../file_browser/file_browser.dart';
 import '../settings/settings_view.dart';
 
 AppBar seraphAppBar(BuildContext context, String name, String routeName,
@@ -17,7 +17,7 @@ AppBar seraphAppBar(BuildContext context, String name, String routeName,
             value: routeName,
             items: const [
               DropdownMenuItem(
-                  value: FileBrowserListView.routeName, child: Text('Cloud Files')),
+                  value: FileBrowser.routeName, child: Text('Cloud Files')),
               DropdownMenuItem(
                   value: GalleryView.routeName, child: Text('Gallery')),
               DropdownMenuItem(enabled: false, child: Divider()),

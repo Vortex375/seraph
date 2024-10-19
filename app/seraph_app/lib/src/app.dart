@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:seraph_app/src/file_browser/file_browser_list_view.dart';
+import 'package:seraph_app/src/file_browser/file_browser.dart';
 import 'package:go_router/go_router.dart';
 import 'package:seraph_app/src/gallery/gallery_view.dart';
 
@@ -24,8 +24,8 @@ class MyApp extends StatelessWidget {
       initialLocation: '/files',
       routes: [
         GoRoute(
-          path: FileBrowserListView.routeName,
-          builder: (context, state) => FileBrowserListView(settings: settingsController, path: state.uri.queryParameters['path'] ?? '/')
+          path: FileBrowser.routeName,
+          builder: (context, state) => FileBrowser(settings: settingsController, path: state.uri.queryParameters['path'] ?? '/')
         ),
         GoRoute(
           path: GalleryView.routeName,
