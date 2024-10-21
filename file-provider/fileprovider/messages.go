@@ -27,6 +27,13 @@ const FileProviderTopicPrefix = "seraph.fileprovider."
 const FileProviderFileTopicPrefix = "seraph.fileprovider_file."
 const FileProviderReaddirTopicPrefix = "seraph.fileprovider_readdir."
 
+type IoError struct {
+	Error string `avro:"error"`
+	Class string `avro:"class"`
+}
+
+var IoErrorSchema avro.Schema
+
 type MkdirRequest struct {
 	Name string      `avro:"name"`
 	Perm os.FileMode `avro:"perm"`
@@ -35,7 +42,7 @@ type MkdirRequest struct {
 var MkdirRequestSchema avro.Schema
 
 type MkdirResponse struct {
-	Error string `avro:"error"`
+	Error IoError `avro:"error"`
 }
 
 var MkdirResponseSchema avro.Schema
@@ -49,8 +56,8 @@ type OpenFileRequest struct {
 var OpenFileRequestSchema avro.Schema
 
 type OpenFileResponse struct {
-	FileId string `avro:"fileId"`
-	Error  string `avro:"error"`
+	FileId string  `avro:"fileId"`
+	Error  IoError `avro:"error"`
 }
 
 var OpenFileResponseSchema avro.Schema
@@ -62,7 +69,7 @@ type RemoveAllRequest struct {
 var RemoveAllRequestSchema avro.Schema
 
 type RemoveAllResponse struct {
-	Error string `avro:"error"`
+	Error IoError `avro:"error"`
 }
 
 var RemoveAllResponseSchema avro.Schema
@@ -75,7 +82,7 @@ type RenameRequest struct {
 var RenameRequestSchema avro.Schema
 
 type RenameResponse struct {
-	Error string `avro:"error"`
+	Error IoError `avro:"error"`
 }
 
 var RenameResponseSchema avro.Schema
@@ -92,7 +99,7 @@ type FileInfoResponse struct {
 	Mode    os.FileMode `avro:"mode"`
 	ModTime int64       `avro:"modTime"`
 	IsDir   bool        `avro:"isDir"`
-	Error   string      `avro:"error"`
+	Error   IoError     `avro:"error"`
 	Last    bool        `avro:"last"`
 }
 
@@ -110,8 +117,8 @@ type FileReadRequest struct {
 var FileReadRequestSchema avro.Schema
 
 type FileReadResponse struct {
-	Error   string `avro:"error"`
-	Payload []byte `avro:"payload"`
+	Error   IoError `avro:"error"`
+	Payload []byte  `avro:"payload"`
 }
 
 var FileReadResponseSchema avro.Schema
@@ -123,8 +130,8 @@ type FileWriteRequest struct {
 var FileWriteRequestSchema avro.Schema
 
 type FileWriteResponse struct {
-	Error string `avro:"error"`
-	Len   int    `avro:"len"`
+	Error IoError `avro:"error"`
+	Len   int     `avro:"len"`
 }
 
 var FileWriteResponseSchema avro.Schema
@@ -137,14 +144,14 @@ type FileSeekRequest struct {
 var FileSeekRequestSchema avro.Schema
 
 type FileSeekResponse struct {
-	Offset int64  `avro:"offset"`
-	Error  string `avro:"error"`
+	Offset int64   `avro:"offset"`
+	Error  IoError `avro:"error"`
 }
 
 var FileSeekResponseSchema avro.Schema
 
 type FileCloseResponse struct {
-	Error string `avro:"error"`
+	Error IoError `avro:"error"`
 }
 
 var FileCloseResponseSchema avro.Schema
@@ -156,8 +163,8 @@ type ReaddirRequest struct {
 var ReaddirRequestSchema avro.Schema
 
 type ReaddirResponse struct {
-	Count int    `avro:"count"`
-	Error string `avro:"error"`
+	Count int     `avro:"count"`
+	Error IoError `avro:"error"`
 }
 
 var ReaddirResponseSchema avro.Schema
@@ -192,6 +199,16 @@ type FileProviderFileResponse struct {
 var FileProviderFileResponseSchema avro.Schema
 
 func init() {
+	IoErrorSchema = avro.MustParse(`{
+		"type": "record",
+		"name": "IoError",
+		"namespace": "seraph.fileprovider",
+		"fields": [
+			{"name": "error", "type": "string"},
+			{"name": "class", "type": "string"}
+		]
+	}`)
+
 	MkdirRequestSchema = avro.MustParse(`{
 		"type": "record",
 		"name": "MkdirRequest",
@@ -207,7 +224,7 @@ func init() {
 		"name": "MkdirResponse",
 		"namespace": "seraph.fileprovider",
 		"fields": [
-			{"name": "error", "type": "string"}
+			{"name": "error", "type": "IoError"}
 		]
 	}`)
 
@@ -228,7 +245,7 @@ func init() {
 		"namespace": "seraph.fileprovider",
 		"fields": [
 			{"name": "fileId", "type": "string"},
-			{"name": "error", "type": "string"}
+			{"name": "error", "type": "IoError"}
 		]
 	}`)
 
@@ -246,7 +263,7 @@ func init() {
 		"name": "RemoveAllResponse",
 		"namespace": "seraph.fileprovider",
 		"fields": [
-			{"name": "error", "type": "string"}
+			{"name": "error", "type": "IoError"}
 		]
 	}`)
 
@@ -265,7 +282,7 @@ func init() {
 		"name": "RenameResponse",
 		"namespace": "seraph.fileprovider",
 		"fields": [
-			{"name": "error", "type": "string"}
+			{"name": "error", "type": "IoError"}
 		]
 	}`)
 
@@ -288,7 +305,7 @@ func init() {
 			{"name": "mode", "type": "long"},
 			{"name": "modTime", "type": "long"},
 			{"name": "isDir", "type": "boolean"},
-			{"name": "error", "type": "string"},
+			{"name": "error", "type": "IoError"},
 			{"name": "last", "type": "boolean"}
 		]
 	}`)
@@ -306,7 +323,7 @@ func init() {
 		"name": "FileCloseResponse",
 		"namespace": "seraph.fileprovider",
 		"fields": [
-			{"name": "error", "type": "string"}
+			{"name": "error", "type": "IoError"}
 		]
 	}`)
 
@@ -324,7 +341,7 @@ func init() {
 		"name": "FileReadResponse",
 		"namespace": "seraph.fileprovider",
 		"fields": [
-			{"name": "error", "type": "string"},
+			{"name": "error", "type": "IoError"},
 			{"name": "payload", "type": "bytes"}
 		]
 	}`)
@@ -343,7 +360,7 @@ func init() {
 		"name": "FileWriteResponse",
 		"namespace": "seraph.fileprovider",
 		"fields": [
-			{"name": "error", "type": "string"},
+			{"name": "error", "type": "IoError"},
 			{"name": "len", "type": "int"}
 		]
 	}`)
@@ -364,7 +381,7 @@ func init() {
 		"namespace": "seraph.fileprovider",
 		"fields": [
 			{"name": "offset", "type": "long"},
-			{"name": "error", "type": "string"}
+			{"name": "error", "type": "IoError"}
 		]
 	}`)
 
@@ -383,7 +400,7 @@ func init() {
 		"namespace": "seraph.fileprovider",
 		"fields": [
 			{"name": "count", "type": "int"},
-			{"name": "error", "type": "string"}
+			{"name": "error", "type": "IoError"}
 		]
 	}`)
 

@@ -21,6 +21,7 @@ package fileprovider
 import (
 	"context"
 	"errors"
+	"io"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -94,6 +95,28 @@ func exchangeFile(nc *nats.Conn, msgApi avro.API, fileId string, request *FilePr
 	return &response, nil
 }
 
+func ioError(err IoError) error {
+	if err.Error == "" && err.Class == "" {
+		return nil
+	}
+	switch err.Class {
+	case "EOF":
+		return io.EOF
+	case "ErrInvalid":
+		return fs.ErrInvalid
+	case "ErrPermission":
+		return fs.ErrPermission
+	case "ErrExist":
+		return fs.ErrExist
+	case "ErrNotExist":
+		return fs.ErrNotExist
+	case "ErrClosed":
+		return fs.ErrClosed
+	default:
+		return errors.New(err.Error)
+	}
+}
+
 func NewFileProviderClient(providerId string, nc *nats.Conn, logger *logging.Logger) Client {
 	msgApi := NewMessageApi()
 
@@ -121,10 +144,10 @@ func (c *client) Mkdir(ctx context.Context, name string, perm os.FileMode) error
 		return err
 	}
 
-	errStr := response.Response.(MkdirResponse).Error
-	if errStr != "" {
-		c.log.Error("mkdir failed", "uid", request.Uid, "req", request.Request, "error", errStr)
-		return errors.New(errStr)
+	err = ioError(response.Response.(MkdirResponse).Error)
+	if err != nil {
+		c.log.Error("mkdir failed", "uid", request.Uid, "req", request.Request, "error", err)
+		return err
 	}
 	return nil
 }
@@ -156,10 +179,11 @@ func (c *client) doOpenFile(name string, flag int, perm os.FileMode) (webdav.Fil
 	}
 
 	resp := response.Response.(OpenFileResponse)
+	err = ioError(resp.Error)
 
-	if resp.Error != "" {
-		c.log.Error("openFile failed", "uid", request.Uid, "req", request.Request, "error", resp.Error)
-		return nil, errors.New(resp.Error)
+	if err != nil {
+		c.log.Error("openFile failed", "uid", request.Uid, "req", request.Request, "error", err)
+		return nil, err
 	}
 	return &file{
 			c:      c,
@@ -182,10 +206,10 @@ func (c *client) RemoveAll(ctx context.Context, name string) error {
 		return err
 	}
 
-	errStr := response.Response.(RemoveAllResponse).Error
-	if errStr != "" {
-		c.log.Error("removeAll failed", "uid", request.Uid, "req", request.Request, "error", errStr)
-		return errors.New(errStr)
+	err = ioError(response.Response.(RemoveAllResponse).Error)
+	if err != nil {
+		c.log.Error("removeAll failed", "uid", request.Uid, "req", request.Request, "error", err)
+		return err
 	}
 	return nil
 }
@@ -205,10 +229,10 @@ func (c *client) Rename(ctx context.Context, oldName string, newName string) err
 		return err
 	}
 
-	errStr := response.Response.(RenameResponse).Error
-	if errStr != "" {
-		c.log.Error("rename failed", "uid", request.Uid, "req", request.Request, "error", errStr)
-		return errors.New(errStr)
+	err = ioError(response.Response.(RenameResponse).Error)
+	if err != nil {
+		c.log.Error("rename failed", "uid", request.Uid, "req", request.Request, "error", err)
+		return err
 	}
 	return nil
 }
@@ -236,10 +260,11 @@ func (c *client) Stat(ctx context.Context, name string) (os.FileInfo, error) {
 	}
 
 	resp := response.Response.(FileInfoResponse)
+	err = ioError(resp.Error)
 
-	if resp.Error != "" {
-		c.log.Error("stat failed", "uid", request.Uid, "req", request.Request, "error", resp.Error)
-		return nil, errors.New(resp.Error)
+	if err != nil {
+		c.log.Error("stat failed", "uid", request.Uid, "req", request.Request, "error", err)
+		return nil, err
 	}
 
 	fileInfo := &fileInfo{resp}
@@ -297,10 +322,10 @@ func (f *file) Close() error {
 		return err
 	}
 
-	errStr := response.Response.(FileCloseResponse).Error
-	if errStr != "" {
-		f.c.log.Error("fileClose failed", "uid", request.Uid, "req", request.Request, "error", errStr)
-		return errors.New(errStr)
+	err = ioError(response.Response.(FileCloseResponse).Error)
+	if err != nil {
+		f.c.log.Error("fileClose failed", "uid", request.Uid, "req", request.Request, "error", err)
+		return err
 	}
 	return nil
 }
@@ -322,10 +347,11 @@ func (f *file) Read(p []byte) (n int, err error) {
 	}
 
 	resp := response.Response.(FileReadResponse)
+	err = ioError(resp.Error)
 
-	if resp.Error != "" {
-		f.c.log.Error("fileRead failed", "uid", request.Uid, "req", request.Request, "error", resp.Error)
-		return 0, errors.New(resp.Error)
+	if err != nil {
+		f.c.log.Error("fileRead failed", "uid", request.Uid, "req", request.Request, "error", err)
+		return 0, err
 	}
 
 	copy(p, resp.Payload[:min(len(resp.Payload), len(p))])
@@ -350,9 +376,10 @@ func (f *file) Seek(offset int64, whence int) (int64, error) {
 	}
 
 	resp := response.Response.(FileSeekResponse)
-	if resp.Error != "" {
-		f.c.log.Error("fileSeek failed", "uid", request.Uid, "req", request.Request, "error", resp.Error)
-		return -1, errors.New(resp.Error)
+	err = ioError(resp.Error)
+	if err != nil {
+		f.c.log.Error("fileSeek failed", "uid", request.Uid, "req", request.Request, "error", err)
+		return -1, err
 	}
 	return resp.Offset, nil
 }
@@ -387,9 +414,10 @@ func (f *file) Readdir(count int) ([]fs.FileInfo, error) {
 	}
 
 	resp := response.Response.(ReaddirResponse)
-	if resp.Error != "" {
-		f.c.log.Error("readdir failed", "uid", request.Uid, "req", request.Request, "error", resp.Error)
-		return nil, errors.New(resp.Error)
+	err = ioError(resp.Error)
+	if err != nil {
+		f.c.log.Error("readdir failed", "uid", request.Uid, "req", request.Request, "error", err)
+		return nil, err
 	}
 
 	var ret []fs.FileInfo
@@ -429,9 +457,10 @@ func (f *file) Stat() (fs.FileInfo, error) {
 	}
 
 	resp := response.Response.(FileInfoResponse)
-	if resp.Error != "" {
-		f.c.log.Error("stat failed", "uid", request.Uid, "req", request.Request, "error", resp.Error)
-		return nil, errors.New(resp.Error)
+	err = ioError(resp.Error)
+	if err != nil {
+		f.c.log.Error("stat failed", "uid", request.Uid, "req", request.Request, "error", err)
+		return nil, err
 	}
 	return &fileInfo{resp}, nil
 }

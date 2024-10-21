@@ -85,7 +85,7 @@ func TestMessages(t *testing.T) {
 		doTestFileProviderResponse(t, api, FileProviderResponse{
 			Uid: uuid.NewString(),
 			Response: MkdirResponse{
-				Error: "err",
+				Error: IoError{Error: "err"},
 			},
 		})
 	})
@@ -93,7 +93,7 @@ func TestMessages(t *testing.T) {
 		doTestFileProviderResponse(t, api, FileProviderResponse{
 			Uid: uuid.NewString(),
 			Response: OpenFileResponse{
-				Error:  "err",
+				Error:  IoError{Error: "err"},
 				FileId: "some-file",
 			},
 		})
@@ -102,7 +102,7 @@ func TestMessages(t *testing.T) {
 		doTestFileProviderResponse(t, api, FileProviderResponse{
 			Uid: uuid.NewString(),
 			Response: RemoveAllResponse{
-				Error: "err",
+				Error: IoError{Error: "err"},
 			},
 		})
 	})
@@ -110,7 +110,7 @@ func TestMessages(t *testing.T) {
 		doTestFileProviderResponse(t, api, FileProviderResponse{
 			Uid: uuid.NewString(),
 			Response: RenameResponse{
-				Error: "err",
+				Error: IoError{Error: "err"},
 			},
 		})
 	})
@@ -118,7 +118,7 @@ func TestMessages(t *testing.T) {
 		doTestFileProviderResponse(t, api, FileProviderResponse{
 			Uid: uuid.NewString(),
 			Response: FileInfoResponse{
-				Error:   "err",
+				Error:   IoError{Error: "err"},
 				Name:    "filename",
 				Size:    4212,
 				Mode:    0777,
@@ -182,7 +182,7 @@ func TestMessages(t *testing.T) {
 		doTestFileProviderFileResponse(t, api, FileProviderFileResponse{
 			Uid: uuid.NewString(),
 			Response: FileCloseResponse{
-				Error: "err",
+				Error: IoError{Error: "err"},
 			},
 		})
 	})
@@ -190,7 +190,7 @@ func TestMessages(t *testing.T) {
 		doTestFileProviderFileResponse(t, api, FileProviderFileResponse{
 			Uid: uuid.NewString(),
 			Response: FileReadResponse{
-				Error:   "err",
+				Error:   IoError{Error: "err"},
 				Payload: []byte{4, 5, 6},
 			},
 		})
@@ -200,7 +200,7 @@ func TestMessages(t *testing.T) {
 			Uid: uuid.NewString(),
 			Response: FileSeekResponse{
 				Offset: 53625,
-				Error:  "err",
+				Error:  IoError{Error: "err"},
 			},
 		})
 	})
@@ -208,7 +208,7 @@ func TestMessages(t *testing.T) {
 		doTestFileProviderFileResponse(t, api, FileProviderFileResponse{
 			Uid: uuid.NewString(),
 			Response: FileWriteResponse{
-				Error: "err",
+				Error: IoError{Error: "err"},
 				Len:   64,
 			},
 		})
@@ -217,7 +217,7 @@ func TestMessages(t *testing.T) {
 		doTestFileProviderFileResponse(t, api, FileProviderFileResponse{
 			Uid: uuid.NewString(),
 			Response: ReaddirResponse{
-				Error: "err",
+				Error: IoError{Error: "err"},
 				Count: 64,
 			},
 		})

@@ -190,7 +190,7 @@ func TestMkdir(t *testing.T) {
 	expected := FileProviderResponse{
 		Uid: request.Uid,
 		Response: MkdirResponse{
-			Error: "",
+			Error: IoError{},
 		},
 	}
 
@@ -213,7 +213,7 @@ func TestMkdirError(t *testing.T) {
 	expected := FileProviderResponse{
 		Uid: request.Uid,
 		Response: MkdirResponse{
-			Error: "request failed",
+			Error: IoError{Error: "request failed"},
 		},
 	}
 
@@ -236,7 +236,7 @@ func TestMkdirReadOnly(t *testing.T) {
 	expected := FileProviderResponse{
 		Uid: request.Uid,
 		Response: MkdirResponse{
-			Error: "read only",
+			Error: IoError{"read only", "ErrPermission"},
 		},
 	}
 
@@ -256,7 +256,7 @@ func TestRemoveAll(t *testing.T) {
 	expected := FileProviderResponse{
 		Uid: request.Uid,
 		Response: RemoveAllResponse{
-			Error: "",
+			Error: IoError{},
 		},
 	}
 
@@ -278,7 +278,7 @@ func TestRemoveAllError(t *testing.T) {
 	expected := FileProviderResponse{
 		Uid: request.Uid,
 		Response: RemoveAllResponse{
-			Error: "removeAll failed",
+			Error: IoError{Error: "removeAll failed"},
 		},
 	}
 
@@ -300,7 +300,7 @@ func TestRemoveAllReadOnly(t *testing.T) {
 	expected := FileProviderResponse{
 		Uid: request.Uid,
 		Response: RemoveAllResponse{
-			Error: "read only",
+			Error: IoError{"read only", "ErrPermission"},
 		},
 	}
 
@@ -321,7 +321,7 @@ func TestRename(t *testing.T) {
 	expected := FileProviderResponse{
 		Uid: request.Uid,
 		Response: RenameResponse{
-			Error: "",
+			Error: IoError{},
 		},
 	}
 
@@ -344,7 +344,7 @@ func TestRenameError(t *testing.T) {
 	expected := FileProviderResponse{
 		Uid: request.Uid,
 		Response: RenameResponse{
-			Error: "rename failed",
+			Error: IoError{Error: "rename failed"},
 		},
 	}
 
@@ -367,7 +367,7 @@ func TestRenameReadOnly(t *testing.T) {
 	expected := FileProviderResponse{
 		Uid: request.Uid,
 		Response: RenameResponse{
-			Error: "read only",
+			Error: IoError{"read only", "ErrPermission"},
 		},
 	}
 
@@ -421,7 +421,7 @@ func TestStatError(t *testing.T) {
 	expected := FileProviderResponse{
 		Uid: request.Uid,
 		Response: FileInfoResponse{
-			Error: "stat failed",
+			Error: IoError{Error: "stat failed"},
 		},
 	}
 
@@ -473,7 +473,7 @@ func TestOpenFileError(t *testing.T) {
 		assert.IsType(t, OpenFileResponse{}, actual.Response)
 		openFileResponse := actual.Response.(OpenFileResponse)
 		assert.Empty(t, openFileResponse.FileId)
-		assert.Equal(t, openFileResponse.Error, "open file failed")
+		assert.Equal(t, IoError{Error: "open file failed"}, openFileResponse.Error)
 	})
 }
 

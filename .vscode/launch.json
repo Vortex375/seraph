@@ -10,6 +10,7 @@
       "request": "launch",
       "mode": "debug",
       "program": "${workspaceFolder}/api-gateway/main.go",
+      "cwd": "${workspaceFolder}/api-gateway",
       "env": {
         // "SERAPH_AUTH_DISABLED": "true"
       }

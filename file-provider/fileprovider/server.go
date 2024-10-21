@@ -20,7 +20,10 @@ package fileprovider
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"strings"
 	"time"
@@ -41,6 +44,31 @@ type fileHolder struct {
 	file         webdav.File
 	lastAccess   time.Time
 	subscription *nats.Subscription
+}
+
+func toIoError(err error) IoError {
+	if err == nil {
+		return IoError{}
+	}
+	if errors.Is(err, io.EOF) {
+		return IoError{err.Error(), "EOF"}
+	}
+	if errors.Is(err, fs.ErrInvalid) {
+		return IoError{err.Error(), "ErrInvalid"}
+	}
+	if errors.Is(err, fs.ErrPermission) {
+		return IoError{err.Error(), "ErrPermission"}
+	}
+	if errors.Is(err, fs.ErrExist) {
+		return IoError{err.Error(), "ErrExist"}
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		return IoError{err.Error(), "ErrNotExist"}
+	}
+	if errors.Is(err, fs.ErrClosed) {
+		return IoError{err.Error(), "ErrClosed"}
+	}
+	return IoError{Error: err.Error()}
 }
 
 func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.FileSystem, readOnly bool, logger *logging.Logger) *FileProviderServer {
@@ -65,24 +93,22 @@ func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.F
 				responseData, _ := msgApi.Marshal(FileProviderResponseSchema, FileProviderResponse{
 					Uid: request.Uid,
 					Response: MkdirResponse{
-						Error: "read only",
+						Error: IoError{"read only", "ErrPermission"},
 					},
 				})
 				msg.Respond(responseData)
 				break
 			}
 			err := fileSystem.Mkdir(context, req.Name, req.Perm)
-			var errStr string
 			if err == nil {
 				log.Debug("mkdir", "uid", request.Uid, "req", req)
 			} else {
 				log.Debug("mkdir failed", "uid", request.Uid, "req", req, "error", err)
-				errStr = err.Error()
 			}
 			responseData, _ := msgApi.Marshal(FileProviderResponseSchema, FileProviderResponse{
 				Uid: request.Uid,
 				Response: MkdirResponse{
-					Error: errStr,
+					Error: toIoError(err),
 				},
 			})
 			msg.Respond(responseData)
@@ -92,24 +118,22 @@ func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.F
 				responseData, _ := msgApi.Marshal(FileProviderResponseSchema, FileProviderResponse{
 					Uid: request.Uid,
 					Response: RemoveAllResponse{
-						Error: "read only",
+						Error: IoError{"read only", "ErrPermission"},
 					},
 				})
 				msg.Respond(responseData)
 				break
 			}
 			err := fileSystem.RemoveAll(context, req.Name)
-			var errStr string
 			if err == nil {
 				log.Debug("removeAll", "uid", request.Uid, "req", req)
 			} else {
 				log.Debug("removeAll failed", "uid", request.Uid, "req", req, "error", err)
-				errStr = err.Error()
 			}
 			responseData, _ := msgApi.Marshal(FileProviderResponseSchema, FileProviderResponse{
 				Uid: request.Uid,
 				Response: RemoveAllResponse{
-					Error: errStr,
+					Error: toIoError(err),
 				},
 			})
 			msg.Respond(responseData)
@@ -119,24 +143,22 @@ func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.F
 				responseData, _ := msgApi.Marshal(FileProviderResponseSchema, FileProviderResponse{
 					Uid: request.Uid,
 					Response: RenameResponse{
-						Error: "read only",
+						Error: IoError{"read only", "ErrPermission"},
 					},
 				})
 				msg.Respond(responseData)
 				break
 			}
 			err := fileSystem.Rename(context, req.OldName, req.NewName)
-			var errStr string
 			if err == nil {
 				log.Debug("rename", "uid", request.Uid, "req", req)
 			} else {
 				log.Debug("rename failed", "uid", request.Uid, "req", req, "error", err)
-				errStr = err.Error()
 			}
 			responseData, _ := msgApi.Marshal(FileProviderResponseSchema, FileProviderResponse{
 				Uid: request.Uid,
 				Response: RenameResponse{
-					Error: errStr,
+					Error: toIoError(err),
 				},
 			})
 			msg.Respond(responseData)
@@ -174,7 +196,7 @@ func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.F
 				nc.Publish(fmt.Sprintf(events.FileProviderFileInfoTopicPattern, providerId), fileInfoEventData)
 
 			} else {
-				response.Error = err.Error()
+				response.Error = toIoError(err)
 			}
 			responseData, _ := msgApi.Marshal(FileProviderResponseSchema, FileProviderResponse{
 				Uid:      request.Uid,
@@ -209,19 +231,17 @@ func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.F
 
 					case FileCloseRequest:
 						err = file.Close()
-						var errStr string
 						if err == nil {
 							log.Debug("fileClose", "uid", fileRequest.Uid, "fileId", fileRequest.FileId, "req", fileReq)
 						} else {
 							log.Error("fileClose failed", "uid", request.Uid, "fileId", fileRequest.FileId, "req", fileReq, "error", err)
-							errStr = err.Error()
 						}
 						openFiles[fileId].subscription.Unsubscribe()
 						delete(openFiles, fileId)
 						fileResponseData, _ := msgApi.Marshal(FileProviderFileResponseSchema, FileProviderFileResponse{
 							Uid: fileRequest.Uid,
 							Response: FileCloseResponse{
-								Error: errStr,
+								Error: toIoError(err),
 							},
 						})
 						fileMsg.Respond(fileResponseData)
@@ -239,7 +259,7 @@ func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.F
 						if err == nil {
 							fileResponse.Payload = buf[0:len]
 						} else {
-							fileResponse.Error = err.Error()
+							fileResponse.Error = toIoError(err)
 						}
 						fileResponseData, _ := msgApi.Marshal(FileProviderFileResponseSchema, FileProviderFileResponse{
 							Uid:      fileRequest.Uid,
@@ -252,43 +272,39 @@ func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.F
 							fileResponseData, _ := msgApi.Marshal(FileProviderFileResponseSchema, FileProviderFileResponse{
 								Uid: fileRequest.Uid,
 								Response: FileWriteResponse{
-									Error: "read only",
+									Error: IoError{"read only", "ErrPermission"},
 								},
 							})
 							fileMsg.Respond(fileResponseData)
 							break
 						}
 						len, err := file.Write(fileReq.Payload)
-						var errStr string
 						if err == nil {
 							log.Debug("fileWrite", "uid", fileRequest.Uid, "fileId", fileRequest.FileId)
 						} else {
 							log.Error("fileWrite failed", "uid", request.Uid, "fileId", fileRequest.FileId, "error", err)
-							errStr = err.Error()
 						}
 						fileResponseData, _ := msgApi.Marshal(FileProviderFileResponseSchema, FileProviderFileResponse{
 							Uid: fileRequest.Uid,
 							Response: FileWriteResponse{
 								Len:   len,
-								Error: errStr,
+								Error: toIoError(err),
 							},
 						})
 						fileMsg.Respond(fileResponseData)
 
 					case FileSeekRequest:
 						offset, err := file.Seek(fileReq.Offset, fileReq.Whence)
-						var errStr string
 						if err == nil {
 							log.Debug("fileSeek", "uid", fileRequest.Uid, "fileId", fileRequest.FileId, "req", fileReq)
 						} else {
 							log.Error("fileSeek failed", "uid", request.Uid, "fileId", fileRequest.FileId, "req", fileReq, "error", err)
-							errStr = err.Error()
 						}
 						fileResponseData, _ := msgApi.Marshal(FileProviderFileResponseSchema, FileProviderFileResponse{
 							Uid: fileRequest.Uid,
 							Response: FileSeekResponse{
 								Offset: offset,
-								Error:  errStr,
+								Error:  toIoError(err),
 							},
 						})
 						fileMsg.Respond(fileResponseData)
@@ -364,7 +380,7 @@ func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.F
 							fileResponseData, _ = msgApi.Marshal(FileProviderFileResponseSchema, FileProviderFileResponse{
 								Uid: fileRequest.Uid,
 								Response: ReaddirResponse{
-									Error: err.Error(),
+									Error: toIoError(err),
 								},
 							})
 						}
@@ -378,7 +394,7 @@ func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.F
 				openFiles[fileId] = fileHolder{fileId, file, time.Now(), subscription}
 				response.FileId = fileId.String()
 			} else {
-				response.Error = err.Error()
+				response.Error = toIoError(err)
 			}
 			responseData, _ := msgApi.Marshal(FileProviderResponseSchema, FileProviderResponse{
 				Uid:      request.Uid,
