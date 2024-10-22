@@ -20,6 +20,7 @@ package main
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/nats-io/nats.go"
 	"github.com/spf13/viper"
@@ -43,6 +44,7 @@ func main() {
 			username := viper.GetString("fileprovider.username")
 			password := viper.GetString("fileprovider.password")
 			sharename := viper.GetString("fileprovider.sharename")
+			pathPrefix := viper.GetString("fileprovider.pathPrefix")
 			readOnly := viper.GetBool("fileprovider.readOnly")
 
 			if id == "" {
@@ -58,7 +60,12 @@ func main() {
 				username = "guest"
 			}
 
-			fs := smbprovider.NewSmbFileSystem(logger, addr, sharename, username, password)
+			if !strings.ContainsAny(addr, ":") {
+				// addr does not contain port - use default
+				addr = addr + ":445"
+			}
+
+			fs := smbprovider.NewSmbFileSystem(logger, addr, sharename, username, password, pathPrefix)
 
 			lc.Append(fx.StartHook(func() {
 				fileprovider.NewFileProviderServer(id, nc, fs, readOnly, logger)

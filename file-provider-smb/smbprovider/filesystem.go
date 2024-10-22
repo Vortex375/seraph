@@ -23,6 +23,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"path"
 	"strings"
 	"time"
 
@@ -33,10 +34,11 @@ import (
 )
 
 type SmbFileSystem struct {
-	factory *shareFactory
+	factory    *shareFactory
+	pathPrefix string
 }
 
-func NewSmbFileSystem(log *logging.Logger, addr string, sharename string, username string, password string) *SmbFileSystem {
+func NewSmbFileSystem(log *logging.Logger, addr string, sharename string, username string, password string, pathPrefix string) *SmbFileSystem {
 	factory := &shareFactory{
 		log:       log,
 		addr:      addr,
@@ -48,8 +50,13 @@ func NewSmbFileSystem(log *logging.Logger, addr string, sharename string, userna
 	factory.init()
 
 	return &SmbFileSystem{
-		factory: factory,
+		factory:    factory,
+		pathPrefix: strings.TrimPrefix(pathPrefix, "/"),
 	}
+}
+
+func (smbfs *SmbFileSystem) getPath(p string) string {
+	return path.Join(smbfs.pathPrefix, strings.TrimPrefix(p, "/"))
 }
 
 func (smbfs *SmbFileSystem) Close() {
@@ -57,7 +64,7 @@ func (smbfs *SmbFileSystem) Close() {
 }
 
 func (smbfs *SmbFileSystem) Mkdir(ctx context.Context, name string, perm os.FileMode) error {
-	name = strings.TrimPrefix(name, "/")
+	name = smbfs.getPath(name)
 
 	return retryVoid(smbfs.factory, func(share *smb2.Share) error {
 		return share.Mkdir(name, perm)
@@ -65,7 +72,7 @@ func (smbfs *SmbFileSystem) Mkdir(ctx context.Context, name string, perm os.File
 }
 
 func (smbfs *SmbFileSystem) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (webdav.File, error) {
-	name = strings.TrimPrefix(name, "/")
+	name = smbfs.getPath(name)
 
 	file, err := retry(smbfs.factory, func(share *smb2.Share) (*smb2.File, error) {
 		return share.OpenFile(name, flag, perm)
@@ -87,7 +94,7 @@ func (smbfs *SmbFileSystem) OpenFile(ctx context.Context, name string, flag int,
 }
 
 func (smbfs *SmbFileSystem) RemoveAll(ctx context.Context, name string) error {
-	name = strings.TrimPrefix(name, "/")
+	name = smbfs.getPath(name)
 
 	return retryVoid(smbfs.factory, func(share *smb2.Share) error {
 		return share.RemoveAll(name)
@@ -95,8 +102,8 @@ func (smbfs *SmbFileSystem) RemoveAll(ctx context.Context, name string) error {
 }
 
 func (smbfs *SmbFileSystem) Rename(ctx context.Context, oldName string, newName string) error {
-	oldName = strings.TrimPrefix(oldName, "/")
-	newName = strings.TrimPrefix(newName, "/")
+	oldName = smbfs.getPath(oldName)
+	newName = smbfs.getPath(newName)
 
 	return retryVoid(smbfs.factory, func(share *smb2.Share) error {
 		return share.Rename(oldName, newName)
@@ -104,7 +111,7 @@ func (smbfs *SmbFileSystem) Rename(ctx context.Context, oldName string, newName 
 }
 
 func (smbfs *SmbFileSystem) Stat(ctx context.Context, name string) (fs.FileInfo, error) {
-	name = strings.TrimPrefix(name, "/")
+	name = smbfs.getPath(name)
 
 	info, err := retry(smbfs.factory, func(share *smb2.Share) (fs.FileInfo, error) {
 		return share.Stat(name)
