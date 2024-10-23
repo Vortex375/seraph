@@ -1,0 +1,22 @@
+[
+  {
+    "type": "record",
+    "name": "ThumbnailRequest",
+    "namespace": "seraph.thumbnailer",
+    "fields": [
+      { "name": "path", "type": "string" },
+      { "name": "width", "type": "int" },
+      { "name": "height", "type": "int" },
+      { "name": "exact", "type": "boolean" }
+    ]
+  },
+  {
+    "type": "record",
+    "name": "ThumbnailResponse",
+    "namespace": "seraph.thumbnailer",
+    "fields": [
+      { "name": "error", "type": "string" },
+      { "name": "path", "type": "string" }
+    ]
+  }
+]

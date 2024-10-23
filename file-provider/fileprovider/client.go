@@ -42,7 +42,7 @@ type Client interface {
 
 type client struct {
 	providerId string
-	log        slog.Logger
+	log        *slog.Logger
 	nc         *nats.Conn
 	msgApi     avro.API
 
@@ -122,7 +122,7 @@ func NewFileProviderClient(providerId string, nc *nats.Conn, logger *logging.Log
 
 	return &client{
 		providerId,
-		*logger.GetLogger("fileproviderclient." + providerId),
+		logger.GetLogger("fileproviderclient." + providerId),
 		nc,
 		msgApi,
 		cache.New(defaultTimeout),
