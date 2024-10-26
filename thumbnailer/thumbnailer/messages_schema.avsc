@@ -4,6 +4,7 @@
     "name": "ThumbnailRequest",
     "namespace": "seraph.thumbnailer",
     "fields": [
+      { "name": "providerId", "type": "string" },
       { "name": "path", "type": "string" },
       { "name": "width", "type": "int" },
       { "name": "height", "type": "int" },
@@ -16,6 +17,7 @@
     "namespace": "seraph.thumbnailer",
     "fields": [
       { "name": "error", "type": "string" },
+      { "name": "providerId", "type": "string" },
       { "name": "path", "type": "string" }
     ]
   }

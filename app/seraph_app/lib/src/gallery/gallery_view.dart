@@ -6,6 +6,8 @@ class GalleryView extends StatelessWidget {
 
   static const routeName = '/gallery';
 
+  const GalleryView({super.key});
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(

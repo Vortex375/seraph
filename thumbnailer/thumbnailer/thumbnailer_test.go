@@ -5,6 +5,7 @@ import (
 	"image"
 	"log/slog"
 	"os"
+	"path"
 	"path/filepath"
 	"testing"
 	"time"
@@ -100,9 +101,10 @@ func TestCreateThumbnail(t *testing.T) {
 	defer thumbnailer.Stop()
 
 	req := ThumbnailRequest{
-		Path:   "testinput/sample.jpg",
-		Width:  1024,
-		Height: 1024,
+		ProviderID: "testinput",
+		Path:       "sample.jpg",
+		Width:      1024,
+		Height:     1024,
 	}
 
 	reqData, err := req.Marshal()
@@ -123,9 +125,9 @@ func TestCreateThumbnail(t *testing.T) {
 	}
 
 	assert.Equal(t, "", resp.Error)
-	assert.Equal(t, fmt.Sprintf("test/%s_1024x1024.jpg", ThumbnailHash(req.Path)), resp.Path)
+	assert.Equal(t, fmt.Sprintf("%s_1024x1024.jpg", ThumbnailHash(path.Join(req.ProviderID, req.Path))), resp.Path)
 
-	resultFile, err := os.OpenFile(filepath.Join(tmpDir, resp.Path[5:]), os.O_RDONLY, 0)
+	resultFile, err := os.OpenFile(filepath.Join(tmpDir, resp.Path), os.O_RDONLY, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

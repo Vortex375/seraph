@@ -2,12 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:go_router/go_router.dart';
 import 'package:seraph_app/src/app_bar/app_bar.dart';
-import 'package:seraph_app/src/file_browser/file_item.dart';
 import 'package:seraph_app/src/file_browser/file_service.dart';
 import 'package:webdav_client/webdav_client.dart';
 
 import '../settings/settings_controller.dart';
-import '../settings/settings_view.dart';
 
 class FileBrowser extends StatefulWidget {
   FileBrowser({super.key, required this.settings, required this.path})

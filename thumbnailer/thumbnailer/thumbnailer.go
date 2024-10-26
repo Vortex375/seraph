@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"os"
 	"path"
-	"strings"
 
 	"github.com/gofiber/fiber/v2/log"
 	"github.com/nats-io/nats.go"
@@ -109,6 +108,10 @@ func (t *Thumbnailer) Stop() error {
 }
 
 func (t *Thumbnailer) handleRequest(req ThumbnailRequest) (resp ThumbnailResponse) {
+	if req.ProviderID == "" {
+		resp.Error = "invalid empty providerId"
+		return
+	}
 	if req.Path == "" {
 		resp.Error = "invalid empty path"
 		return
@@ -125,13 +128,7 @@ func (t *Thumbnailer) handleRequest(req ThumbnailRequest) (resp ThumbnailRespons
 		req.Height = fitSize(req.Height)
 	}
 
-	provider, sourcePath := getProviderAndPath(req.Path)
-	if provider == "" {
-		resp.Error = "invalid path: first path segment must be file provider id"
-		return
-	}
-
-	thumbName := fmt.Sprintf("%s_%dx%d.jpg", ThumbnailHash(req.Path), req.Width, req.Height)
+	thumbName := fmt.Sprintf("%s_%dx%d.jpg", ThumbnailHash(path.Join(req.ProviderID, req.Path)), req.Width, req.Height)
 
 	_, err := t.thumbnailStorage.Stat(context.TODO(), path.Join(t.path, thumbName))
 	if err == nil {
@@ -147,11 +144,11 @@ func (t *Thumbnailer) handleRequest(req ThumbnailRequest) (resp ThumbnailRespons
 
 	// thumbnail needs to be created
 
-	fs := fileprovider.NewFileProviderClient(provider, t.nc, t.logging)
+	fs := fileprovider.NewFileProviderClient(req.ProviderID, t.nc, t.logging)
 
-	file, err := fs.OpenFile(context.TODO(), sourcePath, os.O_RDONLY, 0)
+	file, err := fs.OpenFile(context.TODO(), req.Path, os.O_RDONLY, 0)
 	if err != nil {
-		log.Error("error while opening source file for thumbnail creation", "path", req.Path, "error", err)
+		log.Error("error while opening source file for thumbnail creation", "provider", req.ProviderID, "path", req.Path, "error", err)
 		resp.Error = "error while opening source file for thumbnail creation: " + err.Error()
 		return
 	}
@@ -159,28 +156,28 @@ func (t *Thumbnailer) handleRequest(req ThumbnailRequest) (resp ThumbnailRespons
 
 	imageConfig, format, err := image.DecodeConfig(file)
 	if err != nil {
-		log.Error("error while reading image metadata", "path", req.Path, "error", err)
+		log.Error("error while reading image metadata", "provider", req.ProviderID, "path", req.Path, "error", err)
 		resp.Error = "error while reading image metadata" + err.Error()
 		return
 	}
 	log.Debug("decoded image metadata", "format", format, "width", imageConfig.Width, "height", imageConfig.Height)
 
 	if imageConfig.Width > MaxImageWidth || imageConfig.Height > MaxImageHeight {
-		log.Error("source image too large for thumbnail creation", "path", req.Path, "width", imageConfig.Width, "height", imageConfig.Height)
+		log.Error("source image too large for thumbnail creation", "provider", req.ProviderID, "path", req.Path, "width", imageConfig.Width, "height", imageConfig.Height)
 		resp.Error = "source image too large for thumbnail creation"
 		return
 	}
 
 	_, err = file.Seek(0, io.SeekStart)
 	if err != nil {
-		log.Error("error while accessing source file", "path", req.Path, "error", err)
+		log.Error("error while accessing source file", "provider", req.ProviderID, "path", req.Path, "error", err)
 		resp.Error = "error while accessing source file" + err.Error()
 		return
 	}
 
 	sourceImage, _, err := image.Decode(file)
 	if err != nil {
-		log.Error("error while decoding source image", "path", req.Path, "error", err)
+		log.Error("error while decoding source image", "provider", req.ProviderID, "path", req.Path, "error", err)
 		resp.Error = "error while decoding source image" + err.Error()
 		return
 	}
@@ -199,18 +196,9 @@ func (t *Thumbnailer) handleRequest(req ThumbnailRequest) (resp ThumbnailRespons
 	//TODO: jpeg options!?
 	jpeg.Encode(dstFile, dstImage, nil)
 
-	resp.Path = path.Join(t.fileProviderId, t.path, thumbName)
+	resp.ProviderID = t.fileProviderId
+	resp.Path = path.Join(t.path, thumbName)
 	return
-}
-
-func getProviderAndPath(p string) (string, string) {
-	split := strings.SplitN(strings.TrimPrefix(p, "/"), "/", 2)
-
-	if len(split) != 2 {
-		return "", ""
-	}
-
-	return split[0], split[1]
 }
 
 func calculateThumbnailSize(srcW int, srcH int, dstW int, dstH int) (resW int, resH int) {
