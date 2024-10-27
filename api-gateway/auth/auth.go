@@ -65,8 +65,8 @@ type Result struct {
 }
 
 type Auth interface {
-	AuthMiddleware() func(*gin.Context)
-	PasswordAuthMiddleware(realm string) func(*gin.Context)
+	AuthMiddleware() func(*gin.Context) bool
+	PasswordAuthMiddleware(realm string) func(*gin.Context) bool
 }
 
 type oidcAuth struct {
@@ -278,8 +278,8 @@ func (a *oidcAuth) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 	})
 }
 
-func (a *oidcAuth) AuthMiddleware() func(*gin.Context) {
-	return func(ctx *gin.Context) {
+func (a *oidcAuth) AuthMiddleware() func(*gin.Context) bool {
+	return func(ctx *gin.Context) bool {
 		sess := sessions.Default(ctx)
 
 		tokenFromSession, _ := getTokenFromSession(sess)
@@ -291,7 +291,7 @@ func (a *oidcAuth) AuthMiddleware() func(*gin.Context) {
 			parts := strings.Split(bearerToken, " ")
 			if len(parts) != 2 {
 				ctx.AbortWithError(http.StatusBadRequest, errors.New("auth: invalid Authorization header"))
-				return
+				return false
 			}
 			rawIDToken = parts[1]
 
@@ -306,31 +306,33 @@ func (a *oidcAuth) AuthMiddleware() func(*gin.Context) {
 		if rawIDToken == "" {
 			a.sendRedirect(ctx)
 			ctx.Abort()
-			return
+			return false
 		}
 
 		if _, err := a.verifier.Verify(ctx, rawIDToken); err != nil {
 			a.sendRedirect(ctx)
 			ctx.Abort()
-			return
+			return false
 		}
+
+		return true
 	}
 }
 
-func (a *oidcAuth) PasswordAuthMiddleware(realm string) func(*gin.Context) {
-	return func(ctx *gin.Context) {
+func (a *oidcAuth) PasswordAuthMiddleware(realm string) func(*gin.Context) bool {
+	return func(ctx *gin.Context) bool {
 		sess := sessions.Default(ctx)
 
 		token, err := getTokenFromSession(sess)
 		if err != nil {
 			ctx.AbortWithError(http.StatusInternalServerError, err)
-			return
+			return false
 		}
 		if token == nil {
 			token, err = a.getTokenFromPassword(ctx)
 			if err != nil {
 				ctx.AbortWithError(http.StatusInternalServerError, err)
-				return
+				return false
 			}
 		}
 
@@ -341,13 +343,14 @@ func (a *oidcAuth) PasswordAuthMiddleware(realm string) func(*gin.Context) {
 					if _, err := a.verifier.Verify(ctx, rawIDToken); err == nil {
 						storeTokenToSession(sess, token)
 						sess.Save()
-						return
+						return true
 					}
 				}
 			}
 		}
 
 		a.sendPasswordAuth(ctx, realm)
+		return false
 	}
 }
 

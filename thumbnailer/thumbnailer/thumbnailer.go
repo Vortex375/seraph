@@ -7,10 +7,12 @@ import (
 	"image"
 	"io"
 	"log/slog"
+	"math/rand"
 	"os"
 	"path"
+	"strconv"
+	"time"
 
-	"github.com/gofiber/fiber/v2/log"
 	"github.com/nats-io/nats.go"
 	"go.uber.org/fx"
 	"umbasa.net/seraph/file-provider/fileprovider"
@@ -33,6 +35,12 @@ const MaxImageHeight = 8120
 var ThumbnailSizes = []int{128, 256, 512, 1024}
 
 const DefaultThumbnailSize = 256
+
+// content type for thumbnails
+const ContentType = "image/jpeg"
+
+// name of temporary folder where thumb files are put during creation
+const tmpFolderName = "_tmp"
 
 type Params struct {
 	fx.In
@@ -78,6 +86,7 @@ func (t *Thumbnailer) Start() error {
 			return err
 		}
 	}
+	t.thumbnailStorage.Mkdir(context.TODO(), path.Join(t.path, tmpFolderName), 0777)
 
 	sub, err := t.nc.QueueSubscribe(ThumbnailRequestTopic, ThumbnailRequestTopic, func(msg *nats.Msg) {
 		req := ThumbnailRequest{}
@@ -133,11 +142,12 @@ func (t *Thumbnailer) handleRequest(req ThumbnailRequest) (resp ThumbnailRespons
 	_, err := t.thumbnailStorage.Stat(context.TODO(), path.Join(t.path, thumbName))
 	if err == nil {
 		// thumbnail exists
-		resp.Path = path.Join(t.fileProviderId, t.path, thumbName)
+		resp.ProviderID = t.fileProviderId
+		resp.Path = path.Join(t.path, thumbName)
 		return
 	}
 	if !errors.Is(err, os.ErrNotExist) {
-		log.Error("error while accessing thumbnail storage", "error", err)
+		t.log.Error("error while accessing thumbnail storage", "error", err)
 		resp.Error = "error while accessing thumbnail storage" + err.Error()
 		return
 	}
@@ -148,56 +158,83 @@ func (t *Thumbnailer) handleRequest(req ThumbnailRequest) (resp ThumbnailRespons
 
 	file, err := fs.OpenFile(context.TODO(), req.Path, os.O_RDONLY, 0)
 	if err != nil {
-		log.Error("error while opening source file for thumbnail creation", "provider", req.ProviderID, "path", req.Path, "error", err)
+		t.log.Error("error while opening source file for thumbnail creation", "provider", req.ProviderID, "path", req.Path, "error", err)
 		resp.Error = "error while opening source file for thumbnail creation: " + err.Error()
 		return
 	}
 	defer file.Close()
 
+	start := time.Now()
 	imageConfig, format, err := image.DecodeConfig(file)
 	if err != nil {
-		log.Error("error while reading image metadata", "provider", req.ProviderID, "path", req.Path, "error", err)
+		t.log.Error("error while reading image metadata", "provider", req.ProviderID, "path", req.Path, "error", err)
 		resp.Error = "error while reading image metadata" + err.Error()
 		return
 	}
-	log.Debug("decoded image metadata", "format", format, "width", imageConfig.Width, "height", imageConfig.Height)
+	elapsed := time.Since(start)
+	t.log.Debug("decoded image metadata", "format", format, "width", imageConfig.Width, "height", imageConfig.Height, "time", elapsed)
 
 	if imageConfig.Width > MaxImageWidth || imageConfig.Height > MaxImageHeight {
-		log.Error("source image too large for thumbnail creation", "provider", req.ProviderID, "path", req.Path, "width", imageConfig.Width, "height", imageConfig.Height)
+		t.log.Error("source image too large for thumbnail creation", "provider", req.ProviderID, "path", req.Path, "width", imageConfig.Width, "height", imageConfig.Height)
 		resp.Error = "source image too large for thumbnail creation"
 		return
 	}
 
 	_, err = file.Seek(0, io.SeekStart)
 	if err != nil {
-		log.Error("error while accessing source file", "provider", req.ProviderID, "path", req.Path, "error", err)
+		t.log.Error("error while accessing source file", "provider", req.ProviderID, "path", req.Path, "error", err)
 		resp.Error = "error while accessing source file" + err.Error()
 		return
 	}
 
+	start = time.Now()
 	sourceImage, _, err := image.Decode(file)
 	if err != nil {
-		log.Error("error while decoding source image", "provider", req.ProviderID, "path", req.Path, "error", err)
+		t.log.Error("error while decoding source image", "provider", req.ProviderID, "path", req.Path, "error", err)
 		resp.Error = "error while decoding source image" + err.Error()
 		return
 	}
+	elapsed = time.Since(start)
+	t.log.Debug("decoded image", "time", elapsed)
 
+	start = time.Now()
 	dstWidth, dstHeight := calculateThumbnailSize(imageConfig.Width, imageConfig.Height, req.Width, req.Height)
 	dstImage := image.NewRGBA(image.Rect(0, 0, dstWidth, dstHeight))
 	draw.ApproxBiLinear.Scale(dstImage, dstImage.Bounds(), sourceImage, sourceImage.Bounds(), draw.Over, nil)
+	elapsed = time.Since(start)
+	t.log.Debug("scaled image", "width", dstWidth, "height", dstHeight, "time", elapsed)
 
-	dstFile, err := t.thumbnailStorage.OpenFile(context.TODO(), path.Join(t.path, thumbName), os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0666)
+	tmpFilePath := path.Join(t.path, tmpFolderName, randomFileName())
+	thumbPath := path.Join(t.path, thumbName)
+	dstFile, err := t.thumbnailStorage.OpenFile(context.TODO(), tmpFilePath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0666)
 	if err != nil {
-		log.Error("error while opening thumbnail destination for writing", "error", err)
+		t.log.Error("error while opening thumbnail destination for writing", "error", err)
 		resp.Error = "error while opening thumbnail destination for writing" + err.Error()
 		return
 	}
-	defer dstFile.Close()
+
+	start = time.Now()
 	//TODO: jpeg options!?
-	jpeg.Encode(dstFile, dstImage, nil)
+	err = jpeg.Encode(dstFile, dstImage, nil)
+	if err != nil {
+		defer dstFile.Close()
+		t.log.Error("error while writing thumbnail", "error", err)
+		resp.Error = "error while writing thumbnail" + err.Error()
+		return
+	}
+	elapsed = time.Since(start)
+	t.log.Debug("encoded thumbnail", "time", elapsed)
+	dstFile.Close()
+
+	err = t.thumbnailStorage.Rename(context.TODO(), tmpFilePath, thumbPath)
+	if err != nil {
+		t.log.Error("error while moving thumbnail to destination", "error", err)
+		resp.Error = "error while moving thumbnail to destination" + err.Error()
+		return
+	}
 
 	resp.ProviderID = t.fileProviderId
-	resp.Path = path.Join(t.path, thumbName)
+	resp.Path = thumbPath
 	return
 }
 
@@ -233,4 +270,8 @@ func fitSize(s int) int {
 		l = t
 	}
 	return l
+}
+
+func randomFileName() string {
+	return strconv.Itoa(int(rand.Uint32()))
 }

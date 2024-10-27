@@ -100,10 +100,12 @@ func (g *gateway) Start(handlers []handler.GatewayHandler) {
 	})
 	engine.Use(sessions.Sessions("seraphsession", store))
 
-	apiGroup := engine.Group("/api", cachecontrol.New(cachecontrol.NoCachePreset), g.auth.AuthMiddleware())
+	authMiddleware := g.auth.AuthMiddleware()
+
+	apiGroup := engine.Group("/api", cachecontrol.New(cachecontrol.NoCachePreset), func(ctx *gin.Context) { authMiddleware(ctx) })
 	apiGroup.GET("/test", getTest)
 
-	webAppGroup := engine.Group("/webapp", g.auth.AuthMiddleware())
+	webAppGroup := engine.Group("/webapp", func(ctx *gin.Context) { authMiddleware(ctx) })
 	webAppLocation := g.viper.GetString("gateway.webappLocation")
 	webAppGroup.Static("/", webAppLocation)
 

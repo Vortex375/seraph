@@ -76,7 +76,8 @@ func New(p Params) Result {
 func (server *webDavServer) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 
 	// Gin's router doesn't handle WebDAV methods like PROPFIND, so we must register a global middleware here
-	app.Use(scoped(PathPrefix, false, server.auth.PasswordAuthMiddleware("Access to WebDAV")))
+	passwordAuth := server.auth.PasswordAuthMiddleware("Access to WebDAV")
+	app.Use(scoped(PathPrefix, false, func(ctx *gin.Context) { passwordAuth(ctx) }))
 	app.Use(scoped(PathPrefix, true, func(ctx *gin.Context) {
 		providerId := getProviderId(ctx)
 		if providerId == "" {

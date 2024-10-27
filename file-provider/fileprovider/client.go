@@ -52,6 +52,7 @@ type client struct {
 }
 
 const defaultTimeout = 30 * time.Second
+const cacheTimeout = 5 * time.Second
 
 func exchange(nc *nats.Conn, msgApi avro.API, providerId string, request *FileProviderRequest) (*FileProviderResponse, error) {
 	data, err := msgApi.Marshal(FileProviderRequestSchema, request)
@@ -125,7 +126,7 @@ func NewFileProviderClient(providerId string, nc *nats.Conn, logger *logging.Log
 		logger.GetLogger("fileproviderclient." + providerId),
 		nc,
 		msgApi,
-		cache.New(defaultTimeout),
+		cache.New(cacheTimeout),
 	}
 }
 
@@ -270,7 +271,7 @@ func (c *client) Stat(ctx context.Context, name string) (os.FileInfo, error) {
 	fileInfo := &fileInfo{resp}
 
 	c.log.Debug("caching", "name", name)
-	c.fileInfoCache.Set(name, fileInfo, defaultTimeout)
+	c.fileInfoCache.Set(name, fileInfo, cacheTimeout)
 
 	return fileInfo, nil
 }
@@ -435,7 +436,7 @@ func (f *file) Readdir(count int) ([]fs.FileInfo, error) {
 			ret[i] = &fileInfo{info}
 			filePath := path.Join(f.name, ret[i].Name())
 			f.c.log.Debug("caching", "name", filePath)
-			f.c.fileInfoCache.Set(filePath, ret[i], defaultTimeout)
+			f.c.fileInfoCache.Set(filePath, ret[i], cacheTimeout)
 		}
 	}
 
@@ -466,7 +467,30 @@ func (f *file) Stat() (fs.FileInfo, error) {
 }
 
 func (f *file) Write(p []byte) (n int, err error) {
-	panic("not implemented") // TODO: Implement
+	//TODO: max payload
+	request := FileProviderFileRequest{
+		Uid:    uuid.NewString(),
+		FileId: f.fileId,
+		Request: FileWriteRequest{
+			Payload: p,
+		},
+	}
+
+	response, err := exchangeFile(f.c.nc, f.c.msgApi, f.fileId, &request)
+	if err != nil {
+		f.c.log.Error("fileWrite failed", "uid", request.Uid, "req", request.Request, "error", err)
+		return 0, err
+	}
+
+	resp := response.Response.(FileWriteResponse)
+	err = ioError(resp.Error)
+
+	if err != nil {
+		f.c.log.Error("fileWrite failed", "uid", request.Uid, "req", request.Request, "error", err)
+		return 0, err
+	}
+
+	return resp.Len, nil
 }
 
 func readReaddirResponses(msgApi avro.API, responseChan chan *nats.Msg, finalChan chan []FileInfoResponse) {

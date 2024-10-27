@@ -24,6 +24,7 @@ import (
 	"go.uber.org/fx"
 	"umbasa.net/seraph/api-gateway/auth"
 	"umbasa.net/seraph/api-gateway/gateway"
+	"umbasa.net/seraph/api-gateway/preview"
 	"umbasa.net/seraph/api-gateway/webdav"
 	"umbasa.net/seraph/config"
 	"umbasa.net/seraph/logging"
@@ -39,6 +40,7 @@ func main() {
 		gateway.Module,
 		auth.Module,
 		webdav.Module,
+		preview.Module,
 		mongodb.Module,
 		fx.Provide(auth.NewMigrations),
 		fx.Decorate(func(client *mongo.Client, viper *viper.Viper) *mongo.Client {
