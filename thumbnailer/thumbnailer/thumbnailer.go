@@ -45,8 +45,13 @@ const tmpFolderName = "_tmp"
 type Params struct {
 	fx.In
 
-	Nc     *nats.Conn
-	Logger *logging.Logger
+	Nc      *nats.Conn
+	Logger  *logging.Logger
+	Options *Options `optional:"true"`
+}
+
+type Options struct {
+	JpegQuality int
 }
 
 type Result struct {
@@ -56,6 +61,7 @@ type Result struct {
 }
 
 type Thumbnailer struct {
+	options          Options
 	logging          *logging.Logger
 	log              *slog.Logger
 	nc               *nats.Conn
@@ -66,8 +72,17 @@ type Thumbnailer struct {
 }
 
 func NewThumbnailer(p Params, fileProviderId string, path string, thumbnailStorage fileprovider.Client) (Result, error) {
+	var options *Options
+	if p.Options == nil {
+		options = &Options{
+			JpegQuality: jpeg.DefaultQuality,
+		}
+	} else {
+		options = p.Options
+	}
 	return Result{
 		Thumbnailer: &Thumbnailer{
+			options:          *options,
 			logging:          p.Logger,
 			log:              p.Logger.GetLogger("thumbnailer"),
 			nc:               p.Nc,
@@ -200,7 +215,7 @@ func (t *Thumbnailer) handleRequest(req ThumbnailRequest) (resp ThumbnailRespons
 	start = time.Now()
 	dstWidth, dstHeight := calculateThumbnailSize(imageConfig.Width, imageConfig.Height, req.Width, req.Height)
 	dstImage := image.NewRGBA(image.Rect(0, 0, dstWidth, dstHeight))
-	draw.ApproxBiLinear.Scale(dstImage, dstImage.Bounds(), sourceImage, sourceImage.Bounds(), draw.Over, nil)
+	draw.BiLinear.Scale(dstImage, dstImage.Bounds(), sourceImage, sourceImage.Bounds(), draw.Over, nil)
 	elapsed = time.Since(start)
 	t.log.Debug("scaled image", "width", dstWidth, "height", dstHeight, "time", elapsed)
 
@@ -214,8 +229,9 @@ func (t *Thumbnailer) handleRequest(req ThumbnailRequest) (resp ThumbnailRespons
 	}
 
 	start = time.Now()
-	//TODO: jpeg options!?
-	err = jpeg.Encode(dstFile, dstImage, nil)
+	err = jpeg.Encode(dstFile, dstImage, &jpeg.Options{
+		Quality: t.options.JpegQuality,
+	})
 	if err != nil {
 		defer dstFile.Close()
 		t.log.Error("error while writing thumbnail", "error", err)

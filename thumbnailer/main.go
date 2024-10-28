@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"image/jpeg"
 
 	"github.com/nats-io/nats.go"
 	"github.com/spf13/viper"
@@ -21,6 +22,8 @@ func main() {
 		fx.Invoke(func(nc *nats.Conn, viper *viper.Viper, logger *logging.Logger, lc fx.Lifecycle) error {
 			providerId := viper.GetString("thumbnailer.providerId")
 			path := viper.GetString("thumbnailer.path")
+			viper.SetDefault("thumbnailer.jpegQuality", jpeg.DefaultQuality)
+			jpegQuality := viper.GetInt("thumbnailer.jpegQuality")
 
 			if providerId == "" {
 				return errors.New("misisng 'thumbnailer.providerId' argument: the id of the file provider to use for thumbnail storage")
@@ -29,6 +32,9 @@ func main() {
 			params := thumbnailer.Params{
 				Nc:     nc,
 				Logger: logger,
+				Options: &thumbnailer.Options{
+					JpegQuality: jpegQuality,
+				},
 			}
 			client := fileprovider.NewFileProviderClient(providerId, nc, logger)
 
