@@ -1,0 +1,17 @@
+[
+  {
+    "create": "shares"
+  },
+  {
+    "createIndexes": "shares",
+    "indexes": [
+      {
+        "key": {
+          "shareId": 1
+        },
+        "name": "shares_shareId_idx",
+        "unique": true
+      }
+    ]
+  }
+]

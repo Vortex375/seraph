@@ -1,0 +1,54 @@
+[
+  {
+    "type": "record",
+    "name": "ShareResolveRequest",
+    "namespace": "seraph.shares",
+    "fields": [
+      { "name": "shareId", "type": "string" },
+      { "name": "path", "type": "string" }
+    ]
+  },
+  {
+    "type": "record",
+    "name": "ShareResolveResponse",
+    "namespace": "seraph.shares",
+    "fields": [
+      { "name": "error", "type": "string" },
+      { "name": "providerId", "type": "string" },
+      { "name": "path", "type": "string" }
+    ]
+  },
+  {
+    "type": "record",
+    "name": "Share",
+    "namespace": "seraph.shares",
+    "fields": [
+        { "name": "shareId", "type": "string" },
+        { "name": "owner", "type": "string" },
+        { "name": "title", "type": "string" },
+        { "name": "description", "type": "string" },
+        { "name": "providerId", "type": "string" },
+        { "name": "path", "type": "string" },
+        { "name": "recursive", "type": "boolean" },
+        { "name": "isDir", "type": "boolean" }
+    ]
+  },
+  {
+    "type": "record",
+    "name": "ShareCrudRequest",
+    "namespace": "seraph.shares",
+    "fields": [
+        { "name": "operation", "type": "string", "symbols": ["READ", "CREATE", "UPDATE", "DELETE"] },
+        { "name": "share", "type": ["Share", "null"] }
+    ]
+  },
+  {
+    "type": "record",
+    "name": "ShareCrudResponse",
+    "namespace": "seraph.shares",
+    "fields": [
+        { "name": "error", "type": "string" },
+        { "name": "share", "type": ["Share", "null"] }
+    ]
+  }
+]

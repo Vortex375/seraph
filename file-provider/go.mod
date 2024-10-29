@@ -3,6 +3,7 @@ module umbasa.net/seraph/file-provider
 go 1.22.0
 
 require (
+	github.com/akyoto/cache v1.0.6
 	github.com/google/uuid v1.6.0
 	github.com/hamba/avro/v2 v2.22.1
 	github.com/nats-io/nats-server/v2 v2.10.16
@@ -12,7 +13,6 @@ require (
 )
 
 require (
-	github.com/akyoto/cache v1.0.6 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.17.8 // indirect
