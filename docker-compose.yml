@@ -21,7 +21,7 @@ services:
       - nats-data:/data
 
   mongodb: 
-    image: mongo
+    image: mongo:8
     restart: always
     networks:
       - internal

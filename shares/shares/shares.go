@@ -3,12 +3,15 @@ package shares
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"path"
 	"strings"
 
 	"github.com/nats-io/nats.go"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.uber.org/fx"
 	"umbasa.net/seraph/logging"
 )
@@ -60,7 +63,7 @@ func (s *SharesProvider) Start() error {
 		msg.Respond(data)
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("While starting SharesProvider: %w", err)
 	}
 	s.resolveSub = sub
 	sub, err = s.nc.QueueSubscribe(ShareCrudTopic, ShareCrudTopic, func(msg *nats.Msg) {
@@ -73,7 +76,7 @@ func (s *SharesProvider) Start() error {
 		msg.Respond(data)
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("While starting SharesProvider: %w", err)
 	}
 	s.crudSub = sub
 	return nil
@@ -86,14 +89,14 @@ func (s *SharesProvider) Stop() error {
 		s.crudSub = nil
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("While stopping SharesProvider: %w", err)
 	}
 	if s.resolveSub != nil {
 		err = s.resolveSub.Unsubscribe()
 		s.resolveSub = nil
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("While stopping SharesProvider: %w", err)
 	}
 	return nil
 }
@@ -108,6 +111,8 @@ func (s *SharesProvider) resolveShare(req *ShareResolveRequest) *ShareResolveRes
 			// empty response indicates "not found"
 			return &ShareResolveResponse{}
 		}
+		err := fmt.Errorf("While retrieving share from the database for resolve: %w", result.Err())
+		s.log.Error("error while resolving share", "error", err)
 		return &ShareResolveResponse{
 			Error: result.Err().Error(),
 		}
@@ -120,7 +125,7 @@ func (s *SharesProvider) resolveShare(req *ShareResolveRequest) *ShareResolveRes
 		if !share.IsDir {
 			return &ShareResolveResponse{}
 		}
-		cleanPath = strings.TrimPrefix("/", path.Clean("/"+req.Path))
+		cleanPath = strings.TrimPrefix(path.Clean("/"+req.Path), "/")
 		if strings.Contains(cleanPath, "/") && !share.Recursive {
 			return &ShareResolveResponse{}
 		}
@@ -163,13 +168,94 @@ func (s *SharesProvider) handleCrud(req *ShareCrudRequest) *ShareCrudResponse {
 		}
 
 	case "CREATE":
-		return nil
+		if req.Share == nil {
+			return &ShareCrudResponse{
+				Error: "share is required for CREATE operation",
+			}
+		}
+
+		if req.Share.ShareID == "" {
+			return &ShareCrudResponse{
+				Error: "shareID is required for CREATE operation",
+			}
+		}
+
+		proto := SharePrototype{}
+		req.Share.ToPrototype(&proto)
+		_, err := s.shares.InsertOne(context.Background(), proto)
+
+		if err != nil {
+			return &ShareCrudResponse{
+				Error: err.Error(),
+			}
+		}
+
+		return &ShareCrudResponse{
+			Share: req.Share,
+		}
 
 	case "UPDATE":
-		return nil
+		if req.Share == nil {
+			return &ShareCrudResponse{
+				Error: "share is required for UPDATE operation",
+			}
+		}
+
+		if req.Share.ShareID == "" {
+			return &ShareCrudResponse{
+				Error: "shareID is required for UPDATE operation",
+			}
+		}
+
+		filter := SharePrototype{}
+		filter.ShareID.Set(req.Share.ShareID)
+		proto := SharePrototype{}
+		req.Share.ToPrototype(&proto)
+		result := s.shares.FindOneAndUpdate(context.Background(), filter, bson.M{"$set": proto},
+			options.FindOneAndUpdate().SetReturnDocument(options.After))
+		if result.Err() != nil {
+			return &ShareCrudResponse{
+				Error: result.Err().Error(),
+			}
+		}
+
+		share := Share{}
+		result.Decode(&share)
+
+		return &ShareCrudResponse{
+			Share: &share,
+		}
 
 	case "DELETE":
-		return nil
+
+		if req.Share == nil {
+			return &ShareCrudResponse{
+				Error: "share is required for UPDATE operation",
+			}
+		}
+
+		if req.Share.ShareID == "" {
+			return &ShareCrudResponse{
+				Error: "shareID is required for UPDATE operation",
+			}
+		}
+
+		filter := SharePrototype{}
+		filter.ShareID.Set(req.Share.ShareID)
+
+		result := s.shares.FindOneAndDelete(context.Background(), filter)
+		if result.Err() != nil {
+			return &ShareCrudResponse{
+				Error: result.Err().Error(),
+			}
+		}
+
+		share := Share{}
+		result.Decode(&share)
+
+		return &ShareCrudResponse{
+			Share: &share,
+		}
 
 	default:
 		return &ShareCrudResponse{

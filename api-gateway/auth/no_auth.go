@@ -21,3 +21,7 @@ func (a *noAuth) PasswordAuthMiddleware(realm string) func(*gin.Context) bool {
 func (a *noAuth) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 	/* no-op */
 }
+
+func (a *noAuth) GetUserId(ctx *gin.Context) string {
+	return "anonymous"
+}

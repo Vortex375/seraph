@@ -67,6 +67,7 @@ type Result struct {
 type Auth interface {
 	AuthMiddleware() func(*gin.Context) bool
 	PasswordAuthMiddleware(realm string) func(*gin.Context) bool
+	GetUserId(*gin.Context) string
 }
 
 type oidcAuth struct {
@@ -182,7 +183,8 @@ func (a *oidcAuth) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 			a.log.Info("Registering new auth password", "username", claims.Username)
 			a.tokenStore.registerTokenWithPassword(ctx, idToken.Subject, claims.Username, password, oauth2Token.RefreshToken)
 		} else {
-			storeTokenToSession(sess, oauth2Token)
+			storeTokenToSession(sess, oauth2Token, idToken.Subject)
+			sess.Save()
 		}
 
 		if hasRedirect {
@@ -284,6 +286,7 @@ func (a *oidcAuth) AuthMiddleware() func(*gin.Context) bool {
 
 		tokenFromSession, _ := getTokenFromSession(sess)
 		bearerToken := ctx.GetHeader("Authorization")
+		var token *oauth2.Token
 
 		//TODO: bearer authentication incorrect
 		var rawIDToken string
@@ -296,10 +299,9 @@ func (a *oidcAuth) AuthMiddleware() func(*gin.Context) bool {
 			rawIDToken = parts[1]
 
 		} else if tokenFromSession != nil {
-			if token, err := a.config.TokenSource(ctx, tokenFromSession).Token(); err == nil {
+			var err error
+			if token, err = a.config.TokenSource(ctx, tokenFromSession).Token(); err == nil {
 				rawIDToken, _ = token.Extra("id_token").(string)
-				storeTokenToSession(sess, token)
-				sess.Save()
 			}
 		}
 
@@ -309,11 +311,16 @@ func (a *oidcAuth) AuthMiddleware() func(*gin.Context) bool {
 			return false
 		}
 
-		if _, err := a.verifier.Verify(ctx, rawIDToken); err != nil {
+		var idToken *oidc.IDToken
+		var err error
+		if idToken, err = a.verifier.Verify(ctx, rawIDToken); err != nil {
 			a.sendRedirect(ctx)
 			ctx.Abort()
 			return false
 		}
+
+		storeTokenToSession(sess, token, idToken.Subject)
+		sess.Save()
 
 		return true
 	}
@@ -340,8 +347,8 @@ func (a *oidcAuth) PasswordAuthMiddleware(realm string) func(*gin.Context) bool 
 			if token, err := a.config.TokenSource(ctx, token).Token(); err == nil {
 				rawIDToken, ok := token.Extra("id_token").(string)
 				if ok && rawIDToken != "" {
-					if _, err := a.verifier.Verify(ctx, rawIDToken); err == nil {
-						storeTokenToSession(sess, token)
+					if idToken, err := a.verifier.Verify(ctx, rawIDToken); err == nil {
+						storeTokenToSession(sess, token, idToken.Subject)
 						sess.Save()
 						return true
 					}
@@ -352,6 +359,12 @@ func (a *oidcAuth) PasswordAuthMiddleware(realm string) func(*gin.Context) bool 
 		a.sendPasswordAuth(ctx, realm)
 		return false
 	}
+}
+
+func (a *oidcAuth) GetUserId(ctx *gin.Context) string {
+	sess := sessions.Default(ctx)
+	id, _ := sess.Get("user_id").(string)
+	return id
 }
 
 func (a *oidcAuth) sendRedirect(ctx *gin.Context) {
@@ -385,7 +398,7 @@ func (a *oidcAuth) getTokenFromPassword(ctx *gin.Context) (*oauth2.Token, error)
 	return nil, nil
 }
 
-func storeTokenToSession(sess sessions.Session, token *oauth2.Token) error {
+func storeTokenToSession(sess sessions.Session, token *oauth2.Token, subject string) error {
 	rawIdToken, _ := token.Extra("id_token").(string)
 
 	v, err := json.Marshal(token)
@@ -394,6 +407,7 @@ func storeTokenToSession(sess sessions.Session, token *oauth2.Token) error {
 	}
 	sess.Set("auth_token", string(v))
 	sess.Set("id_token", rawIdToken)
+	sess.Set("user_id", subject)
 
 	return nil
 }
