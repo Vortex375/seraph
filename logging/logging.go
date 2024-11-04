@@ -1,6 +1,6 @@
 // Copyright © 2024 Benjamin Schmitz
 
-// This file is part of Seraph.
+// This file is part of Seraph <https://github.com/Vortex375/seraph>.
 
 // Seraph is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License
