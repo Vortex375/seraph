@@ -33,6 +33,7 @@ import (
 	"umbasa.net/seraph/file-provider/fileprovider"
 	"umbasa.net/seraph/logging"
 	"umbasa.net/seraph/messaging"
+	"umbasa.net/seraph/shares/shares"
 	"umbasa.net/seraph/thumbnailer/thumbnailer"
 )
 
@@ -76,33 +77,62 @@ func New(p Params) Result {
 
 func (h *previewHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 	app.GET("preview", func(ctx *gin.Context) {
-		path := ctx.Query("p")
-		share := ctx.Query("s")
+		var err error
+		parameterP := ctx.Query("p")
+		parameterS := ctx.Query("s")
 
-		if path != "" && share != "" {
+		if parameterP != "" && parameterS != "" {
 			h.log.Error("both 'p' and 's' specified - only one can be used")
 			ctx.AbortWithStatus(http.StatusBadRequest)
 			return
 		}
 
-		if path == "" && share == "" {
+		if parameterP == "" && parameterS == "" {
 			h.log.Error("missing 'p' or 's' parameter")
 			ctx.AbortWithStatus(http.StatusBadRequest)
 			return
 		}
 
-		if share != "" {
-			ctx.AbortWithStatus(http.StatusNotImplemented)
-			return
+		var providerId, path string
+		if parameterS != "" {
+			shareId, sharePath := getProviderAndPath(parameterS)
+			resolveReq := shares.ShareResolveRequest{
+				ShareID: shareId,
+				Path:    sharePath,
+			}
+			resolveRes := shares.ShareResolveResponse{}
+			err = messaging.Request(h.nc, shares.ShareResolveTopic, &resolveReq, &resolveRes)
+			if err != nil {
+				h.log.Error("While retrieving preview: error while resolving share", "error", err)
+				ctx.AbortWithStatus(http.StatusInternalServerError)
+				return
+			}
+			if resolveRes.Error != "" {
+				h.log.Error("While retrieving preview: error while resolving share", "error", resolveRes.Error)
+				ctx.AbortWithStatus(http.StatusInternalServerError)
+				return
+			}
+			if resolveRes.ProviderID == "" {
+				ctx.AbortWithStatus(http.StatusNotFound)
+				return
+			}
+
+			providerId = resolveRes.ProviderID
+			path = resolveRes.Path
 		} else {
 			if !h.authHandler(ctx) {
+				return
+			}
+			providerId, path = getProviderAndPath(parameterP)
+			if providerId == "" || path == "" {
+				h.log.Error("path must include providerId and path resp. filename")
+				ctx.AbortWithStatus(http.StatusBadRequest)
 				return
 			}
 		}
 
 		var width, height int
 		if ws := ctx.Query("w"); ws != "" {
-			var err error
 			width, err = strconv.Atoi(ws)
 			if err != nil {
 				h.log.Error("invalid 'w' parameter: " + ws)
@@ -111,7 +141,6 @@ func (h *previewHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 			}
 		}
 		if hs := ctx.Query("h"); hs != "" {
-			var err error
 			height, err = strconv.Atoi(hs)
 			if err != nil {
 				h.log.Error("invalid 'h' parameter: " + hs)
@@ -121,14 +150,6 @@ func (h *previewHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 		}
 		exact := ctx.Query("exact") != ""
 
-		providerId, path := getProviderAndPath(path)
-
-		if providerId == "" || path == "" {
-			h.log.Error("path must include providerId and path resp. filename")
-			ctx.AbortWithStatus(http.StatusBadRequest)
-			return
-		}
-
 		req := thumbnailer.ThumbnailRequest{
 			ProviderID: providerId,
 			Path:       path,
@@ -137,7 +158,7 @@ func (h *previewHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 			Exact:      exact,
 		}
 		resp := thumbnailer.ThumbnailResponse{}
-		err := messaging.Request(h.nc, thumbnailer.ThumbnailRequestTopic, &req, &resp)
+		err = messaging.Request(h.nc, thumbnailer.ThumbnailRequestTopic, &req, &resp)
 
 		if err != nil {
 			h.log.Error("error retrieving thumbnail response", "error", err)

@@ -105,6 +105,9 @@ func (h *sharesHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 			return
 		}
 
+		owner := h.auth.GetUserId(ctx)
+		share.Owner = owner
+
 		req := shares.ShareCrudRequest{
 			Operation: "CREATE",
 			Share:     &share,
@@ -135,6 +138,8 @@ func (h *sharesHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 			return
 		}
 
+		owner := h.auth.GetUserId(ctx)
+		share.Owner = owner
 		share.ShareID = shareId
 
 		req := shares.ShareCrudRequest{
