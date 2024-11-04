@@ -31,6 +31,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/disintegration/imaging"
 	"github.com/nats-io/nats.go"
 	"go.uber.org/fx"
 	"umbasa.net/seraph/file-provider/fileprovider"
@@ -39,8 +40,6 @@ import (
 	_ "image/gif"
 	"image/jpeg"
 	_ "image/png"
-
-	"golang.org/x/image/draw"
 )
 
 const ThumbnailRequestTopic = "seraph.thumbnail.request"
@@ -221,7 +220,7 @@ func (t *Thumbnailer) handleRequest(req ThumbnailRequest) (resp ThumbnailRespons
 	}
 
 	start = time.Now()
-	sourceImage, _, err := image.Decode(file)
+	sourceImage, err := imaging.Decode(file, imaging.AutoOrientation(true))
 	if err != nil {
 		t.log.Error("error while decoding source image", "provider", req.ProviderID, "path", req.Path, "error", err)
 		resp.Error = "error while decoding source image" + err.Error()
@@ -231,11 +230,9 @@ func (t *Thumbnailer) handleRequest(req ThumbnailRequest) (resp ThumbnailRespons
 	t.log.Debug("decoded image", "time", elapsed)
 
 	start = time.Now()
-	dstWidth, dstHeight := calculateThumbnailSize(imageConfig.Width, imageConfig.Height, req.Width, req.Height)
-	dstImage := image.NewRGBA(image.Rect(0, 0, dstWidth, dstHeight))
-	draw.BiLinear.Scale(dstImage, dstImage.Bounds(), sourceImage, sourceImage.Bounds(), draw.Over, nil)
+	dstImage := imaging.Fit(sourceImage, req.Width, req.Height, imaging.Lanczos)
 	elapsed = time.Since(start)
-	t.log.Debug("scaled image", "width", dstWidth, "height", dstHeight, "time", elapsed)
+	t.log.Debug("scaled image", "width", dstImage.Bounds().Size().X, "height", dstImage.Bounds().Size().Y, "time", elapsed)
 
 	tmpFilePath := path.Join(t.path, tmpFolderName, randomFileName())
 	thumbPath := path.Join(t.path, thumbName)
@@ -269,29 +266,6 @@ func (t *Thumbnailer) handleRequest(req ThumbnailRequest) (resp ThumbnailRespons
 
 	resp.ProviderID = t.fileProviderId
 	resp.Path = thumbPath
-	return
-}
-
-func calculateThumbnailSize(srcW int, srcH int, dstW int, dstH int) (resW int, resH int) {
-	if srcW < dstW && srcH < dstH {
-		// source image is smaller than destination -> we don't scale the image up
-		return srcW, srcH
-	}
-
-	aspect := float64(srcW) / float64(srcH)
-
-	srcRect := image.Rect(0, 0, srcW, srcH)
-	dstRect := image.Rect(0, 0, dstW, dstH)
-	intersect := srcRect.Intersect(dstRect)
-
-	if srcW > intersect.Size().X {
-		resW = intersect.Size().X
-		resH = int(float64(resW) / aspect)
-	} else {
-		resH = intersect.Size().Y
-		resW = int(float64(resH) * aspect)
-	}
-
 	return
 }
 
