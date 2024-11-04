@@ -86,6 +86,7 @@ type Thumbnailer struct {
 	path             string
 	thumbnailStorage fileprovider.Client
 	sub              *nats.Subscription
+	requestChan      chan *nats.Msg
 }
 
 func NewThumbnailer(p Params, fileProviderId string, path string, thumbnailStorage fileprovider.Client) (Result, error) {
@@ -120,22 +121,16 @@ func (t *Thumbnailer) Start() error {
 	}
 	t.thumbnailStorage.Mkdir(context.TODO(), path.Join(t.path, tmpFolderName), 0777)
 
-	sub, err := t.nc.QueueSubscribe(ThumbnailRequestTopic, ThumbnailRequestTopic, func(msg *nats.Msg) {
-		req := ThumbnailRequest{}
-		req.Unmarshal(msg.Data)
+	t.requestChan = make(chan *nats.Msg, nats.DefaultSubPendingMsgsLimit)
 
-		resp := t.handleRequest(req)
-
-		data, _ := resp.Marshal()
-
-		msg.Respond(data)
-	})
-
+	sub, err := t.nc.ChanQueueSubscribe(ThumbnailRequestTopic, ThumbnailRequestTopic, t.requestChan)
 	if err != nil {
 		return err
 	}
-
 	t.sub = sub
+
+	go t.messageLoop()
+
 	return nil
 }
 
@@ -145,7 +140,33 @@ func (t *Thumbnailer) Stop() error {
 		err = t.sub.Unsubscribe()
 		t.sub = nil
 	}
+	if t.requestChan != nil {
+		close(t.requestChan)
+		t.requestChan = nil
+	}
 	return err
+}
+
+func (t *Thumbnailer) messageLoop() {
+	for {
+		msg, ok := <-t.requestChan
+		if !ok {
+			return
+		}
+
+		go t.handleMessage(msg)
+	}
+}
+
+func (t *Thumbnailer) handleMessage(msg *nats.Msg) {
+	req := ThumbnailRequest{}
+	req.Unmarshal(msg.Data)
+
+	resp := t.handleRequest(req)
+
+	data, _ := resp.Marshal()
+
+	msg.Respond(data)
 }
 
 func (t *Thumbnailer) handleRequest(req ThumbnailRequest) (resp ThumbnailResponse) {
