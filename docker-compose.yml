@@ -79,6 +79,20 @@ services:
       SERAPH_THUMBNAILER_PROVIDERID: thumbs
     deploy:
       replicas: 6
+
+  shares:
+    image: seraph
+    restart: always
+    command: 
+      - shares-provider
+    depends_on:
+      - nats
+      - mongodb
+    networks:
+      - internal
+    environment:
+      SERAPH_NATS_URL: nats://nats:4222
+      SERAPH_MONGO_URL: mongodb://mongodb:27017/
     
   file-provider-dir:
     image: seraph

@@ -19,6 +19,8 @@
 package main
 
 import (
+	"github.com/spf13/viper"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.uber.org/fx"
 	"umbasa.net/seraph/config"
 	"umbasa.net/seraph/logging"
@@ -34,6 +36,10 @@ func main() {
 		config.Module,
 		mongodb.Module,
 		fx.Provide(shares.NewMigrations),
+		fx.Decorate(func(client *mongo.Client, viper *viper.Viper) *mongo.Client {
+			viper.SetDefault("mongo.db", "seraph-shares")
+			return client
+		}),
 		fx.Invoke(func(params shares.Params, lc fx.Lifecycle) error {
 
 			result, err := shares.New(params)
