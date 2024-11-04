@@ -8,8 +8,8 @@ import (
 
 // ShareResolveRequest is a generated struct.
 type ShareResolveRequest struct {
-	ShareID string `avro:"shareId" bson:"shareId"`
-	Path    string `avro:"path" bson:"path"`
+	ShareID string `avro:"shareId" bson:"shareId" json:"shareId"`
+	Path    string `avro:"path" bson:"path" json:"path"`
 }
 
 var schemaShareResolveRequest = avro.MustParse(`{"name":"seraph.shares.ShareResolveRequest","type":"record","fields":[{"name":"shareId","type":"string"},{"name":"path","type":"string"}]}`)
@@ -31,9 +31,9 @@ func (o *ShareResolveRequest) Marshal() ([]byte, error) {
 
 // ShareResolveResponse is a generated struct.
 type ShareResolveResponse struct {
-	Error      string `avro:"error" bson:"error"`
-	ProviderID string `avro:"providerId" bson:"providerId"`
-	Path       string `avro:"path" bson:"path"`
+	Error      string `avro:"error" bson:"error" json:"error"`
+	ProviderID string `avro:"providerId" bson:"providerId" json:"providerId"`
+	Path       string `avro:"path" bson:"path" json:"path"`
 }
 
 var schemaShareResolveResponse = avro.MustParse(`{"name":"seraph.shares.ShareResolveResponse","type":"record","fields":[{"name":"error","type":"string"},{"name":"providerId","type":"string"},{"name":"path","type":"string"}]}`)
@@ -55,14 +55,14 @@ func (o *ShareResolveResponse) Marshal() ([]byte, error) {
 
 // Share is a generated struct.
 type Share struct {
-	ShareID     string `avro:"shareId" bson:"shareId"`
-	Owner       string `avro:"owner" bson:"owner"`
-	Title       string `avro:"title" bson:"title"`
-	Description string `avro:"description" bson:"description"`
-	ProviderID  string `avro:"providerId" bson:"providerId"`
-	Path        string `avro:"path" bson:"path"`
-	Recursive   bool   `avro:"recursive" bson:"recursive"`
-	IsDir       bool   `avro:"isDir" bson:"isDir"`
+	ShareID     string `avro:"shareId" bson:"shareId" json:"shareId"`
+	Owner       string `avro:"owner" bson:"owner" json:"owner"`
+	Title       string `avro:"title" bson:"title" json:"title"`
+	Description string `avro:"description" bson:"description" json:"description"`
+	ProviderID  string `avro:"providerId" bson:"providerId" json:"providerId"`
+	Path        string `avro:"path" bson:"path" json:"path"`
+	Recursive   bool   `avro:"recursive" bson:"recursive" json:"recursive"`
+	IsDir       bool   `avro:"isDir" bson:"isDir" json:"isDir"`
 }
 
 var schemaShare = avro.MustParse(`{"name":"seraph.shares.Share","type":"record","fields":[{"name":"shareId","type":"string"},{"name":"owner","type":"string"},{"name":"title","type":"string"},{"name":"description","type":"string"},{"name":"providerId","type":"string"},{"name":"path","type":"string"},{"name":"recursive","type":"boolean"},{"name":"isDir","type":"boolean"}]}`)
@@ -84,8 +84,8 @@ func (o *Share) Marshal() ([]byte, error) {
 
 // ShareCrudRequest is a generated struct.
 type ShareCrudRequest struct {
-	Operation string `avro:"operation" bson:"operation"`
-	Share     *Share `avro:"share" bson:"share"`
+	Operation string `avro:"operation" bson:"operation" json:"operation"`
+	Share     *Share `avro:"share" bson:"share" json:"share"`
 }
 
 var schemaShareCrudRequest = avro.MustParse(`{"name":"seraph.shares.ShareCrudRequest","type":"record","fields":[{"name":"operation","type":"string"},{"name":"share","type":["seraph.shares.Share","null"]}]}`)
@@ -107,8 +107,8 @@ func (o *ShareCrudRequest) Marshal() ([]byte, error) {
 
 // ShareCrudResponse is a generated struct.
 type ShareCrudResponse struct {
-	Error string `avro:"error" bson:"error"`
-	Share *Share `avro:"share" bson:"share"`
+	Error string `avro:"error" bson:"error" json:"error"`
+	Share *Share `avro:"share" bson:"share" json:"share"`
 }
 
 var schemaShareCrudResponse = avro.MustParse(`{"name":"seraph.shares.ShareCrudResponse","type":"record","fields":[{"name":"error","type":"string"},{"name":"share","type":["seraph.shares.Share","null"]}]}`)

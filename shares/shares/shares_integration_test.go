@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
@@ -16,6 +15,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.uber.org/fx/fxtest"
 	"umbasa.net/seraph/logging"
+	"umbasa.net/seraph/messaging"
 	"umbasa.net/seraph/mongodb"
 	"umbasa.net/seraph/shares/shares"
 )
@@ -133,7 +133,8 @@ func TestShareCrud(t *testing.T) {
 		},
 	}
 
-	res, err := exchangeCrud(nc, &req)
+	res := shares.ShareCrudResponse{}
+	err := messaging.Request(nc, shares.ShareCrudTopic, &req, &res)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +166,7 @@ func TestShareCrud(t *testing.T) {
 		},
 	}
 
-	res, err = exchangeCrud(nc, &req)
+	err = messaging.Request(nc, shares.ShareCrudTopic, &req, &res)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +189,7 @@ func TestShareCrud(t *testing.T) {
 		},
 	}
 
-	res, err = exchangeCrud(nc, &req)
+	err = messaging.Request(nc, shares.ShareCrudTopic, &req, &res)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +207,7 @@ func TestShareCrud(t *testing.T) {
 		},
 	}
 
-	res, err = exchangeCrud(nc, &req)
+	err = messaging.Request(nc, shares.ShareCrudTopic, &req, &res)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +232,7 @@ func TestShareCrud(t *testing.T) {
 		},
 	}
 
-	res, err = exchangeCrud(nc, &req)
+	err = messaging.Request(nc, shares.ShareCrudTopic, &req, &res)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,24 +247,9 @@ func TestShareCrud(t *testing.T) {
 		},
 	}
 
-	res, err = exchangeCrud(nc, &req)
+	err = messaging.Request(nc, shares.ShareCrudTopic, &req, &res)
 
 	assert.NotEqual(t, "", res.Error)
-}
-
-func exchangeCrud(nc *nats.Conn, req *shares.ShareCrudRequest) (*shares.ShareCrudResponse, error) {
-	data, _ := req.Marshal()
-
-	msg, err := nc.Request(shares.ShareCrudTopic, data, 10*time.Second)
-
-	if err != nil {
-		return nil, err
-	}
-
-	res := shares.ShareCrudResponse{}
-	res.Unmarshal(msg.Data)
-
-	return &res, nil
 }
 
 func TestShareResolve(t *testing.T) {
@@ -286,7 +272,7 @@ func TestShareResolve(t *testing.T) {
 		},
 	}
 
-	_, err := exchangeCrud(nc, &req)
+	err := messaging.RequestVoid(nc, shares.ShareCrudTopic, &req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,7 +283,8 @@ func TestShareResolve(t *testing.T) {
 		ShareID: "test",
 	}
 
-	res, err := exchangeResolve(nc, &resolveReq)
+	res := shares.ShareResolveResponse{}
+	err = messaging.Request(nc, shares.ShareResolveTopic, &resolveReq, &res)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,7 +300,7 @@ func TestShareResolve(t *testing.T) {
 		Path:    "file.txt",
 	}
 
-	res, err = exchangeResolve(nc, &resolveReq)
+	err = messaging.Request(nc, shares.ShareResolveTopic, &resolveReq, &res)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -329,7 +316,7 @@ func TestShareResolve(t *testing.T) {
 		Path:    "sub/file.txt",
 	}
 
-	res, err = exchangeResolve(nc, &resolveReq)
+	err = messaging.Request(nc, shares.ShareResolveTopic, &resolveReq, &res)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -352,7 +339,7 @@ func TestShareResolve(t *testing.T) {
 		},
 	}
 
-	_, err = exchangeCrud(nc, &req)
+	err = messaging.RequestVoid(nc, shares.ShareCrudTopic, &req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -364,7 +351,7 @@ func TestShareResolve(t *testing.T) {
 		Path:    "sub/file.txt",
 	}
 
-	res, err = exchangeResolve(nc, &resolveReq)
+	err = messaging.Request(nc, shares.ShareResolveTopic, &resolveReq, &res)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,19 +359,4 @@ func TestShareResolve(t *testing.T) {
 	assert.Equal(t, "", res.Error)
 	assert.Equal(t, "foo", res.ProviderID)
 	assert.Equal(t, "/bar/baz/sub/file.txt", res.Path)
-}
-
-func exchangeResolve(nc *nats.Conn, req *shares.ShareResolveRequest) (*shares.ShareResolveResponse, error) {
-	data, _ := req.Marshal()
-
-	msg, err := nc.Request(shares.ShareResolveTopic, data, 10*time.Second)
-
-	if err != nil {
-		return nil, err
-	}
-
-	res := shares.ShareResolveResponse{}
-	res.Unmarshal(msg.Data)
-
-	return &res, nil
 }

@@ -6,7 +6,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/nats-io/nats.go"
@@ -15,6 +14,7 @@ import (
 	"umbasa.net/seraph/api-gateway/gateway-handler"
 	"umbasa.net/seraph/file-provider/fileprovider"
 	"umbasa.net/seraph/logging"
+	"umbasa.net/seraph/messaging"
 	"umbasa.net/seraph/thumbnailer/thumbnailer"
 )
 
@@ -118,16 +118,14 @@ func (h *previewHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 			Height:     height,
 			Exact:      exact,
 		}
-		reqData, _ := req.Marshal()
-		respMsg, err := h.nc.Request(thumbnailer.ThumbnailRequestTopic, reqData, 30*time.Second)
+		resp := thumbnailer.ThumbnailResponse{}
+		err := messaging.Request(h.nc, thumbnailer.ThumbnailRequestTopic, &req, &resp)
+
 		if err != nil {
 			h.log.Error("error retrieving thumbnail response", "error", err)
 			ctx.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
-
-		resp := thumbnailer.ThumbnailResponse{}
-		resp.Unmarshal(respMsg.Data)
 
 		if resp.Error != "" {
 			h.log.Error("error retrieving thumbnail response", "error", resp.Error)

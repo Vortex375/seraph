@@ -8,7 +8,6 @@ import (
 	"path"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
@@ -16,6 +15,7 @@ import (
 	"golang.org/x/net/webdav"
 	"umbasa.net/seraph/file-provider/fileprovider"
 	"umbasa.net/seraph/logging"
+	"umbasa.net/seraph/messaging"
 )
 
 var natsServer *server.Server
@@ -106,20 +106,9 @@ func TestCreateThumbnail(t *testing.T) {
 		Width:      1024,
 		Height:     1024,
 	}
-
-	reqData, err := req.Marshal()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	respData, err := nc.Request(ThumbnailRequestTopic, reqData, 10*time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	resp := ThumbnailResponse{}
-	err = resp.Unmarshal(respData.Data)
 
+	err := messaging.Request(nc, ThumbnailRequestTopic, &req, &resp)
 	if err != nil {
 		t.Fatal(err)
 	}

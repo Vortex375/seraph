@@ -25,6 +25,7 @@ import (
 	"umbasa.net/seraph/api-gateway/auth"
 	"umbasa.net/seraph/api-gateway/gateway"
 	"umbasa.net/seraph/api-gateway/preview"
+	"umbasa.net/seraph/api-gateway/shares"
 	"umbasa.net/seraph/api-gateway/webdav"
 	"umbasa.net/seraph/config"
 	"umbasa.net/seraph/logging"
@@ -37,11 +38,12 @@ func main() {
 		logging.Module,
 		messaging.Module,
 		config.Module,
-		gateway.Module,
 		auth.Module,
+		mongodb.Module,
+		gateway.Module,
 		webdav.Module,
 		preview.Module,
-		mongodb.Module,
+		shares.Module,
 		fx.Provide(auth.NewMigrations),
 		fx.Decorate(func(client *mongo.Client, viper *viper.Viper) *mongo.Client {
 			viper.SetDefault("mongo.db", "seraph-auth")
