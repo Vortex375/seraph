@@ -16,4 +16,5 @@ use (
 	./shares
 	./taglib
 	./thumbnailer
+	./util
 )

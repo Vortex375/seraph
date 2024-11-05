@@ -21,8 +21,8 @@ package main
 import (
 	"errors"
 	"image/jpeg"
+	"runtime"
 
-	"github.com/nats-io/nats.go"
 	"github.com/spf13/viper"
 	"go.uber.org/fx"
 	"umbasa.net/seraph/config"
@@ -37,24 +37,24 @@ func main() {
 		logging.Module,
 		messaging.Module,
 		config.Module,
-		fx.Invoke(func(nc *nats.Conn, viper *viper.Viper, logger *logging.Logger, lc fx.Lifecycle) error {
+		fx.Invoke(func(params thumbnailer.Params, viper *viper.Viper, lc fx.Lifecycle) error {
+			viper.SetDefault("thumbnailer.jpegQuality", jpeg.DefaultQuality)
+			viper.SetDefault("thumbnailer.parallel", runtime.NumCPU())
+
 			providerId := viper.GetString("thumbnailer.providerId")
 			path := viper.GetString("thumbnailer.path")
-			viper.SetDefault("thumbnailer.jpegQuality", jpeg.DefaultQuality)
 			jpegQuality := viper.GetInt("thumbnailer.jpegQuality")
+			parallel := viper.GetInt("thumbnailer.parallel")
+
+			params.Options = &thumbnailer.Options{
+				JpegQuality: jpegQuality,
+				Parallel:    parallel,
+			}
 
 			if providerId == "" {
-				return errors.New("misisng 'thumbnailer.providerId' argument: the id of the file provider to use for thumbnail storage")
+				return errors.New("missing 'thumbnailer.providerId' argument: the id of the file provider to use for thumbnail storage")
 			}
-
-			params := thumbnailer.Params{
-				Nc:     nc,
-				Logger: logger,
-				Options: &thumbnailer.Options{
-					JpegQuality: jpegQuality,
-				},
-			}
-			client := fileprovider.NewFileProviderClient(providerId, nc, logger)
+			client := fileprovider.NewFileProviderClient(providerId, params.Nc, params.Logger)
 
 			result, err := thumbnailer.NewThumbnailer(params, providerId, path, client)
 			if err != nil {

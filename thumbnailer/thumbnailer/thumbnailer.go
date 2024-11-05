@@ -28,6 +28,7 @@ import (
 	"math/rand"
 	"os"
 	"path"
+	"runtime"
 	"strconv"
 	"time"
 
@@ -36,6 +37,7 @@ import (
 	"go.uber.org/fx"
 	"umbasa.net/seraph/file-provider/fileprovider"
 	"umbasa.net/seraph/logging"
+	"umbasa.net/seraph/util"
 
 	_ "image/gif"
 	"image/jpeg"
@@ -69,6 +71,7 @@ type Params struct {
 
 type Options struct {
 	JpegQuality int
+	Parallel    int
 }
 
 type Result struct {
@@ -87,6 +90,7 @@ type Thumbnailer struct {
 	thumbnailStorage fileprovider.Client
 	sub              *nats.Subscription
 	requestChan      chan *nats.Msg
+	limiter          util.Limiter
 }
 
 func NewThumbnailer(p Params, fileProviderId string, path string, thumbnailStorage fileprovider.Client) (Result, error) {
@@ -94,6 +98,7 @@ func NewThumbnailer(p Params, fileProviderId string, path string, thumbnailStora
 	if p.Options == nil {
 		options = &Options{
 			JpegQuality: jpeg.DefaultQuality,
+			Parallel:    runtime.NumCPU(),
 		}
 	} else {
 		options = p.Options
@@ -121,6 +126,7 @@ func (t *Thumbnailer) Start() error {
 	}
 	t.thumbnailStorage.Mkdir(context.TODO(), path.Join(t.path, tmpFolderName), 0777)
 
+	t.limiter = util.NewLimiter(t.options.Parallel)
 	t.requestChan = make(chan *nats.Msg, nats.DefaultSubPendingMsgsLimit)
 
 	sub, err := t.nc.ChanQueueSubscribe(ThumbnailRequestTopic, ThumbnailRequestTopic, t.requestChan)
@@ -143,6 +149,10 @@ func (t *Thumbnailer) Stop() error {
 	if t.requestChan != nil {
 		close(t.requestChan)
 		t.requestChan = nil
+	}
+	if t.limiter != nil {
+		t.limiter.CancelAll()
+		t.limiter = nil
 	}
 	return err
 }
@@ -206,6 +216,12 @@ func (t *Thumbnailer) handleRequest(req ThumbnailRequest) (resp ThumbnailRespons
 	}
 
 	// thumbnail needs to be created
+	// limit concurrency to avoid excessive memory usage
+	if !t.limiter.Begin() {
+		resp.Error = "operation cancelled"
+		return
+	}
+	defer t.limiter.End()
 
 	fs := fileprovider.NewFileProviderClient(req.ProviderID, t.nc, t.logging)
 
