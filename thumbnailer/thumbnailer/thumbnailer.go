@@ -19,6 +19,7 @@
 package thumbnailer
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -257,7 +258,9 @@ func (t *Thumbnailer) handleRequest(req ThumbnailRequest) (resp ThumbnailRespons
 	}
 
 	start = time.Now()
-	sourceImage, err := imaging.Decode(file, imaging.AutoOrientation(true))
+	// use large buffer size for improved performance (default is only 4096 bytes)
+	reader := bufio.NewReaderSize(file, 512*1024)
+	sourceImage, err := imaging.Decode(reader, imaging.AutoOrientation(true))
 	if err != nil {
 		t.log.Error("error while decoding source image", "provider", req.ProviderID, "path", req.Path, "error", err)
 		resp.Error = "error while decoding source image" + err.Error()
