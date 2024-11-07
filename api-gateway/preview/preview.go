@@ -35,6 +35,7 @@ import (
 	"umbasa.net/seraph/messaging"
 	"umbasa.net/seraph/shares/shares"
 	"umbasa.net/seraph/thumbnailer/thumbnailer"
+	"umbasa.net/seraph/util"
 )
 
 var Module = fx.Module("preview",
@@ -188,7 +189,10 @@ func (h *previewHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 			return
 		}
 
-		ctx.DataFromReader(http.StatusOK, stat.Size(), thumbnailer.ContentType, file, map[string]string{
+		fastReader := &util.FastReader{
+			Reader: file,
+		}
+		ctx.DataFromReader(http.StatusOK, stat.Size(), thumbnailer.ContentType, fastReader, map[string]string{
 			"Cache-Control": "max-age=604800",
 		})
 	})
