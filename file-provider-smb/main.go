@@ -22,7 +22,6 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/nats-io/nats.go"
 	"github.com/spf13/viper"
 	"go.uber.org/fx"
 	"umbasa.net/seraph/config"
@@ -38,7 +37,7 @@ func main() {
 		logging.Module,
 		messaging.Module,
 		config.Module,
-		fx.Invoke(func(nc *nats.Conn, viper *viper.Viper, logger *logging.Logger, lc fx.Lifecycle) error {
+		fx.Invoke(func(params fileprovider.ServerParams, viper *viper.Viper, logger *logging.Logger, lc fx.Lifecycle) error {
 			id := viper.GetString("fileprovider.id")
 			addr := viper.GetString("fileprovider.addr")
 			username := viper.GetString("fileprovider.username")
@@ -68,7 +67,7 @@ func main() {
 			fs := smbprovider.NewSmbFileSystem(logger, addr, sharename, username, password, pathPrefix)
 
 			lc.Append(fx.StartHook(func() {
-				fileprovider.NewFileProviderServer(id, nc, fs, readOnly, logger)
+				fileprovider.NewFileProviderServer(params, id, fs, readOnly)
 			}))
 
 			lc.Append(fx.StopHook(func() {

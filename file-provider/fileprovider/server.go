@@ -30,6 +30,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
+	"go.uber.org/fx"
 	"golang.org/x/net/webdav"
 	"umbasa.net/seraph/events"
 	"umbasa.net/seraph/logging"
@@ -37,6 +39,14 @@ import (
 
 type FileProviderServer struct {
 	ProviderId string
+}
+
+type ServerParams struct {
+	fx.In
+
+	Nc     *nats.Conn
+	Js     jetstream.JetStream
+	Logger *logging.Logger
 }
 
 type fileHolder struct {
@@ -71,18 +81,30 @@ func toIoError(err error) IoError {
 	return IoError{Error: err.Error()}
 }
 
-func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.FileSystem, readOnly bool, logger *logging.Logger) *FileProviderServer {
-	log := logger.GetLogger("fileprovider." + providerId)
+func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.FileSystem, readOnly bool) *FileProviderServer {
+	log := p.Logger.GetLogger("fileprovider." + providerId)
 	provider := FileProviderServer{
 		ProviderId: providerId,
 	}
 	msgApi := NewMessageApi()
 
+	if p.Js != nil {
+		cfg := jetstream.StreamConfig{
+			Name:     events.FileInfoStream,
+			Subjects: []string{events.FileProviderFileInfoTopic},
+		}
+
+		_, err := p.Js.CreateOrUpdateStream(context.Background(), cfg)
+		if err != nil {
+			log.Error("Error while creating file info stream", "error", err)
+		}
+	}
+
 	//TODO: close files after timeout
 	openFiles := make(map[uuid.UUID]fileHolder)
 
 	providerTopic := FileProviderTopicPrefix + providerId
-	nc.QueueSubscribe(providerTopic, providerTopic, func(msg *nats.Msg) {
+	p.Nc.QueueSubscribe(providerTopic, providerTopic, func(msg *nats.Msg) {
 		context := context.TODO()
 		request := FileProviderRequest{}
 		msgApi.Unmarshal(FileProviderRequestSchema, msg.Data, &request)
@@ -192,8 +214,8 @@ func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.F
 					Mode:       int64(fileInfo.Mode()),
 					ModTime:    fileInfo.ModTime().Unix(),
 				}
-				fileInfoEventData, _ := events.Api.Marshal(events.Schema, fileInfoEvent)
-				nc.Publish(fmt.Sprintf(events.FileProviderFileInfoTopicPattern, providerId), fileInfoEventData)
+				fileInfoEventData, _ := fileInfoEvent.Marshal()
+				p.Nc.Publish(fmt.Sprintf(events.FileProviderFileInfoTopicPattern, providerId), fileInfoEventData)
 
 			} else {
 				response.Error = toIoError(err)
@@ -219,7 +241,7 @@ func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.F
 			if err == nil {
 				fileId := uuid.New()
 				fileTopic := FileProviderFileTopicPrefix + fileId.String()
-				subscription, _ := nc.Subscribe(fileTopic, func(fileMsg *nats.Msg) {
+				subscription, _ := p.Nc.Subscribe(fileTopic, func(fileMsg *nats.Msg) {
 					fileRequest := FileProviderFileRequest{}
 					err = msgApi.Unmarshal(FileProviderFileRequestSchema, fileMsg.Data, &fileRequest)
 					if err != nil {
@@ -328,8 +350,8 @@ func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.F
 								Path:       ensureAbsolutePath(req.Name),
 								IsDir:      true,
 							}
-							fileInfoEventData, _ := events.Api.Marshal(events.Schema, fileInfoEvent)
-							nc.Publish(fmt.Sprintf(events.FileProviderFileInfoTopicPattern, providerId), fileInfoEventData)
+							fileInfoEventData, _ := fileInfoEvent.Marshal()
+							p.Nc.Publish(fmt.Sprintf(events.FileProviderFileInfoTopicPattern, providerId), fileInfoEventData)
 
 							for i, fileInfo := range fileInfos {
 								fileInfoResponse := FileInfoResponse{
@@ -345,7 +367,7 @@ func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.F
 									err = e
 									break
 								}
-								e = nc.Publish(FileProviderReaddirTopicPrefix+fileRequest.Uid, fileInfoResponseData)
+								e = p.Nc.Publish(FileProviderReaddirTopicPrefix+fileRequest.Uid, fileInfoResponseData)
 								if e != nil {
 									err = e
 									break
@@ -364,8 +386,8 @@ func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.F
 									Mode:       int64(fileInfo.Mode()),
 									ModTime:    fileInfo.ModTime().Unix(),
 								}
-								fileInfoEventData, _ := events.Api.Marshal(events.Schema, fileInfoEvent)
-								nc.Publish(fmt.Sprintf(events.FileProviderFileInfoTopicPattern, providerId), fileInfoEventData)
+								fileInfoEventData, _ := fileInfoEvent.Marshal()
+								p.Nc.Publish(fmt.Sprintf(events.FileProviderFileInfoTopicPattern, providerId), fileInfoEventData)
 							}
 						}
 						var fileResponseData []byte
@@ -384,7 +406,7 @@ func NewFileProviderServer(providerId string, nc *nats.Conn, fileSystem webdav.F
 								},
 							})
 						}
-						nc.Flush()
+						p.Nc.Flush()
 						fileMsg.Respond(fileResponseData)
 
 					default:

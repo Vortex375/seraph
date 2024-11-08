@@ -77,7 +77,12 @@ func setup() {
 	logger := logging.New(logging.Params{})
 	logger.SetLevel(slog.LevelDebug)
 
-	fileprovider.NewFileProviderServer("testinput", nc, webdav.Dir("."), true, logger)
+	params := fileprovider.ServerParams{
+		Nc:     nc,
+		Logger: logger,
+	}
+
+	fileprovider.NewFileProviderServer(params, "testinput", webdav.Dir("."), true)
 }
 
 func shutdown() {

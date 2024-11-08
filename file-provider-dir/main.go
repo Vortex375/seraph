@@ -21,7 +21,6 @@ package main
 import (
 	"errors"
 
-	"github.com/nats-io/nats.go"
 	"github.com/spf13/viper"
 	"go.uber.org/fx"
 	"golang.org/x/net/webdav"
@@ -37,7 +36,7 @@ func main() {
 		logging.Module,
 		messaging.Module,
 		config.Module,
-		fx.Invoke(func(nc *nats.Conn, viper *viper.Viper, logger *logging.Logger, lc fx.Lifecycle) error {
+		fx.Invoke(func(params fileprovider.ServerParams, viper *viper.Viper, lc fx.Lifecycle) error {
 			id := viper.GetString("fileprovider.id")
 			dir := viper.GetString("fileprovider.dir")
 			readOnly := viper.GetBool("fileprovider.readOnly")
@@ -53,7 +52,7 @@ func main() {
 			fs := webdav.Dir(dir)
 
 			lc.Append(fx.StartHook(func() {
-				fileprovider.NewFileProviderServer(id, nc, fs, readOnly, logger)
+				fileprovider.NewFileProviderServer(params, id, fs, readOnly)
 			}))
 
 			return nil

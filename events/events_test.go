@@ -23,9 +23,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hamba/avro/v2"
 	"github.com/stretchr/testify/assert"
 	"umbasa.net/seraph/events"
+	"umbasa.net/seraph/messaging"
 )
 
 func TestFileProviderEvent(t *testing.T) {
@@ -42,17 +42,17 @@ func TestFileProviderEvent(t *testing.T) {
 		IsDir:      true,
 	}
 
-	doTest(t, events.Api, events.Schema, input, events.FileInfoEvent{})
+	doTest(t, &input, &events.FileInfoEvent{})
 }
 
-func doTest(t *testing.T, api avro.API, schema avro.Schema, input any, output any) {
-	data, err := api.Marshal(schema, input)
+func doTest(t *testing.T, input messaging.RequestPayload, output messaging.ResponsePayload) {
+	data, err := input.Marshal()
 
 	if err != nil {
 		t.Error(err)
 	}
 
-	err = api.Unmarshal(schema, data, &output)
+	err = output.Unmarshal(data)
 
 	if err != nil {
 		t.Error(err)

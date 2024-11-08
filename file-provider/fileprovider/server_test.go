@@ -173,7 +173,13 @@ func getServer(t *testing.T, fs webdav.FileSystem, readOnly bool) (*FileProvider
 	logger := logging.New(logging.Params{})
 	logger.SetLevel(slog.LevelDebug)
 
-	return NewFileProviderServer("testprovider", nc, fs, readOnly, logger), nc
+	params := ServerParams{
+		Logger: logger,
+		Nc:     nc,
+		Js:     nil,
+	}
+
+	return NewFileProviderServer(params, "testprovider", fs, readOnly), nc
 }
 
 func TestMkdir(t *testing.T) {

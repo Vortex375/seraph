@@ -18,8 +18,10 @@
 
 package events
 
+const FileInfoStream = "SERAPH_FILE_INFO"
 const FileProviderFileInfoTopic = "seraph.fileprovider.*.fileinfo"
 const FileProviderFileInfoTopicPattern = "seraph.fileprovider.%s.fileinfo"
 
+const FileChangedStream = "SERAPH_FILE_CHANGED"
 const FileChangedTopic = "seraph.file.*.changed"
 const FileChangedTopicPattern = "seraph.file.%s.changed"

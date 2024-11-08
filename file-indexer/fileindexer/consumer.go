@@ -47,12 +47,21 @@ func NewConsumer(p Params) (Consumer, error) {
 	log := p.Logger.GetLogger("fileindexer")
 
 	cfg := jetstream.StreamConfig{
-		Name:     "SERAPH_FILE_INFO",
+		Name:     events.FileChangedStream,
+		Subjects: []string{events.FileChangedTopic},
+	}
+
+	_, err := p.Js.CreateOrUpdateStream(context.Background(), cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg = jetstream.StreamConfig{
+		Name:     events.FileInfoStream,
 		Subjects: []string{events.FileProviderFileInfoTopic},
 	}
 
 	stream, err := p.Js.CreateOrUpdateStream(context.Background(), cfg)
-
 	if err != nil {
 		return nil, err
 	}
@@ -74,18 +83,11 @@ func NewConsumer(p Params) (Consumer, error) {
 
 func (c *consumer) Start() error {
 	ctx, err := c.consumer.Consume(func(msg jetstream.Msg) {
-		var rawEvent any
+		fileInfoEvent := events.FileInfoEvent{}
 
-		err := events.Api.Unmarshal(events.Schema, msg.Data(), &rawEvent)
+		err := fileInfoEvent.Unmarshal(msg.Data())
 		if err != nil {
 			c.log.Error("failed to deserialize message", "error", err)
-			return
-		}
-
-		fileInfoEvent, ok := rawEvent.(events.FileInfoEvent)
-		if !ok {
-			c.log.Error("unexpected event type", "event", rawEvent)
-			msg.TermWithReason("unexpected event type")
 			return
 		}
 
@@ -217,7 +219,7 @@ func (c *consumer) publishChange(file *File, change string) error {
 		IsDir:      file.IsDir,
 	}
 
-	data, err := events.Api.Marshal(events.Schema, ev)
+	data, err := ev.Marshal()
 
 	if err != nil {
 		return err
