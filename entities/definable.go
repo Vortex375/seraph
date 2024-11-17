@@ -18,10 +18,27 @@
 
 package entities
 
+import (
+	"errors"
+	"reflect"
+)
+
 type Definable[T any] struct {
 	Value   T
 	Defined bool
 }
+
+type definableGetter interface {
+	getInternal() (any, bool)
+	getType() reflect.Type
+}
+
+type definableSetter interface {
+	setInternal(any, bool)
+}
+
+var _ definableGetter = Definable[any]{}
+var _ definableSetter = &Definable[any]{}
 
 func (d *Definable[T]) Set(value T) {
 	d.Value = value
@@ -46,6 +63,24 @@ func (d Definable[T]) getInternal() (any, bool) {
 	return d.Value, d.Defined
 }
 
-type definableInternal interface {
-	getInternal() (any, bool)
+func (d Definable[T]) getType() reflect.Type {
+	var t [0]T
+	return reflect.TypeOf(t).Elem()
+}
+
+func (d *Definable[T]) setInternal(v any, defined bool) {
+	if converted, ok := v.(T); ok {
+		d.Value = converted
+	} else {
+		valueVal := reflect.ValueOf(v)
+		defTyp := d.getType()
+
+		if valueVal.CanConvert(defTyp) {
+			converted = valueVal.Convert(defTyp).Interface().(T)
+			d.Value = converted
+		} else {
+			panic(errors.New("unable to convert " + valueVal.Type().String() + " to " + defTyp.String()))
+		}
+	}
+	d.Defined = defined
 }

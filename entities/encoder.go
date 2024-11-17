@@ -63,7 +63,7 @@ func (e *PrototypeEncoder) EncodeValue(ctx bsoncodec.EncodeContext, vw bsonrw.Va
 		fieldIsNil := safeIsNil(fieldValue)
 		fieldValueInterface := fieldValue.Interface()
 
-		if def, ok := fieldValueInterface.(definableInternal); ok {
+		if def, ok := fieldValueInterface.(definableGetter); ok {
 			if fieldIsNil {
 				// Definables are always "omitempty"
 				continue
@@ -96,7 +96,7 @@ type DefinableEncoder struct{}
 
 func (e *DefinableEncoder) EncodeValue(ctx bsoncodec.EncodeContext, vw bsonrw.ValueWriter, val reflect.Value) error {
 
-	valDefinable, ok := val.Interface().(definableInternal)
+	valDefinable, ok := val.Interface().(definableGetter)
 	if !ok {
 		return errors.New("value is not Definable")
 	}
@@ -111,7 +111,7 @@ func (e *DefinableEncoder) EncodeValue(ctx bsoncodec.EncodeContext, vw bsonrw.Va
 }
 
 func RegisterEncoders(r *bsoncodec.Registry) {
-	var d definableInternal
+	var d definableGetter
 	definableType := reflect.TypeOf(&d).Elem()
 	r.RegisterInterfaceEncoder(definableType, &DefinableEncoder{})
 
