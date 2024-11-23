@@ -28,6 +28,7 @@ import (
 	"go.uber.org/fx"
 	"umbasa.net/seraph/api-gateway/auth"
 	"umbasa.net/seraph/api-gateway/gateway-handler"
+	"umbasa.net/seraph/entities"
 	"umbasa.net/seraph/logging"
 	"umbasa.net/seraph/messaging"
 	"umbasa.net/seraph/shares/shares"
@@ -77,16 +78,17 @@ func (h *sharesHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 
 		req := shares.ShareCrudRequest{
 			Operation: "READ",
-			Share: &shares.Share{
-				ShareID: shareId,
-			},
+			Share:     entities.MakePrototype(&shares.SharePrototype{}),
 		}
+		req.Share.ShareID.Set(shareId)
+
 		res := shares.ShareCrudResponse{}
-		err := messaging.Request(h.nc, shares.ShareCrudTopic, &req, &res)
+		err := messaging.Request(h.nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
 		if err != nil {
 			ctx.AbortWithError(http.StatusInternalServerError, err)
 			return
 		}
+
 		if res.Error != "" {
 			//TODO: make better
 			ctx.AbortWithError(http.StatusInternalServerError, errors.New(res.Error))
@@ -97,8 +99,8 @@ func (h *sharesHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 	})
 
 	apiGroup.POST("shares", func(ctx *gin.Context) {
-		share := shares.Share{}
-		err := ctx.BindJSON(&share)
+		share := entities.MakePrototype(&shares.SharePrototype{})
+		err := ctx.BindJSON(share)
 
 		if err != nil {
 			h.log.Error("While creating share: error reading request", "error", err)
@@ -106,18 +108,19 @@ func (h *sharesHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 		}
 
 		owner := h.auth.GetUserId(ctx)
-		share.Owner = owner
+		share.Owner.Set(owner)
 
 		req := shares.ShareCrudRequest{
 			Operation: "CREATE",
-			Share:     &share,
+			Share:     share,
 		}
 		res := shares.ShareCrudResponse{}
-		err = messaging.Request(h.nc, shares.ShareCrudTopic, &req, &res)
+		err = messaging.Request(h.nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
 		if err != nil {
 			ctx.AbortWithError(http.StatusInternalServerError, err)
 			return
 		}
+
 		if res.Error != "" {
 			//TODO: make better
 			ctx.AbortWithError(http.StatusInternalServerError, errors.New(res.Error))
@@ -130,8 +133,8 @@ func (h *sharesHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 	apiGroup.PUT("shares/:shareId", func(ctx *gin.Context) {
 		shareId := ctx.Param("shareId")
 
-		share := shares.Share{}
-		err := ctx.BindJSON(&share)
+		share := entities.MakePrototype(&shares.SharePrototype{})
+		err := ctx.BindJSON(share)
 
 		if err != nil {
 			h.log.Error("While creating share: error reading request", "error", err)
@@ -139,19 +142,20 @@ func (h *sharesHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 		}
 
 		owner := h.auth.GetUserId(ctx)
-		share.Owner = owner
-		share.ShareID = shareId
+		share.Owner.Set(owner)
+		share.ShareID.Set(shareId)
 
 		req := shares.ShareCrudRequest{
 			Operation: "UPDATE",
-			Share:     &share,
+			Share:     share,
 		}
 		res := shares.ShareCrudResponse{}
-		err = messaging.Request(h.nc, shares.ShareCrudTopic, &req, &res)
+		err = messaging.Request(h.nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
 		if err != nil {
 			ctx.AbortWithError(http.StatusInternalServerError, err)
 			return
 		}
+
 		if res.Error != "" {
 			//TODO: make better
 			ctx.AbortWithError(http.StatusInternalServerError, errors.New(res.Error))
@@ -163,20 +167,20 @@ func (h *sharesHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 
 	apiGroup.DELETE("shares/:shareId", func(ctx *gin.Context) {
 		shareId := ctx.Param("shareId")
-		share := shares.Share{
-			ShareID: shareId,
-		}
+		share := entities.MakePrototype(&shares.SharePrototype{})
+		share.ShareID.Set(shareId)
 
 		req := shares.ShareCrudRequest{
 			Operation: "DELETE",
-			Share:     &share,
+			Share:     share,
 		}
 		res := shares.ShareCrudResponse{}
-		err := messaging.Request(h.nc, shares.ShareCrudTopic, &req, &res)
+		err := messaging.Request(h.nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
 		if err != nil {
 			ctx.AbortWithError(http.StatusInternalServerError, err)
 			return
 		}
+
 		if res.Error != "" {
 			//TODO: make better
 			ctx.AbortWithError(http.StatusInternalServerError, errors.New(res.Error))

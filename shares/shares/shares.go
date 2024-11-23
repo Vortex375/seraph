@@ -20,6 +20,7 @@ package shares
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -31,6 +32,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.uber.org/fx"
+	"umbasa.net/seraph/entities"
 	"umbasa.net/seraph/logging"
 )
 
@@ -73,11 +75,11 @@ func New(p Params) (Result, error) {
 func (s *SharesProvider) Start() error {
 	sub, err := s.nc.QueueSubscribe(ShareResolveTopic, ShareResolveTopic, func(msg *nats.Msg) {
 		req := ShareResolveRequest{}
-		req.Unmarshal(msg.Data)
+		json.Unmarshal(msg.Data, &req)
 
 		resp := s.resolveShare(&req)
 
-		data, _ := resp.Marshal()
+		data, _ := json.Marshal(resp)
 		msg.Respond(data)
 	})
 	if err != nil {
@@ -85,12 +87,14 @@ func (s *SharesProvider) Start() error {
 	}
 	s.resolveSub = sub
 	sub, err = s.nc.QueueSubscribe(ShareCrudTopic, ShareCrudTopic, func(msg *nats.Msg) {
-		req := ShareCrudRequest{}
-		req.Unmarshal(msg.Data)
+		req := ShareCrudRequest{
+			Share: entities.MakePrototype(&SharePrototype{}),
+		}
+		json.Unmarshal(msg.Data, &req)
 
 		resp := s.handleCrud(&req)
 
-		data, _ := resp.Marshal()
+		data, _ := json.Marshal(resp)
 		msg.Respond(data)
 	})
 	if err != nil {
@@ -163,15 +167,12 @@ func (s *SharesProvider) handleCrud(req *ShareCrudRequest) *ShareCrudResponse {
 	switch req.Operation {
 
 	case "READ":
-		if req.Share == nil {
+		if !req.Share.ShareID.IsDefined() {
 			return &ShareCrudResponse{
 				Error: "shareID is required for READ operation",
 			}
 		}
-
-		filter := SharePrototype{}
-		filter.ShareID.Set(req.Share.ShareID)
-		result := s.shares.FindOne(context.Background(), filter)
+		result := s.shares.FindOne(context.Background(), req.Share)
 		if result.Err() != nil {
 			return &ShareCrudResponse{
 				Error: result.Err().Error(),
@@ -186,21 +187,13 @@ func (s *SharesProvider) handleCrud(req *ShareCrudRequest) *ShareCrudResponse {
 		}
 
 	case "CREATE":
-		if req.Share == nil {
-			return &ShareCrudResponse{
-				Error: "share is required for CREATE operation",
-			}
-		}
 
-		if req.Share.ShareID == "" {
+		if !req.Share.ShareID.IsDefined() {
 			return &ShareCrudResponse{
 				Error: "shareID is required for CREATE operation",
 			}
 		}
-
-		proto := SharePrototype{}
-		req.Share.ToPrototype(&proto)
-		_, err := s.shares.InsertOne(context.Background(), proto)
+		insertRes, err := s.shares.InsertOne(context.Background(), req.Share)
 
 		if err != nil {
 			return &ShareCrudResponse{
@@ -208,28 +201,26 @@ func (s *SharesProvider) handleCrud(req *ShareCrudRequest) *ShareCrudResponse {
 			}
 		}
 
+		findRes := s.shares.FindOne(context.Background(), bson.M{"_id": insertRes.InsertedID})
+
+		share := Share{}
+		findRes.Decode(&share)
+
 		return &ShareCrudResponse{
-			Share: req.Share,
+			Share: &share,
 		}
 
 	case "UPDATE":
-		if req.Share == nil {
-			return &ShareCrudResponse{
-				Error: "share is required for UPDATE operation",
-			}
-		}
 
-		if req.Share.ShareID == "" {
+		if !req.Share.ShareID.IsDefined() {
 			return &ShareCrudResponse{
 				Error: "shareID is required for UPDATE operation",
 			}
 		}
 
 		filter := SharePrototype{}
-		filter.ShareID.Set(req.Share.ShareID)
-		proto := SharePrototype{}
-		req.Share.ToPrototype(&proto)
-		result := s.shares.FindOneAndUpdate(context.Background(), filter, bson.M{"$set": proto},
+		filter.ShareID.Set(req.Share.ShareID.Get())
+		result := s.shares.FindOneAndUpdate(context.Background(), filter, bson.M{"$set": req.Share},
 			options.FindOneAndUpdate().SetReturnDocument(options.After))
 		if result.Err() != nil {
 			return &ShareCrudResponse{
@@ -246,22 +237,13 @@ func (s *SharesProvider) handleCrud(req *ShareCrudRequest) *ShareCrudResponse {
 
 	case "DELETE":
 
-		if req.Share == nil {
-			return &ShareCrudResponse{
-				Error: "share is required for UPDATE operation",
-			}
-		}
-
-		if req.Share.ShareID == "" {
+		if !req.Share.ShareID.IsDefined() {
 			return &ShareCrudResponse{
 				Error: "shareID is required for UPDATE operation",
 			}
 		}
 
-		filter := SharePrototype{}
-		filter.ShareID.Set(req.Share.ShareID)
-
-		result := s.shares.FindOneAndDelete(context.Background(), filter)
+		result := s.shares.FindOneAndDelete(context.Background(), req.Share)
 		if result.Err() != nil {
 			return &ShareCrudResponse{
 				Error: result.Err().Error(),

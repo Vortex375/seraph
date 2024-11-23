@@ -19,6 +19,7 @@
 package messaging
 
 import (
+	"encoding/json"
 	"reflect"
 	"time"
 
@@ -33,6 +34,22 @@ type RequestPayload interface {
 
 type ResponsePayload interface {
 	Unmarshal(b []byte) error
+}
+
+type JsonPayload struct {
+	v any
+}
+
+func (p *JsonPayload) Marshal() ([]byte, error) {
+	return json.Marshal(p.v)
+}
+
+func (p *JsonPayload) Unmarshal(b []byte) error {
+	return json.Unmarshal(b, p.v)
+}
+
+func Json(v any) *JsonPayload {
+	return &JsonPayload{v}
 }
 
 func Request[Req RequestPayload, Res ResponsePayload](nc *nats.Conn, topic string, req Req, res Res) error {

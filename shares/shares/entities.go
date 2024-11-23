@@ -36,10 +36,16 @@ type SharePrototype struct {
 	IsDir       entities.Definable[bool]   `bson:"isDir"`
 }
 
-type ShareEntity struct {
-	Share
-
-	Id primitive.ObjectID `bson:"_id"`
+type Share struct {
+	Id          primitive.ObjectID `bson:"_id"`
+	ShareID     string             `bson:"shareId" json:"shareId"`
+	Owner       string             `bson:"owner" json:"owner"`
+	Title       string             `bson:"title" json:"title"`
+	Description string             `bson:"description" json:"description"`
+	ProviderID  string             `bson:"providerId" json:"providerId"`
+	Path        string             `bson:"path" json:"path"`
+	Recursive   bool               `bson:"recursive" json:"recursive"`
+	IsDir       bool               `bson:"isDir" json:"isDir"`
 }
 
 func (s *Share) ToPrototype(proto *SharePrototype) {

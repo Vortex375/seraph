@@ -32,6 +32,7 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.uber.org/fx/fxtest"
+	"umbasa.net/seraph/entities"
 	"umbasa.net/seraph/logging"
 	"umbasa.net/seraph/messaging"
 	"umbasa.net/seraph/mongodb"
@@ -139,20 +140,20 @@ func TestShareCrud(t *testing.T) {
 
 	req := shares.ShareCrudRequest{
 		Operation: "CREATE",
-		Share: &shares.Share{
-			ShareID:     "test",
-			Owner:       "user",
-			Title:       "some title",
-			Description: "some description",
-			ProviderID:  "foo",
-			Path:        "/bar/baz",
-			Recursive:   true,
-			IsDir:       true,
-		},
+		Share:     entities.MakePrototype(&shares.SharePrototype{}),
 	}
 
+	req.Share.ShareID.Set("test")
+	req.Share.Owner.Set("user")
+	req.Share.Title.Set("some title")
+	req.Share.Description.Set("some description")
+	req.Share.ProviderID.Set("foo")
+	req.Share.Path.Set("/bar/baz")
+	req.Share.Recursive.Set(true)
+	req.Share.IsDir.Set(true)
+
 	res := shares.ShareCrudResponse{}
-	err := messaging.Request(nc, shares.ShareCrudTopic, &req, &res)
+	err := messaging.Request(nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,19 +173,19 @@ func TestShareCrud(t *testing.T) {
 
 	req = shares.ShareCrudRequest{
 		Operation: "CREATE",
-		Share: &shares.Share{
-			ShareID:     "test",
-			Owner:       "user",
-			Title:       "some title",
-			Description: "some description",
-			ProviderID:  "foo",
-			Path:        "/bar/baz",
-			Recursive:   true,
-			IsDir:       true,
-		},
+		Share:     entities.MakePrototype(&shares.SharePrototype{}),
 	}
 
-	err = messaging.Request(nc, shares.ShareCrudTopic, &req, &res)
+	req.Share.ShareID.Set("test")
+	req.Share.Owner.Set("user")
+	req.Share.Title.Set("some title")
+	req.Share.Description.Set("some description")
+	req.Share.ProviderID.Set("foo")
+	req.Share.Path.Set("/bar/baz")
+	req.Share.Recursive.Set(true)
+	req.Share.IsDir.Set(true)
+
+	err = messaging.Request(nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,37 +196,38 @@ func TestShareCrud(t *testing.T) {
 
 	req = shares.ShareCrudRequest{
 		Operation: "UPDATE",
-		Share: &shares.Share{
-			ShareID:     "test",
-			Owner:       "user",
-			Title:       "some other title",
-			Description: "some other description",
-			ProviderID:  "foo",
-			Path:        "/bar/baz",
-			Recursive:   true,
-			IsDir:       true,
-		},
+		Share:     entities.MakePrototype(&shares.SharePrototype{}),
 	}
 
-	err = messaging.Request(nc, shares.ShareCrudTopic, &req, &res)
+	req.Share.ShareID.Set("test")
+	req.Share.Title.Set("some other title")
+	req.Share.Description.Set("some other description")
+
+	err = messaging.Request(nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	assert.Equal(t, "", res.Error)
+	assert.NotNil(t, res.Share)
+	assert.Equal(t, "test", res.Share.ShareID)
+	assert.Equal(t, "user", res.Share.Owner)
 	assert.Equal(t, "some other title", res.Share.Title)
 	assert.Equal(t, "some other description", res.Share.Description)
+	assert.Equal(t, "foo", res.Share.ProviderID)
+	assert.Equal(t, "/bar/baz", res.Share.Path)
+	assert.Equal(t, true, res.Share.Recursive)
+	assert.Equal(t, true, res.Share.IsDir)
 
 	// READ
 
 	req = shares.ShareCrudRequest{
 		Operation: "READ",
-		Share: &shares.Share{
-			ShareID: "test",
-		},
+		Share:     entities.MakePrototype(&shares.SharePrototype{}),
 	}
+	req.Share.ShareID.Set("test")
 
-	err = messaging.Request(nc, shares.ShareCrudTopic, &req, &res)
+	err = messaging.Request(nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,12 +247,11 @@ func TestShareCrud(t *testing.T) {
 
 	req = shares.ShareCrudRequest{
 		Operation: "DELETE",
-		Share: &shares.Share{
-			ShareID: "test",
-		},
+		Share:     entities.MakePrototype(&shares.SharePrototype{}),
 	}
+	req.Share.ShareID.Set("test")
 
-	err = messaging.Request(nc, shares.ShareCrudTopic, &req, &res)
+	err = messaging.Request(nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -260,12 +261,11 @@ func TestShareCrud(t *testing.T) {
 	// READ again -> expect error
 	req = shares.ShareCrudRequest{
 		Operation: "READ",
-		Share: &shares.Share{
-			ShareID: "test",
-		},
+		Share:     entities.MakePrototype(&shares.SharePrototype{}),
 	}
+	req.Share.ShareID.Set("test")
 
-	err = messaging.Request(nc, shares.ShareCrudTopic, &req, &res)
+	err = messaging.Request(nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
 
 	assert.NotEqual(t, "", res.Error)
 }
@@ -280,17 +280,16 @@ func TestShareResolve(t *testing.T) {
 
 	req := shares.ShareCrudRequest{
 		Operation: "CREATE",
-		Share: &shares.Share{
-			ShareID:    "test",
-			Owner:      "user",
-			ProviderID: "foo",
-			Path:       "/bar/baz",
-			Recursive:  false,
-			IsDir:      true,
-		},
+		Share:     entities.MakePrototype(&shares.SharePrototype{}),
 	}
+	req.Share.ShareID.Set("test")
+	req.Share.Owner.Set("user")
+	req.Share.ProviderID.Set("foo")
+	req.Share.Path.Set("/bar/baz")
+	req.Share.Recursive.Set(false)
+	req.Share.IsDir.Set(true)
 
-	err := messaging.RequestVoid(nc, shares.ShareCrudTopic, &req)
+	err := messaging.RequestVoid(nc, shares.ShareCrudTopic, messaging.Json(&req))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,7 +301,7 @@ func TestShareResolve(t *testing.T) {
 	}
 
 	res := shares.ShareResolveResponse{}
-	err = messaging.Request(nc, shares.ShareResolveTopic, &resolveReq, &res)
+	err = messaging.Request(nc, shares.ShareResolveTopic, messaging.Json(&resolveReq), messaging.Json(&res))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -318,7 +317,7 @@ func TestShareResolve(t *testing.T) {
 		Path:    "file.txt",
 	}
 
-	err = messaging.Request(nc, shares.ShareResolveTopic, &resolveReq, &res)
+	err = messaging.Request(nc, shares.ShareResolveTopic, messaging.Json(&resolveReq), messaging.Json(&res))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +333,7 @@ func TestShareResolve(t *testing.T) {
 		Path:    "sub/file.txt",
 	}
 
-	err = messaging.Request(nc, shares.ShareResolveTopic, &resolveReq, &res)
+	err = messaging.Request(nc, shares.ShareResolveTopic, messaging.Json(&resolveReq), messaging.Json(&res))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -347,17 +346,17 @@ func TestShareResolve(t *testing.T) {
 
 	req = shares.ShareCrudRequest{
 		Operation: "UPDATE",
-		Share: &shares.Share{
-			ShareID:    "test",
-			Owner:      "user",
-			ProviderID: "foo",
-			Path:       "/bar/baz",
-			Recursive:  true,
-			IsDir:      true,
-		},
+		Share:     entities.MakePrototype(&shares.SharePrototype{}),
 	}
 
-	err = messaging.RequestVoid(nc, shares.ShareCrudTopic, &req)
+	req.Share.ShareID.Set("test")
+	req.Share.Owner.Set("user")
+	req.Share.ProviderID.Set("foo")
+	req.Share.Path.Set("/bar/baz")
+	req.Share.Recursive.Set(true)
+	req.Share.IsDir.Set(true)
+
+	err = messaging.RequestVoid(nc, shares.ShareCrudTopic, messaging.Json(&req))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -369,7 +368,7 @@ func TestShareResolve(t *testing.T) {
 		Path:    "sub/file.txt",
 	}
 
-	err = messaging.Request(nc, shares.ShareResolveTopic, &resolveReq, &res)
+	err = messaging.Request(nc, shares.ShareResolveTopic, messaging.Json(&resolveReq), messaging.Json(&res))
 	if err != nil {
 		t.Fatal(err)
 	}
