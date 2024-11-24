@@ -10,13 +10,22 @@
   },
   {
     "type": "record",
+    "name": "ReadDir",
+    "namespace": "seraph.events",
+    "fields": [
+      {"name": "readdir", "type": "string"},
+      {"name": "index", "type": "long"},
+      {"name": "total", "type": "long"}
+    ]
+  },
+  {
+    "type": "record",
     "name": "FileInfoEvent",
     "namespace": "seraph.events",
     "fields": [
 			{"name": "event", "type": "Event"},
 			{"name": "providerId", "type": "string"},
-      {"name": "readdir", "type": "string"},
-      {"name": "last", "type": "boolean"},
+      {"name": "readdir", "type": ["ReadDir", "null"]},
       {"name": "path", "type": "string"},
       {"name": "size", "type": "long"},
       {"name": "mode", "type": "long"},

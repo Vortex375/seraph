@@ -11,6 +11,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.uber.org/fx"
@@ -30,7 +31,8 @@ type consumer struct {
 	consumer jetstream.Consumer
 	ctx      jetstream.ConsumeContext
 
-	files *mongo.Collection
+	files   *mongo.Collection
+	readdir *mongo.Collection
 }
 
 type Params struct {
@@ -46,6 +48,9 @@ type Params struct {
 func NewConsumer(p Params) (Consumer, error) {
 	log := p.Logger.GetLogger("fileindexer")
 
+	// create stream for FileChangedEvent - we are producer for these
+
+	log.Debug("create " + events.FileChangedStream)
 	cfg := jetstream.StreamConfig{
 		Name:     events.FileChangedStream,
 		Subjects: []string{events.FileChangedTopic},
@@ -56,6 +61,9 @@ func NewConsumer(p Params) (Consumer, error) {
 		return nil, err
 	}
 
+	// create stream for FileInfoEvent - we consume these
+
+	log.Debug("create " + events.FileInfoStream)
 	cfg = jetstream.StreamConfig{
 		Name:     events.FileInfoStream,
 		Subjects: []string{events.FileProviderFileInfoTopic},
@@ -71,6 +79,7 @@ func NewConsumer(p Params) (Consumer, error) {
 	})
 
 	files := p.Db.Collection("files")
+	readdir := p.Db.Collection("readdir")
 
 	return &consumer{
 		log:      log,
@@ -78,6 +87,7 @@ func NewConsumer(p Params) (Consumer, error) {
 		js:       p.Js,
 		consumer: c,
 		files:    files,
+		readdir:  readdir,
 	}, nil
 }
 
@@ -106,9 +116,6 @@ func (c *consumer) Start() error {
 			file.Mode.Set(fileInfoEvent.Mode)
 			file.Size.Set(fileInfoEvent.Size)
 		}
-		if fileInfoEvent.Readdir != "" {
-			file.Readdir.Set(fileInfoEvent.Readdir)
-		}
 
 		newFile, change, err := c.upsertFile(&file)
 
@@ -125,12 +132,8 @@ func (c *consumer) Start() error {
 			}
 		}
 
-		if fileInfoEvent.Readdir != "" && fileInfoEvent.Last {
-			err = c.handleReaddirLast(newFile)
-			if err != nil {
-				c.log.Error("error handling readdir", "error", err, "event", fileInfoEvent)
-				return
-			}
+		if fileInfoEvent.Readdir != nil {
+			c.handleReaddir(newFile, fileInfoEvent.Readdir)
 		}
 
 		c.log.Debug("successfully processed file event", "event", fileInfoEvent)
@@ -162,9 +165,6 @@ func (c *consumer) upsertFile(file *FilePrototype) (newFile *File, change string
 			return
 		}
 		file.ParentDir.Set(parent.Id)
-		if parent.Readdir != "" && file.Readdir.IsDefined() && file.Readdir.Get() != parent.Readdir {
-			file.Readdir.Unset()
-		}
 	}
 
 	filter := FilePrototype{}
@@ -232,44 +232,85 @@ func (c *consumer) publishChange(file *File, change string) error {
 	return nil
 }
 
-func (c *consumer) handleReaddirLast(file *File) error {
-	var parentFilter FilePrototype
-	parentFilter.Id.Set(file.ParentDir)
-	parentResult := c.files.FindOne(context.Background(), parentFilter)
+func (c *consumer) handleReaddir(file *File, readDir *events.ReadDir) error {
+	opts := options.Update().SetUpsert(true)
 
-	if parentResult.Err() != nil {
-		return parentResult.Err()
-	}
+	filter := ReaddirPrototype{}
+	filter.Readdir.Set(readDir.Readdir)
+	filter.Index.Set(readDir.Index)
 
-	var parentDir File
-	err := parentResult.Decode(&parentDir)
+	proto := filter
+	proto.Total.Set(readDir.Total)
+	proto.File.Set(file.Id)
+	proto.ParentDir.Set(file.ParentDir)
+
+	_, err := c.readdir.UpdateOne(context.Background(), filter, bson.M{"$set": proto}, opts)
 	if err != nil {
 		return err
 	}
 
-	if parentDir.Readdir == "" {
-		return fmt.Errorf("readdir has ended but parent directory '%s' has no active readdir", parentDir.Path)
+	filter.Index.Unset()
+	count, err := c.readdir.CountDocuments(context.Background(), filter)
+	if err != nil {
+		return err
 	}
 
-	if parentDir.Readdir != file.Readdir {
-		// the readdir that ended is not the active readdir ... there ought to be another one ending
+	if count == readDir.Total {
+		return c.handleReaddirComplete(file, readDir)
+	}
+
+	return nil
+}
+
+func (c *consumer) handleReaddirComplete(file *File, readDir *events.ReadDir) error {
+	filter := ReaddirPrototype{}
+	filter.Readdir.Set(readDir.Readdir)
+
+	cur, err := c.readdir.Find(context.Background(), filter)
+	if err != nil {
+		return err
+	}
+
+	var entries []Readdir
+	cur.All(context.Background(), &entries)
+
+	if len(entries) != int(readDir.Total) {
+		c.log.Debug("readdir "+readDir.Readdir+" incomplete", "count", len(entries), "total", readDir.Total)
 		return nil
 	}
 
-	deleteFilter := bson.M{
-		"parentDir": parentDir.Id,
-		"readdir": bson.M{
-			"$ne": parentDir.Readdir,
-		},
+	var ids []primitive.ObjectID = make([]primitive.ObjectID, len(entries))
+	for i, entry := range entries {
+		ids[i] = entry.File
 	}
-	_, err = c.files.DeleteMany(context.Background(), deleteFilter)
+
+	deleteFileFilter := bson.M{
+		"parentDir": file.ParentDir,
+		"_id":       bson.M{"$nin": ids},
+	}
+
+	cur, err = c.files.Find(context.Background(), deleteFileFilter)
 	if err != nil {
 		return err
 	}
 
-	var newParent FilePrototype
-	newParent.Readdir.Set("")
-	c.files.UpdateOne(context.Background(), parentFilter, newParent)
+	for cur.Next(context.Background()) {
+		var f File
+		cur.Decode(&f)
+		c.publishChange(&f, events.FileChangedEventDeleted)
+	}
+
+	res, err := c.files.DeleteMany(context.Background(), deleteFileFilter)
+	if err != nil {
+		return err
+	}
+
+	c.log.Debug("readdir "+readDir.Readdir+" complete", "total", readDir.Total, "deleted", res.DeletedCount)
+
+	_, err = c.readdir.DeleteMany(context.Background(), filter)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }

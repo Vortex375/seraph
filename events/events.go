@@ -29,20 +29,43 @@ func (o *Event) Marshal() ([]byte, error) {
 	return avro.Marshal(o.Schema(), o)
 }
 
-// FileInfoEvent is a generated struct.
-type FileInfoEvent struct {
-	Event      Event  `avro:"event"`
-	ProviderID string `avro:"providerId"`
-	Readdir    string `avro:"readdir"`
-	Last       bool   `avro:"last"`
-	Path       string `avro:"path"`
-	Size       int64  `avro:"size"`
-	Mode       int64  `avro:"mode"`
-	ModTime    int64  `avro:"modTime"`
-	IsDir      bool   `avro:"isDir"`
+// ReadDir is a generated struct.
+type ReadDir struct {
+	Readdir string `avro:"readdir"`
+	Index   int64  `avro:"index"`
+	Total   int64  `avro:"total"`
 }
 
-var schemaFileInfoEvent = avro.MustParse(`{"name":"seraph.events.FileInfoEvent","type":"record","fields":[{"name":"event","type":"seraph.events.Event"},{"name":"providerId","type":"string"},{"name":"readdir","type":"string"},{"name":"last","type":"boolean"},{"name":"path","type":"string"},{"name":"size","type":"long"},{"name":"mode","type":"long"},{"name":"modTime","type":"long"},{"name":"isDir","type":"boolean"}]}`)
+var schemaReadDir = avro.MustParse(`{"name":"seraph.events.ReadDir","type":"record","fields":[{"name":"readdir","type":"string"},{"name":"index","type":"long"},{"name":"total","type":"long"}]}`)
+
+// Schema returns the schema for ReadDir.
+func (o *ReadDir) Schema() avro.Schema {
+	return schemaReadDir
+}
+
+// Unmarshal decodes b into the receiver.
+func (o *ReadDir) Unmarshal(b []byte) error {
+	return avro.Unmarshal(o.Schema(), b, o)
+}
+
+// Marshal encodes the receiver.
+func (o *ReadDir) Marshal() ([]byte, error) {
+	return avro.Marshal(o.Schema(), o)
+}
+
+// FileInfoEvent is a generated struct.
+type FileInfoEvent struct {
+	Event      Event    `avro:"event"`
+	ProviderID string   `avro:"providerId"`
+	Readdir    *ReadDir `avro:"readdir"`
+	Path       string   `avro:"path"`
+	Size       int64    `avro:"size"`
+	Mode       int64    `avro:"mode"`
+	ModTime    int64    `avro:"modTime"`
+	IsDir      bool     `avro:"isDir"`
+}
+
+var schemaFileInfoEvent = avro.MustParse(`{"name":"seraph.events.FileInfoEvent","type":"record","fields":[{"name":"event","type":"seraph.events.Event"},{"name":"providerId","type":"string"},{"name":"readdir","type":["seraph.events.ReadDir","null"]},{"name":"path","type":"string"},{"name":"size","type":"long"},{"name":"mode","type":"long"},{"name":"modTime","type":"long"},{"name":"isDir","type":"boolean"}]}`)
 
 // Schema returns the schema for FileInfoEvent.
 func (o *FileInfoEvent) Schema() avro.Schema {

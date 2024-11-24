@@ -1,0 +1,30 @@
+[
+  {
+    "create": "readdir"
+  },
+  {
+    "createIndexes": "readdir",
+    "indexes": [
+      {
+        "key": {
+          "readdir": 1,
+          "index": 1
+        },
+        "name": "readdir_idx",
+        "unique": true
+      }
+    ]
+  },
+  {
+    "createIndexes": "files",
+    "indexes": [
+      {
+        "key": {
+          "parentDir": 1
+        },
+        "name": "files_parentDir_idx",
+        "unique": false
+      }
+    ]
+  }
+]

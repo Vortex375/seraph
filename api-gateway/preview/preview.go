@@ -102,7 +102,7 @@ func (h *previewHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 				Path:    sharePath,
 			}
 			resolveRes := shares.ShareResolveResponse{}
-			err = messaging.Request(h.nc, shares.ShareResolveTopic, &resolveReq, &resolveRes)
+			err = messaging.Request(h.nc, shares.ShareResolveTopic, messaging.Json(&resolveReq), messaging.Json(&resolveRes))
 			if err != nil {
 				h.log.Error("While retrieving preview: error while resolving share", "error", err)
 				ctx.AbortWithStatus(http.StatusInternalServerError)

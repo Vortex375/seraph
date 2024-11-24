@@ -19,8 +19,6 @@
 package main
 
 import (
-	"github.com/nats-io/nats.go"
-	"github.com/nats-io/nats.go/jetstream"
 	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.uber.org/fx"
@@ -41,20 +39,10 @@ func main() {
 			viper.SetDefault("mongo.db", "seraph-files")
 			return client
 		}),
-		fx.Invoke(func(nc *nats.Conn, js jetstream.JetStream, db *mongo.Database, log *logging.Logger, viper *viper.Viper, lc fx.Lifecycle) error {
+		fx.Provide(fileindexer.NewMigrations),
+		fx.Invoke(func(params fileindexer.Params, lc fx.Lifecycle) error {
 
-			mig, err := fileindexer.NewMigrations(viper)
-			if err != nil {
-				return err
-			}
-
-			consumer, err := fileindexer.NewConsumer(fileindexer.Params{
-				Nc:     nc,
-				Js:     js,
-				Db:     db,
-				Logger: log,
-				Mig:    mig,
-			})
+			consumer, err := fileindexer.NewConsumer(params)
 			if err != nil {
 				return err
 			}

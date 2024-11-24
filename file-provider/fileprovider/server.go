@@ -206,8 +206,6 @@ func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.
 						Version: 1,
 					},
 					ProviderID: providerId,
-					Readdir:    "",
-					Last:       false,
 					Path:       ensureAbsolutePath(req.Name),
 					IsDir:      fileInfo.IsDir(),
 					Size:       fileInfo.Size(),
@@ -339,20 +337,6 @@ func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.
 							log.Error("readdir failed", "uid", request.Uid, "fileId", fileRequest.FileId, "req", fileReq, "error", err)
 						}
 						if err == nil {
-							fileInfoEvent := events.FileInfoEvent{
-								Event: events.Event{
-									ID:      uuid.NewString(),
-									Version: 1,
-								},
-								ProviderID: providerId,
-								Readdir:    fileRequest.Uid,
-								Last:       false,
-								Path:       ensureAbsolutePath(req.Name),
-								IsDir:      true,
-							}
-							fileInfoEventData, _ := fileInfoEvent.Marshal()
-							p.Nc.Publish(fmt.Sprintf(events.FileProviderFileInfoTopicPattern, providerId), fileInfoEventData)
-
 							for i, fileInfo := range fileInfos {
 								fileInfoResponse := FileInfoResponse{
 									Name:    fileInfo.Name(),
@@ -372,14 +356,27 @@ func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.
 									err = e
 									break
 								}
+
+								var readdir *events.ReadDir
+								if fileReq.Count <= 0 || len(fileInfos) < fileReq.Count {
+									// if it lists the entire directory
+									readdir = &events.ReadDir{
+										Readdir: fileRequest.Uid,
+										Index:   int64(i),
+										Total:   int64(len(fileInfos)),
+									}
+								} else {
+									// partial readdir is not published as readdir
+									readdir = nil
+								}
+
 								fileInfoEvent := events.FileInfoEvent{
 									Event: events.Event{
 										ID:      uuid.NewString(),
 										Version: 1,
 									},
 									ProviderID: providerId,
-									Readdir:    fileRequest.Uid,
-									Last:       (fileReq.Count <= 0 || len(fileInfos) < fileReq.Count) && i == len(fileInfos)-1,
+									Readdir:    readdir,
 									Path:       ensureAbsolutePath(req.Name + "/" + fileInfo.Name()),
 									IsDir:      fileInfo.IsDir(),
 									Size:       fileInfo.Size(),
