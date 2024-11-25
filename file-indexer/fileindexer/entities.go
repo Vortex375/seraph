@@ -17,6 +17,7 @@ type FilePrototype struct {
 	ModTime    entities.Definable[int64]              `bson:"modTime"`
 	IsDir      entities.Definable[bool]               `bson:"isDir"`
 	Mime       entities.Definable[string]             `bson:"mime"`
+	ImoHash    entities.Definable[string]             `bson:"imoHash"`
 }
 
 type File struct {
@@ -29,6 +30,7 @@ type File struct {
 	ModTime    int64              `bson:"modTime"`
 	IsDir      bool               `bson:"isDir"`
 	Mime       string             `bson:"mime"`
+	ImoHash    string             `bson:"imoHash"`
 }
 
 type ReaddirPrototype struct {

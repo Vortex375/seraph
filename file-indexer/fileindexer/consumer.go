@@ -2,7 +2,9 @@ package fileindexer
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"log/slog"
 	"mime"
 	"os"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/google/uuid"
+	"github.com/kalafut/imohash"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"go.mongodb.org/mongo-driver/bson"
@@ -21,6 +24,7 @@ import (
 	"umbasa.net/seraph/events"
 	"umbasa.net/seraph/file-provider/fileprovider"
 	"umbasa.net/seraph/logging"
+	"umbasa.net/seraph/util"
 )
 
 type Consumer interface {
@@ -134,6 +138,11 @@ func (c *consumer) Start() error {
 			err = c.detectAndUpdateMime(newFile)
 			if err != nil {
 				c.log.Error("error storing mime type for file", "error", err, "event", fileInfoEvent)
+				return
+			}
+			err = c.calculateAndUpdateImoHash(newFile)
+			if err != nil {
+				c.log.Error("error storing imo hash for file", "error", err, "event", fileInfoEvent)
 				return
 			}
 			err = c.publishChange(newFile, change)
@@ -255,6 +264,44 @@ func (c *consumer) detectAndUpdateMime(file *File) error {
 	}
 
 	file.Mime = typ
+
+	return nil
+}
+
+func (c *consumer) calculateAndUpdateImoHash(file *File) error {
+	client := fileprovider.NewFileProviderClient(file.ProviderId, c.nc, c.logger)
+	defer client.Close()
+	inFile, err := client.OpenFile(context.TODO(), file.Path, os.O_RDONLY, 0)
+	if err != nil {
+		c.log.Error("Error while opening file for imo hash calculation", "path", file.Path, "error", err)
+		return nil
+	}
+	defer inFile.Close()
+
+	readerAt := &util.ReaderAt{ReadSeeker: inFile}
+
+	hash, err := imohash.SumSectionReader(io.NewSectionReader(readerAt, 0, file.Size))
+	if err != nil {
+		c.log.Error("Error while calculating imo hash", "path", file.Path, "error", err)
+		return nil
+	}
+
+	hashStr := hex.EncodeToString(hash[:])
+
+	c.log.Debug("Calculated imo hash", "path", file.Path, "hash", hashStr)
+
+	filter := FilePrototype{}
+	filter.Id.Set(file.Id)
+
+	proto := FilePrototype{}
+	proto.ImoHash.Set(hashStr)
+
+	_, err = c.files.UpdateOne(context.Background(), filter, bson.M{"$set": proto})
+	if err != nil {
+		return err
+	}
+
+	file.ImoHash = hashStr
 
 	return nil
 }
