@@ -93,9 +93,10 @@ type FileChangedEvent struct {
 	Mode       int64  `avro:"mode"`
 	ModTime    int64  `avro:"modTime"`
 	IsDir      bool   `avro:"isDir"`
+	Mime       string `avro:"mime"`
 }
 
-var schemaFileChangedEvent = avro.MustParse(`{"name":"seraph.events.FileChangedEvent","type":"record","fields":[{"name":"event","type":"seraph.events.Event"},{"name":"fileId","type":"string"},{"name":"providerId","type":"string"},{"name":"change","type":"string"},{"name":"path","type":"string"},{"name":"size","type":"long"},{"name":"mode","type":"long"},{"name":"modTime","type":"long"},{"name":"isDir","type":"boolean"}]}`)
+var schemaFileChangedEvent = avro.MustParse(`{"name":"seraph.events.FileChangedEvent","type":"record","fields":[{"name":"event","type":"seraph.events.Event"},{"name":"fileId","type":"string"},{"name":"providerId","type":"string"},{"name":"change","type":"string"},{"name":"path","type":"string"},{"name":"size","type":"long"},{"name":"mode","type":"long"},{"name":"modTime","type":"long"},{"name":"isDir","type":"boolean"},{"name":"mime","type":"string"}]}`)
 
 // Schema returns the schema for FileChangedEvent.
 func (o *FileChangedEvent) Schema() avro.Schema {

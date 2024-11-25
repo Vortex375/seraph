@@ -46,7 +46,8 @@
       {"name": "size", "type": "long"},
       {"name": "mode", "type": "long"},
       {"name": "modTime", "type": "long"},
-      {"name": "isDir", "type": "boolean"}
+      {"name": "isDir", "type": "boolean"},
+      {"name": "mime", "type": "string"}
     ]
   }
 ]

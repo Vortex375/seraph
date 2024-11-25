@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"mime"
+	"os"
 	"path"
 	"strings"
 
+	"github.com/gabriel-vasile/mimetype"
 	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -16,6 +19,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.uber.org/fx"
 	"umbasa.net/seraph/events"
+	"umbasa.net/seraph/file-provider/fileprovider"
 	"umbasa.net/seraph/logging"
 )
 
@@ -25,6 +29,7 @@ type Consumer interface {
 }
 
 type consumer struct {
+	logger   *logging.Logger
 	log      *slog.Logger
 	nc       *nats.Conn
 	js       jetstream.JetStream
@@ -82,6 +87,7 @@ func NewConsumer(p Params) (Consumer, error) {
 	readdir := p.Db.Collection("readdir")
 
 	return &consumer{
+		logger:   p.Logger,
 		log:      log,
 		nc:       p.Nc,
 		js:       p.Js,
@@ -125,6 +131,11 @@ func (c *consumer) Start() error {
 		}
 
 		if change != "" {
+			err = c.detectAndUpdateMime(newFile)
+			if err != nil {
+				c.log.Error("error storing mime type for file", "error", err, "event", fileInfoEvent)
+				return
+			}
 			err = c.publishChange(newFile, change)
 			if err != nil {
 				c.log.Error("error publishing FileChangedEvent", "error", err, "event", fileInfoEvent)
@@ -203,6 +214,50 @@ func (c *consumer) upsertFile(file *FilePrototype) (newFile *File, change string
 	return
 }
 
+func (c *consumer) detectAndUpdateMime(file *File) error {
+	if file.IsDir {
+		return nil
+	}
+
+	ext := path.Ext(file.Path)
+	typ := mime.TypeByExtension(ext)
+
+	if typ == "" {
+		// use magic numbers for mimetype detection
+		// slow, so we do it only when it can't be done from the file extension
+		client := fileprovider.NewFileProviderClient(file.ProviderId, c.nc, c.logger)
+		inFile, err := client.OpenFile(context.TODO(), file.Path, os.O_RDONLY, 0)
+		if err != nil {
+			c.log.Error("Error while opening file for mime type detection", "path", file.Path, "error", err)
+			return nil
+		}
+		defer inFile.Close()
+		mimeType, err := mimetype.DetectReader(inFile)
+		if err != nil {
+			c.log.Error("Error while detecting mime type", "path", file.Path, "error", err)
+			return nil
+		}
+		typ = mimeType.String()
+	}
+
+	c.log.Debug("Identified mime type", "path", file.Path, "mime", typ)
+
+	filter := FilePrototype{}
+	filter.Id.Set(file.Id)
+
+	proto := FilePrototype{}
+	proto.Mime.Set(typ)
+
+	_, err := c.files.UpdateOne(context.Background(), filter, bson.M{"$set": proto})
+	if err != nil {
+		return err
+	}
+
+	file.Mime = typ
+
+	return nil
+}
+
 func (c *consumer) publishChange(file *File, change string) error {
 	ev := events.FileChangedEvent{
 		Event: events.Event{
@@ -217,6 +272,7 @@ func (c *consumer) publishChange(file *File, change string) error {
 		Mode:       file.Mode,
 		ModTime:    file.ModTime,
 		IsDir:      file.IsDir,
+		Mime:       file.Mime,
 	}
 
 	data, err := ev.Marshal()
