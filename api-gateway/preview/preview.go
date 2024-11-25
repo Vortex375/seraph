@@ -174,6 +174,7 @@ func (h *previewHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 		}
 
 		client := fileprovider.NewFileProviderClient(resp.ProviderID, h.nc, h.logger)
+		defer client.Close()
 		file, err := client.OpenFile(ctx, resp.Path, os.O_RDONLY, 0)
 		if err != nil {
 			h.log.Error("error opening thumbnail", "error", err)

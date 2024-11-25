@@ -38,6 +38,8 @@ import (
 
 type Client interface {
 	webdav.FileSystem
+
+	Close()
 }
 
 type client struct {
@@ -128,6 +130,10 @@ func NewFileProviderClient(providerId string, nc *nats.Conn, logger *logging.Log
 		msgApi,
 		cache.New(cacheTimeout),
 	}
+}
+
+func (c *client) Close() {
+	c.fileInfoCache.Close()
 }
 
 func (c *client) Mkdir(ctx context.Context, name string, perm os.FileMode) error {

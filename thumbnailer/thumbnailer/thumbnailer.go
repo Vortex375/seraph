@@ -225,6 +225,7 @@ func (t *Thumbnailer) handleRequest(req ThumbnailRequest) (resp ThumbnailRespons
 	defer t.limiter.End()
 
 	fs := fileprovider.NewFileProviderClient(req.ProviderID, t.nc, t.logging)
+	defer fs.Close()
 
 	file, err := fs.OpenFile(context.TODO(), req.Path, os.O_RDONLY, 0)
 	if err != nil {

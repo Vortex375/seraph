@@ -66,6 +66,7 @@ func main() {
 				return thumb.Start()
 			}))
 			lc.Append(fx.StopHook(func() error {
+				client.Close()
 				return thumb.Stop()
 			}))
 

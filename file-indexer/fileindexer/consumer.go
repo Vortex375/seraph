@@ -226,6 +226,7 @@ func (c *consumer) detectAndUpdateMime(file *File) error {
 		// use magic numbers for mimetype detection
 		// slow, so we do it only when it can't be done from the file extension
 		client := fileprovider.NewFileProviderClient(file.ProviderId, c.nc, c.logger)
+		defer client.Close()
 		inFile, err := client.OpenFile(context.TODO(), file.Path, os.O_RDONLY, 0)
 		if err != nil {
 			c.log.Error("Error while opening file for mime type detection", "path", file.Path, "error", err)

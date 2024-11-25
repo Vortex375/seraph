@@ -38,7 +38,14 @@ import (
 
 var natsServer *server.Server
 var tmpDir string
-var tmpFs webdav.FileSystem
+var tmpFs fileprovider.Client
+
+// implement fileprovider.Client
+type client struct {
+	webdav.Dir
+}
+
+func (*client) Close() {}
 
 func TestMain(m *testing.M) {
 	setup()
@@ -67,7 +74,7 @@ func setup() {
 		panic(err)
 	}
 
-	tmpFs = webdav.Dir(tmpDir)
+	tmpFs = &client{webdav.Dir(tmpDir)}
 
 	nc, err := nats.Connect(natsServer.ClientURL())
 	if err != nil {

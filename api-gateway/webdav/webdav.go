@@ -121,7 +121,11 @@ func (server *webDavServer) getHandler(providerId string) webdav.Handler {
 			Logger:     makeLogger(server.logger),
 		}
 
-		handler, _ = server.handlers.LoadOrStore(providerId, handler)
+		var loaded bool
+		handler, loaded = server.handlers.LoadOrStore(providerId, handler)
+		if loaded {
+			client.Close()
+		}
 	}
 
 	return handler.(webdav.Handler)
