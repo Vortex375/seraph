@@ -29,6 +29,19 @@ services:
     #   - 27017:27017 # for debugging
     volumes:
       - mongo-data:/data/db
+
+  mongo-express:
+    image: mongo-express
+    restart: always
+    ports:
+      - 127.0.0.1:8081:8081
+    depends_on:
+      - mongodb
+    networks:
+      - internal
+    environment:
+      ME_CONFIG_MONGODB_URL: mongodb://mongodb:27017/
+      ME_CONFIG_BASICAUTH: false
   
   api-gateway:
     image: seraph
