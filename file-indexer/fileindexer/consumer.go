@@ -269,6 +269,10 @@ func (c *consumer) detectAndUpdateMime(file *File) error {
 }
 
 func (c *consumer) calculateAndUpdateImoHash(file *File) error {
+	if file.IsDir {
+		return nil
+	}
+
 	client := fileprovider.NewFileProviderClient(file.ProviderId, c.nc, c.logger)
 	defer client.Close()
 	inFile, err := client.OpenFile(context.TODO(), file.Path, os.O_RDONLY, 0)
