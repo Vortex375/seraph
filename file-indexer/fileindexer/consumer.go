@@ -125,6 +125,7 @@ func (c *consumer) Start() error {
 			file.ModTime.Set(fileInfoEvent.ModTime)
 			file.Mode.Set(fileInfoEvent.Mode)
 			file.Size.Set(fileInfoEvent.Size)
+			file.Pending.Set(true)
 		}
 
 		newFile, change, err := c.upsertFile(&file)
@@ -135,19 +136,9 @@ func (c *consumer) Start() error {
 		}
 
 		if change != "" {
-			err = c.detectAndUpdateMime(newFile)
+			err = c.handleChangedFile(newFile, change)
 			if err != nil {
-				c.log.Error("error storing mime type for file", "error", err, "event", fileInfoEvent)
-				return
-			}
-			err = c.calculateAndUpdateImoHash(newFile)
-			if err != nil {
-				c.log.Error("error storing imo hash for file", "error", err, "event", fileInfoEvent)
-				return
-			}
-			err = c.publishChange(newFile, change)
-			if err != nil {
-				c.log.Error("error publishing FileChangedEvent", "error", err, "event", fileInfoEvent)
+				c.log.Error("error processing changed file", "error", err, "event", fileInfoEvent)
 				return
 			}
 		}
@@ -214,18 +205,50 @@ func (c *consumer) upsertFile(file *FilePrototype) (newFile *File, change string
 		if err != nil {
 			return
 		}
-		if oldFile.ModTime != newFile.ModTime ||
+
+		if oldFile.Pending {
+			// consumer was previously interrupted while processing changes for the file
+			change = events.FileChangedEventChanged
+		} else if oldFile.ModTime != newFile.ModTime ||
 			oldFile.Size != newFile.Size ||
 			oldFile.Mode != newFile.Mode {
+			// file was modified
 			change = events.FileChangedEventChanged
 		}
 	}
 	return
 }
 
-func (c *consumer) detectAndUpdateMime(file *File) error {
+func (c *consumer) handleChangedFile(file *File, change string) error {
+	mimeTyp := c.detectAndUpdateMime(file)
+	imoHash := c.calculateAndUpdateImoHash(file)
+
+	filter := FilePrototype{}
+	filter.Id.Set(file.Id)
+
+	proto := FilePrototype{}
+	proto.Mime.Set(mimeTyp)
+	proto.ImoHash.Set(imoHash)
+	proto.Pending.Set(false)
+
+	_, err := c.files.UpdateOne(context.TODO(), filter, bson.M{"$set": proto})
+	if err != nil {
+		c.log.Error("error persisting mimeType and hash", "error", err, "file", file)
+		return err
+	}
+
+	err = c.publishChange(file, change)
+	if err != nil {
+		c.log.Error("error publishing FileChangedEvent", "error", err, "file", file)
+		return err
+	}
+
+	return nil
+}
+
+func (c *consumer) detectAndUpdateMime(file *File) string {
 	if file.IsDir {
-		return nil
+		return ""
 	}
 
 	ext := path.Ext(file.Path)
@@ -239,38 +262,27 @@ func (c *consumer) detectAndUpdateMime(file *File) error {
 		inFile, err := client.OpenFile(context.TODO(), file.Path, os.O_RDONLY, 0)
 		if err != nil {
 			c.log.Error("Error while opening file for mime type detection", "path", file.Path, "error", err)
-			return nil
+			return ""
 		}
 		defer inFile.Close()
 		mimeType, err := mimetype.DetectReader(inFile)
 		if err != nil {
 			c.log.Error("Error while detecting mime type", "path", file.Path, "error", err)
-			return nil
+			return ""
 		}
 		typ = mimeType.String()
 	}
 
 	c.log.Debug("Identified mime type", "path", file.Path, "mime", typ)
 
-	filter := FilePrototype{}
-	filter.Id.Set(file.Id)
-
-	proto := FilePrototype{}
-	proto.Mime.Set(typ)
-
-	_, err := c.files.UpdateOne(context.Background(), filter, bson.M{"$set": proto})
-	if err != nil {
-		return err
-	}
-
 	file.Mime = typ
 
-	return nil
+	return typ
 }
 
-func (c *consumer) calculateAndUpdateImoHash(file *File) error {
+func (c *consumer) calculateAndUpdateImoHash(file *File) string {
 	if file.IsDir {
-		return nil
+		return ""
 	}
 
 	client := fileprovider.NewFileProviderClient(file.ProviderId, c.nc, c.logger)
@@ -278,7 +290,7 @@ func (c *consumer) calculateAndUpdateImoHash(file *File) error {
 	inFile, err := client.OpenFile(context.TODO(), file.Path, os.O_RDONLY, 0)
 	if err != nil {
 		c.log.Error("Error while opening file for imo hash calculation", "path", file.Path, "error", err)
-		return nil
+		return ""
 	}
 	defer inFile.Close()
 
@@ -287,27 +299,16 @@ func (c *consumer) calculateAndUpdateImoHash(file *File) error {
 	hash, err := imohash.SumSectionReader(io.NewSectionReader(readerAt, 0, file.Size))
 	if err != nil {
 		c.log.Error("Error while calculating imo hash", "path", file.Path, "error", err)
-		return nil
+		return ""
 	}
 
 	hashStr := hex.EncodeToString(hash[:])
 
 	c.log.Debug("Calculated imo hash", "path", file.Path, "hash", hashStr)
 
-	filter := FilePrototype{}
-	filter.Id.Set(file.Id)
-
-	proto := FilePrototype{}
-	proto.ImoHash.Set(hashStr)
-
-	_, err = c.files.UpdateOne(context.Background(), filter, bson.M{"$set": proto})
-	if err != nil {
-		return err
-	}
-
 	file.ImoHash = hashStr
 
-	return nil
+	return hashStr
 }
 
 func (c *consumer) publishChange(file *File, change string) error {

@@ -18,6 +18,7 @@ type FilePrototype struct {
 	IsDir      entities.Definable[bool]               `bson:"isDir"`
 	Mime       entities.Definable[string]             `bson:"mime"`
 	ImoHash    entities.Definable[string]             `bson:"imoHash"`
+	Pending    entities.Definable[bool]               `bson:"pending"`
 }
 
 type File struct {
@@ -31,6 +32,7 @@ type File struct {
 	IsDir      bool               `bson:"isDir"`
 	Mime       string             `bson:"mime"`
 	ImoHash    string             `bson:"imoHash"`
+	Pending    bool               `bson:"pending"`
 }
 
 type ReaddirPrototype struct {
