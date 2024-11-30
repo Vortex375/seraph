@@ -92,6 +92,8 @@ type Thumbnailer struct {
 	sub              *nats.Subscription
 	requestChan      chan *nats.Msg
 	limiter          util.Limiter
+	ctx              context.Context
+	cancel           context.CancelFunc
 }
 
 func NewThumbnailer(p Params, fileProviderId string, path string, thumbnailStorage fileprovider.Client) (Result, error) {
@@ -104,6 +106,9 @@ func NewThumbnailer(p Params, fileProviderId string, path string, thumbnailStora
 	} else {
 		options = p.Options
 	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
 	return Result{
 		Thumbnailer: &Thumbnailer{
 			options:          *options,
@@ -113,6 +118,8 @@ func NewThumbnailer(p Params, fileProviderId string, path string, thumbnailStora
 			fileProviderId:   fileProviderId,
 			path:             path,
 			thumbnailStorage: thumbnailStorage,
+			ctx:              ctx,
+			cancel:           cancel,
 		},
 	}, nil
 }
@@ -152,7 +159,7 @@ func (t *Thumbnailer) Stop() error {
 		t.requestChan = nil
 	}
 	if t.limiter != nil {
-		t.limiter.CancelAll()
+		t.cancel()
 		t.limiter = nil
 	}
 	return err
@@ -218,7 +225,7 @@ func (t *Thumbnailer) handleRequest(req ThumbnailRequest) (resp ThumbnailRespons
 
 	// thumbnail needs to be created
 	// limit concurrency to avoid excessive memory usage
-	if !t.limiter.Begin() {
+	if !t.limiter.Begin(t.ctx) {
 		resp.Error = "operation cancelled"
 		return
 	}

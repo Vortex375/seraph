@@ -3,6 +3,7 @@ package fileindexer
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -16,6 +17,7 @@ import (
 	"github.com/kalafut/imohash"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -38,7 +40,9 @@ type consumer struct {
 	nc       *nats.Conn
 	js       jetstream.JetStream
 	consumer jetstream.Consumer
-	ctx      jetstream.ConsumeContext
+	limiter  util.Limiter
+	ctx      context.Context
+	cancel   context.CancelFunc
 
 	files   *mongo.Collection
 	readdir *mongo.Collection
@@ -51,6 +55,7 @@ type Params struct {
 	Js     jetstream.JetStream
 	Db     *mongo.Database
 	Logger *logging.Logger
+	Viper  *viper.Viper
 	Mig    Migrations
 }
 
@@ -64,7 +69,6 @@ func NewConsumer(p Params) (Consumer, error) {
 		Name:     events.FileChangedStream,
 		Subjects: []string{events.FileChangedTopic},
 	}
-
 	_, err := p.Js.CreateOrUpdateStream(context.Background(), cfg)
 	if err != nil {
 		return nil, err
@@ -77,20 +81,21 @@ func NewConsumer(p Params) (Consumer, error) {
 		Name:     events.FileInfoStream,
 		Subjects: []string{events.FileProviderFileInfoTopic},
 	}
-
 	stream, err := p.Js.CreateOrUpdateStream(context.Background(), cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	c, _ := stream.CreateOrUpdateConsumer(context.Background(), jetstream.ConsumerConfig{
+	ctx, cancel := context.WithCancel(context.Background())
+
+	c, _ := stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
 		Durable: "SERAPH_FILE_INDEXER",
 	})
 
 	files := p.Db.Collection("files")
 	readdir := p.Db.Collection("readdir")
 
-	return &consumer{
+	cons := consumer{
 		logger:   p.Logger,
 		log:      log,
 		nc:       p.Nc,
@@ -98,69 +103,93 @@ func NewConsumer(p Params) (Consumer, error) {
 		consumer: c,
 		files:    files,
 		readdir:  readdir,
-	}, nil
+		ctx:      ctx,
+		cancel:   cancel,
+	}
+	cons.limiter = util.NewLimiter(p.Viper.GetInt("fileindexer.parallel"))
+
+	return &cons, nil
 }
 
 func (c *consumer) Start() error {
-	ctx, err := c.consumer.Consume(func(msg jetstream.Msg) {
-		fileInfoEvent := events.FileInfoEvent{}
-
-		err := fileInfoEvent.Unmarshal(msg.Data())
-		if err != nil {
-			c.log.Error("failed to deserialize message", "error", err)
-			return
-		}
-
-		if !strings.HasPrefix(fileInfoEvent.Path, "/") {
-			c.log.Error("error processing FileInfoEvent: path is not absolute", "event", fileInfoEvent)
-			msg.TermWithReason("path is not absolute")
-			return
-		}
-
-		file := FilePrototype{}
-		file.ProviderId.Set(fileInfoEvent.ProviderID)
-		file.Path.Set(path.Clean(fileInfoEvent.Path))
-		file.IsDir.Set(fileInfoEvent.IsDir)
-		if fileInfoEvent.ModTime != 0 || fileInfoEvent.Mode != 0 || fileInfoEvent.Size != 0 {
-			file.ModTime.Set(fileInfoEvent.ModTime)
-			file.Mode.Set(fileInfoEvent.Mode)
-			file.Size.Set(fileInfoEvent.Size)
-			file.Pending.Set(true)
-		}
-
-		newFile, change, err := c.upsertFile(&file)
-
-		if err != nil {
-			c.log.Error("error processing FileInfoEvent", "error", err, "event", fileInfoEvent)
-			return
-		}
-
-		if change != "" {
-			err = c.handleChangedFile(newFile, change)
-			if err != nil {
-				c.log.Error("error processing changed file", "error", err, "event", fileInfoEvent)
-				return
-			}
-		}
-
-		if fileInfoEvent.Readdir != nil {
-			c.handleReaddir(newFile, fileInfoEvent.Readdir)
-		}
-
-		c.log.Debug("successfully processed file event", "event", fileInfoEvent)
-		msg.Ack()
-	})
+	iter, err := c.consumer.Messages()
 	if err != nil {
 		return err
 	}
-	c.ctx = ctx
+
+	go func() {
+		for {
+			msg, err := iter.Next()
+			if errors.Is(err, jetstream.ErrMsgIteratorClosed) {
+				return
+			}
+			if err != nil {
+				c.log.Error("consumer error", "error", err)
+				return
+			}
+			if !c.limiter.Begin(c.ctx) {
+				return
+			}
+			go c.handleMessage(msg)
+		}
+	}()
+
 	return nil
 }
 
 func (c *consumer) Stop() {
-	if c.ctx != nil {
-		c.ctx.Drain()
+	c.cancel()
+	c.limiter.Join()
+}
+
+func (c *consumer) handleMessage(msg jetstream.Msg) {
+	defer c.limiter.End()
+	fileInfoEvent := events.FileInfoEvent{}
+
+	err := fileInfoEvent.Unmarshal(msg.Data())
+	if err != nil {
+		c.log.Error("failed to deserialize message", "error", err)
+		return
 	}
+
+	if !strings.HasPrefix(fileInfoEvent.Path, "/") {
+		c.log.Error("error processing FileInfoEvent: path is not absolute", "event", fileInfoEvent)
+		msg.TermWithReason("path is not absolute")
+		return
+	}
+
+	file := FilePrototype{}
+	file.ProviderId.Set(fileInfoEvent.ProviderID)
+	file.Path.Set(path.Clean(fileInfoEvent.Path))
+	file.IsDir.Set(fileInfoEvent.IsDir)
+	if fileInfoEvent.ModTime != 0 || fileInfoEvent.Mode != 0 || fileInfoEvent.Size != 0 {
+		file.ModTime.Set(fileInfoEvent.ModTime)
+		file.Mode.Set(fileInfoEvent.Mode)
+		file.Size.Set(fileInfoEvent.Size)
+		file.Pending.Set(true)
+	}
+
+	newFile, change, err := c.upsertFile(&file)
+
+	if err != nil {
+		c.log.Error("error processing FileInfoEvent", "error", err, "event", fileInfoEvent)
+		return
+	}
+
+	if change != "" {
+		err = c.handleChangedFile(newFile, change)
+		if err != nil {
+			c.log.Error("error processing changed file", "error", err, "event", fileInfoEvent)
+			return
+		}
+	}
+
+	if fileInfoEvent.Readdir != nil {
+		c.handleReaddir(newFile, fileInfoEvent.Readdir)
+	}
+
+	c.log.Debug("successfully processed file event", "event", fileInfoEvent)
+	msg.Ack()
 }
 
 func (c *consumer) upsertFile(file *FilePrototype) (newFile *File, change string, err error) {

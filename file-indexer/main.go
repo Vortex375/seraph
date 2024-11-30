@@ -19,6 +19,8 @@
 package main
 
 import (
+	"runtime"
+
 	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.uber.org/fx"
@@ -41,6 +43,7 @@ func main() {
 		}),
 		fx.Provide(fileindexer.NewMigrations),
 		fx.Invoke(func(params fileindexer.Params, lc fx.Lifecycle) error {
+			params.Viper.SetDefault("fileindexer.parallel", runtime.NumCPU())
 
 			consumer, err := fileindexer.NewConsumer(params)
 			if err != nil {
