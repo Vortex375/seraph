@@ -166,6 +166,8 @@ func (c *consumer) handleMessage(msg jetstream.Msg) {
 		file.ModTime.Set(fileInfoEvent.ModTime)
 		file.Mode.Set(fileInfoEvent.Mode)
 		file.Size.Set(fileInfoEvent.Size)
+	}
+	if !fileInfoEvent.IsDir {
 		file.Pending.Set(true)
 	}
 
@@ -180,6 +182,12 @@ func (c *consumer) handleMessage(msg jetstream.Msg) {
 		err = c.handleChangedFile(newFile, change)
 		if err != nil {
 			c.log.Error("error processing changed file", "error", err, "event", fileInfoEvent)
+			return
+		}
+	} else {
+		err = c.handleUnchangedFile(newFile)
+		if err != nil {
+			c.log.Error("error processing unchanged file", "error", err, "event", fileInfoEvent)
 			return
 		}
 	}
@@ -338,6 +346,17 @@ func (c *consumer) calculateAndUpdateImoHash(file *File) string {
 	file.ImoHash = hashStr
 
 	return hashStr
+}
+
+func (c *consumer) handleUnchangedFile(file *File) error {
+	filter := FilePrototype{}
+	filter.Id.Set(file.Id)
+
+	proto := FilePrototype{}
+	proto.Pending.Set(false)
+
+	_, err := c.files.UpdateOne(context.TODO(), filter, bson.M{"$set": proto})
+	return err
 }
 
 func (c *consumer) publishChange(file *File, change string) error {
