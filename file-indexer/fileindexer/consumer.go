@@ -10,6 +10,7 @@ import (
 	"mime"
 	"os"
 	"path"
+	"regexp"
 	"strings"
 
 	"github.com/gabriel-vasile/mimetype"
@@ -58,6 +59,8 @@ type Params struct {
 	Viper  *viper.Viper
 	Mig    Migrations
 }
+
+var searchWordsRegex = regexp.MustCompile("\\W|_")
 
 func NewConsumer(p Params) (Consumer, error) {
 	log := p.Logger.GetLogger("fileindexer")
@@ -158,9 +161,11 @@ func (c *consumer) handleMessage(msg jetstream.Msg) {
 		return
 	}
 
+	cleanPath := path.Clean(fileInfoEvent.Path)
 	file := FilePrototype{}
 	file.ProviderId.Set(fileInfoEvent.ProviderID)
-	file.Path.Set(path.Clean(fileInfoEvent.Path))
+	file.Path.Set(cleanPath)
+	file.SearchWords.Set(strings.TrimSpace(searchWordsRegex.ReplaceAllString(cleanPath, " ")))
 	file.IsDir.Set(fileInfoEvent.IsDir)
 	if fileInfoEvent.ModTime != 0 || fileInfoEvent.Mode != 0 || fileInfoEvent.Size != 0 {
 		file.ModTime.Set(fileInfoEvent.ModTime)

@@ -1,0 +1,13 @@
+[
+  {
+    "createIndexes": "files",
+    "indexes": [
+      {
+        "key": {
+          "searchWords": "text"
+        },
+        "name": "searchWords_text_idx"
+      }
+    ]
+  }
+]
