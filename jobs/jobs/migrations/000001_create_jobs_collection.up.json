@@ -1,0 +1,17 @@
+[
+  {
+    "create": "jobs"
+  },
+  {
+    "createIndexes": "jobs",
+    "indexes": [
+      {
+        "key": {
+          "key": 1
+        },
+        "name": "jobs_key_idx",
+        "unique": true
+      }
+    ]
+  }
+]

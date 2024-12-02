@@ -112,3 +112,29 @@ func (o *FileChangedEvent) Unmarshal(b []byte) error {
 func (o *FileChangedEvent) Marshal() ([]byte, error) {
 	return avro.Marshal(o.Schema(), o)
 }
+
+// JobEvent is a generated struct.
+type JobEvent struct {
+	Event         Event             `avro:"event"`
+	Key           string            `avro:"key"`
+	Description   string            `avro:"description"`
+	StatusMessage string            `avro:"statusMessage"`
+	Properties    map[string]string `avro:"properties"`
+}
+
+var schemaJobEvent = avro.MustParse(`{"name":"seraph.events.JobEvent","type":"record","fields":[{"name":"event","type":"seraph.events.Event"},{"name":"key","type":"string"},{"name":"description","type":"string"},{"name":"statusMessage","type":"string"},{"name":"properties","type":{"type":"map","values":"string"}}]}`)
+
+// Schema returns the schema for JobEvent.
+func (o *JobEvent) Schema() avro.Schema {
+	return schemaJobEvent
+}
+
+// Unmarshal decodes b into the receiver.
+func (o *JobEvent) Unmarshal(b []byte) error {
+	return avro.Unmarshal(o.Schema(), b, o)
+}
+
+// Marshal encodes the receiver.
+func (o *JobEvent) Marshal() ([]byte, error) {
+	return avro.Marshal(o.Schema(), o)
+}

@@ -16,16 +16,26 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with Seraph.  If not, see <http://www.gnu.org/licenses/>.
 
-package events
+package jobs
 
-const FileInfoStream = "SERAPH_FILE_INFO"
-const FileProviderFileInfoTopic = "seraph.fileprovider.*.fileinfo"
-const FileProviderFileInfoTopicPattern = "seraph.fileprovider.%s.fileinfo"
+import (
+	"embed"
 
-const FileChangedStream = "SERAPH_FILE_CHANGED"
-const FileChangedTopic = "seraph.file.*.changed"
-const FileChangedTopicPattern = "seraph.file.%s.changed"
+	_ "github.com/golang-migrate/migrate/v4/database/mongodb"
+	"github.com/spf13/viper"
+	"umbasa.net/seraph/mongodb"
+)
 
-const JobsStream = "SERAPH_JOBS"
-const JobsTopic = "seraph.jobs.>"
-const JobsTopicPattern = "seraph.jobs.%s"
+//go:embed migrations/*.json
+var migrations embed.FS
+
+type Migrations struct{}
+
+func NewMigrations(viper *viper.Viper) (Migrations, error) {
+	uri := viper.GetString("mongo.url")
+	dbName := viper.GetString("mongo.db")
+
+	err := mongodb.ApplyMigrations(migrations, uri, dbName)
+
+	return Migrations{}, err
+}

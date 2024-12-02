@@ -12,7 +12,10 @@ import (
 	"path"
 	"regexp"
 	"strings"
+	"sync/atomic"
+	"time"
 
+	"github.com/boz/go-throttle"
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/google/uuid"
 	"github.com/kalafut/imohash"
@@ -36,17 +39,22 @@ type Consumer interface {
 }
 
 type consumer struct {
-	logger   *logging.Logger
-	log      *slog.Logger
-	nc       *nats.Conn
-	js       jetstream.JetStream
-	consumer jetstream.Consumer
-	limiter  util.Limiter
-	ctx      context.Context
-	cancel   context.CancelFunc
+	logger           *logging.Logger
+	log              *slog.Logger
+	nc               *nats.Conn
+	js               jetstream.JetStream
+	fileInfoStream   jetstream.Stream
+	consumer         jetstream.Consumer
+	limiter          util.Limiter
+	progressThrottle throttle.Throttle
+
+	ctx    context.Context
+	cancel context.CancelFunc
 
 	files   *mongo.Collection
 	readdir *mongo.Collection
+
+	lastSeq atomic.Uint64
 }
 
 type Params struct {
@@ -67,10 +75,11 @@ func NewConsumer(p Params) (Consumer, error) {
 
 	// create stream for FileChangedEvent - we are producer for these
 
-	log.Debug("create " + events.FileChangedStream)
+	log.Debug("create " + events.JobsStream)
 	cfg := jetstream.StreamConfig{
-		Name:     events.FileChangedStream,
-		Subjects: []string{events.FileChangedTopic},
+		Name:              events.JobsStream,
+		Subjects:          []string{events.JobsTopic},
+		MaxMsgsPerSubject: 1,
 	}
 	_, err := p.Js.CreateOrUpdateStream(context.Background(), cfg)
 	if err != nil {
@@ -99,17 +108,19 @@ func NewConsumer(p Params) (Consumer, error) {
 	readdir := p.Db.Collection("readdir")
 
 	cons := consumer{
-		logger:   p.Logger,
-		log:      log,
-		nc:       p.Nc,
-		js:       p.Js,
-		consumer: c,
-		files:    files,
-		readdir:  readdir,
-		ctx:      ctx,
-		cancel:   cancel,
+		logger:         p.Logger,
+		log:            log,
+		nc:             p.Nc,
+		js:             p.Js,
+		fileInfoStream: stream,
+		consumer:       c,
+		files:          files,
+		readdir:        readdir,
+		ctx:            ctx,
+		cancel:         cancel,
 	}
 	cons.limiter = util.NewLimiter(p.Viper.GetInt("fileindexer.parallel"))
+	cons.progressThrottle = throttle.NewThrottle(2*time.Second, true)
 
 	return &cons, nil
 }
@@ -137,19 +148,33 @@ func (c *consumer) Start() error {
 		}
 	}()
 
+	go func() {
+		for c.progressThrottle.Next() {
+			c.updateProgress()
+		}
+	}()
+
 	return nil
 }
 
 func (c *consumer) Stop() {
 	c.cancel()
 	c.limiter.Join()
+	c.progressThrottle.Stop()
 }
 
 func (c *consumer) handleMessage(msg jetstream.Msg) {
 	defer c.limiter.End()
+
+	metadata, err := msg.Metadata()
+	if err != nil {
+		c.log.Error("failed to read message metadata", "error", err)
+		return
+	}
+
 	fileInfoEvent := events.FileInfoEvent{}
 
-	err := fileInfoEvent.Unmarshal(msg.Data())
+	err = fileInfoEvent.Unmarshal(msg.Data())
 	if err != nil {
 		c.log.Error("failed to deserialize message", "error", err)
 		return
@@ -203,6 +228,23 @@ func (c *consumer) handleMessage(msg jetstream.Msg) {
 
 	c.log.Debug("successfully processed file event", "event", fileInfoEvent)
 	msg.Ack()
+
+	c.updateLastSeq(metadata.Sequence.Stream)
+	c.progressThrottle.Trigger()
+}
+
+func (c *consumer) updateLastSeq(newVal uint64) {
+	for {
+		current := c.lastSeq.Load()
+		// Only attempt to set if the new value is greater
+		if newVal > current {
+			if c.lastSeq.CompareAndSwap(current, newVal) {
+				return // Successfully updated
+			}
+		} else {
+			return // No update needed
+		}
+	}
 }
 
 func (c *consumer) upsertFile(file *FilePrototype) (newFile *File, change string, err error) {
@@ -475,4 +517,23 @@ func (c *consumer) handleReaddirComplete(file *File, readDir *events.ReadDir) er
 	}
 
 	return nil
+}
+
+func (c *consumer) updateProgress() {
+	info, err := c.fileInfoStream.Info(context.Background())
+
+	if err != nil {
+		c.log.Error("error updating index progress", "error", err)
+		return
+	}
+
+	lastSeq := c.lastSeq.Load()
+	remaining := info.State.LastSeq - lastSeq
+
+	if remaining > 0 {
+		c.log.Info(fmt.Sprintf("Index progress: %d remaining", remaining), "remaining", remaining)
+	} else {
+		c.log.Info("Indexing complete.", "remaining", remaining)
+	}
+	//TODO: publish progress to stream
 }

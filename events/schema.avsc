@@ -49,5 +49,17 @@
       {"name": "isDir", "type": "boolean"},
       {"name": "mime", "type": "string"}
     ]
+  },
+  {
+    "type": "record",
+    "name": "JobEvent",
+    "namespace": "seraph.events",
+    "fields": [
+			{"name": "event", "type": "Event"},
+      {"name": "key", "type": "string"},
+			{"name": "description", "type": "string"},
+      {"name": "statusMessage", "type": "string"},
+      {"name": "properties", "type": {"type": "map", "values": "string"}}
+    ]
   }
 ]
