@@ -548,11 +548,13 @@ func (c *consumer) updateProgress() {
 
 	remaining := info.State.LastSeq - binary.LittleEndian.Uint64(lastSeq.Value())
 
+	var statusMessage string
 	if remaining > 0 {
-		c.log.Info(fmt.Sprintf("Index progress: %d remaining", remaining), "remaining", remaining)
+		statusMessage = fmt.Sprintf("Index progress: %d remaining", remaining)
 	} else {
-		c.log.Info("Indexing complete.", "remaining", remaining)
+		statusMessage = "Indexing complete."
 	}
+	c.log.Info(statusMessage, "remaining", remaining)
 
 	ev := events.JobEvent{
 		Event: events.Event{
@@ -561,9 +563,9 @@ func (c *consumer) updateProgress() {
 		},
 		Key:           "SERAPH_FILE_INDEXER",
 		Description:   "Indexing files",
-		StatusMessage: fmt.Sprintf("Index progress: %d remaining", remaining),
+		StatusMessage: statusMessage,
 	}
 	data, _ := ev.Marshal()
-	topic := fmt.Sprintf(events.FileChangedTopicPattern, "SERAPH_FILE_INDEXER")
+	topic := fmt.Sprintf(events.JobsTopicPattern, "SERAPH_FILE_INDEXER")
 	c.nc.Publish(topic, data)
 }

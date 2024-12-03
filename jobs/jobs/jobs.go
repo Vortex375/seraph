@@ -21,6 +21,7 @@ package jobs
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -53,6 +54,7 @@ type jobs struct {
 	nc       *nats.Conn
 	js       jetstream.JetStream
 	consumer jetstream.Consumer
+	kv       jetstream.KeyValue
 
 	ctx jetstream.ConsumeContext
 }
@@ -73,6 +75,17 @@ func NewJobs(params Params) (Jobs, error) {
 	consumer, err := stream.CreateOrUpdateConsumer(context.Background(), jetstream.ConsumerConfig{
 		Durable: "SERAPH_JOBS",
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	kv, err := params.Js.CreateOrUpdateKeyValue(context.Background(), jetstream.KeyValueConfig{
+		Bucket: "SERAPH_JOBS",
+		TTL:    14 * 24 * time.Hour, // expire Jobs after 2 weeks TODO: make configurable!?
+	})
+	if err != nil {
+		return nil, err
+	}
 
 	j := jobs{
 		logger:   params.Logger,
@@ -80,6 +93,7 @@ func NewJobs(params Params) (Jobs, error) {
 		nc:       params.Nc,
 		js:       params.Js,
 		consumer: consumer,
+		kv:       kv,
 	}
 
 	return &j, nil
@@ -88,7 +102,10 @@ func NewJobs(params Params) (Jobs, error) {
 func (j *jobs) Start() error {
 	var err error
 	j.ctx, err = j.consumer.Consume(func(msg jetstream.Msg) {
-
+		ev := events.JobEvent{}
+		ev.Unmarshal(msg.Data())
+		j.kv.Put(context.Background(), ev.Key, msg.Data())
+		j.log.Debug("update "+ev.Key, "key", ev.Key, "description", ev.Description, "statusMessage", ev.StatusMessage)
 	})
 	return err
 }
