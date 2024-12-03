@@ -22,7 +22,6 @@ import (
 	"runtime"
 
 	"github.com/spf13/viper"
-	"go.mongodb.org/mongo-driver/mongo"
 	"go.uber.org/fx"
 	"umbasa.net/seraph/config"
 	"umbasa.net/seraph/file-indexer/fileindexer"
@@ -37,18 +36,14 @@ func main() {
 		config.Module,
 		messaging.Module,
 		mongodb.Module,
-		fx.Decorate(func(client *mongo.Client, viper *viper.Viper) *mongo.Client {
+		fx.Decorate(func(viper *viper.Viper) *viper.Viper {
+			viper.SetDefault("fileindexer.parallel", runtime.NumCPU())
 			viper.SetDefault("mongo.db", "seraph-files")
-			return client
+			return viper
 		}),
 		fx.Provide(fileindexer.NewMigrations),
-		fx.Invoke(func(params fileindexer.Params, lc fx.Lifecycle) error {
-			params.Viper.SetDefault("fileindexer.parallel", runtime.NumCPU())
-
-			consumer, err := fileindexer.NewConsumer(params)
-			if err != nil {
-				return err
-			}
+		fx.Provide(fileindexer.NewConsumer),
+		fx.Invoke(func(consumer fileindexer.Consumer, lc fx.Lifecycle) {
 
 			lc.Append(fx.StartHook(func() error {
 				return consumer.Start()
@@ -58,7 +53,6 @@ func main() {
 				consumer.Stop()
 			}))
 
-			return nil
 		}),
 	).Run()
 }

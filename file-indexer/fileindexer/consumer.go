@@ -2,6 +2,7 @@ package fileindexer
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -12,7 +13,6 @@ import (
 	"path"
 	"regexp"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/boz/go-throttle"
@@ -39,12 +39,14 @@ type Consumer interface {
 }
 
 type consumer struct {
-	logger           *logging.Logger
-	log              *slog.Logger
-	nc               *nats.Conn
-	js               jetstream.JetStream
-	fileInfoStream   jetstream.Stream
-	consumer         jetstream.Consumer
+	logger         *logging.Logger
+	log            *slog.Logger
+	nc             *nats.Conn
+	js             jetstream.JetStream
+	fileInfoStream jetstream.Stream
+	consumer       jetstream.Consumer
+	kv             jetstream.KeyValue
+
 	limiter          util.Limiter
 	progressThrottle throttle.Throttle
 
@@ -53,8 +55,6 @@ type consumer struct {
 
 	files   *mongo.Collection
 	readdir *mongo.Collection
-
-	lastSeq atomic.Uint64
 }
 
 type Params struct {
@@ -75,13 +75,11 @@ func NewConsumer(p Params) (Consumer, error) {
 
 	// create stream for FileChangedEvent - we are producer for these
 
-	log.Debug("create " + events.JobsStream)
-	cfg := jetstream.StreamConfig{
-		Name:              events.JobsStream,
-		Subjects:          []string{events.JobsTopic},
-		MaxMsgsPerSubject: 1,
-	}
-	_, err := p.Js.CreateOrUpdateStream(context.Background(), cfg)
+	log.Debug("create " + events.FileChangedStream)
+	_, err := p.Js.CreateOrUpdateStream(context.Background(), jetstream.StreamConfig{
+		Name:     events.FileChangedStream,
+		Subjects: []string{events.FileChangedTopic},
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -89,14 +87,18 @@ func NewConsumer(p Params) (Consumer, error) {
 	// create stream for FileInfoEvent - we consume these
 
 	log.Debug("create " + events.FileInfoStream)
-	cfg = jetstream.StreamConfig{
+	stream, err := p.Js.CreateOrUpdateStream(context.Background(), jetstream.StreamConfig{
 		Name:     events.FileInfoStream,
 		Subjects: []string{events.FileProviderFileInfoTopic},
-	}
-	stream, err := p.Js.CreateOrUpdateStream(context.Background(), cfg)
+	})
 	if err != nil {
 		return nil, err
 	}
+
+	kv, err := p.Js.CreateOrUpdateKeyValue(context.Background(), jetstream.KeyValueConfig{
+		Bucket: "SERAPH_FILE_INDEXER",
+	})
+	kv.Create(context.Background(), "lastSeq", make([]byte, 8))
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -107,6 +109,9 @@ func NewConsumer(p Params) (Consumer, error) {
 	files := p.Db.Collection("files")
 	readdir := p.Db.Collection("readdir")
 
+	limiter := util.NewLimiter(p.Viper.GetInt("fileindexer.parallel"))
+	progressThrottle := throttle.NewThrottle(2*time.Second, true)
+
 	cons := consumer{
 		logger:         p.Logger,
 		log:            log,
@@ -114,13 +119,16 @@ func NewConsumer(p Params) (Consumer, error) {
 		js:             p.Js,
 		fileInfoStream: stream,
 		consumer:       c,
-		files:          files,
-		readdir:        readdir,
-		ctx:            ctx,
-		cancel:         cancel,
+		kv:             kv,
+
+		limiter:          limiter,
+		progressThrottle: progressThrottle,
+
+		files:   files,
+		readdir: readdir,
+		ctx:     ctx,
+		cancel:  cancel,
 	}
-	cons.limiter = util.NewLimiter(p.Viper.GetInt("fileindexer.parallel"))
-	cons.progressThrottle = throttle.NewThrottle(2*time.Second, true)
 
 	return &cons, nil
 }
@@ -233,16 +241,22 @@ func (c *consumer) handleMessage(msg jetstream.Msg) {
 	c.progressThrottle.Trigger()
 }
 
-func (c *consumer) updateLastSeq(newVal uint64) {
+func (c *consumer) updateLastSeq(newValue uint64) {
 	for {
-		current := c.lastSeq.Load()
-		// Only attempt to set if the new value is greater
-		if newVal > current {
-			if c.lastSeq.CompareAndSwap(current, newVal) {
-				return // Successfully updated
-			}
-		} else {
-			return // No update needed
+		current, err := c.kv.Get(c.ctx, "lastSeq")
+		if err != nil {
+			c.log.Error("error while updating progress", "error", err)
+			return
+		}
+		currentValue := binary.LittleEndian.Uint64(current.Value())
+		if newValue <= currentValue {
+			return
+		}
+		newVal := make([]byte, 8)
+		binary.LittleEndian.PutUint64(newVal, newValue)
+		_, err = c.kv.Update(c.ctx, "lastSeq", newVal, current.Revision())
+		if err == nil {
+			return
 		}
 	}
 }
@@ -520,20 +534,36 @@ func (c *consumer) handleReaddirComplete(file *File, readDir *events.ReadDir) er
 }
 
 func (c *consumer) updateProgress() {
-	info, err := c.fileInfoStream.Info(context.Background())
-
+	info, err := c.fileInfoStream.Info(c.ctx)
 	if err != nil {
 		c.log.Error("error updating index progress", "error", err)
 		return
 	}
 
-	lastSeq := c.lastSeq.Load()
-	remaining := info.State.LastSeq - lastSeq
+	lastSeq, err := c.kv.Get(c.ctx, "lastSeq")
+	if err != nil {
+		c.log.Error("error updating index progress", "error", err)
+		return
+	}
+
+	remaining := info.State.LastSeq - binary.LittleEndian.Uint64(lastSeq.Value())
 
 	if remaining > 0 {
 		c.log.Info(fmt.Sprintf("Index progress: %d remaining", remaining), "remaining", remaining)
 	} else {
 		c.log.Info("Indexing complete.", "remaining", remaining)
 	}
-	//TODO: publish progress to stream
+
+	ev := events.JobEvent{
+		Event: events.Event{
+			ID:      uuid.NewString(),
+			Version: 1,
+		},
+		Key:           "SERAPH_FILE_INDEXER",
+		Description:   "Indexing files",
+		StatusMessage: fmt.Sprintf("Index progress: %d remaining", remaining),
+	}
+	data, _ := ev.Marshal()
+	topic := fmt.Sprintf(events.FileChangedTopicPattern, "SERAPH_FILE_INDEXER")
+	c.nc.Publish(topic, data)
 }

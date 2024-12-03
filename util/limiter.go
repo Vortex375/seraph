@@ -39,7 +39,6 @@ type limiter struct {
 func NewLimiter(limit int) Limiter {
 	lim := limiter{
 		limitChan: make(chan empty, limit),
-		// cancelChan: make(chan empty),
 	}
 	lim.cond = sync.NewCond(&lim.mu)
 	return &lim

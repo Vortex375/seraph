@@ -22,7 +22,6 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/gofiber/fiber/v2/log"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/spf13/viper"
@@ -59,14 +58,14 @@ type jobs struct {
 }
 
 func NewJobs(params Params) (Jobs, error) {
+	log := params.Logger.GetLogger("jobs")
 
 	log.Debug("create " + events.JobsStream)
-	cfg := jetstream.StreamConfig{
+	stream, err := params.Js.CreateOrUpdateStream(context.Background(), jetstream.StreamConfig{
 		Name:              events.JobsStream,
 		Subjects:          []string{events.JobsTopic},
 		MaxMsgsPerSubject: 1,
-	}
-	stream, err := params.Js.CreateOrUpdateStream(context.Background(), cfg)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +76,7 @@ func NewJobs(params Params) (Jobs, error) {
 
 	j := jobs{
 		logger:   params.Logger,
-		log:      params.Logger.GetLogger("jobs"),
+		log:      log,
 		nc:       params.Nc,
 		js:       params.Js,
 		consumer: consumer,
