@@ -106,6 +106,18 @@ services:
     environment:
       SERAPH_NATS_URL: nats://nats:4222
       SERAPH_MONGO_URL: mongodb://mongodb:27017/
+
+  jobs:
+    image: seraph
+    restart: always
+    command: 
+      - jobs
+    depends_on:
+      - nats
+    networks:
+      - internal
+    environment:
+      SERAPH_NATS_URL: nats://nats:4222
     
   file-provider-dir:
     image: seraph
