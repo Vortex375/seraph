@@ -8,8 +8,8 @@ import (
 
 // Event is a generated struct.
 type Event struct {
-	ID      string `avro:"id"`
-	Version int    `avro:"version"`
+	ID      string `avro:"id" json:"id"`
+	Version int    `avro:"version" json:"version"`
 }
 
 var schemaEvent = avro.MustParse(`{"name":"seraph.events.Event","type":"record","fields":[{"name":"id","type":"string"},{"name":"version","type":"int"}]}`)
@@ -31,9 +31,9 @@ func (o *Event) Marshal() ([]byte, error) {
 
 // ReadDir is a generated struct.
 type ReadDir struct {
-	Readdir string `avro:"readdir"`
-	Index   int64  `avro:"index"`
-	Total   int64  `avro:"total"`
+	Readdir string `avro:"readdir" json:"readdir"`
+	Index   int64  `avro:"index" json:"index"`
+	Total   int64  `avro:"total" json:"total"`
 }
 
 var schemaReadDir = avro.MustParse(`{"name":"seraph.events.ReadDir","type":"record","fields":[{"name":"readdir","type":"string"},{"name":"index","type":"long"},{"name":"total","type":"long"}]}`)
@@ -55,14 +55,14 @@ func (o *ReadDir) Marshal() ([]byte, error) {
 
 // FileInfoEvent is a generated struct.
 type FileInfoEvent struct {
-	Event      Event    `avro:"event"`
-	ProviderID string   `avro:"providerId"`
-	Readdir    *ReadDir `avro:"readdir"`
-	Path       string   `avro:"path"`
-	Size       int64    `avro:"size"`
-	Mode       int64    `avro:"mode"`
-	ModTime    int64    `avro:"modTime"`
-	IsDir      bool     `avro:"isDir"`
+	Event      Event    `avro:"event" json:"event"`
+	ProviderID string   `avro:"providerId" json:"providerId"`
+	Readdir    *ReadDir `avro:"readdir" json:"readdir"`
+	Path       string   `avro:"path" json:"path"`
+	Size       int64    `avro:"size" json:"size"`
+	Mode       int64    `avro:"mode" json:"mode"`
+	ModTime    int64    `avro:"modTime" json:"modTime"`
+	IsDir      bool     `avro:"isDir" json:"isDir"`
 }
 
 var schemaFileInfoEvent = avro.MustParse(`{"name":"seraph.events.FileInfoEvent","type":"record","fields":[{"name":"event","type":"seraph.events.Event"},{"name":"providerId","type":"string"},{"name":"readdir","type":["seraph.events.ReadDir","null"]},{"name":"path","type":"string"},{"name":"size","type":"long"},{"name":"mode","type":"long"},{"name":"modTime","type":"long"},{"name":"isDir","type":"boolean"}]}`)
@@ -84,16 +84,16 @@ func (o *FileInfoEvent) Marshal() ([]byte, error) {
 
 // FileChangedEvent is a generated struct.
 type FileChangedEvent struct {
-	Event      Event  `avro:"event"`
-	FileID     string `avro:"fileId"`
-	ProviderID string `avro:"providerId"`
-	Change     string `avro:"change"`
-	Path       string `avro:"path"`
-	Size       int64  `avro:"size"`
-	Mode       int64  `avro:"mode"`
-	ModTime    int64  `avro:"modTime"`
-	IsDir      bool   `avro:"isDir"`
-	Mime       string `avro:"mime"`
+	Event      Event  `avro:"event" json:"event"`
+	FileID     string `avro:"fileId" json:"fileId"`
+	ProviderID string `avro:"providerId" json:"providerId"`
+	Change     string `avro:"change" json:"change"`
+	Path       string `avro:"path" json:"path"`
+	Size       int64  `avro:"size" json:"size"`
+	Mode       int64  `avro:"mode" json:"mode"`
+	ModTime    int64  `avro:"modTime" json:"modTime"`
+	IsDir      bool   `avro:"isDir" json:"isDir"`
+	Mime       string `avro:"mime" json:"mime"`
 }
 
 var schemaFileChangedEvent = avro.MustParse(`{"name":"seraph.events.FileChangedEvent","type":"record","fields":[{"name":"event","type":"seraph.events.Event"},{"name":"fileId","type":"string"},{"name":"providerId","type":"string"},{"name":"change","type":"string"},{"name":"path","type":"string"},{"name":"size","type":"long"},{"name":"mode","type":"long"},{"name":"modTime","type":"long"},{"name":"isDir","type":"boolean"},{"name":"mime","type":"string"}]}`)
@@ -115,11 +115,11 @@ func (o *FileChangedEvent) Marshal() ([]byte, error) {
 
 // JobEvent is a generated struct.
 type JobEvent struct {
-	Event         Event             `avro:"event"`
-	Key           string            `avro:"key"`
-	Description   string            `avro:"description"`
-	StatusMessage string            `avro:"statusMessage"`
-	Properties    map[string]string `avro:"properties"`
+	Event         Event             `avro:"event" json:"event"`
+	Key           string            `avro:"key" json:"key"`
+	Description   string            `avro:"description" json:"description"`
+	StatusMessage string            `avro:"statusMessage" json:"statusMessage"`
+	Properties    map[string]string `avro:"properties" json:"properties"`
 }
 
 var schemaJobEvent = avro.MustParse(`{"name":"seraph.events.JobEvent","type":"record","fields":[{"name":"event","type":"seraph.events.Event"},{"name":"key","type":"string"},{"name":"description","type":"string"},{"name":"statusMessage","type":"string"},{"name":"properties","type":{"type":"map","values":"string"}}]}`)

@@ -24,6 +24,7 @@ import (
 	"go.uber.org/fx"
 	"umbasa.net/seraph/api-gateway/auth"
 	"umbasa.net/seraph/api-gateway/gateway"
+	"umbasa.net/seraph/api-gateway/jobs"
 	"umbasa.net/seraph/api-gateway/preview"
 	"umbasa.net/seraph/api-gateway/shares"
 	"umbasa.net/seraph/api-gateway/webdav"
@@ -44,6 +45,7 @@ func main() {
 		webdav.Module,
 		preview.Module,
 		shares.Module,
+		jobs.Module,
 		fx.Provide(auth.NewMigrations),
 		fx.Decorate(func(client *mongo.Client, viper *viper.Viper) *mongo.Client {
 			viper.SetDefault("mongo.db", "seraph-auth")

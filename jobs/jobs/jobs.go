@@ -25,8 +25,6 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
-	"github.com/spf13/viper"
-	"go.mongodb.org/mongo-driver/mongo"
 	"go.uber.org/fx"
 	"umbasa.net/seraph/events"
 	"umbasa.net/seraph/logging"
@@ -37,10 +35,7 @@ type Params struct {
 
 	Nc     *nats.Conn
 	Js     jetstream.JetStream
-	Db     *mongo.Database
 	Logger *logging.Logger
-	Viper  *viper.Viper
-	Mig    Migrations
 }
 
 type Jobs interface {
@@ -57,6 +52,11 @@ type jobs struct {
 	kv       jetstream.KeyValue
 
 	ctx jetstream.ConsumeContext
+}
+
+var BucketConfig = jetstream.KeyValueConfig{
+	Bucket: "SERAPH_JOBS",
+	TTL:    14 * 24 * time.Hour, // expire Jobs after 2 weeks TODO: make configurable!?
 }
 
 func NewJobs(params Params) (Jobs, error) {
@@ -79,10 +79,7 @@ func NewJobs(params Params) (Jobs, error) {
 		return nil, err
 	}
 
-	kv, err := params.Js.CreateOrUpdateKeyValue(context.Background(), jetstream.KeyValueConfig{
-		Bucket: "SERAPH_JOBS",
-		TTL:    14 * 24 * time.Hour, // expire Jobs after 2 weeks TODO: make configurable!?
-	})
+	kv, err := params.Js.CreateOrUpdateKeyValue(context.Background(), BucketConfig)
 	if err != nil {
 		return nil, err
 	}

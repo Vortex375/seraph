@@ -19,14 +19,11 @@
 package main
 
 import (
-	"github.com/spf13/viper"
-	"go.mongodb.org/mongo-driver/mongo"
 	"go.uber.org/fx"
 	"umbasa.net/seraph/config"
 	"umbasa.net/seraph/jobs/jobs"
 	"umbasa.net/seraph/logging"
 	"umbasa.net/seraph/messaging"
-	"umbasa.net/seraph/mongodb"
 )
 
 func main() {
@@ -34,12 +31,6 @@ func main() {
 		logging.Module,
 		config.Module,
 		messaging.Module,
-		mongodb.Module,
-		fx.Decorate(func(client *mongo.Client, viper *viper.Viper) *mongo.Client {
-			viper.SetDefault("mongo.db", "seraph-jobs")
-			return client
-		}),
-		fx.Provide(jobs.NewMigrations),
 		fx.Invoke(func(params jobs.Params, lc fx.Lifecycle) error {
 			jobs, err := jobs.NewJobs(params)
 			if err != nil {
