@@ -31,8 +31,17 @@ import (
 )
 
 type TokenStore interface {
+	// Registers a token for a user with a password. The token can later be retrieved using the same username and password.
+	// If there's already a token registered for the user it is replaced with the new token and the new password.
 	registerTokenWithPassword(context context.Context, userId string, username string, password string, refreshToken string) error
-	getTokenWithPassword(context context.Context, username string, password string) (string, error)
+
+	// Retrieves a stored token using username and password. Returns empty string if no token was found with the given username/password
+	// combination. Second parameter is set to true if the user has a token stored (but the password might have been incorrect)
+	// and to false if no token is stored at all (meaning no password will be sucessful for this user)
+	getTokenWithPassword(context context.Context, username string, password string) (string, bool, error)
+
+	// Deletes the stored token for this user, if any
+	deleteToken(context context.Context, userId string) error
 }
 
 type TokenPrototype struct {
@@ -82,29 +91,38 @@ func (store *tokenStore) registerTokenWithPassword(context context.Context, user
 	return err
 }
 
-func (store *tokenStore) getTokenWithPassword(context context.Context, username string, password string) (string, error) {
+func (store *tokenStore) getTokenWithPassword(context context.Context, username string, password string) (string, bool, error) {
 	filter := TokenPrototype{}
 	filter.UserName.Set(username)
 
 	res := store.tokens.FindOne(context, filter)
 	if errors.Is(res.Err(), mongo.ErrNoDocuments) {
-		return "", nil
+		return "", false, nil
 	}
 	if res.Err() != nil {
-		return "", res.Err()
+		return "", false, res.Err()
 	}
 
 	token := Token{}
 	err := res.Decode(&token)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(token.Password), []byte(password))
 	if err != nil {
-		return "", nil
+		return "", true, nil
 	}
 
-	return token.RefreshToken, nil
+	return token.RefreshToken, true, nil
 
+}
+
+func (store *tokenStore) deleteToken(context context.Context, userId string) error {
+	filter := TokenPrototype{}
+	filter.UserId.Set(userId)
+
+	_, err := store.tokens.DeleteOne(context, filter)
+
+	return err
 }

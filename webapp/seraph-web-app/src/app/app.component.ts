@@ -26,4 +26,10 @@ export class AppComponent {
       setTimeout(() => this.pwForm?.nativeElement?.submit())
     })
   }
+
+  deletePassword() {
+    this.passwordService.getNonce().subscribe(nonce => {
+      this.passwordService.deletePassword(nonce).subscribe()
+    })
+  }
 }

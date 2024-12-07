@@ -1,8 +1,24 @@
 <h1>Seraph</h1>
 
 <h2>Set WebDAV Password</h2>
+
+<p>
+  You can configure a separate password to be used for WebDAV authentication.
+  If you don't configure a separate password, your account password is used for WebDAV.
+</p>
+
+<p>
+  Enter a password and select "Set Password" to use the entered password for WebDAV.
+  You may have to enter your account password again for confirmation.
+</p>
+
+<p>
+  Select "Clear Password" to remove the stored password and use your account password again for WebDAV.
+</p>
+
 <form #pwForm method="post" action="/auth/password">
   <input type="hidden" name="nonce" [(ngModel)]="nonce">
   <input type="password" name="password" [(ngModel)]="password">
   <input type="button" value="Set Password" (click)="changePassword()">
+  <input type="button" value="Clear Password" (click)="deletePassword()">
 </form>

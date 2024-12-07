@@ -243,6 +243,31 @@ func (a *oidcAuth) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 		ctx.Redirect(http.StatusFound, a.offlineConfig.AuthCodeURL(state))
 	})
 
+	authGroup.DELETE("/password", func(ctx *gin.Context) {
+		userId := a.GetUserId(ctx)
+		if userId == "" {
+			ctx.AbortWithStatus(http.StatusForbidden)
+			return
+		}
+
+		sess := sessions.Default(ctx)
+		nonce := sess.Get("auth_register_password_nonce")
+		sess.Delete("auth_register_password_nonce")
+		queryNonce := ctx.Query("nonce")
+		if nonce == "" || nonce != queryNonce {
+			ctx.AbortWithError(http.StatusBadRequest, errors.New("invalid nonce"))
+			return
+		}
+
+		err := a.tokenStore.deleteToken(ctx, userId)
+		if err != nil {
+			ctx.AbortWithError(http.StatusInternalServerError, err)
+			return
+		}
+
+		ctx.Status(http.StatusNoContent)
+	})
+
 	//TODO: for debugging
 	authGroup.GET("/token", func(ctx *gin.Context) {
 		sess := sessions.Default(ctx)
@@ -335,11 +360,28 @@ func (a *oidcAuth) PasswordAuthMiddleware(realm string) func(*gin.Context) bool 
 			ctx.AbortWithError(http.StatusInternalServerError, err)
 			return false
 		}
+
+		var hasStored bool
 		if token == nil {
-			token, err = a.getTokenFromPassword(ctx)
+			token, hasStored, err = a.getTokenFromTokenStore(ctx)
 			if err != nil {
 				ctx.AbortWithError(http.StatusInternalServerError, err)
 				return false
+			}
+		}
+
+		if token == nil && !hasStored {
+			token, err = a.getTokenWithPassword(ctx)
+			if err != nil {
+				if authErr, ok := err.(*oauth2.RetrieveError); ok && authErr.ErrorCode != "" {
+					// status code returned from Authentication server -> likely invalid credentials
+					a.log.Error("unable to authenticate with password", "error", err)
+					token = nil
+				} else {
+					// internal or unknown error
+					ctx.AbortWithError(http.StatusInternalServerError, err)
+					return false
+				}
 			}
 		}
 
@@ -382,18 +424,25 @@ func (a *oidcAuth) sendPasswordAuth(ctx *gin.Context, realm string) {
 	ctx.AbortWithStatus(http.StatusUnauthorized)
 }
 
-func (a *oidcAuth) getTokenFromPassword(ctx *gin.Context) (*oauth2.Token, error) {
+func (a *oidcAuth) getTokenFromTokenStore(ctx *gin.Context) (*oauth2.Token, bool, error) {
 	if username, password, ok := ctx.Request.BasicAuth(); ok {
-		refreshToken, err := a.tokenStore.getTokenWithPassword(ctx, username, password)
+		refreshToken, has, err := a.tokenStore.getTokenWithPassword(ctx, username, password)
 		if err != nil {
-			return nil, err
+			return nil, has, err
 		}
 		if refreshToken == "" {
-			return nil, nil
+			return nil, has, nil
 		}
 		return &oauth2.Token{
 			RefreshToken: refreshToken,
-		}, nil
+		}, has, nil
+	}
+	return nil, false, nil
+}
+
+func (a *oidcAuth) getTokenWithPassword(ctx *gin.Context) (*oauth2.Token, error) {
+	if username, password, ok := ctx.Request.BasicAuth(); ok {
+		return a.config.PasswordCredentialsToken(ctx, username, password)
 	}
 	return nil, nil
 }

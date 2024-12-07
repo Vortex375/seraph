@@ -13,4 +13,8 @@ export class PasswordService {
     return this.http.get('/auth/password')
     .pipe(map<any, string>(v => v.nonce))
   }
+
+  deletePassword(nonce: string): Observable<any> {
+    return this.http.delete('/auth/password', { params: { nonce } })
+  }
 }
