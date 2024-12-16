@@ -22,14 +22,7 @@ import "github.com/gin-gonic/gin"
 
 type noAuth struct{}
 
-func (a *noAuth) AuthMiddleware() func(*gin.Context) bool {
-	return func(ctx *gin.Context) bool {
-		/* no-op */
-		return true
-	}
-}
-
-func (a *noAuth) PasswordAuthMiddleware(realm string) func(*gin.Context) bool {
+func (a *noAuth) AuthMiddleware(enablePasswordAuth bool, realm string) func(*gin.Context) bool {
 	return func(ctx *gin.Context) bool {
 		/* no-op */
 		return true

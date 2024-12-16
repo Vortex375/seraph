@@ -25,11 +25,14 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/coreos/go-oidc"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/spf13/viper"
 	cachecontrol "go.eigsys.de/gin-cachecontrol/v2"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -39,6 +42,9 @@ import (
 	"golang.org/x/oauth2"
 	"umbasa.net/seraph/api-gateway/gateway-handler"
 	"umbasa.net/seraph/logging"
+
+	"github.com/zitadel/oidc/v3/pkg/client/rs"
+	zoidc "github.com/zitadel/oidc/v3/pkg/oidc"
 )
 
 var Module = fx.Module("auth",
@@ -52,6 +58,7 @@ type Params struct {
 
 	Log   *logging.Logger
 	Viper *viper.Viper
+	Js    jetstream.JetStream
 
 	Db  *mongo.Database
 	Mig Migrations
@@ -65,18 +72,23 @@ type Result struct {
 }
 
 type Auth interface {
-	AuthMiddleware() func(*gin.Context) bool
-	PasswordAuthMiddleware(realm string) func(*gin.Context) bool
+	AuthMiddleware(enablePasswordAuth bool, realm string) func(*gin.Context) bool
 	GetUserId(*gin.Context) string
 }
 
 type oidcAuth struct {
-	log           *slog.Logger
-	provider      *oidc.Provider
-	config        *oauth2.Config
-	offlineConfig *oauth2.Config
-	verifier      *oidc.IDTokenVerifier
-	tokenStore    TokenStore
+	log            *slog.Logger
+	configUrl      string
+	provider       *oidc.Provider
+	resourceServer rs.ResourceServer
+	config         *oauth2.Config
+	offlineConfig  *oauth2.Config
+	verifier       *oidc.IDTokenVerifier
+
+	passwordCache      jetstream.KeyValue
+	introspectionCache jetstream.KeyValue
+
+	tokenStore TokenStore
 }
 
 func New(p Params) (Result, error) {
@@ -86,6 +98,7 @@ func New(p Params) (Result, error) {
 	p.Viper.SetDefault("auth.configURL", "http://localhost:8081/realms/seraph")
 	p.Viper.SetDefault("auth.redirectURL", "http://localhost:8080/auth/callback")
 	p.Viper.SetDefault("auth.clientId", "seraph")
+	p.Viper.SetDefault("auth.clientScopes", make([]string, 0))
 
 	if p.Viper.GetBool("auth.disabled") {
 		log.Warn("AUTHENTICATION DISABLED via auth.disabled parameter!! Access to all APIs and data is granted without login.")
@@ -94,17 +107,25 @@ func New(p Params) (Result, error) {
 	}
 
 	configURL := p.Viper.GetString("auth.configURL")
+	clientID := p.Viper.GetString("auth.clientId")
+	clientSecret := p.Viper.GetString("auth.clientSecret")
+	clientScopes := p.Viper.GetStringSlice("auth.clientScopes")
+	redirectURL := p.Viper.GetString("auth.redirectURL")
 	ctx := context.Background()
-	provider, err := oidc.NewProvider(ctx, configURL)
 
+	log.Info("oidc configuration", "issuer", configURL, "clientId", clientID, "clientScopes", clientScopes, "redirectUrl", redirectURL)
+
+	provider, err := oidc.NewProvider(ctx, configURL)
 	if err != nil {
 		return Result{}, err
 	}
 
-	clientID := p.Viper.GetString("auth.clientId")
-	clientSecret := p.Viper.GetString("auth.clientSecret")
+	resourceServer, err := rs.NewResourceServerClientCredentials(ctx, configURL, clientID, clientSecret)
+	if err != nil {
+		return Result{}, err
+	}
 
-	redirectURL := p.Viper.GetString("auth.redirectURL")
+	scopes := append(append(make([]string, 0, 3+len(clientScopes)), oidc.ScopeOpenID, "profile", "email"), clientScopes...)
 
 	oauth2Config := oauth2.Config{
 		ClientID:     clientID,
@@ -113,7 +134,7 @@ func New(p Params) (Result, error) {
 		// Discovery returns the OAuth2 endpoints.
 		Endpoint: provider.Endpoint(),
 		// "openid" is a required scope for OpenID Connect flows.
-		Scopes: []string{oidc.ScopeOpenID, "profile", "email"},
+		Scopes: scopes,
 	}
 
 	verifier := provider.Verifier(&oidc.Config{
@@ -127,10 +148,37 @@ func New(p Params) (Result, error) {
 		// Discovery returns the OAuth2 endpoints.
 		Endpoint: provider.Endpoint(),
 		// "openid" is a required scope for OpenID Connect flows.
-		Scopes: []string{oidc.ScopeOpenID, oidc.ScopeOfflineAccess, "profile", "email"},
+		Scopes: append(append(make([]string, 0, len(scopes)+1), scopes...), oidc.ScopeOfflineAccess),
 	}
 
-	auth := &oidcAuth{log, provider, &oauth2Config, &offlineConfig, verifier, NewTokenStore(p.Db)}
+	passwordCache, err := p.Js.CreateOrUpdateKeyValue(context.Background(), jetstream.KeyValueConfig{
+		Bucket: "SERAPH_AUTH_PASSWORD",
+		TTL:    5 * time.Minute,
+	})
+	if err != nil {
+		return Result{}, err
+	}
+
+	introspectionCache, err := p.Js.CreateOrUpdateKeyValue(context.Background(), jetstream.KeyValueConfig{
+		Bucket: "SERAPH_AUTH_INTROSPECTION",
+		TTL:    5 * time.Minute,
+	})
+	if err != nil {
+		return Result{}, err
+	}
+
+	auth := &oidcAuth{
+		log:                log,
+		configUrl:          configURL,
+		provider:           provider,
+		resourceServer:     resourceServer,
+		config:             &oauth2Config,
+		offlineConfig:      &offlineConfig,
+		verifier:           verifier,
+		passwordCache:      passwordCache,
+		introspectionCache: introspectionCache,
+		tokenStore:         NewTokenStore(p.Db),
+	}
 
 	return Result{Auth: auth, Handler: auth}, nil
 }
@@ -183,7 +231,8 @@ func (a *oidcAuth) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 			a.log.Info("Registering new auth password", "username", claims.Username)
 			a.tokenStore.registerTokenWithPassword(ctx, idToken.Subject, claims.Username, password, oauth2Token.RefreshToken)
 		} else {
-			storeTokenToSession(sess, oauth2Token, idToken.Subject)
+			setUserId(ctx, idToken.Subject)
+			storeTokenToSession(sess, oauth2Token)
 			sess.Save()
 		}
 
@@ -272,7 +321,7 @@ func (a *oidcAuth) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 	authGroup.GET("/token", func(ctx *gin.Context) {
 		sess := sessions.Default(ctx)
 
-		oauth2Token, _ := getTokenFromSession(sess)
+		oauth2Token, _ := a.getTokenFromSession(sess)
 		if oauth2Token == nil {
 			ctx.String(http.StatusOK, "no session")
 			return
@@ -289,11 +338,22 @@ func (a *oidcAuth) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 			}
 		}
 
+		var userInfoClaims *json.RawMessage = new(json.RawMessage)
+		userInfo, err := a.provider.UserInfo(ctx, oauth2.StaticTokenSource(oauth2Token))
+		if err == nil {
+			userInfo.Claims(&userInfoClaims)
+		}
+
+		introspectionResponse, _ := rs.Introspect[*zoidc.IntrospectionResponse](ctx, a.resourceServer, oauth2Token.AccessToken)
+
 		resp := struct {
-			OAuth2Token   *oauth2.Token
-			IDToken       *oidc.IDToken
-			IDTokenClaims *json.RawMessage
-		}{oauth2Token, idToken, idTokenClaims}
+			OAuth2Token           *oauth2.Token
+			IDToken               *oidc.IDToken
+			IDTokenClaims         *json.RawMessage
+			UserInfo              *oidc.UserInfo
+			UserInfoClaims        *json.RawMessage
+			IntrospectionResponse *zoidc.IntrospectionResponse
+		}{oauth2Token, idToken, idTokenClaims, userInfo, userInfoClaims, introspectionResponse}
 
 		data, err := json.MarshalIndent(resp, "", "  ")
 		if err != nil {
@@ -305,108 +365,133 @@ func (a *oidcAuth) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 	})
 }
 
-func (a *oidcAuth) AuthMiddleware() func(*gin.Context) bool {
+func (a *oidcAuth) AuthMiddleware(passwordAuth bool, realm string) func(*gin.Context) bool {
 	return func(ctx *gin.Context) bool {
-		sess := sessions.Default(ctx)
-
-		tokenFromSession, _ := getTokenFromSession(sess)
-		bearerToken := ctx.GetHeader("Authorization")
+		var sess sessions.Session
 		var token *oauth2.Token
+		var err error
+		var bearerAuth bool
 
-		//TODO: bearer authentication incorrect
-		var rawIDToken string
-		if bearerToken != "" {
-			parts := strings.Split(bearerToken, " ")
-			if len(parts) != 2 {
-				ctx.AbortWithError(http.StatusBadRequest, errors.New("auth: invalid Authorization header"))
+		// if Authorization header is present, use it
+		authHeader := ctx.GetHeader("Authorization")
+		if authHeader != "" {
+			// first, check for Authorization: Bearer
+			token, err = a.getBearerToken(ctx)
+			if err != nil {
+				ctx.AbortWithError(http.StatusBadRequest, err)
 				return false
 			}
-			rawIDToken = parts[1]
 
-		} else if tokenFromSession != nil {
-			var err error
-			if token, err = a.config.TokenSource(ctx, tokenFromSession).Token(); err == nil {
-				rawIDToken, _ = token.Extra("id_token").(string)
+			if token != nil {
+				bearerAuth = true
 			}
-		}
 
-		if rawIDToken == "" {
-			a.sendRedirect(ctx)
-			ctx.Abort()
-			return false
-		}
+			// when passwordAuth is enabled, check for Authorization: Basic
+			if token == nil && passwordAuth {
+				// re-use password authentication from cache
+				token, err = a.getTokenFromPasswordCache(ctx)
+				if err != nil {
+					ctx.AbortWithError(http.StatusInternalServerError, err)
+					return false
+				}
 
-		var idToken *oidc.IDToken
-		var err error
-		if idToken, err = a.verifier.Verify(ctx, rawIDToken); err != nil {
-			a.sendRedirect(ctx)
-			ctx.Abort()
-			return false
-		}
+				// retrieve token from token store
+				var hasStored bool
+				if token == nil {
+					token, hasStored, err = a.getTokenFromTokenStore(ctx)
+					if err != nil {
+						ctx.AbortWithError(http.StatusInternalServerError, err)
+						return false
+					}
+				}
 
-		storeTokenToSession(sess, token, idToken.Subject)
-		sess.Save()
-
-		return true
-	}
-}
-
-func (a *oidcAuth) PasswordAuthMiddleware(realm string) func(*gin.Context) bool {
-	return func(ctx *gin.Context) bool {
-		sess := sessions.Default(ctx)
-
-		token, err := getTokenFromSession(sess)
-		if err != nil {
-			ctx.AbortWithError(http.StatusInternalServerError, err)
-			return false
-		}
-
-		var hasStored bool
-		if token == nil {
-			token, hasStored, err = a.getTokenFromTokenStore(ctx)
+				// use direct access grant
+				if token == nil && !hasStored {
+					token, err = a.getTokenWithPassword(ctx)
+					if err != nil {
+						if authErr, ok := err.(*oauth2.RetrieveError); ok && authErr.ErrorCode != "" {
+							// status code returned from Authentication server -> likely invalid credentials
+							a.log.Error("unable to authenticate with password", "error", err)
+							token = nil
+						} else {
+							// internal or unknown error
+							ctx.AbortWithError(http.StatusInternalServerError, err)
+							return false
+						}
+					}
+				}
+			}
+		} else {
+			// otherwise, get token from session
+			sess = sessions.Default(ctx)
+			token, err = a.getTokenFromSession(sess)
 			if err != nil {
 				ctx.AbortWithError(http.StatusInternalServerError, err)
 				return false
 			}
 		}
 
-		if token == nil && !hasStored {
-			token, err = a.getTokenWithPassword(ctx)
-			if err != nil {
-				if authErr, ok := err.(*oauth2.RetrieveError); ok && authErr.ErrorCode != "" {
-					// status code returned from Authentication server -> likely invalid credentials
-					a.log.Error("unable to authenticate with password", "error", err)
-					token = nil
-				} else {
-					// internal or unknown error
-					ctx.AbortWithError(http.StatusInternalServerError, err)
-					return false
-				}
-			}
+		// no Authorization header and no session
+		if token == nil {
+			a.authenticationFailed(ctx, bearerAuth, passwordAuth, realm)
+			return false
 		}
 
-		if token != nil {
-			if token, err := a.config.TokenSource(ctx, token).Token(); err == nil {
-				rawIDToken, ok := token.Extra("id_token").(string)
-				if ok && rawIDToken != "" {
-					if idToken, err := a.verifier.Verify(ctx, rawIDToken); err == nil {
-						storeTokenToSession(sess, token, idToken.Subject)
-						sess.Save()
-						return true
-					}
-				}
+		// attempt token refresh
+		token, err = a.config.TokenSource(ctx, token).Token()
+		if err != nil {
+			// token failed to refresh
+			if sess != nil {
+				// remove the stored token from the session
+				sess.Delete("auth_token")
+				sess.Save()
 			}
+
+			a.authenticationFailed(ctx, bearerAuth, passwordAuth, realm)
+			return false
 		}
 
-		a.sendPasswordAuth(ctx, realm)
-		return false
+		introspection, err := a.introspectToken(ctx, token)
+		if err != nil {
+			ctx.AbortWithError(http.StatusServiceUnavailable, err)
+			return false
+		}
+
+		if !a.verifyToken(introspection) {
+			a.authenticationFailed(ctx, bearerAuth, passwordAuth, realm)
+			return false
+		}
+
+		// user authenticated
+		setUserId(ctx, introspection.Subject)
+
+		if sess != nil {
+			// if no Authorization header was used, token is stored to session
+			storeTokenToSession(sess, token)
+			sess.Save()
+		} else {
+			// if Authorization: Basic was used, the token obtained via password is cached
+			// (bearer token is never cached)
+			a.addTokenToPasswordCache(ctx, token)
+		}
+
+		return true
 	}
 }
 
-func (a *oidcAuth) GetUserId(ctx *gin.Context) string {
-	sess := sessions.Default(ctx)
-	id, _ := sess.Get("user_id").(string)
-	return id
+func (a *oidcAuth) authenticationFailed(ctx *gin.Context, bearerAuth, passwordAuth bool, realm string) {
+	if bearerAuth {
+		// no redirect is sent when client provided Bearer token
+		ctx.AbortWithStatus(http.StatusForbidden)
+	} else if passwordAuth {
+		a.deleteTokenFromPasswordCache(ctx)
+		// respond with HTTP 401 and WWW-Authenticate header to initiate password authentication (for WebDAV)
+		a.sendPasswordAuth(ctx, realm)
+	} else {
+		// redirect to login
+		a.sendRedirect(ctx)
+		ctx.Abort()
+	}
 }
 
 func (a *oidcAuth) sendRedirect(ctx *gin.Context) {
@@ -422,6 +507,101 @@ func (a *oidcAuth) sendRedirect(ctx *gin.Context) {
 func (a *oidcAuth) sendPasswordAuth(ctx *gin.Context, realm string) {
 	ctx.Header("WWW-Authenticate", fmt.Sprintf("Basic realm=\"%s\"", realm))
 	ctx.AbortWithStatus(http.StatusUnauthorized)
+}
+
+func (a *oidcAuth) GetUserId(ctx *gin.Context) string {
+	if v, ok := ctx.Get("user_id"); ok {
+		return v.(string)
+	}
+	return ""
+}
+
+func setUserId(ctx *gin.Context, subject string) {
+	ctx.Set("user_id", subject)
+}
+
+func (a *oidcAuth) getBearerToken(ctx *gin.Context) (*oauth2.Token, error) {
+	authHeader := ctx.GetHeader("Authorization")
+	if authHeader != "" {
+		parts := strings.Split(authHeader, " ")
+		if len(parts) != 2 {
+			return nil, errors.New("auth: invalid Authorization header")
+		}
+		if !strings.EqualFold("Bearer", parts[0]) {
+			return nil, nil
+		}
+		return &oauth2.Token{
+			AccessToken: parts[1],
+		}, nil
+	}
+	return nil, nil
+}
+
+func (a *oidcAuth) getTokenFromPasswordCache(ctx *gin.Context) (*oauth2.Token, error) {
+	authHeader := ctx.GetHeader("Authorization")
+	if authHeader != "" {
+		parts := strings.Split(authHeader, " ")
+		if len(parts) != 2 {
+			return nil, errors.New("auth: invalid Authorization header")
+		}
+		if !strings.EqualFold("Basic", parts[0]) {
+			return nil, nil
+		}
+		kv, err := a.passwordCache.Get(ctx, parts[1])
+		if err != nil {
+			if errors.Is(err, jetstream.ErrKeyNotFound) || errors.Is(err, jetstream.ErrKeyDeleted) {
+				return nil, nil
+			}
+			return nil, err
+		}
+		token := oauth2.Token{}
+		err = json.Unmarshal(kv.Value(), &token)
+		if err != nil {
+			a.log.Error("error retrieving token from password cache", "error", err)
+			err = a.passwordCache.Delete(ctx, parts[1])
+			return nil, err
+		}
+		return &token, nil
+	}
+	return nil, nil
+}
+
+func (a *oidcAuth) deleteTokenFromPasswordCache(ctx *gin.Context) error {
+	authHeader := ctx.GetHeader("Authorization")
+	if authHeader != "" {
+		parts := strings.Split(authHeader, " ")
+		if len(parts) != 2 {
+			return errors.New("auth: invalid Authorization header")
+		}
+		if !strings.EqualFold("Basic", parts[0]) {
+			return nil
+		}
+		return a.passwordCache.Delete(ctx, parts[1])
+	}
+	return nil
+}
+
+func (a *oidcAuth) addTokenToPasswordCache(ctx *gin.Context, token *oauth2.Token) error {
+	authHeader := ctx.GetHeader("Authorization")
+	if authHeader != "" {
+		parts := strings.Split(authHeader, " ")
+		if len(parts) != 2 {
+			return errors.New("auth: invalid Authorization header")
+		}
+		if !strings.EqualFold("Basic", parts[0]) {
+			return nil
+		}
+
+		data, err := json.Marshal(token)
+		if err != nil {
+			return err
+		}
+
+		_, err = a.passwordCache.Put(ctx, parts[1], data)
+
+		return err
+	}
+	return nil
 }
 
 func (a *oidcAuth) getTokenFromTokenStore(ctx *gin.Context) (*oauth2.Token, bool, error) {
@@ -447,23 +627,18 @@ func (a *oidcAuth) getTokenWithPassword(ctx *gin.Context) (*oauth2.Token, error)
 	return nil, nil
 }
 
-func storeTokenToSession(sess sessions.Session, token *oauth2.Token, subject string) error {
-	rawIdToken, _ := token.Extra("id_token").(string)
-
+func storeTokenToSession(sess sessions.Session, token *oauth2.Token) error {
 	v, err := json.Marshal(token)
 	if err != nil {
 		return err
 	}
 	sess.Set("auth_token", string(v))
-	sess.Set("id_token", rawIdToken)
-	sess.Set("user_id", subject)
 
 	return nil
 }
 
-func getTokenFromSession(sess sessions.Session) (*oauth2.Token, error) {
+func (a *oidcAuth) getTokenFromSession(sess sessions.Session) (*oauth2.Token, error) {
 	jsonToken, _ := sess.Get("auth_token").(string)
-	rawIdToken, _ := sess.Get("id_token").(string)
 
 	if jsonToken == "" {
 		return nil, nil
@@ -473,7 +648,73 @@ func getTokenFromSession(sess sessions.Session) (*oauth2.Token, error) {
 
 	err := json.Unmarshal([]byte(jsonToken), &token)
 	if err != nil {
+		a.log.Error("error retrieving token from session", "error", err)
+		sess.Delete("auth_token")
 		return nil, err
 	}
-	return token.WithExtra(map[string]any{"id_token": rawIdToken}), nil
+	return &token, nil
+}
+
+func (a *oidcAuth) introspectToken(ctx *gin.Context, token *oauth2.Token) (*zoidc.IntrospectionResponse, error) {
+	kv, err := a.introspectionCache.Get(ctx, token.AccessToken)
+	if err != nil {
+		if !errors.Is(err, jetstream.ErrKeyNotFound) && !errors.Is(err, jetstream.ErrKeyDeleted) {
+			a.log.Error("error retrieving token introspection from cache", "error", err)
+		}
+		kv = nil
+	}
+
+	if kv != nil {
+		resp := zoidc.IntrospectionResponse{}
+		err = json.Unmarshal(kv.Value(), &resp)
+		if err != nil {
+			a.log.Error("error retrieving token introspection from cache", "error", err)
+			a.introspectionCache.Delete(ctx, token.AccessToken)
+		} else {
+			return &resp, nil
+		}
+	}
+
+	resp, err := rs.Introspect[*zoidc.IntrospectionResponse](ctx, a.resourceServer, token.AccessToken)
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := json.Marshal(resp)
+	if err != nil {
+		a.log.Error("error putting introspection value to cache", "error", err)
+		return nil, err
+	}
+	_, err = a.introspectionCache.Put(ctx, token.AccessToken, data)
+	if err != nil {
+		a.log.Error("error putting introspection value to cache", "error", err)
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (a *oidcAuth) verifyToken(introspection *zoidc.IntrospectionResponse) bool {
+	// check token is active
+	if !introspection.Active {
+		return false
+	}
+
+	// check token is not expired (required when using token from cache)
+	if time.Now().UTC().After(introspection.Expiration.AsTime()) {
+		return false
+	}
+
+	// check issuer matches
+	if !(a.configUrl == introspection.Issuer) {
+		return false
+	}
+
+	// check all requested scopes are present
+	for _, scope := range a.config.Scopes {
+		if !slices.Contains(introspection.Scope, scope) {
+			return false
+		}
+	}
+
+	return true
 }

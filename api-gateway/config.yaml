@@ -3,6 +3,8 @@ auth:
   configUrl: http://localhost:8081/realms/seraph
   redirectUrl: http://localhost:8080/auth/callback
   client: seraph
+  clientScopes:
+    - seraph
 
 gateway:
   webappLocation: ../webapp/seraph-web-app/dist/seraph-web-app/browser

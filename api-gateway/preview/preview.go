@@ -71,7 +71,7 @@ func New(p Params) Result {
 			logger:      p.Log,
 			log:         p.Log.GetLogger("preview"),
 			nc:          p.Nc,
-			authHandler: p.Auth.AuthMiddleware(),
+			authHandler: p.Auth.AuthMiddleware(false, ""),
 		},
 	}
 }

@@ -96,11 +96,11 @@ func (g *gateway) Start(handlers []handler.GatewayHandler) {
 		Path:     "/",
 		Secure:   true,
 		HttpOnly: true,
-		SameSite: http.SameSiteStrictMode,
+		// SameSite: http.SameSiteStrictMode,
 	})
 	engine.Use(sessions.Sessions("seraphsession", store))
 
-	authMiddleware := g.auth.AuthMiddleware()
+	authMiddleware := g.auth.AuthMiddleware(false, "")
 
 	apiGroup := engine.Group("/api", cachecontrol.New(cachecontrol.NoCachePreset), func(ctx *gin.Context) { authMiddleware(ctx) })
 	apiGroup.GET("/test", getTest)
