@@ -20,9 +20,9 @@ package logging
 
 import (
 	"log/slog"
-	"os"
 
 	"go.uber.org/fx"
+	"go.uber.org/fx/fxevent"
 	"umbasa.net/seraph/messaging"
 )
 
@@ -47,6 +47,12 @@ type Params struct {
 	NatsHolder *messaging.NatsHolder `optional:"true"`
 }
 
+func FxLogger() fx.Option {
+	return fx.WithLogger(func(logger *Logger) fxevent.Logger {
+		return &fxevent.SlogLogger{Logger: logger.GetLogger("fx")}
+	})
+}
+
 func New(p Params) *Logger {
 	levelVar := slog.LevelVar{}
 	levelVar.Set(slog.LevelInfo)
@@ -57,15 +63,11 @@ func (l *Logger) GetLogger(name string) *slog.Logger {
 	var handlers []slog.Handler
 	if l.natsHolder == nil {
 		handlers = []slog.Handler{
-			slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-				Level: l.levelVar,
-			}),
+			NewConsoleHandler(l.levelVar),
 		}
 	} else {
 		handlers = []slog.Handler{
-			slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-				Level: l.levelVar,
-			}),
+			NewConsoleHandler(l.levelVar),
 			NewNatsHandler(l.natsHolder),
 		}
 	}

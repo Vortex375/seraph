@@ -49,6 +49,8 @@ func New(p Params) (Result, error) {
 	log := p.Logger.GetLogger("config")
 	v := viper.New()
 
+	v.SetDefault("log.level", "INFO")
+
 	v.SetEnvPrefix("seraph")
 	v.AutomaticEnv()
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
@@ -68,8 +70,13 @@ func New(p Params) (Result, error) {
 	}
 
 	level := slog.LevelInfo
-	level.UnmarshalText([]byte(v.GetString("log.level")))
+	err := level.UnmarshalText([]byte(v.GetString("log.level")))
+	if err != nil {
+		return Result{}, err
+	}
 	p.Logger.SetLevel(level)
+
+	log.Info("log level set to " + level.String())
 
 	return Result{
 		Viper: v,

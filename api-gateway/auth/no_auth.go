@@ -18,7 +18,12 @@
 
 package auth
 
-import "github.com/gin-gonic/gin"
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+	cachecontrol "go.eigsys.de/gin-cachecontrol/v2"
+)
 
 type noAuth struct{}
 
@@ -30,7 +35,10 @@ func (a *noAuth) AuthMiddleware(enablePasswordAuth bool, realm string) func(*gin
 }
 
 func (a *noAuth) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
-	/* no-op */
+	authGroup := app.Group("/auth", cachecontrol.New(cachecontrol.NoCachePreset))
+	authGroup.GET("/config", func(ctx *gin.Context) {
+		ctx.JSON(http.StatusOK, struct{}{})
+	})
 }
 
 func (a *noAuth) GetUserId(ctx *gin.Context) string {

@@ -36,6 +36,7 @@ func main() {
 		logging.Module,
 		messaging.Module,
 		config.Module,
+		logging.FxLogger(),
 		fx.Invoke(func(params fileprovider.ServerParams, viper *viper.Viper, lc fx.Lifecycle) error {
 			id := viper.GetString("fileprovider.id")
 			dir := viper.GetString("fileprovider.dir")

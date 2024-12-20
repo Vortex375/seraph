@@ -37,6 +37,7 @@ func main() {
 		logging.Module,
 		messaging.Module,
 		config.Module,
+		logging.FxLogger(),
 		fx.Invoke(func(params thumbnailer.Params, viper *viper.Viper, lc fx.Lifecycle) error {
 			viper.SetDefault("thumbnailer.jpegQuality", jpeg.DefaultQuality)
 			viper.SetDefault("thumbnailer.parallel", runtime.NumCPU())

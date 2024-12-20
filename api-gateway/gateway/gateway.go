@@ -32,6 +32,8 @@ import (
 	"umbasa.net/seraph/api-gateway/auth"
 	handler "umbasa.net/seraph/api-gateway/gateway-handler"
 	"umbasa.net/seraph/logging"
+
+	sloggin "github.com/samber/slog-gin"
 )
 
 var Module = fx.Module("gateway",
@@ -62,10 +64,11 @@ type Gateway interface {
 }
 
 type gateway struct {
-	log    *slog.Logger
-	viper  *viper.Viper
-	auth   auth.Auth
-	server *http.Server
+	logging *logging.Logger
+	log     *slog.Logger
+	viper   *viper.Viper
+	auth    auth.Auth
+	server  *http.Server
 }
 
 func New(p Params) Result {
@@ -74,9 +77,10 @@ func New(p Params) Result {
 	p.Viper.SetDefault("gateway.webappLocation", "/srv/webapp")
 
 	gateway := &gateway{
-		log:   p.Log.GetLogger("api-gateway"),
-		viper: p.Viper,
-		auth:  p.Auth,
+		logging: p.Log,
+		log:     p.Log.GetLogger("api-gateway"),
+		viper:   p.Viper,
+		auth:    p.Auth,
 	}
 
 	p.Lc.Append(fx.StartHook(func() {
@@ -88,7 +92,9 @@ func New(p Params) Result {
 }
 
 func (g *gateway) Start(handlers []handler.GatewayHandler) {
-	engine := gin.Default()
+	engine := gin.New()
+	engine.Use(sloggin.New(g.logging.GetLogger("gin")))
+	engine.Use(gin.Recovery())
 
 	//TODO: secret
 	store := memstore.NewStore([]byte(g.viper.GetString("gateway.cookie.secret")))

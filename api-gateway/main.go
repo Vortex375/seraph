@@ -46,6 +46,7 @@ func main() {
 		preview.Module,
 		shares.Module,
 		jobs.Module,
+		logging.FxLogger(),
 		fx.Provide(auth.NewMigrations),
 		fx.Decorate(func(client *mongo.Client, viper *viper.Viper) *mongo.Client {
 			viper.SetDefault("mongo.db", "seraph-auth")

@@ -36,6 +36,7 @@ func main() {
 		config.Module,
 		messaging.Module,
 		mongodb.Module,
+		logging.FxLogger(),
 		fx.Decorate(func(viper *viper.Viper) *viper.Viper {
 			viper.SetDefault("fileindexer.parallel", runtime.NumCPU())
 			viper.SetDefault("mongo.db", "seraph-files")

@@ -31,6 +31,7 @@ func main() {
 		logging.Module,
 		config.Module,
 		messaging.Module,
+		logging.FxLogger(),
 		fx.Invoke(func(params jobs.Params, lc fx.Lifecycle) error {
 			jobs, err := jobs.NewJobs(params)
 			if err != nil {

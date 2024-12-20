@@ -3,7 +3,7 @@ module umbasa.net/seraph/log-viewer
 go 1.22.0
 
 require (
-	github.com/fatih/color v1.17.0
+	github.com/fatih/color v1.18.0
 	github.com/nats-io/nats.go v1.35.0
 	go.uber.org/fx v1.23.0
 )

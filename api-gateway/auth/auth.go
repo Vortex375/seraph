@@ -85,6 +85,8 @@ type oidcAuth struct {
 	offlineConfig  *oauth2.Config
 	verifier       *oidc.IDTokenVerifier
 
+	appClientId string
+
 	passwordCache      jetstream.KeyValue
 	introspectionCache jetstream.KeyValue
 
@@ -98,6 +100,7 @@ func New(p Params) (Result, error) {
 	p.Viper.SetDefault("auth.configURL", "http://localhost:8081/realms/seraph")
 	p.Viper.SetDefault("auth.redirectURL", "http://localhost:8080/auth/callback")
 	p.Viper.SetDefault("auth.clientId", "seraph")
+	p.Viper.SetDefault("auth.appClientId", "seraph-app")
 	p.Viper.SetDefault("auth.clientScopes", make([]string, 0))
 
 	if p.Viper.GetBool("auth.disabled") {
@@ -111,6 +114,7 @@ func New(p Params) (Result, error) {
 	clientSecret := p.Viper.GetString("auth.clientSecret")
 	clientScopes := p.Viper.GetStringSlice("auth.clientScopes")
 	redirectURL := p.Viper.GetString("auth.redirectURL")
+	appClientId := p.Viper.GetString("auth.appClientId")
 	ctx := context.Background()
 
 	log.Info("oidc configuration", "issuer", configURL, "clientId", clientID, "clientScopes", clientScopes, "redirectUrl", redirectURL)
@@ -178,6 +182,7 @@ func New(p Params) (Result, error) {
 		passwordCache:      passwordCache,
 		introspectionCache: introspectionCache,
 		tokenStore:         NewTokenStore(p.Db),
+		appClientId:        appClientId,
 	}
 
 	return Result{Auth: auth, Handler: auth}, nil
@@ -185,6 +190,17 @@ func New(p Params) (Result, error) {
 
 func (a *oidcAuth) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 	authGroup := app.Group("/auth", cachecontrol.New(cachecontrol.NoCachePreset))
+	authGroup.GET("/config", func(ctx *gin.Context) {
+		resp := struct {
+			Issuer      string
+			AppClientId string
+		}{
+			Issuer:      a.configUrl,
+			AppClientId: a.appClientId,
+		}
+
+		ctx.JSON(http.StatusOK, resp)
+	})
 	authGroup.GET("/callback", func(ctx *gin.Context) {
 		sess := sessions.Default(ctx)
 		defer sess.Save()

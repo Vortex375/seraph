@@ -78,34 +78,6 @@ func (h *NatsHandler) Handle(ctx context.Context, r slog.Record) error {
 	return nil
 }
 
-func makeGroup(groups []string, attrs []slog.Attr, m map[string]any) {
-	current := m
-	for _, group := range groups {
-		next, ok := current[group].(map[string]any)
-		if !ok {
-			next = make(map[string]any)
-			current[group] = next
-		}
-		current = next
-	}
-
-	for _, attr := range attrs {
-		key := attr.Key
-		value := attr.Value.Resolve()
-
-		if value.Kind() == slog.KindGroup {
-			makeGroup([]string{key}, value.Group(), current)
-		} else {
-			val := value.Any()
-			if e, ok := val.(error); ok {
-				current[key] = e.Error()
-			} else {
-				current[key] = value.Any()
-			}
-		}
-	}
-}
-
 func (h *NatsHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	copy := *h
 	copy.attrs = append(clone(h.attrs), attrs...)
@@ -116,8 +88,4 @@ func (h *NatsHandler) WithGroup(name string) slog.Handler {
 	copy := *h
 	copy.groups = append(clone(h.groups), name)
 	return &copy
-}
-
-func clone[T any](s []T) []T {
-	return append([]T{}, s...)
 }

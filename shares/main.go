@@ -35,6 +35,7 @@ func main() {
 		messaging.Module,
 		config.Module,
 		mongodb.Module,
+		logging.FxLogger(),
 		fx.Provide(shares.NewMigrations),
 		fx.Decorate(func(client *mongo.Client, viper *viper.Viper) *mongo.Client {
 			viper.SetDefault("mongo.db", "seraph-shares")
