@@ -22,6 +22,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 
 	"github.com/fatih/color"
 )
@@ -48,6 +49,29 @@ func levelColor(level slog.Level) *color.Color {
 	default:
 		return debugColor
 	}
+}
+
+// for HTTP status codes
+var informationalColor = color.New(color.BgBlue)
+var okColor = color.New(color.BgGreen)
+var redirectColor = color.New(color.BgMagenta)
+var clientErrorColor = color.New(color.BgYellow)
+var serverErrorColor = color.New(color.BgRed)
+
+func statusColor(status int) *color.Color {
+	switch {
+	case status >= http.StatusInternalServerError:
+		return serverErrorColor
+	case status >= http.StatusBadRequest:
+		return clientErrorColor
+	case status >= http.StatusMultipleChoices:
+		return redirectColor
+	case status >= http.StatusOK:
+		return okColor
+	case status >= http.StatusContinue:
+		return informationalColor
+	}
+	return color.New()
 }
 
 type ConsoleHandler struct {
@@ -79,8 +103,8 @@ func (h *ConsoleHandler) Handle(ctx context.Context, r slog.Record) error {
 	var component string
 	var err string
 	var stack string
-	// var request []slog.Attr
-	// var response []slog.Attr
+	var request []slog.Attr
+	var response []slog.Attr
 	var other = make([]slog.Attr, 0)
 
 	r.Attrs(func(attr slog.Attr) bool {
@@ -96,10 +120,12 @@ func (h *ConsoleHandler) Handle(ctx context.Context, r slog.Record) error {
 			} else {
 				stack = attr.Value.String()
 			}
-			// } else if attr.Key == "request" && attr.Value.Kind() == slog.KindGroup {
-			// 	request = attr.Value.Group()
-			// } else if attr.Key == "response" && attr.Value.Kind() == slog.KindGroup {
-			// 	response = attr.Value.Group()
+		} else if attr.Key == "request" && attr.Value.Kind() == slog.KindGroup {
+			request = attr.Value.Group()
+			other = append(other, attr)
+		} else if attr.Key == "response" && attr.Value.Kind() == slog.KindGroup {
+			response = attr.Value.Group()
+			other = append(other, attr)
 		} else {
 			other = append(other, attr)
 		}
@@ -117,22 +143,54 @@ func (h *ConsoleHandler) Handle(ctx context.Context, r slog.Record) error {
 	timeColor.Print(r.Time.Format("2006-01-02 15:04:05.999 "))
 	levelColor(r.Level).Print(r.Level.String())
 	fmt.Print(" ")
+
 	if component != "" {
 		componentColor.Print(component)
 		fmt.Print(" ")
 	}
+
+	if response != nil {
+		fmt.Print("| ")
+		status := getAttr(response, "status")
+		if status != nil {
+			statusColor(int(status.Value.Int64())).Print(status.Value)
+			fmt.Print(" | ")
+		}
+		latency := getAttr(response, "latency")
+		if latency != nil {
+			fmt.Print(latency.Value)
+			fmt.Print(" | ")
+		}
+	}
+
+	if request != nil {
+		method := getAttr(request, "method")
+		if method != nil {
+			fmt.Print(method.Value)
+			fmt.Print(" | ")
+		}
+		path := getAttr(request, "path")
+		if path != nil {
+			fmt.Print(path.Value)
+			fmt.Print(" | ")
+		}
+	}
+
 	fmt.Print(r.Message)
+
 	if len(other) > 0 {
 		fmt.Print(" ")
 		attrColor.Print(other)
 	}
 	fmt.Print("\n")
+
 	if err != "" {
 		errorDetailLabelColor.Print("ERR")
 		fmt.Print(" ")
 		errorDetailColor.Print(err)
 		fmt.Print("\n")
 	}
+
 	if stack != "" {
 		if r.Level >= slog.LevelError {
 			errorDetailLabelColor.Print("AT")
@@ -157,4 +215,13 @@ func (h *ConsoleHandler) WithGroup(name string) slog.Handler {
 	copy := *h
 	copy.groups = append(clone(h.groups), name)
 	return &copy
+}
+
+func getAttr(attrs []slog.Attr, key string) *slog.Attr {
+	for _, attr := range attrs {
+		if attr.Key == key {
+			return &attr
+		}
+	}
+	return nil
 }
