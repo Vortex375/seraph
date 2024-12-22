@@ -5,16 +5,18 @@ import 'package:seraph_app/src/app_bar/app_bar.dart';
 import 'package:seraph_app/src/file_browser/file_service.dart';
 import 'package:webdav_client/webdav_client.dart';
 
+import '../login/login_service.dart';
 import '../settings/settings_controller.dart';
 
 class FileBrowser extends StatefulWidget {
-  FileBrowser({super.key, required this.settings, required this.path})
-      : fileService = FileService(settings.serverUrl);
+  FileBrowser({super.key, required this.settings, required this.loginService, required this.path})
+      : fileService = FileService(settings.serverUrl, loginService);
 
   static const routeName = '/files';
 
   final SettingsController settings;
   final FileService fileService;
+  final LoginService loginService;
   final String path;
 
   @override
@@ -154,6 +156,12 @@ class _FileBrowserState extends State<FileBrowser> {
               onPressed: () {
                 _refreshing = true;
                 loadFiles();
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.logout),
+              onPressed: () {
+                widget.loginService.logout();
               },
             ),
           ]),

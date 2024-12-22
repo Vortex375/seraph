@@ -5,6 +5,7 @@ import 'package:seraph_app/src/file_browser/file_browser.dart';
 import 'package:go_router/go_router.dart';
 import 'package:seraph_app/src/gallery/gallery_view.dart';
 
+import 'login/login_service.dart';
 import 'login/login_view.dart';
 import 'settings/settings_controller.dart';
 import 'settings/settings_view.dart';
@@ -14,9 +15,11 @@ class MyApp extends StatelessWidget {
   const MyApp({
     super.key,
     required this.settingsController,
+    required this.loginService,
   });
 
   final SettingsController settingsController;
+  final LoginService loginService;
 
   @override
   Widget build(BuildContext context) {
@@ -28,8 +31,10 @@ class MyApp extends StatelessWidget {
           path: FileBrowser.routeName,
           builder: (context, state) => LoginView(
             settings: settingsController, 
+            loginService: loginService,
             child: FileBrowser(
               settings: settingsController, 
+              loginService: loginService,
               path: state.uri.queryParameters['path'] ?? '/'
             )
           )

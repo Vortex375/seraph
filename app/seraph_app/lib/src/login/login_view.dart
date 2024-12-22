@@ -2,17 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:dio/dio.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:oidc/oidc.dart';
-import 'package:oidc_default_store/oidc_default_store.dart';
 
 import '../settings/settings_controller.dart';
+import 'login_service.dart';
 
 class LoginView extends StatefulWidget {
-  const LoginView({super.key, required this.settings, required this.child});
+  const LoginView({super.key, required this.settings, required this.loginService, required this.child});
 
   static const routeName = '/files';
 
   final SettingsController settings;
+  final LoginService loginService;
   final Widget child;
 
   @override
@@ -21,8 +21,11 @@ class LoginView extends StatefulWidget {
 
 class _LoginViewState extends State<LoginView> {
 
-  bool _loggedIn = false;
   bool _changeServerUrl = false;
+
+  bool _loggedIn() {
+    return widget.loginService.isInitialized && (widget.loginService.isNoAuth || widget.loginService.currentUser != null);
+  }
 
   bool _hasServerUrl() {
     // server URL can't be changed on web
@@ -36,6 +39,15 @@ class _LoginViewState extends State<LoginView> {
    return widget.settings.serverUrl != "";
   }
 
+  void _setServerUrl(String url) async {
+    await widget.loginService.reset();
+    setState(() {
+      _changeServerUrl = false;
+      widget.settings.updateServerUrl(url);
+    });
+    _doLogin();
+  }
+
   Future<void> _doLogin() async {
     final dio = Dio(BaseOptions(baseUrl: widget.settings.serverUrl));
     try {
@@ -43,21 +55,8 @@ class _LoginViewState extends State<LoginView> {
       if (response.data['Issuer'] == null) {
         print('no authentication');
       } else {
-        final manager = OidcUserManager.lazy(
-          discoveryDocumentUri: OidcUtils.getOpenIdConfigWellKnownUri(
-              Uri.parse(response.data['Issuer']),
-          ),
-          clientCredentials: OidcClientAuthentication.none(clientId: response.data['AppClientId']),
-          store: OidcDefaultStore(),
-          settings: OidcUserManagerSettings(redirectUri: Uri.parse('http://localhost:0')) //TODO: other platforms
-        );
-
-        await manager.init();
-        print("oidc: init complete");
-
-        final newUser = await manager.loginAuthorizationCodeFlow();
-        print("oidc: login complete");
-        print(newUser);
+        print('yes authentication');
+        await widget.loginService.init(response.data['Issuer'], response.data['AppClientId']);
       }
     } catch (err) {
       showError("Failed to connect to server: ${err.toString()}");
@@ -89,20 +88,32 @@ class _LoginViewState extends State<LoginView> {
   @override
   void initState() {
     super.initState();
+
+    if (_hasServerUrl() && ! kIsWeb && !widget.loginService.isInitialized) {
+      _doLogin();
+    }
   }
 
   @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(listenable: widget.settings, builder: (BuildContext context, Widget? child) {
-      if (!_hasServerUrl()) {
-        return _serverSelection(context);
-      }
-      if (!_loggedIn) {
-        return _loginState(context);
-      }
+   void didUpdateWidget(LoginView old) {
+    super.didUpdateWidget(old);
+   }
 
-      return widget.child;
-    });
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: Listenable.merge([widget.settings, widget.loginService]), 
+      builder: (BuildContext context, Widget? child) {
+        if (!_hasServerUrl()) {
+          return _serverSelection(context);
+        }
+        if (!_loggedIn()) {
+          return _loginState(context);
+        }
+
+        return widget.child;
+      }
+    );
   }
 
   Widget _serverSelection(BuildContext context) {
@@ -130,12 +141,7 @@ class _LoginViewState extends State<LoginView> {
                         labelText: 'Url',
                       ),
                        controller: urlController,
-                      onSubmitted: (v) {
-                        setState(() {
-                          _changeServerUrl = false;
-                        });
-                        widget.settings.updateServerUrl(v);
-                      },
+                      onSubmitted: _setServerUrl,
                     )
                   ]
                 )
@@ -148,8 +154,6 @@ class _LoginViewState extends State<LoginView> {
   }
 
   Widget _loginState(BuildContext context) {
-    _doLogin();
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Seraph'),
