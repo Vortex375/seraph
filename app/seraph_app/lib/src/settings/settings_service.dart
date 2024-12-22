@@ -5,6 +5,7 @@ class SettingsService {
 
   static const keyThemeMode = 'theme_mode'; 
   static const keyServerUrl = 'server_url'; 
+  static const keyServerUrlConfirmed = 'server_url_confirmed'; 
 
   Future<ThemeMode> themeMode() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -32,5 +33,15 @@ class SettingsService {
   Future<void> updateServerUrl(String serverUrl) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.setString(keyServerUrl, serverUrl);
+  }
+
+  Future<bool> serverUrlConfirmed() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(keyServerUrlConfirmed) ?? false;
+  }
+
+  Future<void> setServerUrlConfirmed(bool confirmed) async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(keyServerUrlConfirmed, confirmed);
   }
 }

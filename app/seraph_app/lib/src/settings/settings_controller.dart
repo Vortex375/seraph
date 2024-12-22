@@ -10,14 +10,17 @@ class SettingsController with ChangeNotifier {
   // settings
   late ThemeMode _themeMode;
   late String _serverUrl;
+  bool _serverUrlConfirmed = false;
 
   // getters
   ThemeMode get themeMode => _themeMode;
   String get serverUrl => _serverUrl;
+  bool get serverUrlConfirmed => _serverUrlConfirmed;
 
   Future<void> loadSettings() async {
     _themeMode = await _settingsService.themeMode();
     _serverUrl = await _settingsService.serverUrl();
+    _serverUrlConfirmed = await _settingsService.serverUrlConfirmed();
 
     notifyListeners();
   }
@@ -34,15 +37,26 @@ class SettingsController with ChangeNotifier {
     await _settingsService.updateThemeMode(newThemeMode);
   }
 
+  Future<void> confirmServerUrl(bool confirmed) async {
+    print('set server url $serverUrl');
+
+    _serverUrlConfirmed = confirmed;
+
+    notifyListeners();
+
+    await _settingsService.setServerUrlConfirmed(confirmed);
+  }
+
   Future<void> updateServerUrl(String? serverUrl) async {
     print('set server url $serverUrl');
     if (serverUrl == null) return;
-    if (serverUrl == _serverUrl) return;
 
     _serverUrl = serverUrl;
+    _serverUrlConfirmed = true;
 
     notifyListeners();
 
     await _settingsService.updateServerUrl(serverUrl);
+    await _settingsService.setServerUrlConfirmed(true);
   }
 }

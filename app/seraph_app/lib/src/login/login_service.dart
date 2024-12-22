@@ -72,13 +72,15 @@ class LoginService with ChangeNotifier {
     _initialized = true;
     notifyListeners();
 
+    bool first = true;
     _manager?.userChanges().listen((user) async {
       print('currentUser changed to ${user?.uid} ${user?.parsedIdToken.claims.toString()}');
       _currentUser = user;
       notifyListeners();
-      if (_initialized && !isNoAuth && user == null) {
+      if (first && user == null) {
         await login();
       }
+      first = false;
     });
   }
 

@@ -21,8 +21,6 @@ class LoginView extends StatefulWidget {
 
 class _LoginViewState extends State<LoginView> {
 
-  bool _changeServerUrl = false;
-
   bool _loggedIn() {
     return widget.loginService.isInitialized && (widget.loginService.isNoAuth || widget.loginService.currentUser != null);
   }
@@ -33,7 +31,7 @@ class _LoginViewState extends State<LoginView> {
     return true;
    }
    // change requested
-   if (_changeServerUrl) {
+   if (!widget.settings.serverUrlConfirmed) {
     return false;
    }
    return widget.settings.serverUrl != "";
@@ -41,10 +39,7 @@ class _LoginViewState extends State<LoginView> {
 
   void _setServerUrl(String url) async {
     await widget.loginService.reset();
-    setState(() {
-      _changeServerUrl = false;
-      widget.settings.updateServerUrl(url);
-    });
+    await widget.settings.updateServerUrl(url);
     _doLogin();
   }
 
@@ -60,9 +55,7 @@ class _LoginViewState extends State<LoginView> {
       }
     } catch (err) {
       showError("Failed to connect to server: ${err.toString()}");
-      setState(() {
-        _changeServerUrl = true;
-      });
+      await widget.settings.confirmServerUrl(false);
     }
   }
 
@@ -93,11 +86,6 @@ class _LoginViewState extends State<LoginView> {
       _doLogin();
     }
   }
-
-  @override
-   void didUpdateWidget(LoginView old) {
-    super.didUpdateWidget(old);
-   }
 
   @override
   Widget build(BuildContext context) {
@@ -142,7 +130,11 @@ class _LoginViewState extends State<LoginView> {
                       ),
                        controller: urlController,
                       onSubmitted: _setServerUrl,
-                    )
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton(onPressed: () {
+                      _setServerUrl(urlController.text);
+                    }, child: const Text('Connect'))
                   ]
                 )
               )
@@ -179,9 +171,7 @@ class _LoginViewState extends State<LoginView> {
                     Text(widget.settings.serverUrl, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).disabledColor)),
                     const SizedBox(height: 16),
                     FilledButton(onPressed: () {
-                      setState(() {
-                        _changeServerUrl = true;
-                      });
+                      widget.settings.confirmServerUrl(false);
                     }, child: const Text('Change Server'))
                   ]
                 )

@@ -161,6 +161,7 @@ class _FileBrowserState extends State<FileBrowser> {
             IconButton(
               icon: const Icon(Icons.logout),
               onPressed: () {
+                widget.settings.confirmServerUrl(false);
                 widget.loginService.logout();
               },
             ),
@@ -192,10 +193,7 @@ class _FileBrowserState extends State<FileBrowser> {
                     onChanged: (v) => selectItem(item, v ?? false)
                   ),
                   if (isSelecting) const SizedBox(width: 4),
-                  const CircleAvatar(
-                    // Display the Flutter Logo image asset.
-                    foregroundImage: AssetImage('assets/images/flutter_logo.png'),
-                  ),
+                  Image.network("${widget.settings.serverUrl}/preview?p=foo${item.path}&w=256&h=256&exact=false"),
                 ],
               ),
               onTap: () => openItem(item),
