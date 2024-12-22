@@ -5,6 +5,7 @@ import 'package:seraph_app/src/file_browser/file_browser.dart';
 import 'package:go_router/go_router.dart';
 import 'package:seraph_app/src/gallery/gallery_view.dart';
 
+import 'login/login_view.dart';
 import 'settings/settings_controller.dart';
 import 'settings/settings_view.dart';
 
@@ -25,7 +26,13 @@ class MyApp extends StatelessWidget {
       routes: [
         GoRoute(
           path: FileBrowser.routeName,
-          builder: (context, state) => FileBrowser(settings: settingsController, path: state.uri.queryParameters['path'] ?? '/')
+          builder: (context, state) => LoginView(
+            settings: settingsController, 
+            child: FileBrowser(
+              settings: settingsController, 
+              path: state.uri.queryParameters['path'] ?? '/'
+            )
+          )
         ),
         GoRoute(
           path: GalleryView.routeName,
