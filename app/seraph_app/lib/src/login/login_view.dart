@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:dio/dio.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:oidc/oidc.dart';
+import 'package:oidc_default_store/oidc_default_store.dart';
 
 import '../settings/settings_controller.dart';
 
@@ -38,10 +40,27 @@ class _LoginViewState extends State<LoginView> {
     final dio = Dio(BaseOptions(baseUrl: widget.settings.serverUrl));
     try {
       final response = await dio.get('/auth/config');
-      print(response);
+      if (response.data['Issuer'] == null) {
+        print('no authentication');
+      } else {
+        final manager = OidcUserManager.lazy(
+          discoveryDocumentUri: OidcUtils.getOpenIdConfigWellKnownUri(
+              Uri.parse(response.data['Issuer']),
+          ),
+          clientCredentials: OidcClientAuthentication.none(clientId: response.data['AppClientId']),
+          store: OidcDefaultStore(),
+          settings: OidcUserManagerSettings(redirectUri: Uri.parse('http://localhost:0')) //TODO: other platforms
+        );
+
+        await manager.init();
+        print("oidc: init complete");
+
+        final newUser = await manager.loginAuthorizationCodeFlow();
+        print("oidc: login complete");
+        print(newUser);
+      }
     } catch (err) {
       showError("Failed to connect to server: ${err.toString()}");
-      print(err);
       setState(() {
         _changeServerUrl = true;
       });

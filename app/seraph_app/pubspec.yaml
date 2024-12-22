@@ -16,6 +16,8 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   go_router: ^14.3.0
+  oidc: ^0.9.0+1
+  oidc_default_store: ^0.2.0+12
   provider: ^6.1.2
   shared_preferences: ^2.3.2
   webdav_client: ^1.2.2
