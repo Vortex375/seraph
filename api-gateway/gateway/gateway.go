@@ -23,6 +23,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/Cyprinus12138/otelgin"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/memstore"
 	"github.com/gin-gonic/gin"
@@ -32,6 +33,7 @@ import (
 	"umbasa.net/seraph/api-gateway/auth"
 	handler "umbasa.net/seraph/api-gateway/gateway-handler"
 	"umbasa.net/seraph/logging"
+	"umbasa.net/seraph/tracing"
 
 	sloggin "github.com/samber/slog-gin"
 )
@@ -48,6 +50,7 @@ type Params struct {
 	Log      *logging.Logger
 	Viper    *viper.Viper
 	Auth     auth.Auth
+	Tracing  tracing.Tracing          `optional:"true"`
 	Handlers []handler.GatewayHandler `group:"gatewayhandlers"`
 	Lc       fx.Lifecycle
 }
@@ -95,6 +98,7 @@ func (g *gateway) Start(handlers []handler.GatewayHandler) {
 	engine := gin.New()
 	engine.Use(sloggin.New(g.logging.GetLogger("gin")))
 	engine.Use(gin.Recovery())
+	engine.Use(otelgin.Middleware("my-server"))
 
 	//TODO: secret
 	store := memstore.NewStore([]byte(g.viper.GetString("gateway.cookie.secret")))
