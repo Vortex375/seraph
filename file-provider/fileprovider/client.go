@@ -376,14 +376,14 @@ func (f *file) Read(p []byte) (n int, err error) {
 	resp := response.Response.(FileReadResponse)
 	err = ioError(resp.Error)
 
-	if err != nil {
+	if err != nil && !errors.Is(err, io.EOF) {
 		f.c.log.Error("fileRead failed", "uid", request.Uid, "req", request.Request, "error", err)
 		return 0, err
 	}
 
 	copy(p, resp.Payload[:min(len(resp.Payload), len(p))])
 
-	return len(resp.Payload), nil
+	return len(resp.Payload), err
 }
 
 func (f *file) Seek(offset int64, whence int) (int64, error) {

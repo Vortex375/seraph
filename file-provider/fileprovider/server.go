@@ -308,7 +308,7 @@ func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.
 						//TODO: validate Len
 						buf := make([]byte, fileReq.Len)
 						len, err := file.Read(buf)
-						if err == nil {
+						if err == nil || errors.Is(err, io.EOF) {
 							log.Debug("fileRead", "uid", fileRequest.Uid, "fileId", fileRequest.FileId, "req", fileReq)
 						} else {
 							log.Error("fileRead failed", "uid", request.Uid, "fileId", fileRequest.FileId, "req", fileReq, "error", err)
