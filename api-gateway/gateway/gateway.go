@@ -50,7 +50,7 @@ type Params struct {
 	Log      *logging.Logger
 	Viper    *viper.Viper
 	Auth     auth.Auth
-	Tracing  tracing.Tracing          `optional:"true"`
+	Tracing  tracing.Tracing
 	Handlers []handler.GatewayHandler `group:"gatewayhandlers"`
 	Lc       fx.Lifecycle
 }
@@ -98,7 +98,7 @@ func (g *gateway) Start(handlers []handler.GatewayHandler) {
 	engine := gin.New()
 	engine.Use(sloggin.New(g.logging.GetLogger("gin")))
 	engine.Use(gin.Recovery())
-	engine.Use(otelgin.Middleware("my-server"))
+	engine.Use(otelgin.Middleware("api-gateway"))
 
 	//TODO: secret
 	store := memstore.NewStore([]byte(g.viper.GetString("gateway.cookie.secret")))

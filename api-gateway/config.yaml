@@ -12,3 +12,8 @@ gateway:
 mongo:
   url: mongodb://localhost:27017/
   db: seraph-auth
+
+tracing:
+  enabled: false
+  otlp:
+    grpc: localhost:4317

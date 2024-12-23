@@ -15,6 +15,7 @@ use (
 	./messaging
 	./mongodb
 	./shares
+	./spaces
 	./taglib
 	./thumbnailer
 	./tracing

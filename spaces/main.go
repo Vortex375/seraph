@@ -22,17 +22,11 @@ import (
 	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.uber.org/fx"
-	"umbasa.net/seraph/api-gateway/auth"
-	"umbasa.net/seraph/api-gateway/gateway"
-	"umbasa.net/seraph/api-gateway/jobs"
-	"umbasa.net/seraph/api-gateway/preview"
-	"umbasa.net/seraph/api-gateway/shares"
-	"umbasa.net/seraph/api-gateway/webdav"
 	"umbasa.net/seraph/config"
 	"umbasa.net/seraph/logging"
 	"umbasa.net/seraph/messaging"
 	"umbasa.net/seraph/mongodb"
-	"umbasa.net/seraph/tracing"
+	"umbasa.net/seraph/spaces/spaces"
 )
 
 func main() {
@@ -40,26 +34,30 @@ func main() {
 		logging.Module,
 		messaging.Module,
 		config.Module,
-		auth.Module,
 		mongodb.Module,
-		gateway.Module,
-		webdav.Module,
-		preview.Module,
-		shares.Module,
-		jobs.Module,
-		tracing.Module,
 		logging.FxLogger(),
-		fx.Provide(auth.NewMigrations),
-		fx.Decorate(func(viper *viper.Viper) *viper.Viper {
-			viper.SetDefault("tracing.serviceName", "api-gateway")
-			return viper
-		}),
+		fx.Provide(spaces.NewMigrations),
 		fx.Decorate(func(client *mongo.Client, viper *viper.Viper) *mongo.Client {
-			viper.SetDefault("mongo.db", "seraph-auth")
+			viper.SetDefault("mongo.db", "seraph-spaces")
 			return client
 		}),
-		fx.Invoke(func(g gateway.Gateway) {
-			// required to bootstrap the Gateway
-		}),
+		// fx.Invoke(func(params shares.Params, lc fx.Lifecycle) error {
+
+		// 	result, err := shares.New(params)
+
+		// 	if err != nil {
+		// 		return err
+		// 	}
+
+		// 	provider := result.SharesProvider
+		// 	lc.Append(fx.StartHook(func() error {
+		// 		return provider.Start()
+		// 	}))
+		// 	lc.Append(fx.StopHook(func() error {
+		// 		return provider.Stop()
+		// 	}))
+
+		// 	return nil
+		// }),
 	).Run()
 }
