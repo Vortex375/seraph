@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/fatih/color"
 )
@@ -140,67 +141,71 @@ func (h *ConsoleHandler) Handle(ctx context.Context, r slog.Record) error {
 		}
 	}
 
-	timeColor.Print(r.Time.Format("2006-01-02 15:04:05.999 "))
-	levelColor(r.Level).Print(r.Level.String())
-	fmt.Print(" ")
+	w := strings.Builder{}
+
+	timeColor.Fprint(&w, r.Time.Format("2006-01-02 15:04:05.999 "))
+	levelColor(r.Level).Fprint(&w, r.Level.String())
+	fmt.Fprint(&w, " ")
 
 	if component != "" {
-		componentColor.Print(component)
-		fmt.Print(" ")
+		componentColor.Fprint(&w, component)
+		fmt.Fprint(&w, " ")
 	}
 
 	if response != nil {
-		fmt.Print("| ")
+		fmt.Fprint(&w, "| ")
 		status := getAttr(response, "status")
 		if status != nil {
-			statusColor(int(status.Value.Int64())).Print(status.Value)
-			fmt.Print(" | ")
+			statusColor(int(status.Value.Int64())).Fprint(&w, status.Value)
+			fmt.Fprint(&w, " | ")
 		}
 		latency := getAttr(response, "latency")
 		if latency != nil {
-			fmt.Print(latency.Value)
-			fmt.Print(" | ")
+			fmt.Fprint(&w, latency.Value)
+			fmt.Fprint(&w, " | ")
 		}
 	}
 
 	if request != nil {
 		method := getAttr(request, "method")
 		if method != nil {
-			fmt.Print(method.Value)
-			fmt.Print(" | ")
+			fmt.Fprint(&w, method.Value)
+			fmt.Fprint(&w, " | ")
 		}
 		path := getAttr(request, "path")
 		if path != nil {
-			fmt.Print(path.Value)
-			fmt.Print(" | ")
+			fmt.Fprint(&w, path.Value)
+			fmt.Fprint(&w, " | ")
 		}
 	}
 
-	fmt.Print(r.Message)
+	fmt.Fprint(&w, r.Message)
 
 	if len(other) > 0 {
-		fmt.Print(" ")
-		attrColor.Print(other)
+		fmt.Fprint(&w, " ")
+		attrColor.Fprint(&w, other)
 	}
-	fmt.Print("\n")
+	fmt.Fprint(&w, "\n")
 
 	if err != "" {
-		errorDetailLabelColor.Print("ERR")
-		fmt.Print(" ")
-		errorDetailColor.Print(err)
-		fmt.Print("\n")
+		errorDetailLabelColor.Fprint(&w, "ERR")
+		fmt.Fprint(&w, " ")
+		errorDetailColor.Fprint(&w, err)
+		fmt.Fprint(&w, "\n")
 	}
 
 	if stack != "" {
 		if r.Level >= slog.LevelError {
-			errorDetailLabelColor.Print("AT")
-			fmt.Print(" ")
-			errorDetailColor.Print(stack)
+			errorDetailLabelColor.Fprint(&w, "AT")
+			fmt.Fprint(&w, " ")
+			errorDetailColor.Fprint(&w, stack)
 		} else {
-			fmt.Print("at ", stack)
+			fmt.Fprint(&w, "at ", stack)
 		}
-		fmt.Print("\n")
+		fmt.Fprint(&w, "\n")
 	}
+
+	fmt.Print(w.String())
 
 	return nil
 }
