@@ -1,4 +1,4 @@
-go 1.23.3
+go 1.23.4
 
 use (
 	./api-gateway
@@ -17,5 +17,6 @@ use (
 	./shares
 	./taglib
 	./thumbnailer
+	./tracing
 	./util
 )
