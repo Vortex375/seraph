@@ -1,4 +1,8 @@
 fileprovider:
   id: foo
   dir: /home/vortex/loeschen/test/wallpaper
-  readOnly: true
+
+tracing:
+  enabled: false
+  otlp:
+    grpc: localhost:4317

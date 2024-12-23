@@ -30,6 +30,7 @@ import (
 	"umbasa.net/seraph/logging"
 	"umbasa.net/seraph/messaging"
 	"umbasa.net/seraph/thumbnailer/thumbnailer"
+	"umbasa.net/seraph/tracing"
 )
 
 func main() {
@@ -37,7 +38,12 @@ func main() {
 		logging.Module,
 		messaging.Module,
 		config.Module,
+		tracing.Module,
 		logging.FxLogger(),
+		fx.Decorate(func(viper *viper.Viper) *viper.Viper {
+			viper.SetDefault("tracing.serviceName", "thumbnailer")
+			return viper
+		}),
 		fx.Invoke(func(params thumbnailer.Params, viper *viper.Viper, lc fx.Lifecycle) error {
 			viper.SetDefault("thumbnailer.jpegQuality", jpeg.DefaultQuality)
 			viper.SetDefault("thumbnailer.parallel", runtime.NumCPU())

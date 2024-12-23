@@ -35,7 +35,7 @@ type TracingParams struct {
 type TracingResult struct {
 	fx.Out
 
-	Tracing Tracing
+	Tracing *Tracing
 }
 
 type Tracing struct {
@@ -74,7 +74,7 @@ func NewTracing(p TracingParams) (TracingResult, error) {
 	}))
 
 	return TracingResult{
-		Tracing: tracing,
+		Tracing: &tracing,
 	}, nil
 }
 

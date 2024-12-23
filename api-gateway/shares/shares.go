@@ -83,7 +83,7 @@ func (h *sharesHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 		req.Share.ShareID.Set(shareId)
 
 		res := shares.ShareCrudResponse{}
-		err := messaging.Request(h.nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
+		err := messaging.Request(ctx.Request.Context(), h.nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
 		if err != nil {
 			ctx.AbortWithError(http.StatusInternalServerError, err)
 			return
@@ -115,7 +115,7 @@ func (h *sharesHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 			Share:     share,
 		}
 		res := shares.ShareCrudResponse{}
-		err = messaging.Request(h.nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
+		err = messaging.Request(ctx.Request.Context(), h.nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
 		if err != nil {
 			ctx.AbortWithError(http.StatusInternalServerError, err)
 			return
@@ -150,7 +150,7 @@ func (h *sharesHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 			Share:     share,
 		}
 		res := shares.ShareCrudResponse{}
-		err = messaging.Request(h.nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
+		err = messaging.Request(ctx.Request.Context(), h.nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
 		if err != nil {
 			ctx.AbortWithError(http.StatusInternalServerError, err)
 			return
@@ -175,7 +175,7 @@ func (h *sharesHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 			Share:     share,
 		}
 		res := shares.ShareCrudResponse{}
-		err := messaging.Request(h.nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
+		err := messaging.Request(ctx.Request.Context(), h.nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
 		if err != nil {
 			ctx.AbortWithError(http.StatusInternalServerError, err)
 			return

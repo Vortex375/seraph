@@ -31,10 +31,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/fx"
 	"golang.org/x/net/webdav"
 	"umbasa.net/seraph/events"
 	"umbasa.net/seraph/logging"
+	"umbasa.net/seraph/tracing"
 )
 
 type FileProviderServer struct {
@@ -44,9 +47,10 @@ type FileProviderServer struct {
 type ServerParams struct {
 	fx.In
 
-	Nc     *nats.Conn
-	Js     jetstream.JetStream
-	Logger *logging.Logger
+	Nc      *nats.Conn
+	Js      jetstream.JetStream
+	Logger  *logging.Logger
+	Tracing *tracing.Tracing
 }
 
 type fileHolder struct {
@@ -87,6 +91,7 @@ func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.
 		ProviderId: providerId,
 	}
 	msgApi := NewMessageApi()
+	tracer := p.Tracing.TracerProvider.Tracer("fileprovider." + providerId)
 
 	if p.Js != nil {
 		cfg := jetstream.StreamConfig{
@@ -105,12 +110,18 @@ func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.
 
 	providerTopic := FileProviderTopicPrefix + providerId
 	p.Nc.QueueSubscribe(providerTopic, providerTopic, func(msg *nats.Msg) {
-		context := context.TODO()
+		ctx := context.Background()
+		propagator := propagation.TraceContext{}
+		ctx = propagator.Extract(ctx, propagation.HeaderCarrier(msg.Header))
+
 		request := FileProviderRequest{}
 		msgApi.Unmarshal(FileProviderRequestSchema, msg.Data, &request)
 		switch req := request.Request.(type) {
 
 		case MkdirRequest:
+			var span trace.Span
+			ctx, span = tracer.Start(ctx, "mkdir")
+			defer span.End()
 			if readOnly {
 				responseData, _ := msgApi.Marshal(FileProviderResponseSchema, FileProviderResponse{
 					Uid: request.Uid,
@@ -121,7 +132,7 @@ func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.
 				msg.Respond(responseData)
 				break
 			}
-			err := fileSystem.Mkdir(context, req.Name, req.Perm)
+			err := fileSystem.Mkdir(ctx, req.Name, req.Perm)
 			if err == nil {
 				log.Debug("mkdir", "uid", request.Uid, "req", req)
 			} else {
@@ -136,6 +147,9 @@ func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.
 			msg.Respond(responseData)
 
 		case RemoveAllRequest:
+			var span trace.Span
+			ctx, span = tracer.Start(ctx, "removeAll")
+			defer span.End()
 			if readOnly {
 				responseData, _ := msgApi.Marshal(FileProviderResponseSchema, FileProviderResponse{
 					Uid: request.Uid,
@@ -146,7 +160,7 @@ func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.
 				msg.Respond(responseData)
 				break
 			}
-			err := fileSystem.RemoveAll(context, req.Name)
+			err := fileSystem.RemoveAll(ctx, req.Name)
 			if err == nil {
 				log.Debug("removeAll", "uid", request.Uid, "req", req)
 			} else {
@@ -161,6 +175,10 @@ func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.
 			msg.Respond(responseData)
 
 		case RenameRequest:
+			var span trace.Span
+			ctx, span = tracer.Start(ctx, "rename")
+			defer span.End()
+
 			if readOnly {
 				responseData, _ := msgApi.Marshal(FileProviderResponseSchema, FileProviderResponse{
 					Uid: request.Uid,
@@ -171,7 +189,7 @@ func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.
 				msg.Respond(responseData)
 				break
 			}
-			err := fileSystem.Rename(context, req.OldName, req.NewName)
+			err := fileSystem.Rename(ctx, req.OldName, req.NewName)
 			if err == nil {
 				log.Debug("rename", "uid", request.Uid, "req", req)
 			} else {
@@ -186,7 +204,11 @@ func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.
 			msg.Respond(responseData)
 
 		case StatRequest:
-			fileInfo, err := fileSystem.Stat(context, req.Name)
+			var span trace.Span
+			ctx, span = tracer.Start(ctx, "stat")
+			defer span.End()
+
+			fileInfo, err := fileSystem.Stat(ctx, req.Name)
 			if err == nil {
 				log.Debug("fileInfo", "uid", request.Uid, "req", req)
 			} else {
@@ -225,11 +247,15 @@ func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.
 			msg.Respond(responseData)
 
 		case OpenFileRequest:
+			var span trace.Span
+			ctx, span = tracer.Start(ctx, "open")
+			defer span.End()
+
 			flag := req.Flag
 			if readOnly {
 				flag = os.O_RDONLY
 			}
-			file, err := fileSystem.OpenFile(context, req.Name, flag, req.Perm)
+			file, err := fileSystem.OpenFile(ctx, req.Name, flag, req.Perm)
 			if err == nil {
 				log.Debug("openFile", "uid", request.Uid, "req", req)
 			} else {
@@ -240,6 +266,10 @@ func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.
 				fileId := uuid.New()
 				fileTopic := FileProviderFileTopicPrefix + fileId.String()
 				subscription, _ := p.Nc.Subscribe(fileTopic, func(fileMsg *nats.Msg) {
+					ctx := context.Background()
+					propagator := propagation.TraceContext{}
+					ctx = propagator.Extract(ctx, propagation.HeaderCarrier(fileMsg.Header))
+
 					fileRequest := FileProviderFileRequest{}
 					err = msgApi.Unmarshal(FileProviderFileRequestSchema, fileMsg.Data, &fileRequest)
 					if err != nil {
@@ -250,6 +280,10 @@ func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.
 					switch fileReq := fileRequest.Request.(type) {
 
 					case FileCloseRequest:
+						var span trace.Span
+						ctx, span = tracer.Start(ctx, "close")
+						defer span.End()
+
 						err = file.Close()
 						if err == nil {
 							log.Debug("fileClose", "uid", fileRequest.Uid, "fileId", fileRequest.FileId, "req", fileReq)
@@ -267,6 +301,10 @@ func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.
 						fileMsg.Respond(fileResponseData)
 
 					case FileReadRequest:
+						var span trace.Span
+						ctx, span = tracer.Start(ctx, "read")
+						defer span.End()
+
 						//TODO: validate Len
 						buf := make([]byte, fileReq.Len)
 						len, err := file.Read(buf)
@@ -288,6 +326,10 @@ func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.
 						fileMsg.Respond(fileResponseData)
 
 					case FileWriteRequest:
+						var span trace.Span
+						ctx, span = tracer.Start(ctx, "write")
+						defer span.End()
+
 						if readOnly {
 							fileResponseData, _ := msgApi.Marshal(FileProviderFileResponseSchema, FileProviderFileResponse{
 								Uid: fileRequest.Uid,
@@ -314,6 +356,10 @@ func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.
 						fileMsg.Respond(fileResponseData)
 
 					case FileSeekRequest:
+						var span trace.Span
+						ctx, span = tracer.Start(ctx, "seek")
+						defer span.End()
+
 						offset, err := file.Seek(fileReq.Offset, fileReq.Whence)
 						if err == nil {
 							log.Debug("fileSeek", "uid", fileRequest.Uid, "fileId", fileRequest.FileId, "req", fileReq)
@@ -330,6 +376,10 @@ func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.
 						fileMsg.Respond(fileResponseData)
 
 					case ReaddirRequest:
+						var span trace.Span
+						ctx, span = tracer.Start(ctx, "readdir")
+						defer span.End()
+
 						fileInfos, err := file.Readdir(fileReq.Count)
 						if err == nil {
 							log.Debug("readdir", "uid", fileRequest.Uid, "fileId", fileRequest.FileId, "req", fileReq)

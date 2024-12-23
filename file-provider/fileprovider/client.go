@@ -32,6 +32,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hamba/avro/v2"
 	"github.com/nats-io/nats.go"
+	"go.opentelemetry.io/otel/propagation"
 	"golang.org/x/net/webdav"
 	"umbasa.net/seraph/logging"
 )
@@ -56,13 +57,21 @@ type client struct {
 const defaultTimeout = 30 * time.Second
 const cacheTimeout = 5 * time.Second
 
-func exchange(nc *nats.Conn, msgApi avro.API, providerId string, request *FileProviderRequest) (*FileProviderResponse, error) {
+func exchange(ctx context.Context, nc *nats.Conn, msgApi avro.API, providerId string, request *FileProviderRequest) (*FileProviderResponse, error) {
 	data, err := msgApi.Marshal(FileProviderRequestSchema, request)
 	if err != nil {
 		return nil, err
 	}
 
-	msg, err := nc.Request(FileProviderTopicPrefix+providerId, data, defaultTimeout)
+	header := make(nats.Header)
+	propagator := propagation.TraceContext{}
+	propagator.Inject(ctx, propagation.HeaderCarrier(header))
+
+	msg, err := nc.RequestMsg(&nats.Msg{
+		Subject: FileProviderTopicPrefix + providerId,
+		Header:  header,
+		Data:    data,
+	}, defaultTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -77,13 +86,21 @@ func exchange(nc *nats.Conn, msgApi avro.API, providerId string, request *FilePr
 	return &response, nil
 }
 
-func exchangeFile(nc *nats.Conn, msgApi avro.API, fileId string, request *FileProviderFileRequest) (*FileProviderFileResponse, error) {
+func exchangeFile(ctx context.Context, nc *nats.Conn, msgApi avro.API, fileId string, request *FileProviderFileRequest) (*FileProviderFileResponse, error) {
 	data, err := msgApi.Marshal(FileProviderFileRequestSchema, request)
 	if err != nil {
 		return nil, err
 	}
 
-	msg, err := nc.Request(FileProviderFileTopicPrefix+fileId, data, defaultTimeout)
+	header := make(nats.Header)
+	propagator := propagation.TraceContext{}
+	propagator.Inject(ctx, propagation.HeaderCarrier(header))
+
+	msg, err := nc.RequestMsg(&nats.Msg{
+		Subject: FileProviderFileTopicPrefix + fileId,
+		Header:  header,
+		Data:    data,
+	}, defaultTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +162,7 @@ func (c *client) Mkdir(ctx context.Context, name string, perm os.FileMode) error
 		},
 	}
 
-	response, err := exchange(c.nc, c.msgApi, c.providerId, &request)
+	response, err := exchange(ctx, c.nc, c.msgApi, c.providerId, &request)
 	if err != nil {
 		c.log.Error("mkdir failed", "uid", request.Uid, "req", request.Request, "error", err)
 		return err
@@ -162,6 +179,7 @@ func (c *client) Mkdir(ctx context.Context, name string, perm os.FileMode) error
 func (c *client) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (webdav.File, error) {
 	return &lazyFile{
 		client: c,
+		ctx:    ctx,
 		name:   name,
 		flag:   flag,
 		perm:   perm,
@@ -169,7 +187,7 @@ func (c *client) OpenFile(ctx context.Context, name string, flag int, perm os.Fi
 	}, nil
 }
 
-func (c *client) doOpenFile(name string, flag int, perm os.FileMode) (webdav.File, error) {
+func (c *client) doOpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (webdav.File, error) {
 	request := FileProviderRequest{
 		Uid: uuid.NewString(),
 		Request: OpenFileRequest{
@@ -179,7 +197,7 @@ func (c *client) doOpenFile(name string, flag int, perm os.FileMode) (webdav.Fil
 		},
 	}
 
-	response, err := exchange(c.nc, c.msgApi, c.providerId, &request)
+	response, err := exchange(ctx, c.nc, c.msgApi, c.providerId, &request)
 	if err != nil {
 		c.log.Error("openFile failed", "uid", request.Uid, "req", request.Request, "error", err)
 		return nil, err
@@ -194,6 +212,7 @@ func (c *client) doOpenFile(name string, flag int, perm os.FileMode) (webdav.Fil
 	}
 	return &file{
 			c:      c,
+			ctx:    ctx,
 			name:   name,
 			fileId: resp.FileId},
 		nil
@@ -207,7 +226,7 @@ func (c *client) RemoveAll(ctx context.Context, name string) error {
 		},
 	}
 
-	response, err := exchange(c.nc, c.msgApi, c.providerId, &request)
+	response, err := exchange(ctx, c.nc, c.msgApi, c.providerId, &request)
 	if err != nil {
 		c.log.Error("removeAll failed", "uid", request.Uid, "req", request.Request, "error", err)
 		return err
@@ -230,7 +249,7 @@ func (c *client) Rename(ctx context.Context, oldName string, newName string) err
 		},
 	}
 
-	response, err := exchange(c.nc, c.msgApi, c.providerId, &request)
+	response, err := exchange(ctx, c.nc, c.msgApi, c.providerId, &request)
 	if err != nil {
 		c.log.Error("rename failed", "uid", request.Uid, "req", request.Request, "error", err)
 		return err
@@ -260,7 +279,7 @@ func (c *client) Stat(ctx context.Context, name string) (os.FileInfo, error) {
 		},
 	}
 
-	response, err := exchange(c.nc, c.msgApi, c.providerId, &request)
+	response, err := exchange(ctx, c.nc, c.msgApi, c.providerId, &request)
 	if err != nil {
 		c.log.Error("stat failed", "uid", request.Uid, "req", request.Request, "error", err)
 		return nil, err
@@ -312,6 +331,7 @@ func (f *fileInfo) Sys() any {
 
 type file struct {
 	c      *client
+	ctx    context.Context
 	fileId string
 	name   string
 }
@@ -323,7 +343,7 @@ func (f *file) Close() error {
 		Request: FileCloseRequest{},
 	}
 
-	response, err := exchangeFile(f.c.nc, f.c.msgApi, f.fileId, &request)
+	response, err := exchangeFile(f.ctx, f.c.nc, f.c.msgApi, f.fileId, &request)
 	if err != nil {
 		f.c.log.Error("fileClose failed", "uid", request.Uid, "req", request.Request, "error", err)
 		return err
@@ -347,7 +367,7 @@ func (f *file) Read(p []byte) (n int, err error) {
 		},
 	}
 
-	response, err := exchangeFile(f.c.nc, f.c.msgApi, f.fileId, &request)
+	response, err := exchangeFile(f.ctx, f.c.nc, f.c.msgApi, f.fileId, &request)
 	if err != nil {
 		f.c.log.Error("fileRead failed", "uid", request.Uid, "req", request.Request, "error", err)
 		return 0, err
@@ -376,7 +396,7 @@ func (f *file) Seek(offset int64, whence int) (int64, error) {
 		},
 	}
 
-	response, err := exchangeFile(f.c.nc, f.c.msgApi, f.fileId, &request)
+	response, err := exchangeFile(f.ctx, f.c.nc, f.c.msgApi, f.fileId, &request)
 	if err != nil {
 		f.c.log.Error("fileSeek failed", "uid", request.Uid, "req", request.Request, "error", err)
 		return -1, err
@@ -414,7 +434,7 @@ func (f *file) Readdir(count int) ([]fs.FileInfo, error) {
 
 	go readReaddirResponses(f.c.msgApi, responseChan, readdirChan)
 
-	response, err := exchangeFile(f.c.nc, f.c.msgApi, f.fileId, &request)
+	response, err := exchangeFile(f.ctx, f.c.nc, f.c.msgApi, f.fileId, &request)
 	if err != nil {
 		f.c.log.Error("readdir failed", "uid", request.Uid, "req", request.Request, "error", err)
 		return nil, err
@@ -457,7 +477,7 @@ func (f *file) Stat() (fs.FileInfo, error) {
 		},
 	}
 
-	response, err := exchange(f.c.nc, f.c.msgApi, f.c.providerId, &request)
+	response, err := exchange(f.ctx, f.c.nc, f.c.msgApi, f.c.providerId, &request)
 	if err != nil {
 		f.c.log.Error("stat failed", "uid", request.Uid, "req", request.Request, "error", err)
 		return nil, err
@@ -482,7 +502,7 @@ func (f *file) Write(p []byte) (n int, err error) {
 		},
 	}
 
-	response, err := exchangeFile(f.c.nc, f.c.msgApi, f.fileId, &request)
+	response, err := exchangeFile(f.ctx, f.c.nc, f.c.msgApi, f.fileId, &request)
 	if err != nil {
 		f.c.log.Error("fileWrite failed", "uid", request.Uid, "req", request.Request, "error", err)
 		return 0, err
@@ -533,6 +553,7 @@ func readWithTimeout[T any](c chan T, timeout time.Duration) (T, bool) {
 
 type lazyFile struct {
 	client *client
+	ctx    context.Context
 	name   string
 	flag   int
 	perm   os.FileMode
@@ -608,7 +629,7 @@ func (f *lazyFile) Write(p []byte) (n int, err error) {
 }
 
 func (f *lazyFile) doOpen() error {
-	file, err := f.client.doOpenFile(f.name, f.flag, f.perm)
+	file, err := f.client.doOpenFile(f.ctx, f.name, f.flag, f.perm)
 	if err == nil {
 		f.file = file
 	}

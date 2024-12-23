@@ -153,7 +153,7 @@ func TestShareCrud(t *testing.T) {
 	req.Share.IsDir.Set(true)
 
 	res := shares.ShareCrudResponse{}
-	err := messaging.Request(nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
+	err := messaging.Request(context.Background(), nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +185,7 @@ func TestShareCrud(t *testing.T) {
 	req.Share.Recursive.Set(true)
 	req.Share.IsDir.Set(true)
 
-	err = messaging.Request(nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
+	err = messaging.Request(context.Background(), nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +203,7 @@ func TestShareCrud(t *testing.T) {
 	req.Share.Title.Set("some other title")
 	req.Share.Description.Set("some other description")
 
-	err = messaging.Request(nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
+	err = messaging.Request(context.Background(), nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +227,7 @@ func TestShareCrud(t *testing.T) {
 	}
 	req.Share.ShareID.Set("test")
 
-	err = messaging.Request(nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
+	err = messaging.Request(context.Background(), nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +251,7 @@ func TestShareCrud(t *testing.T) {
 	}
 	req.Share.ShareID.Set("test")
 
-	err = messaging.Request(nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
+	err = messaging.Request(context.Background(), nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +265,7 @@ func TestShareCrud(t *testing.T) {
 	}
 	req.Share.ShareID.Set("test")
 
-	err = messaging.Request(nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
+	err = messaging.Request(context.Background(), nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
 
 	assert.NotEqual(t, "", res.Error)
 }
@@ -289,7 +289,7 @@ func TestShareResolve(t *testing.T) {
 	req.Share.Recursive.Set(false)
 	req.Share.IsDir.Set(true)
 
-	err := messaging.RequestVoid(nc, shares.ShareCrudTopic, messaging.Json(&req))
+	err := messaging.RequestVoid(context.Background(), nc, shares.ShareCrudTopic, messaging.Json(&req))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -301,7 +301,7 @@ func TestShareResolve(t *testing.T) {
 	}
 
 	res := shares.ShareResolveResponse{}
-	err = messaging.Request(nc, shares.ShareResolveTopic, messaging.Json(&resolveReq), messaging.Json(&res))
+	err = messaging.Request(context.Background(), nc, shares.ShareResolveTopic, messaging.Json(&resolveReq), messaging.Json(&res))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +317,7 @@ func TestShareResolve(t *testing.T) {
 		Path:    "file.txt",
 	}
 
-	err = messaging.Request(nc, shares.ShareResolveTopic, messaging.Json(&resolveReq), messaging.Json(&res))
+	err = messaging.Request(context.Background(), nc, shares.ShareResolveTopic, messaging.Json(&resolveReq), messaging.Json(&res))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,7 +333,7 @@ func TestShareResolve(t *testing.T) {
 		Path:    "sub/file.txt",
 	}
 
-	err = messaging.Request(nc, shares.ShareResolveTopic, messaging.Json(&resolveReq), messaging.Json(&res))
+	err = messaging.Request(context.Background(), nc, shares.ShareResolveTopic, messaging.Json(&resolveReq), messaging.Json(&res))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -356,7 +356,7 @@ func TestShareResolve(t *testing.T) {
 	req.Share.Recursive.Set(true)
 	req.Share.IsDir.Set(true)
 
-	err = messaging.RequestVoid(nc, shares.ShareCrudTopic, messaging.Json(&req))
+	err = messaging.RequestVoid(context.Background(), nc, shares.ShareCrudTopic, messaging.Json(&req))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -368,7 +368,7 @@ func TestShareResolve(t *testing.T) {
 		Path:    "sub/file.txt",
 	}
 
-	err = messaging.Request(nc, shares.ShareResolveTopic, messaging.Json(&resolveReq), messaging.Json(&res))
+	err = messaging.Request(context.Background(), nc, shares.ShareResolveTopic, messaging.Json(&resolveReq), messaging.Json(&res))
 	if err != nil {
 		t.Fatal(err)
 	}

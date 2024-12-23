@@ -50,7 +50,7 @@ type Params struct {
 	Log      *logging.Logger
 	Viper    *viper.Viper
 	Auth     auth.Auth
-	Tracing  tracing.Tracing
+	Tracing  *tracing.Tracing
 	Handlers []handler.GatewayHandler `group:"gatewayhandlers"`
 	Lc       fx.Lifecycle
 }

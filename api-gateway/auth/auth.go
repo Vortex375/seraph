@@ -220,7 +220,7 @@ func (a *oidcAuth) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 			return
 		}
 
-		oauth2Token, err := a.config.Exchange(ctx, ctx.Query("code"))
+		oauth2Token, err := a.config.Exchange(ctx.Request.Context(), ctx.Query("code"))
 		if err != nil {
 			ctx.AbortWithError(http.StatusInternalServerError, fmt.Errorf("auth: failed to exchange token: %w", err))
 			return
@@ -232,7 +232,7 @@ func (a *oidcAuth) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 			return
 		}
 
-		idToken, err := a.verifier.Verify(context.Background(), rawIDToken)
+		idToken, err := a.verifier.Verify(ctx.Request.Context(), rawIDToken)
 		if err != nil {
 			ctx.AbortWithError(http.StatusInternalServerError, fmt.Errorf("auth: failed to verify ID Token: %w", err))
 			return
@@ -348,19 +348,19 @@ func (a *oidcAuth) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 
 		if rawIDToken, ok := oauth2Token.Extra("id_token").(string); ok {
 			var err error
-			idToken, err = a.verifier.Verify(ctx, rawIDToken)
+			idToken, err = a.verifier.Verify(ctx.Request.Context(), rawIDToken)
 			if err == nil {
 				idToken.Claims(&idTokenClaims)
 			}
 		}
 
 		var userInfoClaims *json.RawMessage = new(json.RawMessage)
-		userInfo, err := a.provider.UserInfo(ctx, oauth2.StaticTokenSource(oauth2Token))
+		userInfo, err := a.provider.UserInfo(ctx.Request.Context(), oauth2.StaticTokenSource(oauth2Token))
 		if err == nil {
 			userInfo.Claims(&userInfoClaims)
 		}
 
-		introspectionResponse, _ := rs.Introspect[*zoidc.IntrospectionResponse](ctx, a.resourceServer, oauth2Token.AccessToken)
+		introspectionResponse, _ := rs.Introspect[*zoidc.IntrospectionResponse](ctx.Request.Context(), a.resourceServer, oauth2Token.AccessToken)
 
 		resp := struct {
 			OAuth2Token           *oauth2.Token
@@ -454,7 +454,7 @@ func (a *oidcAuth) AuthMiddleware(passwordAuth bool, realm string) func(*gin.Con
 		}
 
 		// attempt token refresh
-		token, err = a.config.TokenSource(ctx, token).Token()
+		token, err = a.config.TokenSource(ctx.Request.Context(), token).Token()
 		if err != nil {
 			// token failed to refresh
 			if sess != nil {
@@ -672,7 +672,7 @@ func (a *oidcAuth) getTokenFromSession(sess sessions.Session) (*oauth2.Token, er
 }
 
 func (a *oidcAuth) introspectToken(ctx *gin.Context, token *oauth2.Token) (*zoidc.IntrospectionResponse, error) {
-	kv, err := a.introspectionCache.Get(ctx, token.AccessToken)
+	kv, err := a.introspectionCache.Get(ctx.Request.Context(), token.AccessToken)
 	if err != nil {
 		if !errors.Is(err, jetstream.ErrKeyNotFound) && !errors.Is(err, jetstream.ErrKeyDeleted) {
 			a.log.Error("error retrieving token introspection from cache", "error", err)
@@ -685,13 +685,13 @@ func (a *oidcAuth) introspectToken(ctx *gin.Context, token *oauth2.Token) (*zoid
 		err = json.Unmarshal(kv.Value(), &resp)
 		if err != nil {
 			a.log.Error("error retrieving token introspection from cache", "error", err)
-			a.introspectionCache.Delete(ctx, token.AccessToken)
+			a.introspectionCache.Delete(ctx.Request.Context(), token.AccessToken)
 		} else {
 			return &resp, nil
 		}
 	}
 
-	resp, err := rs.Introspect[*zoidc.IntrospectionResponse](ctx, a.resourceServer, token.AccessToken)
+	resp, err := rs.Introspect[*zoidc.IntrospectionResponse](ctx.Request.Context(), a.resourceServer, token.AccessToken)
 	if err != nil {
 		return nil, err
 	}
@@ -701,7 +701,7 @@ func (a *oidcAuth) introspectToken(ctx *gin.Context, token *oauth2.Token) (*zoid
 		a.log.Error("error putting introspection value to cache", "error", err)
 		return nil, err
 	}
-	_, err = a.introspectionCache.Put(ctx, token.AccessToken, data)
+	_, err = a.introspectionCache.Put(ctx.Request.Context(), token.AccessToken, data)
 	if err != nil {
 		a.log.Error("error putting introspection value to cache", "error", err)
 		return nil, err

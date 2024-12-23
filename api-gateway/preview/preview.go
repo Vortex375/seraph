@@ -102,7 +102,7 @@ func (h *previewHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 				Path:    sharePath,
 			}
 			resolveRes := shares.ShareResolveResponse{}
-			err = messaging.Request(h.nc, shares.ShareResolveTopic, messaging.Json(&resolveReq), messaging.Json(&resolveRes))
+			err = messaging.Request(ctx.Request.Context(), h.nc, shares.ShareResolveTopic, messaging.Json(&resolveReq), messaging.Json(&resolveRes))
 			if err != nil {
 				h.log.Error("While retrieving preview: error while resolving share", "error", err)
 				ctx.AbortWithStatus(http.StatusInternalServerError)
@@ -159,7 +159,7 @@ func (h *previewHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 			Exact:      exact,
 		}
 		resp := thumbnailer.ThumbnailResponse{}
-		err = messaging.Request(h.nc, thumbnailer.ThumbnailRequestTopic, &req, &resp)
+		err = messaging.Request(ctx.Request.Context(), h.nc, thumbnailer.ThumbnailRequestTopic, &req, &resp)
 
 		if err != nil {
 			h.log.Error("error retrieving thumbnail response", "error", err)
@@ -175,7 +175,7 @@ func (h *previewHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 
 		client := fileprovider.NewFileProviderClient(resp.ProviderID, h.nc, h.logger)
 		defer client.Close()
-		file, err := client.OpenFile(ctx, resp.Path, os.O_RDONLY, 0)
+		file, err := client.OpenFile(ctx.Request.Context(), resp.Path, os.O_RDONLY, 0)
 		if err != nil {
 			h.log.Error("error opening thumbnail", "error", err)
 			ctx.AbortWithStatus(http.StatusInternalServerError)

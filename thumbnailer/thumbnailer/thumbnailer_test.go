@@ -19,6 +19,7 @@
 package thumbnailer
 
 import (
+	"context"
 	"fmt"
 	"image"
 	"log/slog"
@@ -138,7 +139,7 @@ func TestCreateThumbnail(t *testing.T) {
 	}
 	resp := ThumbnailResponse{}
 
-	err := messaging.Request(nc, ThumbnailRequestTopic, &req, &resp)
+	err := messaging.Request(context.Background(), nc, ThumbnailRequestTopic, &req, &resp)
 	if err != nil {
 		t.Fatal(err)
 	}

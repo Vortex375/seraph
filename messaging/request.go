@@ -19,11 +19,13 @@
 package messaging
 
 import (
+	"context"
 	"encoding/json"
 	"reflect"
 	"time"
 
 	"github.com/nats-io/nats.go"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 const DefaultTimeout = 30 * time.Second
@@ -52,25 +54,35 @@ func Json(v any) *JsonPayload {
 	return &JsonPayload{v}
 }
 
-func Request[Req RequestPayload, Res ResponsePayload](nc *nats.Conn, topic string, req Req, res Res) error {
-	return RequestTimeout[Req, Res](nc, topic, DefaultTimeout, req, res)
+func Request[Req RequestPayload, Res ResponsePayload](ctx context.Context, nc *nats.Conn, topic string, req Req, res Res) error {
+	return RequestTimeout[Req, Res](ctx, nc, topic, DefaultTimeout, req, res)
 }
 
-func RequestVoid[Req RequestPayload](nc *nats.Conn, topic string, req Req) error {
+func RequestVoid[Req RequestPayload](ctx context.Context, nc *nats.Conn, topic string, req Req) error {
 	var v ResponsePayload = nil
-	return RequestTimeout(nc, topic, DefaultTimeout, req, v)
+	return RequestTimeout(ctx, nc, topic, DefaultTimeout, req, v)
 }
 
-func RequestVoidTimeout[Req RequestPayload](nc *nats.Conn, topic string, timeout time.Duration, req Req) error {
+func RequestVoidTimeout[Req RequestPayload](ctx context.Context, nc *nats.Conn, topic string, timeout time.Duration, req Req) error {
 	var v ResponsePayload = nil
-	return RequestTimeout(nc, topic, timeout, req, v)
+	return RequestTimeout(ctx, nc, topic, timeout, req, v)
 }
 
-func RequestTimeout[Req RequestPayload, Res ResponsePayload](nc *nats.Conn, topic string, timeout time.Duration, req Req, res Res) error {
-	data, _ := req.Marshal()
+func RequestTimeout[Req RequestPayload, Res ResponsePayload](ctx context.Context, nc *nats.Conn, topic string, timeout time.Duration, req Req, res Res) error {
+	data, err := req.Marshal()
+	if err != nil {
+		return err
+	}
 
-	msg, err := nc.Request(topic, data, timeout)
+	header := make(nats.Header)
+	propagator := propagation.TraceContext{}
+	propagator.Inject(ctx, propagation.HeaderCarrier(header))
 
+	msg, err := nc.RequestMsg(&nats.Msg{
+		Subject: topic,
+		Header:  header,
+		Data:    data,
+	}, timeout)
 	if err != nil {
 		return err
 	}

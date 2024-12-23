@@ -1,3 +1,8 @@
 thumbnailer:
   providerId: thumbs
   jpegQuality: 80
+
+tracing:
+  enabled: false
+  otlp:
+    grpc: localhost:4317

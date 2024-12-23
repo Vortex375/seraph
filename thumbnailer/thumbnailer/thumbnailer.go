@@ -35,9 +35,12 @@ import (
 
 	"github.com/disintegration/imaging"
 	"github.com/nats-io/nats.go"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/fx"
 	"umbasa.net/seraph/file-provider/fileprovider"
 	"umbasa.net/seraph/logging"
+	"umbasa.net/seraph/tracing"
 	"umbasa.net/seraph/util"
 
 	_ "image/gif"
@@ -62,11 +65,14 @@ const ContentType = "image/jpeg"
 // name of temporary folder where thumb files are put during creation
 const tmpFolderName = "_tmp"
 
+const bufferSize = 512 * 1024
+
 type Params struct {
 	fx.In
 
 	Nc      *nats.Conn
 	Logger  *logging.Logger
+	Tracing *tracing.Tracing
 	Options *Options `optional:"true"`
 }
 
@@ -85,6 +91,7 @@ type Thumbnailer struct {
 	options          Options
 	logging          *logging.Logger
 	log              *slog.Logger
+	tracer           trace.Tracer
 	nc               *nats.Conn
 	fileProviderId   string
 	path             string
@@ -109,11 +116,14 @@ func NewThumbnailer(p Params, fileProviderId string, path string, thumbnailStora
 
 	ctx, cancel := context.WithCancel(context.Background())
 
+	tracer := p.Tracing.TracerProvider.Tracer("thumbnailer")
+
 	return Result{
 		Thumbnailer: &Thumbnailer{
 			options:          *options,
 			logging:          p.Logger,
 			log:              p.Logger.GetLogger("thumbnailer"),
+			tracer:           tracer,
 			nc:               p.Nc,
 			fileProviderId:   fileProviderId,
 			path:             path,
@@ -177,17 +187,23 @@ func (t *Thumbnailer) messageLoop() {
 }
 
 func (t *Thumbnailer) handleMessage(msg *nats.Msg) {
+	propagator := propagation.TraceContext{}
+	ctx := propagator.Extract(t.ctx, propagation.HeaderCarrier(msg.Header))
+
 	req := ThumbnailRequest{}
 	req.Unmarshal(msg.Data)
 
-	resp := t.handleRequest(req)
+	resp := t.handleRequest(ctx, req)
 
 	data, _ := resp.Marshal()
 
 	msg.Respond(data)
 }
 
-func (t *Thumbnailer) handleRequest(req ThumbnailRequest) (resp ThumbnailResponse) {
+func (t *Thumbnailer) handleRequest(ctx context.Context, req ThumbnailRequest) (resp ThumbnailResponse) {
+	ctx, span := t.tracer.Start(ctx, "handleRequest")
+	defer span.End()
+
 	if req.ProviderID == "" {
 		resp.Error = "invalid empty providerId"
 		return
@@ -210,7 +226,7 @@ func (t *Thumbnailer) handleRequest(req ThumbnailRequest) (resp ThumbnailRespons
 
 	thumbName := fmt.Sprintf("%s_%dx%d.jpg", ThumbnailHash(path.Join(req.ProviderID, req.Path)), req.Width, req.Height)
 
-	_, err := t.thumbnailStorage.Stat(context.TODO(), path.Join(t.path, thumbName))
+	_, err := t.thumbnailStorage.Stat(ctx, path.Join(t.path, thumbName))
 	if err == nil {
 		// thumbnail exists
 		resp.ProviderID = t.fileProviderId
@@ -231,10 +247,13 @@ func (t *Thumbnailer) handleRequest(req ThumbnailRequest) (resp ThumbnailRespons
 	}
 	defer t.limiter.End()
 
+	ctx, span = t.tracer.Start(ctx, "createThumbnail")
+	defer span.End()
+
 	fs := fileprovider.NewFileProviderClient(req.ProviderID, t.nc, t.logging)
 	defer fs.Close()
 
-	file, err := fs.OpenFile(context.TODO(), req.Path, os.O_RDONLY, 0)
+	file, err := fs.OpenFile(ctx, req.Path, os.O_RDONLY, 0)
 	if err != nil {
 		t.log.Error("error while opening source file for thumbnail creation", "provider", req.ProviderID, "path", req.Path, "error", err)
 		resp.Error = "error while opening source file for thumbnail creation: " + err.Error()
@@ -267,7 +286,7 @@ func (t *Thumbnailer) handleRequest(req ThumbnailRequest) (resp ThumbnailRespons
 
 	start = time.Now()
 	// use large buffer size for improved performance (default is only 4096 bytes)
-	reader := bufio.NewReaderSize(file, 512*1024)
+	reader := bufio.NewReaderSize(file, bufferSize)
 	sourceImage, err := imaging.Decode(reader, imaging.AutoOrientation(true))
 	if err != nil {
 		t.log.Error("error while decoding source image", "provider", req.ProviderID, "path", req.Path, "error", err)
@@ -284,15 +303,17 @@ func (t *Thumbnailer) handleRequest(req ThumbnailRequest) (resp ThumbnailRespons
 
 	tmpFilePath := path.Join(t.path, tmpFolderName, randomFileName())
 	thumbPath := path.Join(t.path, thumbName)
-	dstFile, err := t.thumbnailStorage.OpenFile(context.TODO(), tmpFilePath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0666)
+	dstFile, err := t.thumbnailStorage.OpenFile(ctx, tmpFilePath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0666)
 	if err != nil {
 		t.log.Error("error while opening thumbnail destination for writing", "error", err)
 		resp.Error = "error while opening thumbnail destination for writing" + err.Error()
 		return
 	}
 
+	writer := bufio.NewWriterSize(dstFile, bufferSize)
+
 	start = time.Now()
-	err = jpeg.Encode(dstFile, dstImage, &jpeg.Options{
+	err = jpeg.Encode(writer, dstImage, &jpeg.Options{
 		Quality: t.options.JpegQuality,
 	})
 	if err != nil {
@@ -303,9 +324,10 @@ func (t *Thumbnailer) handleRequest(req ThumbnailRequest) (resp ThumbnailRespons
 	}
 	elapsed = time.Since(start)
 	t.log.Debug("encoded thumbnail", "time", elapsed)
+	writer.Flush()
 	dstFile.Close()
 
-	err = t.thumbnailStorage.Rename(context.TODO(), tmpFilePath, thumbPath)
+	err = t.thumbnailStorage.Rename(ctx, tmpFilePath, thumbPath)
 	if err != nil {
 		t.log.Error("error while moving thumbnail to destination", "error", err)
 		resp.Error = "error while moving thumbnail to destination" + err.Error()
