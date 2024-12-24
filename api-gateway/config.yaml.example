@@ -1,0 +1,65 @@
+# Configure authentication
+# Seraph relies on an OpenID Connect (OIDC) provider to handle the authentication
+# so you need to set up one, e.g. Keycloak
+auth:
+  # OPTIONAL (default: true) 
+  # set to false to completely disable authentication (for local development only)
+  # when set to false the other options are not required
+  enabled: true
+  # REQUIRED (when auth.enabled: true)
+  # configure the URL of your OIDC provider (e.g. your keycloak instance)
+  configUrl: https://id.example.com/realms/seraph
+  # REQUIRED (when auth.enabled: true)
+  # the user must be redirected back to Seraph to complete the authentication flow
+  # configure Seraph's URL here and append '/auth/callback'
+  # the same URL must be configured as valid redirect URL in your OIDC provider
+  redirectUrl: http://localhost:8080/auth/callback
+  # REQUIRED (when auth.enabled: true)
+  # the client id
+  client: seraph
+  # REQUIRED (when auth.enabled: true)
+  # the client secret - setting this is required because Seraph uses token introspection
+  # which requires the client to authenticate with the OIDC provider
+  clientSecret: mysecret
+  # OPTIONAL (default: none)
+  # optional: list access token scopes here that are required for access to seraph
+  # seraph will deny access if the user's access token does not have the required scopes
+  clientScopes:
+    - seraph
+
+# Configure the API gateway
+gateway:
+  cookie:
+    # REQUIRED - secret used to encrypt the session cookie
+    secret: secret
+  # OPTIONAL (default: ':8080')
+  # address (host:port) on which the gateway's HTTP server listens
+  address: :8080
+  # OPTIONAL (default: '/srv/webapp' - for use inside docker image)
+  # for development only: specify the location from where the (Angular) web app is served
+  webappLocation: ../webapp/seraph-web-app/dist/seraph-web-app/browser
+
+# Configure the database
+mongo:
+  # REQUIRED - URL of mongodb
+  url: mongodb://localhost:27017/
+  # OPTIONAL (default: 'seraph-auth')
+  # name of the database to use
+  db: seraph-auth
+
+# Configure tracing via OpenTelemetry
+tracing:
+  # OPTIONAL (default: false)
+  # set to true to enable tracing
+  enabled: false
+  # OPTIONAL (default: 'api-gateway')
+  # set the service name that appears in the traces
+  serviceName: api-gateway
+  # OPTIONAL (default: false)
+  # for debugging: set to true to print traces to stdout
+  stdOut: false
+  # OPTIONAL (default: none)
+  # configure trace exporting via OTLP (OpenTelemetry Protocol)
+  otlp:
+    # configure address (host:port) of the gRPC endpoint
+    grpc: localhost:4317

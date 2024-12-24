@@ -1,0 +1,24 @@
+# Configure the database
+mongo:
+  # REQUIRED - URL of mongodb
+  url: mongodb://localhost:27017/
+  # OPTIONAL (default: 'seraph-shares')
+  # name of the database to use
+  db: seraph-shares
+
+# Configure tracing via OpenTelemetry
+tracing:
+  # OPTIONAL (default: false)
+  # set to true to enable tracing
+  enabled: false
+  # OPTIONAL (default: 'shares')
+  # set the service name that appears in the traces
+  serviceName: shares
+  # OPTIONAL (default: false)
+  # for debugging: set to true to print traces to stdout
+  stdOut: false
+  # OPTIONAL (default: none)
+  # configure trace exporting via OTLP (OpenTelemetry Protocol)
+  otlp:
+    # configure address (host:port) of the gRPC endpoint
+    grpc: localhost:4317

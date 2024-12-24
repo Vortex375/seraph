@@ -96,15 +96,15 @@ type oidcAuth struct {
 func New(p Params) (Result, error) {
 	log := p.Log.GetLogger("auth")
 
-	p.Viper.SetDefault("auth.disabled", false)
+	p.Viper.SetDefault("auth.enabled", true)
 	p.Viper.SetDefault("auth.configURL", "http://localhost:8081/realms/seraph")
 	p.Viper.SetDefault("auth.redirectURL", "http://localhost:8080/auth/callback")
 	p.Viper.SetDefault("auth.clientId", "seraph")
 	p.Viper.SetDefault("auth.appClientId", "seraph-app")
 	p.Viper.SetDefault("auth.clientScopes", make([]string, 0))
 
-	if p.Viper.GetBool("auth.disabled") {
-		log.Warn("AUTHENTICATION DISABLED via auth.disabled parameter!! Access to all APIs and data is granted without login.")
+	if !p.Viper.GetBool("auth.enabled") {
+		log.Warn("AUTHENTICATION DISABLED via auth.enabled parameter!! Access to all APIs and data is granted without login.")
 		auth := &noAuth{}
 		return Result{Auth: auth, Handler: auth}, nil
 	}

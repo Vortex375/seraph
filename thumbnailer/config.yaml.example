@@ -1,0 +1,30 @@
+# Configure thumbnailer options
+thumbnailer:
+  # REQUIRED - id of the fileprovider the thumbnailer uses to store thumbnails (in a cache)
+  providerId: thumbs
+  # OPTIONAL (default: '/')
+  # the path (folder) in which the thumbnails are stored
+  path: /
+  # OPTIONAL (default: 75)
+  # jpeg quality (1-100) of the generated thumbnails
+  jpegQuality: 80
+  # OPTIONAL (default: auto-detect number of CPU cores)
+  # number of thumbnails processed in parallel
+  parallel: 8
+
+# Configure tracing via OpenTelemetry
+tracing:
+  # OPTIONAL (default: false)
+  # set to true to enable tracing
+  enabled: false
+  # OPTIONAL (default: 'thumbnailer')
+  # set the service name that appears in the traces
+  serviceName: thumbnailer
+  # OPTIONAL (default: false)
+  # for debugging: set to true to print traces to stdout
+  stdOut: false
+  # OPTIONAL (default: none)
+  # configure trace exporting via OTLP (OpenTelemetry Protocol)
+  otlp:
+    # configure address (host:port) of the gRPC endpoint
+    grpc: localhost:4317

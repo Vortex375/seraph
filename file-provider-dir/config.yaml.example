@@ -1,0 +1,29 @@
+# Configure the file provider
+fileprovider:
+  # REQUIRED - unique id for the file provider
+  # you may have multiple instances of the service with the same id for load-balancing
+  # but all instances with the same id must share the same configuration and provide the same set of files
+  # this is used as part of the file path when accessing files from this provider
+  id: foo
+  # REQUIRED - the directory in the local file system that is served by the file provider
+  dir: /srv/files
+  # OPTIONAL (default: false)
+  # set to true for read-only access to files
+  readOnly: false
+
+# Configure tracing via OpenTelemetry
+tracing:
+  # OPTIONAL (default: false)
+  # set to true to enable tracing
+  enabled: false
+  # OPTIONAL (default: 'fileprovider.<providerId>')
+  # set the service name that appears in the traces
+  serviceName: 
+  # OPTIONAL (default: false)
+  # for debugging: set to true to print traces to stdout
+  stdOut: false
+  # OPTIONAL (default: none)
+  # configure trace exporting via OTLP (OpenTelemetry Protocol)
+  otlp:
+    # configure address (host:port) of the gRPC endpoint
+    grpc: localhost:4317
