@@ -25,7 +25,9 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const DefaultTimeout = 30 * time.Second
@@ -69,6 +71,13 @@ func RequestVoidTimeout[Req RequestPayload](ctx context.Context, nc *nats.Conn, 
 }
 
 func RequestTimeout[Req RequestPayload, Res ResponsePayload](ctx context.Context, nc *nats.Conn, topic string, timeout time.Duration, req Req, res Res) error {
+	tracer := otel.Tracer("request")
+	if tracer != nil {
+		var span trace.Span
+		ctx, span = tracer.Start(ctx, "request "+topic)
+		defer span.End()
+	}
+
 	data, err := req.Marshal()
 	if err != nil {
 		return err

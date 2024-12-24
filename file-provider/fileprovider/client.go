@@ -32,7 +32,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/hamba/avro/v2"
 	"github.com/nats-io/nats.go"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/net/webdav"
 	"umbasa.net/seraph/logging"
 )
@@ -58,6 +60,13 @@ const defaultTimeout = 30 * time.Second
 const cacheTimeout = 5 * time.Second
 
 func exchange(ctx context.Context, nc *nats.Conn, msgApi avro.API, providerId string, request *FileProviderRequest) (*FileProviderResponse, error) {
+	tracer := otel.Tracer("fileprovider")
+	if tracer != nil {
+		var span trace.Span
+		ctx, span = tracer.Start(ctx, "exchange")
+		defer span.End()
+	}
+
 	data, err := msgApi.Marshal(FileProviderRequestSchema, request)
 	if err != nil {
 		return nil, err
@@ -87,6 +96,13 @@ func exchange(ctx context.Context, nc *nats.Conn, msgApi avro.API, providerId st
 }
 
 func exchangeFile(ctx context.Context, nc *nats.Conn, msgApi avro.API, fileId string, request *FileProviderFileRequest) (*FileProviderFileResponse, error) {
+	tracer := otel.Tracer("fileprovider")
+	if tracer != nil {
+		var span trace.Span
+		ctx, span = tracer.Start(ctx, "exchangeFile")
+		defer span.End()
+	}
+
 	data, err := msgApi.Marshal(FileProviderFileRequestSchema, request)
 	if err != nil {
 		return nil, err
@@ -614,7 +630,7 @@ func (f *lazyFile) Stat() (fs.FileInfo, error) {
 		}
 		return f.file.Stat()
 	}
-	return f.client.Stat(context.Background(), f.name)
+	return f.client.Stat(f.ctx, f.name)
 }
 
 func (f *lazyFile) Write(p []byte) (n int, err error) {
