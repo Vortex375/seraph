@@ -26,7 +26,6 @@ import (
 	"io/fs"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
@@ -51,13 +50,6 @@ type ServerParams struct {
 	Js      jetstream.JetStream
 	Logger  *logging.Logger
 	Tracing *tracing.Tracing
-}
-
-type fileHolder struct {
-	fileId       uuid.UUID
-	file         webdav.File
-	lastAccess   time.Time
-	subscription *nats.Subscription
 }
 
 func toIoError(err error) IoError {
@@ -104,9 +96,6 @@ func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.
 			log.Error("Error while creating file info stream", "error", err)
 		}
 	}
-
-	//TODO: close files after timeout
-	openFiles := make(map[uuid.UUID]fileHolder)
 
 	providerTopic := FileProviderTopicPrefix + providerId
 	p.Nc.QueueSubscribe(providerTopic, providerTopic, func(msg *nats.Msg) {
@@ -265,7 +254,8 @@ func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.
 			if err == nil {
 				fileId := uuid.New()
 				fileTopic := FileProviderFileTopicPrefix + fileId.String()
-				subscription, _ := p.Nc.Subscribe(fileTopic, func(fileMsg *nats.Msg) {
+				var fileSubscription *nats.Subscription
+				fileSubscription, _ = p.Nc.Subscribe(fileTopic, func(fileMsg *nats.Msg) {
 					ctx := context.Background()
 					propagator := propagation.TraceContext{}
 					ctx = propagator.Extract(ctx, propagation.HeaderCarrier(fileMsg.Header))
@@ -290,8 +280,7 @@ func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.
 						} else {
 							log.Error("fileClose failed", "uid", request.Uid, "fileId", fileRequest.FileId, "req", fileReq, "error", err)
 						}
-						openFiles[fileId].subscription.Unsubscribe()
-						delete(openFiles, fileId)
+						fileSubscription.Unsubscribe()
 						fileResponseData, _ := msgApi.Marshal(FileProviderFileResponseSchema, FileProviderFileResponse{
 							Uid: fileRequest.Uid,
 							Response: FileCloseResponse{
@@ -460,7 +449,6 @@ func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.
 						log.Error("unknown file request", "req", fileRequest.Request)
 					}
 				})
-				openFiles[fileId] = fileHolder{fileId, file, time.Now(), subscription}
 				response.FileId = fileId.String()
 			} else {
 				response.Error = toIoError(err)
