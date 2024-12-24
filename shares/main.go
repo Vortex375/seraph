@@ -27,6 +27,7 @@ import (
 	"umbasa.net/seraph/messaging"
 	"umbasa.net/seraph/mongodb"
 	"umbasa.net/seraph/shares/shares"
+	"umbasa.net/seraph/tracing"
 )
 
 func main() {
@@ -35,8 +36,13 @@ func main() {
 		messaging.Module,
 		config.Module,
 		mongodb.Module,
+		tracing.Module,
 		logging.FxLogger(),
 		fx.Provide(shares.NewMigrations),
+		fx.Decorate(func(viper *viper.Viper) *viper.Viper {
+			viper.SetDefault("tracing.serviceName", "shares")
+			return viper
+		}),
 		fx.Decorate(func(client *mongo.Client, viper *viper.Viper) *mongo.Client {
 			viper.SetDefault("mongo.db", "seraph-shares")
 			return client
