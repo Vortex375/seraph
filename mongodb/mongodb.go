@@ -26,8 +26,10 @@ import (
 	"go.mongodb.org/mongo-driver/bson/bsoncodec"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.opentelemetry.io/contrib/instrumentation/go.mongodb.org/mongo-driver/mongo/otelmongo"
 	"go.uber.org/fx"
 	"umbasa.net/seraph/entities"
+	"umbasa.net/seraph/tracing"
 )
 
 var Module = fx.Module("mongodb",
@@ -40,8 +42,9 @@ var Module = fx.Module("mongodb",
 type ClientParams struct {
 	fx.In
 
-	Viper *viper.Viper
-	Lc    fx.Lifecycle
+	Tracing *tracing.Tracing
+	Viper   *viper.Viper
+	Lc      fx.Lifecycle
 }
 
 type ClientResult struct {
@@ -61,7 +64,13 @@ func getCustomRegistry() *bsoncodec.Registry {
 func NewClient(p ClientParams) (ClientResult, error) {
 	p.Viper.SetDefault("mongo.url", "mongodb://localhost:27017/")
 	uri := p.Viper.GetString("mongo.url")
-	client, err := mongo.Connect(context.Background(), options.Client().ApplyURI(uri).SetRegistry(getCustomRegistry()))
+
+	opts := options.Client()
+	opts.ApplyURI(uri)
+	opts.SetRegistry(getCustomRegistry())
+	opts.SetMonitor(otelmongo.NewMonitor(otelmongo.WithTracerProvider(p.Tracing.TracerProvider)))
+
+	client, err := mongo.Connect(context.Background(), opts)
 
 	if err != nil {
 		return ClientResult{}, err

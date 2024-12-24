@@ -26,10 +26,12 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/fx"
 	"umbasa.net/seraph/events"
 	"umbasa.net/seraph/file-provider/fileprovider"
 	"umbasa.net/seraph/logging"
+	"umbasa.net/seraph/tracing"
 	"umbasa.net/seraph/util"
 )
 
@@ -55,17 +57,20 @@ type consumer struct {
 
 	files   *mongo.Collection
 	readdir *mongo.Collection
+
+	tracer trace.Tracer
 }
 
 type Params struct {
 	fx.In
 
-	Nc     *nats.Conn
-	Js     jetstream.JetStream
-	Db     *mongo.Database
-	Logger *logging.Logger
-	Viper  *viper.Viper
-	Mig    Migrations
+	Nc      *nats.Conn
+	Js      jetstream.JetStream
+	Db      *mongo.Database
+	Logger  *logging.Logger
+	Viper   *viper.Viper
+	Tracing *tracing.Tracing
+	Mig     Migrations
 }
 
 var searchWordsRegex = regexp.MustCompile("\\W|_")
@@ -112,6 +117,8 @@ func NewConsumer(p Params) (Consumer, error) {
 	limiter := util.NewLimiter(p.Viper.GetInt("fileindexer.parallel"))
 	progressThrottle := throttle.NewThrottle(2*time.Second, true)
 
+	tracer := p.Tracing.TracerProvider.Tracer("fileindexer")
+
 	cons := consumer{
 		logger:         p.Logger,
 		log:            log,
@@ -128,6 +135,8 @@ func NewConsumer(p Params) (Consumer, error) {
 		readdir: readdir,
 		ctx:     ctx,
 		cancel:  cancel,
+
+		tracer: tracer,
 	}
 
 	return &cons, nil
@@ -173,6 +182,8 @@ func (c *consumer) Stop() {
 
 func (c *consumer) handleMessage(msg jetstream.Msg) {
 	defer c.limiter.End()
+	ctx, span := c.tracer.Start(c.ctx, "handleMessage")
+	defer span.End()
 
 	metadata, err := msg.Metadata()
 	if err != nil {
@@ -209,7 +220,7 @@ func (c *consumer) handleMessage(msg jetstream.Msg) {
 		file.Pending.Set(true)
 	}
 
-	newFile, change, err := c.upsertFile(&file)
+	newFile, change, err := c.upsertFile(ctx, &file)
 
 	if err != nil {
 		c.log.Error("error processing FileInfoEvent", "error", err, "event", fileInfoEvent)
@@ -217,13 +228,13 @@ func (c *consumer) handleMessage(msg jetstream.Msg) {
 	}
 
 	if change != "" {
-		err = c.handleChangedFile(newFile, change)
+		err = c.handleChangedFile(ctx, newFile, change)
 		if err != nil {
 			c.log.Error("error processing changed file", "error", err, "event", fileInfoEvent)
 			return
 		}
 	} else {
-		err = c.handleUnchangedFile(newFile)
+		err = c.handleUnchangedFile(ctx, newFile)
 		if err != nil {
 			c.log.Error("error processing unchanged file", "error", err, "event", fileInfoEvent)
 			return
@@ -231,19 +242,22 @@ func (c *consumer) handleMessage(msg jetstream.Msg) {
 	}
 
 	if fileInfoEvent.Readdir != nil {
-		c.handleReaddir(newFile, fileInfoEvent.Readdir)
+		c.handleReaddir(ctx, newFile, fileInfoEvent.Readdir)
 	}
 
 	c.log.Debug("successfully processed file event", "event", fileInfoEvent)
 	msg.Ack()
 
-	c.updateLastSeq(metadata.Sequence.Stream)
+	c.updateLastSeq(ctx, metadata.Sequence.Stream)
 	c.progressThrottle.Trigger()
 }
 
-func (c *consumer) updateLastSeq(newValue uint64) {
+func (c *consumer) updateLastSeq(ctx context.Context, newValue uint64) {
+	ctx, span := c.tracer.Start(ctx, "updateLastSeq")
+	defer span.End()
+
 	for {
-		current, err := c.kv.Get(c.ctx, "lastSeq")
+		current, err := c.kv.Get(ctx, "lastSeq")
 		if err != nil {
 			c.log.Error("error while updating progress", "error", err)
 			return
@@ -254,14 +268,17 @@ func (c *consumer) updateLastSeq(newValue uint64) {
 		}
 		newVal := make([]byte, 8)
 		binary.LittleEndian.PutUint64(newVal, newValue)
-		_, err = c.kv.Update(c.ctx, "lastSeq", newVal, current.Revision())
+		_, err = c.kv.Update(ctx, "lastSeq", newVal, current.Revision())
 		if err == nil {
 			return
 		}
 	}
 }
 
-func (c *consumer) upsertFile(file *FilePrototype) (newFile *File, change string, err error) {
+func (c *consumer) upsertFile(ctx context.Context, file *FilePrototype) (newFile *File, change string, err error) {
+	ctx, span := c.tracer.Start(ctx, "upsertFile")
+	defer span.End()
+
 	if file.Path.Get() != "/" { // if it's not the root dir
 		dirName := path.Dir(file.Path.Get())
 		parentDir := FilePrototype{}
@@ -269,7 +286,7 @@ func (c *consumer) upsertFile(file *FilePrototype) (newFile *File, change string
 		parentDir.Path.Set(dirName)
 		parentDir.IsDir.Set(true)
 		var parent *File
-		parent, _, err = c.upsertFile(&parentDir)
+		parent, _, err = c.upsertFile(ctx, &parentDir)
 		if err != nil {
 			return
 		}
@@ -284,8 +301,8 @@ func (c *consumer) upsertFile(file *FilePrototype) (newFile *File, change string
 		"$set": file,
 	}
 	opts := options.FindOneAndUpdate().SetUpsert(true).SetReturnDocument(options.Before)
-	result := c.files.FindOneAndUpdate(context.Background(), filter, update, opts)
-	resultNew := c.files.FindOne(context.Background(), filter)
+	result := c.files.FindOneAndUpdate(ctx, filter, update, opts)
+	resultNew := c.files.FindOne(ctx, filter)
 
 	newFile = &File{}
 	err = resultNew.Decode(newFile)
@@ -317,9 +334,12 @@ func (c *consumer) upsertFile(file *FilePrototype) (newFile *File, change string
 	return
 }
 
-func (c *consumer) handleChangedFile(file *File, change string) error {
-	mimeTyp := c.detectAndUpdateMime(file)
-	imoHash := c.calculateAndUpdateImoHash(file)
+func (c *consumer) handleChangedFile(ctx context.Context, file *File, change string) error {
+	ctx, span := c.tracer.Start(ctx, "handleChangedFile")
+	defer span.End()
+
+	mimeTyp := c.detectAndUpdateMime(ctx, file)
+	imoHash := c.calculateAndUpdateImoHash(ctx, file)
 
 	filter := FilePrototype{}
 	filter.Id.Set(file.Id)
@@ -329,13 +349,13 @@ func (c *consumer) handleChangedFile(file *File, change string) error {
 	proto.ImoHash.Set(imoHash)
 	proto.Pending.Set(false)
 
-	_, err := c.files.UpdateOne(context.TODO(), filter, bson.M{"$set": proto})
+	_, err := c.files.UpdateOne(ctx, filter, bson.M{"$set": proto})
 	if err != nil {
 		c.log.Error("error persisting mimeType and hash", "error", err, "file", file)
 		return err
 	}
 
-	err = c.publishChange(file, change)
+	err = c.publishChange(ctx, file, change)
 	if err != nil {
 		c.log.Error("error publishing FileChangedEvent", "error", err, "file", file)
 		return err
@@ -344,7 +364,10 @@ func (c *consumer) handleChangedFile(file *File, change string) error {
 	return nil
 }
 
-func (c *consumer) detectAndUpdateMime(file *File) string {
+func (c *consumer) detectAndUpdateMime(ctx context.Context, file *File) string {
+	ctx, span := c.tracer.Start(ctx, "detectAndUpdateMime")
+	defer span.End()
+
 	if file.IsDir {
 		return ""
 	}
@@ -357,7 +380,7 @@ func (c *consumer) detectAndUpdateMime(file *File) string {
 		// slow, so we do it only when it can't be done from the file extension
 		client := fileprovider.NewFileProviderClient(file.ProviderId, c.nc, c.logger)
 		defer client.Close()
-		inFile, err := client.OpenFile(context.TODO(), file.Path, os.O_RDONLY, 0)
+		inFile, err := client.OpenFile(ctx, file.Path, os.O_RDONLY, 0)
 		if err != nil {
 			c.log.Error("Error while opening file for mime type detection", "path", file.Path, "error", err)
 			return ""
@@ -378,14 +401,17 @@ func (c *consumer) detectAndUpdateMime(file *File) string {
 	return typ
 }
 
-func (c *consumer) calculateAndUpdateImoHash(file *File) string {
+func (c *consumer) calculateAndUpdateImoHash(ctx context.Context, file *File) string {
+	ctx, span := c.tracer.Start(ctx, "calculateAndUpdateImoHash")
+	defer span.End()
+
 	if file.IsDir {
 		return ""
 	}
 
 	client := fileprovider.NewFileProviderClient(file.ProviderId, c.nc, c.logger)
 	defer client.Close()
-	inFile, err := client.OpenFile(context.TODO(), file.Path, os.O_RDONLY, 0)
+	inFile, err := client.OpenFile(ctx, file.Path, os.O_RDONLY, 0)
 	if err != nil {
 		c.log.Error("Error while opening file for imo hash calculation", "path", file.Path, "error", err)
 		return ""
@@ -409,18 +435,24 @@ func (c *consumer) calculateAndUpdateImoHash(file *File) string {
 	return hashStr
 }
 
-func (c *consumer) handleUnchangedFile(file *File) error {
+func (c *consumer) handleUnchangedFile(ctx context.Context, file *File) error {
+	ctx, span := c.tracer.Start(ctx, "handleUnchangedFile")
+	defer span.End()
+
 	filter := FilePrototype{}
 	filter.Id.Set(file.Id)
 
 	proto := FilePrototype{}
 	proto.Pending.Set(false)
 
-	_, err := c.files.UpdateOne(context.TODO(), filter, bson.M{"$set": proto})
+	_, err := c.files.UpdateOne(ctx, filter, bson.M{"$set": proto})
 	return err
 }
 
-func (c *consumer) publishChange(file *File, change string) error {
+func (c *consumer) publishChange(ctx context.Context, file *File, change string) error {
+	ctx, span := c.tracer.Start(ctx, "publishChange")
+	defer span.End()
+
 	ev := events.FileChangedEvent{
 		Event: events.Event{
 			ID:      uuid.NewString(),
@@ -450,7 +482,10 @@ func (c *consumer) publishChange(file *File, change string) error {
 	return nil
 }
 
-func (c *consumer) handleReaddir(file *File, readDir *events.ReadDir) error {
+func (c *consumer) handleReaddir(ctx context.Context, file *File, readDir *events.ReadDir) error {
+	ctx, span := c.tracer.Start(ctx, "handleReaddir")
+	defer span.End()
+
 	opts := options.Update().SetUpsert(true)
 
 	filter := ReaddirPrototype{}
@@ -462,35 +497,38 @@ func (c *consumer) handleReaddir(file *File, readDir *events.ReadDir) error {
 	proto.File.Set(file.Id)
 	proto.ParentDir.Set(file.ParentDir)
 
-	_, err := c.readdir.UpdateOne(context.Background(), filter, bson.M{"$set": proto}, opts)
+	_, err := c.readdir.UpdateOne(ctx, filter, bson.M{"$set": proto}, opts)
 	if err != nil {
 		return err
 	}
 
 	filter.Index.Unset()
-	count, err := c.readdir.CountDocuments(context.Background(), filter)
+	count, err := c.readdir.CountDocuments(ctx, filter)
 	if err != nil {
 		return err
 	}
 
 	if count == readDir.Total {
-		return c.handleReaddirComplete(file, readDir)
+		return c.handleReaddirComplete(ctx, file, readDir)
 	}
 
 	return nil
 }
 
-func (c *consumer) handleReaddirComplete(file *File, readDir *events.ReadDir) error {
+func (c *consumer) handleReaddirComplete(ctx context.Context, file *File, readDir *events.ReadDir) error {
+	ctx, span := c.tracer.Start(ctx, "handleReaddirComplete")
+	defer span.End()
+
 	filter := ReaddirPrototype{}
 	filter.Readdir.Set(readDir.Readdir)
 
-	cur, err := c.readdir.Find(context.Background(), filter)
+	cur, err := c.readdir.Find(ctx, filter)
 	if err != nil {
 		return err
 	}
 
 	var entries []Readdir
-	cur.All(context.Background(), &entries)
+	cur.All(ctx, &entries)
 
 	if len(entries) != int(readDir.Total) {
 		c.log.Debug("readdir "+readDir.Readdir+" incomplete", "count", len(entries), "total", readDir.Total)
@@ -507,25 +545,25 @@ func (c *consumer) handleReaddirComplete(file *File, readDir *events.ReadDir) er
 		"_id":       bson.M{"$nin": ids},
 	}
 
-	cur, err = c.files.Find(context.Background(), deleteFileFilter)
+	cur, err = c.files.Find(ctx, deleteFileFilter)
 	if err != nil {
 		return err
 	}
 
-	for cur.Next(context.Background()) {
+	for cur.Next(ctx) {
 		var f File
 		cur.Decode(&f)
-		c.publishChange(&f, events.FileChangedEventDeleted)
+		c.publishChange(ctx, &f, events.FileChangedEventDeleted)
 	}
 
-	res, err := c.files.DeleteMany(context.Background(), deleteFileFilter)
+	res, err := c.files.DeleteMany(ctx, deleteFileFilter)
 	if err != nil {
 		return err
 	}
 
 	c.log.Debug("readdir "+readDir.Readdir+" complete", "total", readDir.Total, "deleted", res.DeletedCount)
 
-	_, err = c.readdir.DeleteMany(context.Background(), filter)
+	_, err = c.readdir.DeleteMany(ctx, filter)
 	if err != nil {
 		return err
 	}
