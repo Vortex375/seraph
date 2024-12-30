@@ -19,6 +19,8 @@
 package entities
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"reflect"
 )
@@ -72,15 +74,47 @@ func (d *Definable[T]) setInternal(v any, defined bool) {
 	if converted, ok := v.(T); ok {
 		d.Value = converted
 	} else {
+		valueTyp := reflect.TypeOf(v)
 		valueVal := reflect.ValueOf(v)
 		defTyp := d.getType()
 
 		if valueVal.CanConvert(defTyp) {
 			converted = valueVal.Convert(defTyp).Interface().(T)
 			d.Value = converted
+		} else if defTyp.Kind() == reflect.Slice && valueTyp.Kind() == reflect.Slice {
+			if valueVal.Len() == 0 {
+				d.Defined = defined
+				return
+			}
+			defElemTyp := defTyp.Elem()
+			targetSlice := reflect.MakeSlice(defTyp, 0, 0)
+			for i := 0; i < valueVal.Len(); i++ {
+				v := valueVal.Index(i)
+				if v.Kind() == reflect.Interface {
+					v = v.Elem()
+				}
+				if !v.CanConvert(defElemTyp) {
+					panic(errors.New("unable to convert " + v.Type().String() + " to " + defElemTyp.String()))
+				}
+				targetSlice = reflect.Append(targetSlice, v.Convert(defElemTyp))
+			}
+			d.Value = targetSlice.Interface().(T)
 		} else {
 			panic(errors.New("unable to convert " + valueVal.Type().String() + " to " + defTyp.String()))
 		}
 	}
 	d.Defined = defined
+}
+
+func (d *Definable[T]) UnmarshalJSON(b []byte) error {
+	var v T
+	decoder := json.NewDecoder(bytes.NewReader(b))
+	err := decoder.Decode(&v)
+	if err != nil {
+		return err
+	}
+
+	d.Value = v
+	d.Defined = true
+	return nil
 }
