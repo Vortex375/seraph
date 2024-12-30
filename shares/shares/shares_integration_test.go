@@ -37,6 +37,7 @@ import (
 	"umbasa.net/seraph/messaging"
 	"umbasa.net/seraph/mongodb"
 	"umbasa.net/seraph/shares/shares"
+	"umbasa.net/seraph/tracing"
 )
 
 var natsServer *server.Server
@@ -109,8 +110,9 @@ func getSharesProvider(t *testing.T) (*shares.SharesProvider, *nats.Conn, *mongo
 	}
 
 	res, err := mongodb.NewClient(mongodb.ClientParams{
-		Viper: v,
-		Lc:    fxtest.NewLifecycle(t),
+		Viper:   v,
+		Tracing: tracing.NewNoopTracing(),
+		Lc:      fxtest.NewLifecycle(t),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -122,9 +124,10 @@ func getSharesProvider(t *testing.T) (*shares.SharesProvider, *nats.Conn, *mongo
 	db := mongoClient.Database("shares_test")
 
 	res2, _ := shares.New(shares.Params{
-		Nc:     nc,
-		Logger: logger,
-		Db:     db,
+		Nc:      nc,
+		Logger:  logger,
+		Tracing: tracing.NewNoopTracing(),
+		Db:      db,
 	})
 
 	return res2.SharesProvider, nc, db
@@ -160,14 +163,15 @@ func TestShareCrud(t *testing.T) {
 
 	assert.Equal(t, "", res.Error)
 	assert.NotNil(t, res.Share)
-	assert.Equal(t, "test", res.Share.ShareID)
-	assert.Equal(t, "user", res.Share.Owner)
-	assert.Equal(t, "some title", res.Share.Title)
-	assert.Equal(t, "some description", res.Share.Description)
-	assert.Equal(t, "foo", res.Share.ProviderID)
-	assert.Equal(t, "/bar/baz", res.Share.Path)
-	assert.Equal(t, true, res.Share.Recursive)
-	assert.Equal(t, true, res.Share.IsDir)
+	assert.Equal(t, 1, len(res.Share))
+	assert.Equal(t, "test", res.Share[0].ShareID)
+	assert.Equal(t, "user", res.Share[0].Owner)
+	assert.Equal(t, "some title", res.Share[0].Title)
+	assert.Equal(t, "some description", res.Share[0].Description)
+	assert.Equal(t, "foo", res.Share[0].ProviderID)
+	assert.Equal(t, "/bar/baz", res.Share[0].Path)
+	assert.Equal(t, true, res.Share[0].Recursive)
+	assert.Equal(t, true, res.Share[0].IsDir)
 
 	// CREATE duplicate -> expect error
 
@@ -210,14 +214,15 @@ func TestShareCrud(t *testing.T) {
 
 	assert.Equal(t, "", res.Error)
 	assert.NotNil(t, res.Share)
-	assert.Equal(t, "test", res.Share.ShareID)
-	assert.Equal(t, "user", res.Share.Owner)
-	assert.Equal(t, "some other title", res.Share.Title)
-	assert.Equal(t, "some other description", res.Share.Description)
-	assert.Equal(t, "foo", res.Share.ProviderID)
-	assert.Equal(t, "/bar/baz", res.Share.Path)
-	assert.Equal(t, true, res.Share.Recursive)
-	assert.Equal(t, true, res.Share.IsDir)
+	assert.Equal(t, 1, len(res.Share))
+	assert.Equal(t, "test", res.Share[0].ShareID)
+	assert.Equal(t, "user", res.Share[0].Owner)
+	assert.Equal(t, "some other title", res.Share[0].Title)
+	assert.Equal(t, "some other description", res.Share[0].Description)
+	assert.Equal(t, "foo", res.Share[0].ProviderID)
+	assert.Equal(t, "/bar/baz", res.Share[0].Path)
+	assert.Equal(t, true, res.Share[0].Recursive)
+	assert.Equal(t, true, res.Share[0].IsDir)
 
 	// READ
 
@@ -234,14 +239,15 @@ func TestShareCrud(t *testing.T) {
 
 	assert.Equal(t, "", res.Error)
 	assert.NotNil(t, res.Share)
-	assert.Equal(t, "test", res.Share.ShareID)
-	assert.Equal(t, "user", res.Share.Owner)
-	assert.Equal(t, "some other title", res.Share.Title)
-	assert.Equal(t, "some other description", res.Share.Description)
-	assert.Equal(t, "foo", res.Share.ProviderID)
-	assert.Equal(t, "/bar/baz", res.Share.Path)
-	assert.Equal(t, true, res.Share.Recursive)
-	assert.Equal(t, true, res.Share.IsDir)
+	assert.Equal(t, 1, len(res.Share))
+	assert.Equal(t, "test", res.Share[0].ShareID)
+	assert.Equal(t, "user", res.Share[0].Owner)
+	assert.Equal(t, "some other title", res.Share[0].Title)
+	assert.Equal(t, "some other description", res.Share[0].Description)
+	assert.Equal(t, "foo", res.Share[0].ProviderID)
+	assert.Equal(t, "/bar/baz", res.Share[0].Path)
+	assert.Equal(t, true, res.Share[0].Recursive)
+	assert.Equal(t, true, res.Share[0].IsDir)
 
 	// DELETE
 
@@ -258,7 +264,7 @@ func TestShareCrud(t *testing.T) {
 
 	assert.Equal(t, "", res.Error)
 
-	// READ again -> expect error
+	// READ again -> expect not found
 	req = shares.ShareCrudRequest{
 		Operation: "READ",
 		Share:     entities.MakePrototype(&shares.SharePrototype{}),
@@ -267,7 +273,9 @@ func TestShareCrud(t *testing.T) {
 
 	err = messaging.Request(context.Background(), nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
 
-	assert.NotEqual(t, "", res.Error)
+	assert.Equal(t, "", res.Error)
+	assert.NotNil(t, res.Share)
+	assert.Equal(t, 0, len(res.Share))
 }
 
 func TestShareResolve(t *testing.T) {

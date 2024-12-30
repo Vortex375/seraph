@@ -35,11 +35,11 @@ import (
 
 	"github.com/disintegration/imaging"
 	"github.com/nats-io/nats.go"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/fx"
 	"umbasa.net/seraph/file-provider/fileprovider"
 	"umbasa.net/seraph/logging"
+	"umbasa.net/seraph/messaging"
 	"umbasa.net/seraph/tracing"
 	"umbasa.net/seraph/util"
 
@@ -187,8 +187,7 @@ func (t *Thumbnailer) messageLoop() {
 }
 
 func (t *Thumbnailer) handleMessage(msg *nats.Msg) {
-	propagator := propagation.TraceContext{}
-	ctx := propagator.Extract(t.ctx, propagation.HeaderCarrier(msg.Header))
+	ctx := messaging.ExtractTraceContext(t.ctx, msg)
 
 	req := ThumbnailRequest{}
 	req.Unmarshal(msg.Data)

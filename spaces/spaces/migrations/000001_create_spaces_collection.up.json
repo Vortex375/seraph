@@ -1,5 +1,22 @@
 [
   {
     "create": "spaces"
+  },
+  {
+    "createIndexes": "spaces",
+    "indexes": [
+      {
+        "key": {
+          "users": 1
+        },
+        "name": "spaces_users_idx"
+      },
+      {
+        "key": {
+          "fileProviders.spaceProviderId": 1
+        },
+        "name": "spaces_fileProviders_spaceProviderId_idx"
+      }
+    ]
   }
 ]

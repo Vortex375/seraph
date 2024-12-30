@@ -31,9 +31,12 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/fx"
 	"umbasa.net/seraph/entities"
 	"umbasa.net/seraph/logging"
+	"umbasa.net/seraph/messaging"
+	"umbasa.net/seraph/tracing"
 )
 
 const ShareResolveTopic = "seraph.shares.resolve"
@@ -42,10 +45,11 @@ const ShareCrudTopic = "seraph.shares.crud"
 type Params struct {
 	fx.In
 
-	Nc     *nats.Conn
-	Db     *mongo.Database
-	Logger *logging.Logger
-	Mig    Migrations
+	Nc      *nats.Conn
+	Db      *mongo.Database
+	Logger  *logging.Logger
+	Tracing *tracing.Tracing
+	Mig     Migrations
 }
 
 type Result struct {
@@ -56,6 +60,7 @@ type Result struct {
 
 type SharesProvider struct {
 	log        *slog.Logger
+	tracer     trace.Tracer
 	nc         *nats.Conn
 	shares     *mongo.Collection
 	resolveSub *nats.Subscription
@@ -66,6 +71,7 @@ func New(p Params) (Result, error) {
 	return Result{
 		SharesProvider: &SharesProvider{
 			log:    p.Logger.GetLogger("shares"),
+			tracer: p.Tracing.TracerProvider.Tracer("shares"),
 			nc:     p.Nc,
 			shares: p.Db.Collection("shares"),
 		},
@@ -74,10 +80,14 @@ func New(p Params) (Result, error) {
 
 func (s *SharesProvider) Start() error {
 	sub, err := s.nc.QueueSubscribe(ShareResolveTopic, ShareResolveTopic, func(msg *nats.Msg) {
+		ctx := messaging.ExtractTraceContext(context.Background(), msg)
+		ctx, span := s.tracer.Start(ctx, "resolveShare")
+		defer span.End()
+
 		req := ShareResolveRequest{}
 		json.Unmarshal(msg.Data, &req)
 
-		resp := s.resolveShare(&req)
+		resp := s.resolveShare(ctx, &req)
 
 		data, _ := json.Marshal(resp)
 		msg.Respond(data)
@@ -87,12 +97,16 @@ func (s *SharesProvider) Start() error {
 	}
 	s.resolveSub = sub
 	sub, err = s.nc.QueueSubscribe(ShareCrudTopic, ShareCrudTopic, func(msg *nats.Msg) {
+		ctx := messaging.ExtractTraceContext(context.Background(), msg)
+		ctx, span := s.tracer.Start(ctx, "handleCrud")
+		defer span.End()
+
 		req := ShareCrudRequest{
 			Share: entities.MakePrototype(&SharePrototype{}),
 		}
 		json.Unmarshal(msg.Data, &req)
 
-		resp := s.handleCrud(&req)
+		resp := s.handleCrud(ctx, &req)
 
 		data, _ := json.Marshal(resp)
 		msg.Respond(data)
@@ -123,11 +137,11 @@ func (s *SharesProvider) Stop() error {
 	return nil
 }
 
-func (s *SharesProvider) resolveShare(req *ShareResolveRequest) *ShareResolveResponse {
+func (s *SharesProvider) resolveShare(ctx context.Context, req *ShareResolveRequest) *ShareResolveResponse {
 	filter := SharePrototype{}
 	filter.ShareID.Set(req.ShareID)
 
-	result := s.shares.FindOne(context.Background(), filter)
+	result := s.shares.FindOne(ctx, filter)
 	if result.Err() != nil {
 		if errors.Is(result.Err(), mongo.ErrNoDocuments) {
 			// empty response indicates "not found"
@@ -163,27 +177,36 @@ func (s *SharesProvider) resolveShare(req *ShareResolveRequest) *ShareResolveRes
 	}
 }
 
-func (s *SharesProvider) handleCrud(req *ShareCrudRequest) *ShareCrudResponse {
+func (s *SharesProvider) handleCrud(ctx context.Context, req *ShareCrudRequest) *ShareCrudResponse {
 	switch req.Operation {
 
 	case "READ":
-		if !req.Share.ShareID.IsDefined() {
+		if !req.Share.ShareID.IsDefined() && !req.Share.Owner.IsDefined() {
 			return &ShareCrudResponse{
-				Error: "shareID is required for READ operation",
+				Error: "shareID or owner is required for READ operation",
 			}
 		}
-		result := s.shares.FindOne(context.Background(), req.Share)
+		result, err := s.shares.Find(ctx, req.Share)
+		if err != nil {
+			return &ShareCrudResponse{
+				Error: err.Error(),
+			}
+		}
+
+		shares := make([]Share, 0)
+		for result.Next(ctx) {
+			share := Share{}
+			result.Decode(&share)
+			shares = append(shares, share)
+		}
 		if result.Err() != nil {
 			return &ShareCrudResponse{
 				Error: result.Err().Error(),
 			}
 		}
 
-		share := Share{}
-		result.Decode(&share)
-
 		return &ShareCrudResponse{
-			Share: &share,
+			Share: shares,
 		}
 
 	case "CREATE":
@@ -193,7 +216,7 @@ func (s *SharesProvider) handleCrud(req *ShareCrudRequest) *ShareCrudResponse {
 				Error: "shareID is required for CREATE operation",
 			}
 		}
-		insertRes, err := s.shares.InsertOne(context.Background(), req.Share)
+		insertRes, err := s.shares.InsertOne(ctx, req.Share)
 
 		if err != nil {
 			return &ShareCrudResponse{
@@ -201,13 +224,13 @@ func (s *SharesProvider) handleCrud(req *ShareCrudRequest) *ShareCrudResponse {
 			}
 		}
 
-		findRes := s.shares.FindOne(context.Background(), bson.M{"_id": insertRes.InsertedID})
+		findRes := s.shares.FindOne(ctx, bson.M{"_id": insertRes.InsertedID})
 
 		share := Share{}
 		findRes.Decode(&share)
 
 		return &ShareCrudResponse{
-			Share: &share,
+			Share: []Share{share},
 		}
 
 	case "UPDATE":
@@ -220,7 +243,10 @@ func (s *SharesProvider) handleCrud(req *ShareCrudRequest) *ShareCrudResponse {
 
 		filter := SharePrototype{}
 		filter.ShareID.Set(req.Share.ShareID.Get())
-		result := s.shares.FindOneAndUpdate(context.Background(), filter, bson.M{"$set": req.Share},
+		if filter.Owner.IsDefined() {
+			filter.Owner.Set(req.Share.Owner.Get())
+		}
+		result := s.shares.FindOneAndUpdate(ctx, filter, bson.M{"$set": req.Share},
 			options.FindOneAndUpdate().SetReturnDocument(options.After))
 		if result.Err() != nil {
 			return &ShareCrudResponse{
@@ -232,18 +258,18 @@ func (s *SharesProvider) handleCrud(req *ShareCrudRequest) *ShareCrudResponse {
 		result.Decode(&share)
 
 		return &ShareCrudResponse{
-			Share: &share,
+			Share: []Share{share},
 		}
 
 	case "DELETE":
 
 		if !req.Share.ShareID.IsDefined() {
 			return &ShareCrudResponse{
-				Error: "shareID is required for UPDATE operation",
+				Error: "shareID is required for DELETE operation",
 			}
 		}
 
-		result := s.shares.FindOneAndDelete(context.Background(), req.Share)
+		result := s.shares.FindOneAndDelete(ctx, req.Share)
 		if result.Err() != nil {
 			return &ShareCrudResponse{
 				Error: result.Err().Error(),
@@ -254,7 +280,7 @@ func (s *SharesProvider) handleCrud(req *ShareCrudRequest) *ShareCrudResponse {
 		result.Decode(&share)
 
 		return &ShareCrudResponse{
-			Share: &share,
+			Share: []Share{share},
 		}
 
 	default:

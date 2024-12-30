@@ -46,6 +46,15 @@ type Tracing struct {
 	cancel context.CancelFunc
 }
 
+func NewNoopTracing() *Tracing {
+	return &Tracing{
+		TracerProvider: noop.NewTracerProvider(),
+		Propagator:     propagation.TraceContext{},
+
+		ctx: context.Background(),
+	}
+}
+
 func NewTracing(p TracingParams) (TracingResult, error) {
 	log := p.Log.GetLogger("tracing")
 	ctx, cancel := context.WithCancel(context.Background())

@@ -30,12 +30,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/fx"
 	"golang.org/x/net/webdav"
 	"umbasa.net/seraph/events"
 	"umbasa.net/seraph/logging"
+	"umbasa.net/seraph/messaging"
 	"umbasa.net/seraph/tracing"
 )
 
@@ -99,9 +99,7 @@ func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.
 
 	providerTopic := FileProviderTopicPrefix + providerId
 	p.Nc.QueueSubscribe(providerTopic, providerTopic, func(msg *nats.Msg) {
-		ctx := context.Background()
-		propagator := propagation.TraceContext{}
-		ctx = propagator.Extract(ctx, propagation.HeaderCarrier(msg.Header))
+		ctx := messaging.ExtractTraceContext(context.Background(), msg)
 
 		request := FileProviderRequest{}
 		msgApi.Unmarshal(FileProviderRequestSchema, msg.Data, &request)
@@ -256,9 +254,7 @@ func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.
 				fileTopic := FileProviderFileTopicPrefix + fileId.String()
 				var fileSubscription *nats.Subscription
 				fileSubscription, _ = p.Nc.Subscribe(fileTopic, func(fileMsg *nats.Msg) {
-					ctx := context.Background()
-					propagator := propagation.TraceContext{}
-					ctx = propagator.Extract(ctx, propagation.HeaderCarrier(fileMsg.Header))
+					ctx := messaging.ExtractTraceContext(context.Background(), fileMsg)
 
 					fileRequest := FileProviderFileRequest{}
 					err = msgApi.Unmarshal(FileProviderFileRequestSchema, fileMsg.Data, &fileRequest)

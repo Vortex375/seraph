@@ -16,25 +16,26 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with Seraph.  If not, see <http://www.gnu.org/licenses/>.
 
-package shares
+package spaces
 
-type ShareResolveRequest struct {
-	ShareID string `bson:"shareId" json:"shareId"`
-	Path    string `bson:"path" json:"path"`
+type SpaceResolveRequest struct {
+	UserId          string `bson:"userId" json:"userId"`
+	SpaceProviderId string `bson:"spaceProviderId" json:"spaceProviderId"`
+	Path            string `bson:"path" json:"path"`
 }
 
-type ShareResolveResponse struct {
+type SpaceResolveResponse struct {
 	Error      string `bson:"error" json:"error"`
-	ProviderID string `bson:"providerId" json:"providerId"`
+	ProviderId string `bson:"providerId" json:"providerId"`
 	Path       string `bson:"path" json:"path"`
 }
 
-type ShareCrudRequest struct {
+type SpaceCrudRequest struct {
 	Operation string          `bson:"operation" json:"operation"`
-	Share     *SharePrototype `bson:"share" json:"share"`
+	Space     *SpacePrototype `bson:"space" json:"space"`
 }
 
-type ShareCrudResponse struct {
+type SpaceCrudResponse struct {
 	Error string  `bson:"error" json:"error"`
-	Share []Share `bson:"share" json:"share"`
+	Space []Space `bson:"space" json:"space"`
 }

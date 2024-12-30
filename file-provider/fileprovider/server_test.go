@@ -36,6 +36,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/net/webdav"
 	"umbasa.net/seraph/logging"
+	"umbasa.net/seraph/tracing"
 )
 
 type MockFileSystem struct {
@@ -174,9 +175,10 @@ func getServer(t *testing.T, fs webdav.FileSystem, readOnly bool) (*FileProvider
 	logger.SetLevel(slog.LevelDebug)
 
 	params := ServerParams{
-		Logger: logger,
-		Nc:     nc,
-		Js:     nil,
+		Logger:  logger,
+		Tracing: tracing.NewNoopTracing(),
+		Nc:      nc,
+		Js:      nil,
 	}
 
 	return NewFileProviderServer(params, "testprovider", fs, readOnly), nc

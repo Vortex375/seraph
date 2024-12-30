@@ -27,6 +27,7 @@ import (
 	"umbasa.net/seraph/messaging"
 	"umbasa.net/seraph/mongodb"
 	"umbasa.net/seraph/spaces/spaces"
+	"umbasa.net/seraph/tracing"
 )
 
 func main() {
@@ -35,29 +36,34 @@ func main() {
 		messaging.Module,
 		config.Module,
 		mongodb.Module,
+		tracing.Module,
 		logging.FxLogger(),
 		fx.Provide(spaces.NewMigrations),
+		fx.Decorate(func(viper *viper.Viper) *viper.Viper {
+			viper.SetDefault("tracing.serviceName", "spaces")
+			return viper
+		}),
 		fx.Decorate(func(client *mongo.Client, viper *viper.Viper) *mongo.Client {
 			viper.SetDefault("mongo.db", "seraph-spaces")
 			return client
 		}),
-		// fx.Invoke(func(params shares.Params, lc fx.Lifecycle) error {
+		fx.Invoke(func(params spaces.Params, lc fx.Lifecycle) error {
 
-		// 	result, err := shares.New(params)
+			result, err := spaces.New(params)
 
-		// 	if err != nil {
-		// 		return err
-		// 	}
+			if err != nil {
+				return err
+			}
 
-		// 	provider := result.SharesProvider
-		// 	lc.Append(fx.StartHook(func() error {
-		// 		return provider.Start()
-		// 	}))
-		// 	lc.Append(fx.StopHook(func() error {
-		// 		return provider.Stop()
-		// 	}))
+			provider := result.SpacesProvider
+			lc.Append(fx.StartHook(func() error {
+				return provider.Start()
+			}))
+			lc.Append(fx.StopHook(func() error {
+				return provider.Stop()
+			}))
 
-		// 	return nil
-		// }),
+			return nil
+		}),
 	).Run()
 }

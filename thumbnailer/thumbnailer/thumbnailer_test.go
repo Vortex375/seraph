@@ -35,6 +35,7 @@ import (
 	"umbasa.net/seraph/file-provider/fileprovider"
 	"umbasa.net/seraph/logging"
 	"umbasa.net/seraph/messaging"
+	"umbasa.net/seraph/tracing"
 )
 
 var natsServer *server.Server
@@ -86,8 +87,9 @@ func setup() {
 	logger.SetLevel(slog.LevelDebug)
 
 	params := fileprovider.ServerParams{
-		Nc:     nc,
-		Logger: logger,
+		Nc:      nc,
+		Tracing: tracing.NewNoopTracing(),
+		Logger:  logger,
 	}
 
 	fileprovider.NewFileProviderServer(params, "testinput", webdav.Dir("."), true)
@@ -115,8 +117,9 @@ func getThumbnailer(t *testing.T) (*Thumbnailer, *nats.Conn) {
 	logger.SetLevel(slog.LevelDebug)
 
 	res, _ := NewThumbnailer(Params{
-		Nc:     nc,
-		Logger: logger,
+		Nc:      nc,
+		Tracing: tracing.NewNoopTracing(),
+		Logger:  logger,
 	}, "test", "", tmpFs)
 
 	err = res.Thumbnailer.Start()

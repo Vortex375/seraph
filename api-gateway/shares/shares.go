@@ -75,12 +75,14 @@ func New(p Params) Result {
 func (h *sharesHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 	apiGroup.GET("shares/:shareId", func(ctx *gin.Context) {
 		shareId := ctx.Param("shareId")
+		owner := h.auth.GetUserId(ctx)
 
 		req := shares.ShareCrudRequest{
 			Operation: "READ",
 			Share:     entities.MakePrototype(&shares.SharePrototype{}),
 		}
 		req.Share.ShareID.Set(shareId)
+		req.Share.Owner.Set(owner)
 
 		res := shares.ShareCrudResponse{}
 		err := messaging.Request(ctx.Request.Context(), h.nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
@@ -168,7 +170,9 @@ func (h *sharesHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 	apiGroup.DELETE("shares/:shareId", func(ctx *gin.Context) {
 		shareId := ctx.Param("shareId")
 		share := entities.MakePrototype(&shares.SharePrototype{})
+		owner := h.auth.GetUserId(ctx)
 		share.ShareID.Set(shareId)
+		share.Owner.Set(owner)
 
 		req := shares.ShareCrudRequest{
 			Operation: "DELETE",

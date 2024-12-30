@@ -26,7 +26,6 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -83,9 +82,7 @@ func RequestTimeout[Req RequestPayload, Res ResponsePayload](ctx context.Context
 		return err
 	}
 
-	header := make(nats.Header)
-	propagator := propagation.TraceContext{}
-	propagator.Inject(ctx, propagation.HeaderCarrier(header))
+	header := InjectTraceContext(ctx, make(nats.Header))
 
 	msg, err := nc.RequestMsg(&nats.Msg{
 		Subject: topic,
