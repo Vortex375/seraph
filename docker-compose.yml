@@ -97,7 +97,21 @@ services:
     image: seraph
     restart: always
     command: 
-      - shares-provider
+      - shares
+    depends_on:
+      - nats
+      - mongodb
+    networks:
+      - internal
+    environment:
+      SERAPH_NATS_URL: nats://nats:4222
+      SERAPH_MONGO_URL: mongodb://mongodb:27017/
+
+  spaces:
+    image: seraph
+    restart: always
+    command: 
+      - spaces
     depends_on:
       - nats
       - mongodb
