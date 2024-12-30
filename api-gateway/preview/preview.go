@@ -202,9 +202,13 @@ func (h *previewHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 func getProviderAndPath(p string) (string, string) {
 	split := strings.SplitN(strings.TrimPrefix(p, "/"), "/", 2)
 
-	if len(split) != 2 {
-		return "", ""
+	if len(split) == 1 {
+		return split[0], ""
 	}
 
-	return split[0], split[1]
+	if len(split) == 2 {
+		return split[0], split[1]
+	}
+
+	return "", ""
 }
