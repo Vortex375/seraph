@@ -135,6 +135,7 @@ func (f *MockFile) Stat() (fs.FileInfo, error) {
 }
 
 var natsServer *server.Server
+var tmpDir string
 
 func TestMain(m *testing.M) {
 	setup()
@@ -150,9 +151,13 @@ func setup() {
 	opts := &server.Options{}
 	var err error
 	natsServer, err = server.NewServer(opts)
+	if err != nil {
+		panic(err)
+	}
 
 	natsServer.Start()
 
+	tmpDir, err = os.MkdirTemp("", "seraph-fileprovider-test-")
 	if err != nil {
 		panic(err)
 	}
@@ -162,6 +167,9 @@ func shutdown() {
 	if natsServer != nil {
 		natsServer.Shutdown()
 		natsServer = nil
+	}
+	if tmpDir != "" {
+		os.RemoveAll(tmpDir)
 	}
 }
 

@@ -33,10 +33,10 @@ import (
 	"github.com/hamba/avro/v2"
 	"github.com/nats-io/nats.go"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/net/webdav"
 	"umbasa.net/seraph/logging"
+	"umbasa.net/seraph/messaging"
 )
 
 type Client interface {
@@ -59,6 +59,8 @@ type client struct {
 const defaultTimeout = 30 * time.Second
 const cacheTimeout = 5 * time.Second
 
+const maxPayload = 768 * 1024
+
 func exchange(ctx context.Context, nc *nats.Conn, msgApi avro.API, providerId string, request *FileProviderRequest) (*FileProviderResponse, error) {
 	tracer := otel.Tracer("fileprovider")
 	if tracer != nil {
@@ -72,9 +74,7 @@ func exchange(ctx context.Context, nc *nats.Conn, msgApi avro.API, providerId st
 		return nil, err
 	}
 
-	header := make(nats.Header)
-	propagator := propagation.TraceContext{}
-	propagator.Inject(ctx, propagation.HeaderCarrier(header))
+	header := messaging.InjectTraceContext(ctx, make(nats.Header))
 
 	msg, err := nc.RequestMsg(&nats.Msg{
 		Subject: FileProviderTopicPrefix + providerId,
@@ -108,9 +108,7 @@ func exchangeFile(ctx context.Context, nc *nats.Conn, msgApi avro.API, fileId st
 		return nil, err
 	}
 
-	header := make(nats.Header)
-	propagator := propagation.TraceContext{}
-	propagator.Inject(ctx, propagation.HeaderCarrier(header))
+	header := messaging.InjectTraceContext(ctx, make(nats.Header))
 
 	msg, err := nc.RequestMsg(&nats.Msg{
 		Subject: FileProviderFileTopicPrefix + fileId,
@@ -374,7 +372,24 @@ func (f *file) Close() error {
 }
 
 func (f *file) Read(p []byte) (n int, err error) {
-	//TODO: max payload
+	if len(p) <= maxPayload {
+		return f.doRead(p)
+	}
+
+	offset := 0
+	read := 0
+	for read < len(p) {
+		w, err := f.doRead(p[offset:min(offset+maxPayload, len(p))])
+		read += w
+		if err != nil {
+			return read, err
+		}
+		offset += w
+	}
+	return read, nil
+}
+
+func (f *file) doRead(p []byte) (n int, err error) {
 	request := FileProviderFileRequest{
 		Uid:    uuid.NewString(),
 		FileId: f.fileId,
@@ -509,7 +524,23 @@ func (f *file) Stat() (fs.FileInfo, error) {
 }
 
 func (f *file) Write(p []byte) (n int, err error) {
-	//TODO: max payload
+	if len(p) <= maxPayload {
+		return f.doWrite(p)
+	}
+	offset := 0
+	written := 0
+	for written < len(p) {
+		w, err := f.doWrite(p[offset:min(offset+maxPayload, len(p))])
+		written += w
+		if err != nil {
+			return written, err
+		}
+		offset += w
+	}
+	return written, nil
+}
+
+func (f *file) doWrite(p []byte) (n int, err error) {
 	request := FileProviderFileRequest{
 		Uid:    uuid.NewString(),
 		FileId: f.fileId,
@@ -520,7 +551,7 @@ func (f *file) Write(p []byte) (n int, err error) {
 
 	response, err := exchangeFile(f.ctx, f.c.nc, f.c.msgApi, f.fileId, &request)
 	if err != nil {
-		f.c.log.Error("fileWrite failed", "uid", request.Uid, "req", request.Request, "error", err)
+		f.c.log.Error("fileWrite failed", "uid", request.Uid, "fileId", request.FileId, "error", err)
 		return 0, err
 	}
 
@@ -528,7 +559,7 @@ func (f *file) Write(p []byte) (n int, err error) {
 	err = ioError(resp.Error)
 
 	if err != nil {
-		f.c.log.Error("fileWrite failed", "uid", request.Uid, "req", request.Request, "error", err)
+		f.c.log.Error("fileWrite failed", "uid", request.Uid, "fileId", request.FileId, "error", err)
 		return 0, err
 	}
 
