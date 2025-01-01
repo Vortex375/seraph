@@ -73,7 +73,8 @@ type Result struct {
 
 type Auth interface {
 	AuthMiddleware(enablePasswordAuth bool, realm string) func(*gin.Context) bool
-	GetUserId(*gin.Context) string
+	GetUserId(context.Context) string
+	IsSpaceAdmin(context.Context) bool
 }
 
 type oidcAuth struct {
@@ -92,6 +93,8 @@ type oidcAuth struct {
 
 	tokenStore TokenStore
 }
+
+type userIdKey struct{}
 
 func New(p Params) (Result, error) {
 	log := p.Log.GetLogger("auth")
@@ -525,15 +528,15 @@ func (a *oidcAuth) sendPasswordAuth(ctx *gin.Context, realm string) {
 	ctx.AbortWithStatus(http.StatusUnauthorized)
 }
 
-func (a *oidcAuth) GetUserId(ctx *gin.Context) string {
-	if v, ok := ctx.Get("user_id"); ok {
-		return v.(string)
+func (a *oidcAuth) GetUserId(ctx context.Context) string {
+	if v, ok := ctx.Value(userIdKey{}).(string); ok {
+		return v
 	}
 	return ""
 }
 
 func setUserId(ctx *gin.Context, subject string) {
-	ctx.Set("user_id", subject)
+	ctx.Request = ctx.Request.WithContext(context.WithValue(ctx.Request.Context(), userIdKey{}, subject))
 }
 
 func (a *oidcAuth) getBearerToken(ctx *gin.Context) (*oauth2.Token, error) {
@@ -733,4 +736,9 @@ func (a *oidcAuth) verifyToken(introspection *zoidc.IntrospectionResponse) bool 
 	}
 
 	return true
+}
+
+func (a *oidcAuth) IsSpaceAdmin(ctx context.Context) bool {
+	//TODO: role check
+	return false
 }

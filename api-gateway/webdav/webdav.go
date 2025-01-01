@@ -62,73 +62,50 @@ type WebDavServer interface {
 }
 
 type webDavServer struct {
-	logger   *logging.Logger
-	nc       *nats.Conn
-	auth     auth.Auth
-	handlers *sync.Map
+	logger     *logging.Logger
+	nc         *nats.Conn
+	auth       auth.Auth
+	clients    *sync.Map
+	lockSystem webdav.LockSystem
 }
 
 func New(p Params) Result {
-	server := &webDavServer{p.Log, p.Nc, p.Auth, &sync.Map{}}
+	server := &webDavServer{p.Log, p.Nc, p.Auth, &sync.Map{}, webdav.NewMemLS()}
 	return Result{Server: server, Handler: server}
 }
 
 func (server *webDavServer) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
-
 	// Gin's router doesn't handle WebDAV methods like PROPFIND, so we must register a global middleware here
 	passwordAuth := server.auth.AuthMiddleware(true, "Access to WebDAV")
+	handler := &webdav.Handler{
+		Prefix:     PathPrefix,
+		FileSystem: &delegatingFs{server, *server.logger.GetLogger("webdav.fs")},
+		LockSystem: server.lockSystem,
+		Logger:     makeLogger(server.logger),
+	}
 	app.Use(scoped(PathPrefix, false, func(ctx *gin.Context) { passwordAuth(ctx) }))
 	app.Use(scoped(PathPrefix, true, func(ctx *gin.Context) {
-		providerId := getProviderId(ctx)
-		if providerId == "" {
-			ctx.AbortWithStatus(http.StatusNotFound)
-			return
-		}
-		handler := server.getHandler(providerId)
 		handler.ServeHTTP(&fastResponseWriter{ctx.Writer}, ctx.Request)
 		ctx.Abort()
 	}))
-
-	app.Any("/dav/:providerId/*path", func(*gin.Context) {
+	app.Any("/dav/*path", func(*gin.Context) {
 		// dummy method to prevent GIN returning 404
 	})
 }
 
-func getProviderId(ctx *gin.Context) string {
-	// Param() does not work when the request method is PROPFIND or some other non-standard HTTP method
-	providerId := ctx.Param("providerId")
-	if providerId == "" {
-		split := strings.Split(ctx.Request.URL.Path, "/")
-		if strings.HasPrefix(ctx.Request.URL.Path, "/") && len(split) > 2 {
-			return split[2]
-		} else if len(split) > 1 {
-			return split[1]
-		}
-	}
-	return providerId
-}
-
-func (server *webDavServer) getHandler(providerId string) webdav.Handler {
-	handler, ok := server.handlers.Load(providerId)
-
+func (server *webDavServer) getClient(providerId string) fileprovider.Client {
+	client, ok := server.clients.Load(providerId)
 	if !ok {
-		client := fileprovider.NewFileProviderClient(providerId, server.nc, server.logger)
-
-		handler = webdav.Handler{
-			Prefix:     PathPrefix + "/" + providerId,
-			FileSystem: client,
-			LockSystem: webdav.NewMemLS(),
-			Logger:     makeLogger(server.logger),
-		}
-
-		var loaded bool
-		handler, loaded = server.handlers.LoadOrStore(providerId, handler)
+		newClient := fileprovider.NewFileProviderClient(providerId, server.nc, server.logger)
+		existingClient, loaded := server.clients.LoadOrStore(providerId, newClient)
 		if loaded {
-			client.Close()
+			newClient.Close()
+			client = existingClient
+		} else {
+			client = newClient
 		}
 	}
-
-	return handler.(webdav.Handler)
+	return client.(fileprovider.Client)
 }
 
 func makeLogger(logger *logging.Logger) func(*http.Request, error) {

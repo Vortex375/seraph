@@ -19,6 +19,7 @@
 package auth
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -41,6 +42,10 @@ func (a *noAuth) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 	})
 }
 
-func (a *noAuth) GetUserId(ctx *gin.Context) string {
+func (a *noAuth) GetUserId(ctx context.Context) string {
 	return "anonymous"
+}
+
+func (a *noAuth) IsSpaceAdmin(ctx context.Context) bool {
+	return true
 }
