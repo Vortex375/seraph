@@ -21,7 +21,6 @@ package spaces
 type SpaceResolveRequest struct {
 	UserId          string `bson:"userId" json:"userId"`
 	SpaceProviderId string `bson:"spaceProviderId" json:"spaceProviderId"`
-	Path            string `bson:"path" json:"path"`
 }
 
 type SpaceResolveResponse struct {

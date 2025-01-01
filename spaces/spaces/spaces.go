@@ -24,7 +24,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"path"
 	"strings"
 
 	"github.com/nats-io/nats.go"
@@ -163,7 +162,7 @@ func (s *SpacesProvider) resolveSpace(ctx context.Context, req *SpaceResolveRequ
 		if provider.SpaceProviderId == req.SpaceProviderId {
 			return &SpaceResolveResponse{
 				ProviderId: provider.ProviderId,
-				Path:       path.Join(provider.Path, req.Path),
+				Path:       provider.Path,
 			}
 		}
 	}

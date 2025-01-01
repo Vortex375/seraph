@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
+	"path"
 	"strings"
 
 	"golang.org/x/net/webdav"
@@ -77,18 +78,18 @@ func (f *delegatingFs) getFsAndPath(ctx context.Context, op string, name string)
 		return fs, path, err
 	} else {
 		//TODO: handle readOnly
-		res, err := f.resolveSpace(ctx, providerId, path)
+		resolvedProviderId, resolvedPath, err := f.resolveSpace(ctx, providerId, path)
 		if err != nil {
 			return nil, "", err
 		}
-		if res.ProviderId == "" {
+		if resolvedProviderId == "" {
 			return nil, "", fs.ErrNotExist
 		}
 
-		f.log.Debug(fmt.Sprintf("resolved %s:%s to %s:%s", providerId, path, res.ProviderId, res.Path), "providerId", providerId, "path", path, "resolvedProviderId", res.ProviderId, "resolvedPath", res.Path)
+		f.log.Debug(fmt.Sprintf("resolved %s:%s to %s:%s", providerId, path, resolvedProviderId, resolvedPath), "providerId", providerId, "path", path, "resolvedProviderId", resolvedProviderId, "resolvedPath", resolvedPath)
 
-		fs := f.server.getClient(res.ProviderId)
-		return fs, res.Path, nil
+		fs := f.server.getClient(resolvedProviderId)
+		return fs, resolvedPath, nil
 	}
 }
 
@@ -127,21 +128,26 @@ func (f *delegatingFs) getSpacesFs(ctx context.Context) (webdav.FileSystem, erro
 	return &spacesFileSystem{f.server, res.Space}, nil
 }
 
-func (f *delegatingFs) resolveSpace(ctx context.Context, spaceProviderId string, path string) (*spaces.SpaceResolveResponse, error) {
-	userId := f.server.auth.GetUserId(ctx)
-	req := spaces.SpaceResolveRequest{
-		UserId:          userId,
-		SpaceProviderId: spaceProviderId,
-		Path:            path,
-	}
-	res := spaces.SpaceResolveResponse{}
-	err := messaging.Request(ctx, f.server.nc, spaces.SpaceResolveTopic, messaging.Json(&req), messaging.Json(&res))
-	if err != nil {
-		return nil, fmt.Errorf("unable to resolve space %s for user %s: %w", spaceProviderId, userId, err)
-	}
-	if res.Error != "" {
-		return nil, fmt.Errorf("unable to resolve space %s for user %s: %w", spaceProviderId, userId, errors.New(res.Error))
+func (f *delegatingFs) resolveSpace(ctx context.Context, spaceProviderId string, filePath string) (string, string, error) {
+	cache := ctx.Value(spaceResolveCacheKey{}).(map[string]spaces.SpaceResolveResponse)
+	var res spaces.SpaceResolveResponse
+	if fromCache, ok := cache[spaceProviderId]; ok {
+		res = fromCache
+	} else {
+		userId := f.server.auth.GetUserId(ctx)
+		req := spaces.SpaceResolveRequest{
+			UserId:          userId,
+			SpaceProviderId: spaceProviderId,
+		}
+		err := messaging.Request(ctx, f.server.nc, spaces.SpaceResolveTopic, messaging.Json(&req), messaging.Json(&res))
+		if err != nil {
+			return "", "", fmt.Errorf("unable to resolve space %s for user %s: %w", spaceProviderId, userId, err)
+		}
+		if res.Error != "" {
+			return "", "", fmt.Errorf("unable to resolve space %s for user %s: %w", spaceProviderId, userId, errors.New(res.Error))
+		}
+		cache[spaceProviderId] = res
 	}
 
-	return &res, nil
+	return res.ProviderId, path.Join(res.Path, filePath), nil
 }

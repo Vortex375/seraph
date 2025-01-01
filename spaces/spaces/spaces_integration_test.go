@@ -465,7 +465,6 @@ func TestSpaceResolve(t *testing.T) {
 	resolveReq := spaces.SpaceResolveRequest{
 		UserId:          "pino",
 		SpaceProviderId: "pippo",
-		Path:            "",
 	}
 
 	res := spaces.SpaceResolveResponse{}
@@ -481,7 +480,6 @@ func TestSpaceResolve(t *testing.T) {
 	resolveReq = spaces.SpaceResolveRequest{
 		UserId:          "pino",
 		SpaceProviderId: "peppo",
-		Path:            "",
 	}
 
 	res = spaces.SpaceResolveResponse{}
@@ -493,115 +491,12 @@ func TestSpaceResolve(t *testing.T) {
 	assert.Equal(t, "", res.Error)
 	assert.Equal(t, "bar", res.ProviderId)
 	assert.Equal(t, "/test/path", res.Path)
-
-	// resolve - path /
-
-	resolveReq = spaces.SpaceResolveRequest{
-		UserId:          "pino",
-		SpaceProviderId: "pippo",
-		Path:            "/",
-	}
-
-	res = spaces.SpaceResolveResponse{}
-	err = messaging.Request(context.Background(), nc, spaces.SpaceResolveTopic, messaging.Json(&resolveReq), messaging.Json(&res))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	assert.Equal(t, "", res.Error)
-	assert.Equal(t, "foo", res.ProviderId)
-	assert.Equal(t, "/", res.Path)
-
-	resolveReq = spaces.SpaceResolveRequest{
-		UserId:          "pino",
-		SpaceProviderId: "peppo",
-		Path:            "/",
-	}
-
-	res = spaces.SpaceResolveResponse{}
-	err = messaging.Request(context.Background(), nc, spaces.SpaceResolveTopic, messaging.Json(&resolveReq), messaging.Json(&res))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	assert.Equal(t, "", res.Error)
-	assert.Equal(t, "bar", res.ProviderId)
-	assert.Equal(t, "/test/path", res.Path)
-
-	// resolve - path without /
-
-	resolveReq = spaces.SpaceResolveRequest{
-		UserId:          "pino",
-		SpaceProviderId: "pippo",
-		Path:            "some/folder",
-	}
-
-	res = spaces.SpaceResolveResponse{}
-	err = messaging.Request(context.Background(), nc, spaces.SpaceResolveTopic, messaging.Json(&resolveReq), messaging.Json(&res))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	assert.Equal(t, "", res.Error)
-	assert.Equal(t, "foo", res.ProviderId)
-	assert.Equal(t, "/some/folder", res.Path)
-
-	resolveReq = spaces.SpaceResolveRequest{
-		UserId:          "pino",
-		SpaceProviderId: "peppo",
-		Path:            "some/folder",
-	}
-
-	res = spaces.SpaceResolveResponse{}
-	err = messaging.Request(context.Background(), nc, spaces.SpaceResolveTopic, messaging.Json(&resolveReq), messaging.Json(&res))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	assert.Equal(t, "", res.Error)
-	assert.Equal(t, "bar", res.ProviderId)
-	assert.Equal(t, "/test/path/some/folder", res.Path)
-
-	// resolve - path with /
-
-	resolveReq = spaces.SpaceResolveRequest{
-		UserId:          "pino",
-		SpaceProviderId: "pippo",
-		Path:            "/some/folder",
-	}
-
-	res = spaces.SpaceResolveResponse{}
-	err = messaging.Request(context.Background(), nc, spaces.SpaceResolveTopic, messaging.Json(&resolveReq), messaging.Json(&res))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	assert.Equal(t, "", res.Error)
-	assert.Equal(t, "foo", res.ProviderId)
-	assert.Equal(t, "/some/folder", res.Path)
-
-	resolveReq = spaces.SpaceResolveRequest{
-		UserId:          "pino",
-		SpaceProviderId: "peppo",
-		Path:            "/some/folder",
-	}
-
-	res = spaces.SpaceResolveResponse{}
-	err = messaging.Request(context.Background(), nc, spaces.SpaceResolveTopic, messaging.Json(&resolveReq), messaging.Json(&res))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	assert.Equal(t, "", res.Error)
-	assert.Equal(t, "bar", res.ProviderId)
-	assert.Equal(t, "/test/path/some/folder", res.Path)
 
 	// resolve - no access
 
 	resolveReq = spaces.SpaceResolveRequest{
 		UserId:          "pino",
 		SpaceProviderId: "pippolino",
-		Path:            "/",
 	}
 
 	res = spaces.SpaceResolveResponse{}

@@ -19,6 +19,7 @@
 package webdav
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -32,6 +33,7 @@ import (
 	"umbasa.net/seraph/api-gateway/gateway-handler"
 	"umbasa.net/seraph/file-provider/fileprovider"
 	"umbasa.net/seraph/logging"
+	"umbasa.net/seraph/spaces/spaces"
 )
 
 const PathPrefix = "/dav"
@@ -69,6 +71,9 @@ type webDavServer struct {
 	lockSystem webdav.LockSystem
 }
 
+// key for request-scoped cache for delegatingFs.resolveSpace()
+type spaceResolveCacheKey struct{}
+
 func New(p Params) Result {
 	server := &webDavServer{p.Log, p.Nc, p.Auth, &sync.Map{}, webdav.NewMemLS()}
 	return Result{Server: server, Handler: server}
@@ -85,7 +90,11 @@ func (server *webDavServer) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 	}
 	app.Use(scoped(PathPrefix, false, func(ctx *gin.Context) { passwordAuth(ctx) }))
 	app.Use(scoped(PathPrefix, true, func(ctx *gin.Context) {
-		handler.ServeHTTP(&fastResponseWriter{ctx.Writer}, ctx.Request)
+		cache := make(map[string]spaces.SpaceResolveResponse)
+		r := ctx.Request.WithContext(context.WithValue(ctx.Request.Context(), spaceResolveCacheKey{}, cache))
+		w := &fastResponseWriter{ctx.Writer}
+
+		handler.ServeHTTP(w, r)
 		ctx.Abort()
 	}))
 	app.Any("/dav/*path", func(*gin.Context) {
