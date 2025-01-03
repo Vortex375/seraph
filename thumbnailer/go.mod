@@ -1,6 +1,6 @@
 module umbasa.net/seraph/thumbnailer
 
-go 1.23.2
+go 1.23.4
 
 require (
 	github.com/disintegration/imaging v1.6.2

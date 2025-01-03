@@ -58,9 +58,16 @@ func main() {
 			}
 
 			fs := webdav.Dir(dir)
+			server, err := fileprovider.NewFileProviderServer(params, id, fs, readOnly)
+			if err != nil {
+				return err
+			}
 
 			lc.Append(fx.StartHook(func() {
-				fileprovider.NewFileProviderServer(params, id, fs, readOnly)
+				server.Start()
+			}))
+			lc.Append(fx.StopHook(func() {
+				server.Stop(false)
 			}))
 
 			return nil

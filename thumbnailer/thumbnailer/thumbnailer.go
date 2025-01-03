@@ -170,6 +170,7 @@ func (t *Thumbnailer) Stop() error {
 	}
 	if t.limiter != nil {
 		t.cancel()
+		t.limiter.Join()
 		t.limiter = nil
 	}
 	return err

@@ -176,8 +176,7 @@ func shutdown() {
 func getServer(t *testing.T, fs webdav.FileSystem, readOnly bool) (*FileProviderServer, *nats.Conn) {
 	nc, err := nats.Connect(natsServer.ClientURL())
 	if err != nil {
-		t.Error(err)
-		t.FailNow()
+		t.Fatal(err)
 	}
 	logger := logging.New(logging.Params{})
 	logger.SetLevel(slog.LevelDebug)
@@ -189,7 +188,12 @@ func getServer(t *testing.T, fs webdav.FileSystem, readOnly bool) (*FileProvider
 		Js:      nil,
 	}
 
-	return NewFileProviderServer(params, "testprovider", fs, readOnly), nc
+	server, err := NewFileProviderServer(params, "testprovider", fs, readOnly)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return server, nc
 }
 
 func TestMkdir(t *testing.T) {
@@ -520,6 +524,8 @@ func TestFile(t *testing.T) {
 	mockFs := MockFileSystem{}
 	testServer, nc := getServer(t, &mockFs, false)
 	msgApi := NewMessageApi()
+	testServer.Start()
+	defer testServer.Stop(true)
 	defer nc.Close()
 
 	request := FileProviderRequest{
@@ -535,7 +541,7 @@ func TestFile(t *testing.T) {
 	mockFs.On("OpenFile", mock.Anything, "testfile", os.O_CREATE, fs.FileMode(0444)).Return(&mockFile, nil)
 
 	data, _ := msgApi.Marshal(FileProviderRequestSchema, &request)
-	msg, err := nc.Request(FileProviderTopicPrefix+testServer.ProviderId, data, 5*time.Second)
+	msg, err := nc.Request(FileProviderTopicPrefix+testServer.providerId, data, 5*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -725,10 +731,12 @@ func TestFile(t *testing.T) {
 func doTest(t *testing.T, mockFs *MockFileSystem, readOnly bool, request FileProviderRequest, expectation func(*testing.T, FileProviderResponse)) {
 	testServer, nc := getServer(t, mockFs, readOnly)
 	msgApi := NewMessageApi()
+	testServer.Start()
+	defer testServer.Stop(true)
 	defer nc.Close()
 
 	data, _ := msgApi.Marshal(FileProviderRequestSchema, &request)
-	msg, err := nc.Request(FileProviderTopicPrefix+testServer.ProviderId, data, 5*time.Second)
+	msg, err := nc.Request(FileProviderTopicPrefix+testServer.providerId, data, 5*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}

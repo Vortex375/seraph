@@ -125,9 +125,7 @@ func (s *shareFactory) init() {
 						s.resShare <- shareResult{s.share, nil}
 					}
 
-					if !timer.Stop() {
-						<-timer.C
-					}
+					timer.Stop()
 					timer.Reset(idleTimeout)
 
 				case <-timer.C:

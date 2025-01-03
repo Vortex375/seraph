@@ -39,6 +39,7 @@ import (
 )
 
 var natsServer *server.Server
+var fileServer *fileprovider.FileProviderServer
 var tmpDir string
 var tmpFs fileprovider.Client
 
@@ -92,10 +93,18 @@ func setup() {
 		Logger:  logger,
 	}
 
-	fileprovider.NewFileProviderServer(params, "testinput", webdav.Dir("."), true)
+	fileServer, err = fileprovider.NewFileProviderServer(params, "testinput", webdav.Dir("."), true)
+	if err != nil {
+		panic(err)
+	}
+	fileServer.Start()
 }
 
 func shutdown() {
+	if fileServer != nil {
+		fileServer.Stop(true)
+		fileServer = nil
+	}
 	if natsServer != nil {
 		natsServer.Shutdown()
 		natsServer = nil

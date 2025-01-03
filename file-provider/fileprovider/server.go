@@ -24,10 +24,13 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/google/uuid"
+	"github.com/hamba/avro/v2"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"go.opentelemetry.io/otel/trace"
@@ -40,7 +43,20 @@ import (
 )
 
 type FileProviderServer struct {
-	ProviderId string
+	providerId string
+	readOnly   bool
+
+	log    *slog.Logger
+	tracer trace.Tracer
+	nc     *nats.Conn
+	msgApi avro.API
+	fs     webdav.FileSystem
+
+	requestSub  *nats.Subscription
+	requestChan chan *nats.Msg
+	wg          sync.WaitGroup
+	ctx         context.Context
+	cancel      context.CancelFunc
 }
 
 type ServerParams struct {
@@ -77,11 +93,8 @@ func toIoError(err error) IoError {
 	return IoError{Error: err.Error()}
 }
 
-func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.FileSystem, readOnly bool) *FileProviderServer {
+func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.FileSystem, readOnly bool) (*FileProviderServer, error) {
 	log := p.Logger.GetLogger("fileprovider." + providerId)
-	provider := FileProviderServer{
-		ProviderId: providerId,
-	}
 	msgApi := NewMessageApi()
 	tracer := p.Tracing.TracerProvider.Tracer("fileprovider." + providerId)
 
@@ -93,375 +106,272 @@ func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.
 
 		_, err := p.Js.CreateOrUpdateStream(context.Background(), cfg)
 		if err != nil {
-			log.Error("Error while creating file info stream", "error", err)
+			return nil, fmt.Errorf("Error while creating file info stream: %w", err)
 		}
 	}
 
-	providerTopic := FileProviderTopicPrefix + providerId
-	p.Nc.QueueSubscribe(providerTopic, providerTopic, func(msg *nats.Msg) {
-		ctx := messaging.ExtractTraceContext(context.Background(), msg)
+	return &FileProviderServer{
+		providerId: providerId,
+		readOnly:   readOnly,
+		log:        log,
+		tracer:     tracer,
+		nc:         p.Nc,
+		msgApi:     msgApi,
+		fs:         fileSystem,
+	}, nil
+}
 
-		request := FileProviderRequest{}
-		msgApi.Unmarshal(FileProviderRequestSchema, msg.Data, &request)
-		switch req := request.Request.(type) {
+func (s *FileProviderServer) Start() (err error) {
+	providerTopic := FileProviderTopicPrefix + s.providerId
+	s.requestChan = make(chan *nats.Msg, nats.DefaultSubPendingMsgsLimit)
+	s.requestSub, err = s.nc.ChanQueueSubscribe(providerTopic, providerTopic, s.requestChan)
+	s.ctx, s.cancel = context.WithCancel(context.Background())
+	s.wg.Add(1)
+	go s.messageLoop()
+	return
+}
 
-		case MkdirRequest:
-			var span trace.Span
-			ctx, span = tracer.Start(ctx, "mkdir")
-			defer span.End()
-			if readOnly {
-				responseData, _ := msgApi.Marshal(FileProviderResponseSchema, FileProviderResponse{
-					Uid: request.Uid,
-					Response: MkdirResponse{
-						Error: IoError{"read only", "ErrPermission"},
-					},
-				})
-				msg.Respond(responseData)
-				break
-			}
-			err := fileSystem.Mkdir(ctx, req.Name, req.Perm)
-			if err == nil {
-				log.Debug("mkdir", "uid", request.Uid, "req", req)
-			} else {
-				log.Debug("mkdir failed", "uid", request.Uid, "req", req, "error", err)
-			}
-			responseData, _ := msgApi.Marshal(FileProviderResponseSchema, FileProviderResponse{
-				Uid: request.Uid,
-				Response: MkdirResponse{
-					Error: toIoError(err),
-				},
-			})
-			msg.Respond(responseData)
-
-		case RemoveAllRequest:
-			var span trace.Span
-			ctx, span = tracer.Start(ctx, "removeAll")
-			defer span.End()
-			if readOnly {
-				responseData, _ := msgApi.Marshal(FileProviderResponseSchema, FileProviderResponse{
-					Uid: request.Uid,
-					Response: RemoveAllResponse{
-						Error: IoError{"read only", "ErrPermission"},
-					},
-				})
-				msg.Respond(responseData)
-				break
-			}
-			err := fileSystem.RemoveAll(ctx, req.Name)
-			if err == nil {
-				log.Debug("removeAll", "uid", request.Uid, "req", req)
-			} else {
-				log.Debug("removeAll failed", "uid", request.Uid, "req", req, "error", err)
-			}
-			responseData, _ := msgApi.Marshal(FileProviderResponseSchema, FileProviderResponse{
-				Uid: request.Uid,
-				Response: RemoveAllResponse{
-					Error: toIoError(err),
-				},
-			})
-			msg.Respond(responseData)
-
-		case RenameRequest:
-			var span trace.Span
-			ctx, span = tracer.Start(ctx, "rename")
-			defer span.End()
-
-			if readOnly {
-				responseData, _ := msgApi.Marshal(FileProviderResponseSchema, FileProviderResponse{
-					Uid: request.Uid,
-					Response: RenameResponse{
-						Error: IoError{"read only", "ErrPermission"},
-					},
-				})
-				msg.Respond(responseData)
-				break
-			}
-			err := fileSystem.Rename(ctx, req.OldName, req.NewName)
-			if err == nil {
-				log.Debug("rename", "uid", request.Uid, "req", req)
-			} else {
-				log.Debug("rename failed", "uid", request.Uid, "req", req, "error", err)
-			}
-			responseData, _ := msgApi.Marshal(FileProviderResponseSchema, FileProviderResponse{
-				Uid: request.Uid,
-				Response: RenameResponse{
-					Error: toIoError(err),
-				},
-			})
-			msg.Respond(responseData)
-
-		case StatRequest:
-			var span trace.Span
-			ctx, span = tracer.Start(ctx, "stat")
-			defer span.End()
-
-			fileInfo, err := fileSystem.Stat(ctx, req.Name)
-			if err == nil {
-				log.Debug("fileInfo", "uid", request.Uid, "req", req)
-			} else {
-				log.Debug("fileInfo failed", "uid", request.Uid, "req", req, "error", err)
-			}
-			response := FileInfoResponse{}
-			if err == nil {
-				response.Name = fileInfo.Name()
-				response.IsDir = fileInfo.IsDir()
-				response.Size = fileInfo.Size()
-				response.Mode = fileInfo.Mode()
-				response.ModTime = fileInfo.ModTime().Unix()
-
-				fileInfoEvent := events.FileInfoEvent{
-					Event: events.Event{
-						ID:      uuid.NewString(),
-						Version: 1,
-					},
-					ProviderID: providerId,
-					Path:       ensureAbsolutePath(req.Name),
-					IsDir:      fileInfo.IsDir(),
-					Size:       fileInfo.Size(),
-					Mode:       int64(fileInfo.Mode()),
-					ModTime:    fileInfo.ModTime().Unix(),
-				}
-				fileInfoEventData, _ := fileInfoEvent.Marshal()
-				p.Nc.Publish(fmt.Sprintf(events.FileProviderFileInfoTopicPattern, providerId), fileInfoEventData)
-
-			} else {
-				response.Error = toIoError(err)
-			}
-			responseData, _ := msgApi.Marshal(FileProviderResponseSchema, FileProviderResponse{
-				Uid:      request.Uid,
-				Response: response,
-			})
-			msg.Respond(responseData)
-
-		case OpenFileRequest:
-			var span trace.Span
-			ctx, span = tracer.Start(ctx, "open")
-			defer span.End()
-
-			flag := req.Flag
-			if readOnly {
-				flag = os.O_RDONLY
-			}
-			file, err := fileSystem.OpenFile(ctx, req.Name, flag, req.Perm)
-			if err == nil {
-				log.Debug("openFile", "uid", request.Uid, "req", req)
-			} else {
-				log.Debug("openFile failed", "uid", request.Uid, "req", req, "error", err)
-			}
-			response := OpenFileResponse{}
-			if err == nil {
-				fileId := uuid.New()
-				fileTopic := FileProviderFileTopicPrefix + fileId.String()
-				var fileSubscription *nats.Subscription
-				fileSubscription, _ = p.Nc.Subscribe(fileTopic, func(fileMsg *nats.Msg) {
-					ctx := messaging.ExtractTraceContext(context.Background(), fileMsg)
-
-					fileRequest := FileProviderFileRequest{}
-					err = msgApi.Unmarshal(FileProviderFileRequestSchema, fileMsg.Data, &fileRequest)
-					if err != nil {
-						log.Error("unable to parse file request", "err", err)
-						return
-					}
-
-					switch fileReq := fileRequest.Request.(type) {
-
-					case FileCloseRequest:
-						var span trace.Span
-						ctx, span = tracer.Start(ctx, "close")
-						defer span.End()
-
-						err = file.Close()
-						if err == nil {
-							log.Debug("fileClose", "uid", fileRequest.Uid, "fileId", fileRequest.FileId, "req", fileReq)
-						} else {
-							log.Error("fileClose failed", "uid", request.Uid, "fileId", fileRequest.FileId, "req", fileReq, "error", err)
-						}
-						fileSubscription.Unsubscribe()
-						fileResponseData, _ := msgApi.Marshal(FileProviderFileResponseSchema, FileProviderFileResponse{
-							Uid: fileRequest.Uid,
-							Response: FileCloseResponse{
-								Error: toIoError(err),
-							},
-						})
-						fileMsg.Respond(fileResponseData)
-
-					case FileReadRequest:
-						var span trace.Span
-						ctx, span = tracer.Start(ctx, "read")
-						defer span.End()
-
-						//TODO: validate Len
-						buf := make([]byte, fileReq.Len)
-						len, err := file.Read(buf)
-						if err == nil || errors.Is(err, io.EOF) {
-							log.Debug("fileRead", "uid", fileRequest.Uid, "fileId", fileRequest.FileId, "req", fileReq)
-						} else {
-							log.Error("fileRead failed", "uid", request.Uid, "fileId", fileRequest.FileId, "req", fileReq, "error", err)
-						}
-						fileResponse := FileReadResponse{}
-						if err == nil {
-							fileResponse.Payload = buf[0:len]
-						} else {
-							fileResponse.Error = toIoError(err)
-						}
-						fileResponseData, _ := msgApi.Marshal(FileProviderFileResponseSchema, FileProviderFileResponse{
-							Uid:      fileRequest.Uid,
-							Response: fileResponse,
-						})
-						fileMsg.Respond(fileResponseData)
-
-					case FileWriteRequest:
-						var span trace.Span
-						ctx, span = tracer.Start(ctx, "write")
-						defer span.End()
-
-						if readOnly {
-							fileResponseData, _ := msgApi.Marshal(FileProviderFileResponseSchema, FileProviderFileResponse{
-								Uid: fileRequest.Uid,
-								Response: FileWriteResponse{
-									Error: IoError{"read only", "ErrPermission"},
-								},
-							})
-							fileMsg.Respond(fileResponseData)
-							break
-						}
-						len, err := file.Write(fileReq.Payload)
-						if err == nil {
-							log.Debug("fileWrite", "uid", fileRequest.Uid, "fileId", fileRequest.FileId)
-						} else {
-							log.Error("fileWrite failed", "uid", request.Uid, "fileId", fileRequest.FileId, "error", err)
-						}
-						fileResponseData, _ := msgApi.Marshal(FileProviderFileResponseSchema, FileProviderFileResponse{
-							Uid: fileRequest.Uid,
-							Response: FileWriteResponse{
-								Len:   len,
-								Error: toIoError(err),
-							},
-						})
-						fileMsg.Respond(fileResponseData)
-
-					case FileSeekRequest:
-						var span trace.Span
-						ctx, span = tracer.Start(ctx, "seek")
-						defer span.End()
-
-						offset, err := file.Seek(fileReq.Offset, fileReq.Whence)
-						if err == nil {
-							log.Debug("fileSeek", "uid", fileRequest.Uid, "fileId", fileRequest.FileId, "req", fileReq)
-						} else {
-							log.Error("fileSeek failed", "uid", request.Uid, "fileId", fileRequest.FileId, "req", fileReq, "error", err)
-						}
-						fileResponseData, _ := msgApi.Marshal(FileProviderFileResponseSchema, FileProviderFileResponse{
-							Uid: fileRequest.Uid,
-							Response: FileSeekResponse{
-								Offset: offset,
-								Error:  toIoError(err),
-							},
-						})
-						fileMsg.Respond(fileResponseData)
-
-					case ReaddirRequest:
-						var span trace.Span
-						ctx, span = tracer.Start(ctx, "readdir")
-						defer span.End()
-
-						fileInfos, err := file.Readdir(fileReq.Count)
-						if err == nil {
-							log.Debug("readdir", "uid", fileRequest.Uid, "fileId", fileRequest.FileId, "req", fileReq)
-						} else {
-							log.Error("readdir failed", "uid", request.Uid, "fileId", fileRequest.FileId, "req", fileReq, "error", err)
-						}
-						if err == nil {
-							for i, fileInfo := range fileInfos {
-								fileInfoResponse := FileInfoResponse{
-									Name:    fileInfo.Name(),
-									IsDir:   fileInfo.IsDir(),
-									Size:    fileInfo.Size(),
-									Mode:    fileInfo.Mode(),
-									ModTime: fileInfo.ModTime().Unix(),
-									Last:    i == len(fileInfos)-1,
-								}
-								fileInfoResponseData, e := msgApi.Marshal(FileInfoResponseSchema, &fileInfoResponse)
-								if e != nil {
-									err = e
-									break
-								}
-								e = p.Nc.Publish(FileProviderReaddirTopicPrefix+fileRequest.Uid, fileInfoResponseData)
-								if e != nil {
-									err = e
-									break
-								}
-
-								var readdir *events.ReadDir
-								if fileReq.Count <= 0 || len(fileInfos) < fileReq.Count {
-									// if it lists the entire directory
-									readdir = &events.ReadDir{
-										Readdir: fileRequest.Uid,
-										Index:   int64(i),
-										Total:   int64(len(fileInfos)),
-									}
-								} else {
-									// partial readdir is not published as readdir
-									readdir = nil
-								}
-
-								fileInfoEvent := events.FileInfoEvent{
-									Event: events.Event{
-										ID:      uuid.NewString(),
-										Version: 1,
-									},
-									ProviderID: providerId,
-									Readdir:    readdir,
-									Path:       ensureAbsolutePath(req.Name + "/" + fileInfo.Name()),
-									IsDir:      fileInfo.IsDir(),
-									Size:       fileInfo.Size(),
-									Mode:       int64(fileInfo.Mode()),
-									ModTime:    fileInfo.ModTime().Unix(),
-								}
-								fileInfoEventData, _ := fileInfoEvent.Marshal()
-								p.Nc.Publish(fmt.Sprintf(events.FileProviderFileInfoTopicPattern, providerId), fileInfoEventData)
-							}
-						}
-						var fileResponseData []byte
-						if err == nil {
-							fileResponseData, _ = msgApi.Marshal(FileProviderFileResponseSchema, FileProviderFileResponse{
-								Uid: fileRequest.Uid,
-								Response: ReaddirResponse{
-									Count: len(fileInfos),
-								},
-							})
-						} else {
-							fileResponseData, _ = msgApi.Marshal(FileProviderFileResponseSchema, FileProviderFileResponse{
-								Uid: fileRequest.Uid,
-								Response: ReaddirResponse{
-									Error: toIoError(err),
-								},
-							})
-						}
-						p.Nc.Flush()
-						fileMsg.Respond(fileResponseData)
-
-					default:
-						log.Error("unknown file request", "req", fileRequest.Request)
-					}
-				})
-				response.FileId = fileId.String()
-			} else {
-				response.Error = toIoError(err)
-			}
-			responseData, _ := msgApi.Marshal(FileProviderResponseSchema, FileProviderResponse{
-				Uid:      request.Uid,
-				Response: response,
-			})
-			msg.Respond(responseData)
-
-		default:
-			log.Error("unknown request", "req", request.Request)
+func (s *FileProviderServer) Stop(force bool) (err error) {
+	cancel := func() {
+		if s.ctx != nil {
+			s.cancel()
+			s.cancel = nil
+			s.ctx = nil
 		}
-	})
-	log.Info("fileprovider active", "topic", providerTopic)
+	}
 
-	return &provider
+	// if force is true then cancel the context to force-close any open files
+	if force {
+		cancel()
+	} else {
+		defer cancel()
+	}
+
+	if s.requestSub != nil {
+		err = s.requestSub.Unsubscribe()
+		s.requestSub = nil
+	}
+	if s.requestChan != nil {
+		close(s.requestChan)
+		s.requestChan = nil
+	}
+
+	s.wg.Wait()
+
+	return
+}
+
+func (s *FileProviderServer) messageLoop() {
+	defer s.wg.Done()
+
+	for {
+		msg, ok := <-s.requestChan
+		if !ok {
+			return
+		}
+		s.wg.Add(1)
+		go s.handleMessage(msg)
+	}
+}
+
+func (s *FileProviderServer) handleMessage(msg *nats.Msg) {
+	defer s.wg.Done()
+
+	ctx := messaging.ExtractTraceContext(s.ctx, msg)
+	request := FileProviderRequest{}
+	s.msgApi.Unmarshal(FileProviderRequestSchema, msg.Data, &request)
+
+	response := s.handleRequest(ctx, &request)
+	data, _ := s.msgApi.Marshal(FileProviderResponseSchema, response)
+	msg.Respond(data)
+}
+
+func (s *FileProviderServer) handleRequest(ctx context.Context, request *FileProviderRequest) *FileProviderResponse {
+	switch req := request.Request.(type) {
+	case MkdirRequest:
+		return s.handleMkdir(ctx, request.Uid, &req)
+	case OpenFileRequest:
+		return s.handleOpenFile(ctx, request.Uid, &req)
+	case RemoveAllRequest:
+		return s.handleRemoveALl(ctx, request.Uid, &req)
+	case RenameRequest:
+		return s.handleRename(ctx, request.Uid, &req)
+	case StatRequest:
+		return s.handleStat(ctx, request.Uid, &req)
+	default:
+		return &FileProviderResponse{}
+	}
+}
+
+func (s *FileProviderServer) handleMkdir(ctx context.Context, uid string, req *MkdirRequest) *FileProviderResponse {
+	var span trace.Span
+	ctx, span = s.tracer.Start(ctx, "mkdir")
+	defer span.End()
+
+	if s.readOnly {
+		return &FileProviderResponse{
+			Uid: uid,
+			Response: MkdirResponse{
+				Error: IoError{"read only", "ErrPermission"},
+			},
+		}
+	}
+
+	err := s.fs.Mkdir(ctx, req.Name, req.Perm)
+	if err == nil {
+		s.log.Debug("mkdir", "uid", uid, "req", req)
+	} else {
+		s.log.Debug("mkdir failed", "uid", uid, "req", req, "error", err)
+	}
+
+	return &FileProviderResponse{
+		Uid: uid,
+		Response: MkdirResponse{
+			Error: toIoError(err),
+		},
+	}
+}
+
+func (s *FileProviderServer) handleOpenFile(ctx context.Context, uid string, req *OpenFileRequest) *FileProviderResponse {
+	var span trace.Span
+	_, span = s.tracer.Start(ctx, "open")
+	defer span.End()
+
+	flag := req.Flag
+	if s.readOnly {
+		flag = os.O_RDONLY
+	}
+	file, err := s.fs.OpenFile(ctx, req.Name, flag, req.Perm)
+	if err == nil {
+		s.log.Debug("openFile", "uid", uid, "req", req)
+	} else {
+		s.log.Debug("openFile failed", "uid", uid, "req", req, "error", err)
+	}
+
+	response := OpenFileResponse{}
+	if err == nil {
+		fileId := uuid.New()
+		err = newServerFile(ctx, uid, fileId, req.Name, file, s)
+		if err == nil {
+			response.FileId = fileId.String()
+		} else {
+			response.Error = toIoError(err)
+		}
+	} else {
+		response.Error = toIoError(err)
+	}
+
+	return &FileProviderResponse{
+		Uid:      uid,
+		Response: response,
+	}
+}
+
+func (s *FileProviderServer) handleRemoveALl(ctx context.Context, uid string, req *RemoveAllRequest) *FileProviderResponse {
+	var span trace.Span
+	ctx, span = s.tracer.Start(ctx, "removeAll")
+	defer span.End()
+
+	if s.readOnly {
+		return &FileProviderResponse{
+			Uid: uid,
+			Response: RemoveAllResponse{
+				Error: IoError{"read only", "ErrPermission"},
+			},
+		}
+	}
+
+	err := s.fs.RemoveAll(ctx, req.Name)
+	if err == nil {
+		s.log.Debug("removeAll", "uid", uid, "req", req)
+	} else {
+		s.log.Debug("removeAll failed", "uid", uid, "req", req, "error", err)
+	}
+
+	return &FileProviderResponse{
+		Uid: uid,
+		Response: RemoveAllResponse{
+			Error: toIoError(err),
+		},
+	}
+}
+
+func (s *FileProviderServer) handleRename(ctx context.Context, uid string, req *RenameRequest) *FileProviderResponse {
+	var span trace.Span
+	ctx, span = s.tracer.Start(ctx, "rename")
+	defer span.End()
+
+	if s.readOnly {
+		return &FileProviderResponse{
+			Uid: uid,
+			Response: RenameResponse{
+				Error: IoError{"read only", "ErrPermission"},
+			},
+		}
+	}
+
+	err := s.fs.Rename(ctx, req.OldName, req.NewName)
+	if err == nil {
+		s.log.Debug("rename", "uid", uid, "req", req)
+	} else {
+		s.log.Debug("rename failed", "uid", uid, "req", req, "error", err)
+	}
+
+	return &FileProviderResponse{
+		Uid: uid,
+		Response: RenameResponse{
+			Error: toIoError(err),
+		},
+	}
+}
+
+func (s *FileProviderServer) handleStat(ctx context.Context, uid string, req *StatRequest) *FileProviderResponse {
+	var span trace.Span
+	ctx, span = s.tracer.Start(ctx, "stat")
+	defer span.End()
+
+	fileInfo, err := s.fs.Stat(ctx, req.Name)
+	if err == nil {
+		s.log.Debug("fileInfo", "uid", uid, "req", req)
+	} else {
+		s.log.Debug("fileInfo failed", "uid", uid, "req", req, "error", err)
+	}
+
+	response := FileInfoResponse{}
+	if err == nil {
+		response.Name = fileInfo.Name()
+		response.IsDir = fileInfo.IsDir()
+		response.Size = fileInfo.Size()
+		response.Mode = fileInfo.Mode()
+		response.ModTime = fileInfo.ModTime().Unix()
+
+		s.publishFileInfoEvent(ctx, req.Name, fileInfo, nil)
+	} else {
+		response.Error = toIoError(err)
+	}
+
+	return &FileProviderResponse{
+		Uid:      uid,
+		Response: response,
+	}
+}
+
+func (s *FileProviderServer) publishFileInfoEvent(ctx context.Context, path string, fileInfo os.FileInfo, readdir *events.ReadDir) error {
+	fileInfoEvent := events.FileInfoEvent{
+		Event: events.Event{
+			ID:      uuid.NewString(),
+			Version: 1,
+		},
+		Readdir:    readdir,
+		ProviderID: s.providerId,
+		Path:       ensureAbsolutePath(path),
+		IsDir:      fileInfo.IsDir(),
+		Size:       fileInfo.Size(),
+		Mode:       int64(fileInfo.Mode()),
+		ModTime:    fileInfo.ModTime().Unix(),
+	}
+	fileInfoEventData, _ := fileInfoEvent.Marshal()
+	return s.nc.Publish(fmt.Sprintf(events.FileProviderFileInfoTopicPattern, s.providerId), fileInfoEventData)
 }
 
 func ensureAbsolutePath(p string) string {

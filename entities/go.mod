@@ -1,6 +1,6 @@
 module umbasa.net/seraph/entities
 
-go 1.22.5
+go 1.23.4
 
 require (
 	github.com/iancoleman/strcase v0.3.0

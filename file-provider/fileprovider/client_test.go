@@ -34,11 +34,10 @@ import (
 	"umbasa.net/seraph/tracing"
 )
 
-func getClient(t *testing.T) (Client, *nats.Conn) {
+func getClient(t *testing.T) (Client, *FileProviderServer) {
 	nc, err := nats.Connect(natsServer.ClientURL())
 	if err != nil {
-		t.Error(err)
-		t.FailNow()
+		t.Fatal(err)
 	}
 	logger := logging.New(logging.Params{})
 	logger.SetLevel(slog.LevelDebug)
@@ -52,15 +51,20 @@ func getClient(t *testing.T) (Client, *nats.Conn) {
 
 	fs := webdav.Dir(tmpDir)
 
-	NewFileProviderServer(params, "testforclient", fs, false)
+	server, err := NewFileProviderServer(params, "testforclient", fs, false)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	client := NewFileProviderClient("testforclient", nc, logger)
 
-	return client, nc
+	return client, server
 }
 
 func TestClient(t *testing.T) {
-	client, _ := getClient(t)
+	client, server := getClient(t)
+	server.Start()
+	defer server.Stop(true)
 
 	t.Run("TestLargePayload", func(t *testing.T) {
 		payload := make([]byte, 2048*1024)

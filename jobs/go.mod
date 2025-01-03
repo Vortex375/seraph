@@ -1,6 +1,6 @@
 module umbasa.net/seraph/jobs
 
-go 1.23.3
+go 1.23.4
 
 require (
 	github.com/nats-io/nats.go v1.35.0
