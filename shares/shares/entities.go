@@ -26,35 +26,26 @@ import (
 type SharePrototype struct {
 	entities.Prototype
 
-	ShareID     entities.Definable[string] `bson:"shareId"`
+	ShareId     entities.Definable[string] `bson:"shareId"`
 	Owner       entities.Definable[string] `bson:"owner"`
 	Title       entities.Definable[string] `bson:"title"`
 	Description entities.Definable[string] `bson:"description"`
-	ProviderID  entities.Definable[string] `bson:"providerId"`
+	ProviderId  entities.Definable[string] `bson:"providerId"`
 	Path        entities.Definable[string] `bson:"path"`
 	Recursive   entities.Definable[bool]   `bson:"recursive"`
+	ReadOnly    entities.Definable[bool]   `bson:"readOnly"`
 	IsDir       entities.Definable[bool]   `bson:"isDir"`
 }
 
 type Share struct {
 	Id          primitive.ObjectID `bson:"_id"`
-	ShareID     string             `bson:"shareId" json:"shareId"`
+	ShareId     string             `bson:"shareId" json:"shareId"`
 	Owner       string             `bson:"owner" json:"owner"`
 	Title       string             `bson:"title" json:"title"`
 	Description string             `bson:"description" json:"description"`
-	ProviderID  string             `bson:"providerId" json:"providerId"`
+	ProviderId  string             `bson:"providerId" json:"providerId"`
 	Path        string             `bson:"path" json:"path"`
 	Recursive   bool               `bson:"recursive" json:"recursive"`
+	ReadOnly    bool               `bson:"readOnly"`
 	IsDir       bool               `bson:"isDir" json:"isDir"`
-}
-
-func (s *Share) ToPrototype(proto *SharePrototype) {
-	proto.ShareID.Set(s.ShareID)
-	proto.Owner.Set(s.Owner)
-	proto.Title.Set(s.Title)
-	proto.Description.Set(s.Description)
-	proto.ProviderID.Set(s.ProviderID)
-	proto.Path.Set(s.Path)
-	proto.Recursive.Set(s.Recursive)
-	proto.IsDir.Set(s.IsDir)
 }

@@ -81,7 +81,7 @@ func (h *sharesHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 			Operation: "READ",
 			Share:     entities.MakePrototype(&shares.SharePrototype{}),
 		}
-		req.Share.ShareID.Set(shareId)
+		req.Share.ShareId.Set(shareId)
 		req.Share.Owner.Set(owner)
 
 		res := shares.ShareCrudResponse{}
@@ -145,7 +145,7 @@ func (h *sharesHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 
 		owner := h.auth.GetUserId(ctx)
 		share.Owner.Set(owner)
-		share.ShareID.Set(shareId)
+		share.ShareId.Set(shareId)
 
 		req := shares.ShareCrudRequest{
 			Operation: "UPDATE",
@@ -171,7 +171,7 @@ func (h *sharesHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 		shareId := ctx.Param("shareId")
 		share := entities.MakePrototype(&shares.SharePrototype{})
 		owner := h.auth.GetUserId(ctx)
-		share.ShareID.Set(shareId)
+		share.ShareId.Set(shareId)
 		share.Owner.Set(owner)
 
 		req := shares.ShareCrudRequest{

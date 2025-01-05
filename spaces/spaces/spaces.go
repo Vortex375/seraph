@@ -163,6 +163,7 @@ func (s *SpacesProvider) resolveSpace(ctx context.Context, req *SpaceResolveRequ
 			return &SpaceResolveResponse{
 				ProviderId: provider.ProviderId,
 				Path:       provider.Path,
+				ReadOnly:   provider.ReadOnly,
 			}
 		}
 	}

@@ -422,6 +422,7 @@ func TestSpaceResolve(t *testing.T) {
 			SpaceProviderId: "peppo",
 			ProviderId:      "bar",
 			Path:            "/test/path",
+			ReadOnly:        true,
 		},
 	}
 
@@ -491,6 +492,7 @@ func TestSpaceResolve(t *testing.T) {
 	assert.Equal(t, "", res.Error)
 	assert.Equal(t, "bar", res.ProviderId)
 	assert.Equal(t, "/test/path", res.Path)
+	assert.Equal(t, true, res.ReadOnly)
 
 	// resolve - no access
 

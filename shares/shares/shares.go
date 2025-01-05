@@ -36,6 +36,7 @@ import (
 	"umbasa.net/seraph/entities"
 	"umbasa.net/seraph/logging"
 	"umbasa.net/seraph/messaging"
+	"umbasa.net/seraph/spaces/spaces"
 	"umbasa.net/seraph/tracing"
 )
 
@@ -139,7 +140,7 @@ func (s *SharesProvider) Stop() error {
 
 func (s *SharesProvider) resolveShare(ctx context.Context, req *ShareResolveRequest) *ShareResolveResponse {
 	filter := SharePrototype{}
-	filter.ShareID.Set(req.ShareID)
+	filter.ShareId.Set(req.ShareId)
 
 	result := s.shares.FindOne(ctx, filter)
 	if result.Err() != nil {
@@ -147,10 +148,10 @@ func (s *SharesProvider) resolveShare(ctx context.Context, req *ShareResolveRequ
 			// empty response indicates "not found"
 			return &ShareResolveResponse{}
 		}
-		err := fmt.Errorf("While retrieving share from the database for resolve: %w", result.Err())
-		s.log.Error("error while resolving share", "error", err)
+		err := fmt.Errorf("While retrieving share %s from the database for resolve: %w", req.ShareId, result.Err())
+		s.log.Error("error while resolving share", "shareId", req.ShareId, "error", err)
 		return &ShareResolveResponse{
-			Error: result.Err().Error(),
+			Error: err.Error(),
 		}
 	}
 	share := Share{}
@@ -167,21 +168,52 @@ func (s *SharesProvider) resolveShare(ctx context.Context, req *ShareResolveRequ
 		}
 	}
 
-	resolvedPath := path.Join(share.Path, cleanPath)
+	space, err := s.resolveSpace(ctx, &share)
+	if err != nil {
+		err = fmt.Errorf("While resolving space for share %s: %w", req.ShareId, err)
+		s.log.Error("error while resolving share", "shareId", req.ShareId, "error", err)
+		return &ShareResolveResponse{
+			Error: err.Error(),
+		}
+	}
 
-	//TODO: check if owner has access
+	if space.ProviderId == "" {
+		s.log.Warn("space not found for share "+req.ShareId, "shareId", req.ShareId)
+		return &ShareResolveResponse{}
+	}
+
+	resolvedPath := path.Join(space.Path, share.Path, cleanPath)
 
 	return &ShareResolveResponse{
-		ProviderID: share.ProviderID,
+		ProviderId: space.ProviderId,
 		Path:       resolvedPath,
+		ReadOnly:   share.ReadOnly || space.ReadOnly,
 	}
+}
+
+func (s *SharesProvider) resolveSpace(ctx context.Context, share *Share) (*spaces.SpaceResolveResponse, error) {
+	userId := share.Owner
+	req := spaces.SpaceResolveRequest{
+		UserId:          userId,
+		SpaceProviderId: share.ProviderId,
+	}
+	res := spaces.SpaceResolveResponse{}
+	err := messaging.Request(ctx, s.nc, spaces.SpaceResolveTopic, messaging.Json(&req), messaging.Json(&res))
+	if err != nil {
+		return nil, fmt.Errorf("unable to resolve space %s for user %s: %w", share.ProviderId, userId, err)
+	}
+	if res.Error != "" {
+		return nil, fmt.Errorf("unable to resolve space %s for user %s: %w", share.ProviderId, userId, errors.New(res.Error))
+	}
+	return &res, nil
 }
 
 func (s *SharesProvider) handleCrud(ctx context.Context, req *ShareCrudRequest) *ShareCrudResponse {
 	switch req.Operation {
 
 	case "READ":
-		if !req.Share.ShareID.IsDefined() && !req.Share.Owner.IsDefined() {
+
+		if !req.Share.ShareId.IsDefined() && !req.Share.Owner.IsDefined() {
 			return &ShareCrudResponse{
 				Error: "shareID or owner is required for READ operation",
 			}
@@ -211,7 +243,7 @@ func (s *SharesProvider) handleCrud(ctx context.Context, req *ShareCrudRequest) 
 
 	case "CREATE":
 
-		if !req.Share.ShareID.IsDefined() {
+		if !req.Share.ShareId.IsDefined() {
 			return &ShareCrudResponse{
 				Error: "shareID is required for CREATE operation",
 			}
@@ -235,14 +267,14 @@ func (s *SharesProvider) handleCrud(ctx context.Context, req *ShareCrudRequest) 
 
 	case "UPDATE":
 
-		if !req.Share.ShareID.IsDefined() {
+		if !req.Share.ShareId.IsDefined() {
 			return &ShareCrudResponse{
 				Error: "shareID is required for UPDATE operation",
 			}
 		}
 
 		filter := SharePrototype{}
-		filter.ShareID.Set(req.Share.ShareID.Get())
+		filter.ShareId.Set(req.Share.ShareId.Get())
 		if filter.Owner.IsDefined() {
 			filter.Owner.Set(req.Share.Owner.Get())
 		}
@@ -263,7 +295,7 @@ func (s *SharesProvider) handleCrud(ctx context.Context, req *ShareCrudRequest) 
 
 	case "DELETE":
 
-		if !req.Share.ShareID.IsDefined() {
+		if !req.Share.ShareId.IsDefined() {
 			return &ShareCrudResponse{
 				Error: "shareID is required for DELETE operation",
 			}

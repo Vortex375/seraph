@@ -98,7 +98,7 @@ func (h *previewHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 		if parameterS != "" {
 			shareId, sharePath := getProviderAndPath(parameterS)
 			resolveReq := shares.ShareResolveRequest{
-				ShareID: shareId,
+				ShareId: shareId,
 				Path:    sharePath,
 			}
 			resolveRes := shares.ShareResolveResponse{}
@@ -113,12 +113,12 @@ func (h *previewHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 				ctx.AbortWithStatus(http.StatusInternalServerError)
 				return
 			}
-			if resolveRes.ProviderID == "" {
+			if resolveRes.ProviderId == "" {
 				ctx.AbortWithStatus(http.StatusNotFound)
 				return
 			}
 
-			providerId = resolveRes.ProviderID
+			providerId = resolveRes.ProviderId
 			path = resolveRes.Path
 		} else {
 			if !h.authHandler(ctx) {

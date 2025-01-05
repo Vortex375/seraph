@@ -19,14 +19,15 @@
 package shares
 
 type ShareResolveRequest struct {
-	ShareID string `bson:"shareId" json:"shareId"`
+	ShareId string `bson:"shareId" json:"shareId"`
 	Path    string `bson:"path" json:"path"`
 }
 
 type ShareResolveResponse struct {
 	Error      string `bson:"error" json:"error"`
-	ProviderID string `bson:"providerId" json:"providerId"`
+	ProviderId string `bson:"providerId" json:"providerId"`
 	Path       string `bson:"path" json:"path"`
+	ReadOnly   bool   `bson:"readOnly" json:"readOnly"`
 }
 
 type ShareCrudRequest struct {

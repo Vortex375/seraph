@@ -12,7 +12,9 @@ import (
 
 	"golang.org/x/net/webdav"
 	"umbasa.net/seraph/entities"
+	"umbasa.net/seraph/file-provider/fileprovider"
 	"umbasa.net/seraph/messaging"
+	"umbasa.net/seraph/shares/shares"
 	"umbasa.net/seraph/spaces/spaces"
 )
 
@@ -49,9 +51,9 @@ func (f *delegatingFs) RemoveAll(ctx context.Context, name string) error {
 
 func (f *delegatingFs) Rename(ctx context.Context, oldName, newName string) error {
 	//TODO: rename across providers!?
-	oldProvider, _ := getProviderAndPath(oldName)
-	newProvider, newPath := getProviderAndPath(newName)
-	if oldProvider != newProvider {
+	oldMode, oldProvider, _ := getModeAndProviderAndPath(oldName)
+	newMode, newProvider, newPath := getModeAndProviderAndPath(newName)
+	if oldMode != newMode || oldProvider != newProvider {
 		return fs.ErrInvalid
 	}
 	fs, path, err := f.getFsAndPath(ctx, "Rename", oldName)
@@ -70,15 +72,19 @@ func (f *delegatingFs) Stat(ctx context.Context, name string) (os.FileInfo, erro
 }
 
 func (f *delegatingFs) getFsAndPath(ctx context.Context, op string, name string) (webdav.FileSystem, string, error) {
-	providerId, path := getProviderAndPath(name)
-	f.log.Debug("delegating "+op, "providerId", providerId, "path", path)
+	mode, providerId, path := getModeAndProviderAndPath(name)
+	f.log.Debug("delegating "+op, "mode", mode, "providerId", providerId, "path", path)
 
-	if providerId == "" {
-		fs, err := f.getSpacesFs(ctx)
-		return fs, path, err
-	} else {
-		//TODO: handle readOnly
-		resolvedProviderId, resolvedPath, err := f.resolveSpace(ctx, providerId, path)
+	switch mode {
+
+	// "path" mode
+	case "p":
+		if providerId == "" {
+			fs, err := f.getSpacesFs(ctx)
+			return fs, path, err
+		}
+
+		resolvedProviderId, resolvedPath, readOnly, err := f.resolveSpace(ctx, providerId, path)
 		if err != nil {
 			return nil, "", err
 		}
@@ -88,23 +94,54 @@ func (f *delegatingFs) getFsAndPath(ctx context.Context, op string, name string)
 
 		f.log.Debug(fmt.Sprintf("resolved %s:%s to %s:%s", providerId, path, resolvedProviderId, resolvedPath), "providerId", providerId, "path", path, "resolvedProviderId", resolvedProviderId, "resolvedPath", resolvedPath)
 
-		fs := f.server.getClient(resolvedProviderId)
+		fs := &fileprovider.LimitedFs{
+			FileSystem: f.server.getClient(resolvedProviderId),
+			ReadOnly:   readOnly,
+		}
 		return fs, resolvedPath, nil
+
+	// "share mode"
+	case "s":
+
+		resolvedProviderId, resolvedPath, readOnly, err := f.resolveShare(ctx, providerId, path)
+		if err != nil {
+			return nil, "", err
+		}
+		if resolvedProviderId == "" {
+			return nil, "", fs.ErrNotExist
+		}
+
+		f.log.Debug(fmt.Sprintf("resolved %s:%s to %s:%s", providerId, path, resolvedProviderId, resolvedPath), "providerId", providerId, "path", path, "resolvedProviderId", resolvedProviderId, "resolvedPath", resolvedPath)
+
+		fs := &fileprovider.LimitedFs{
+			FileSystem: f.server.getClient(resolvedProviderId),
+			ReadOnly:   readOnly,
+		}
+		return fs, resolvedPath, nil
+
+	// invalid mode
+	default:
+		return nil, "", fs.ErrNotExist
 	}
+
 }
 
-func getProviderAndPath(p string) (string, string) {
-	split := strings.SplitN(strings.TrimPrefix(p, "/"), "/", 2)
+func getModeAndProviderAndPath(p string) (string, string, string) {
+	split := strings.SplitN(strings.TrimPrefix(p, "/"), "/", 3)
 
 	if len(split) == 1 {
-		return "", split[0]
+		return split[0], "", ""
 	}
 
 	if len(split) == 2 {
-		return split[0], split[1]
+		return split[0], split[1], ""
 	}
 
-	return "", ""
+	if len(split) == 3 {
+		return split[0], split[1], split[2]
+	}
+
+	return "", "", ""
 }
 
 func (f *delegatingFs) getSpacesFs(ctx context.Context) (webdav.FileSystem, error) {
@@ -128,7 +165,7 @@ func (f *delegatingFs) getSpacesFs(ctx context.Context) (webdav.FileSystem, erro
 	return &spacesFileSystem{f.server, res.Space}, nil
 }
 
-func (f *delegatingFs) resolveSpace(ctx context.Context, spaceProviderId string, filePath string) (string, string, error) {
+func (f *delegatingFs) resolveSpace(ctx context.Context, spaceProviderId string, filePath string) (string, string, bool, error) {
 	cache := ctx.Value(spaceResolveCacheKey{}).(map[string]spaces.SpaceResolveResponse)
 	var res spaces.SpaceResolveResponse
 	if fromCache, ok := cache[spaceProviderId]; ok {
@@ -141,13 +178,29 @@ func (f *delegatingFs) resolveSpace(ctx context.Context, spaceProviderId string,
 		}
 		err := messaging.Request(ctx, f.server.nc, spaces.SpaceResolveTopic, messaging.Json(&req), messaging.Json(&res))
 		if err != nil {
-			return "", "", fmt.Errorf("unable to resolve space %s for user %s: %w", spaceProviderId, userId, err)
+			return "", "", false, fmt.Errorf("unable to resolve space %s for user %s: %w", spaceProviderId, userId, err)
 		}
 		if res.Error != "" {
-			return "", "", fmt.Errorf("unable to resolve space %s for user %s: %w", spaceProviderId, userId, errors.New(res.Error))
+			return "", "", false, fmt.Errorf("unable to resolve space %s for user %s: %w", spaceProviderId, userId, errors.New(res.Error))
 		}
 		cache[spaceProviderId] = res
 	}
 
-	return res.ProviderId, path.Join(res.Path, filePath), nil
+	return res.ProviderId, path.Join(res.Path, filePath), res.ReadOnly, nil
+}
+
+func (f *delegatingFs) resolveShare(ctx context.Context, shareId string, filePath string) (string, string, bool, error) {
+	resolveReq := shares.ShareResolveRequest{
+		ShareId: shareId,
+		Path:    filePath,
+	}
+	resolveRes := shares.ShareResolveResponse{}
+	err := messaging.Request(ctx, f.server.nc, shares.ShareResolveTopic, messaging.Json(&resolveReq), messaging.Json(&resolveRes))
+	if err != nil {
+		return "", "", false, err
+	}
+	if resolveRes.Error != "" {
+		return "", "", false, errors.New(resolveRes.Error)
+	}
+	return resolveRes.ProviderId, resolveRes.Path, resolveRes.ReadOnly, nil
 }

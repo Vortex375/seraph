@@ -37,14 +37,15 @@ import (
 	"umbasa.net/seraph/messaging"
 	"umbasa.net/seraph/mongodb"
 	"umbasa.net/seraph/shares/shares"
+	"umbasa.net/seraph/spaces/spaces"
 	"umbasa.net/seraph/tracing"
 )
 
 var natsServer *server.Server
 var mongoContainer testcontainers.Container
 var mongoUrl string
-var migrations shares.Migrations
-var v *viper.Viper
+var sharesMigrations shares.Migrations
+var spacesMigrations spaces.Migrations
 
 func TestMain(m *testing.M) {
 	setup()
@@ -83,11 +84,17 @@ func setup() {
 
 	mongoUrl = fmt.Sprintf("mongodb://%s/", endpoint)
 
-	v = viper.New()
+	v := viper.New()
 	v.Set("mongo.url", mongoUrl)
 	v.Set("mongo.db", "shares_test")
 
-	migrations, err = shares.NewMigrations(v)
+	sharesMigrations, err = shares.NewMigrations(v)
+	if err != nil {
+		panic(err)
+	}
+
+	v.Set("mongo.db", "spaces_test")
+	spacesMigrations, err = spaces.NewMigrations(v)
 	if err != nil {
 		panic(err)
 	}
@@ -109,6 +116,10 @@ func getSharesProvider(t *testing.T) (*shares.SharesProvider, *nats.Conn, *mongo
 		t.Fatal(err)
 	}
 
+	v := viper.New()
+	v.Set("mongo.url", mongoUrl)
+	v.Set("mongo.db", "shares_test")
+
 	res, err := mongodb.NewClient(mongodb.ClientParams{
 		Viper:   v,
 		Tracing: tracing.NewNoopTracing(),
@@ -128,9 +139,45 @@ func getSharesProvider(t *testing.T) (*shares.SharesProvider, *nats.Conn, *mongo
 		Logger:  logger,
 		Tracing: tracing.NewNoopTracing(),
 		Db:      db,
+		Mig:     sharesMigrations,
 	})
 
 	return res2.SharesProvider, nc, db
+}
+
+func getSpacesProvider(t *testing.T) (*spaces.SpacesProvider, *nats.Conn, *mongo.Database) {
+	nc, err := nats.Connect(natsServer.ClientURL())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	v := viper.New()
+	v.Set("mongo.url", mongoUrl)
+	v.Set("mongo.db", "spaces_test")
+
+	res, err := mongodb.NewClient(mongodb.ClientParams{
+		Viper:   v,
+		Tracing: tracing.NewNoopTracing(),
+		Lc:      fxtest.NewLifecycle(t),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mongoClient := res.Client
+
+	logger := logging.New(logging.Params{})
+	logger.SetLevel(slog.LevelDebug)
+	db := mongoClient.Database("spaces_test")
+
+	res2, _ := spaces.New(spaces.Params{
+		Nc:      nc,
+		Logger:  logger,
+		Tracing: tracing.NewNoopTracing(),
+		Db:      db,
+		Mig:     spacesMigrations,
+	})
+
+	return res2.SpacesProvider, nc, db
 }
 
 func TestShareCrud(t *testing.T) {
@@ -146,11 +193,11 @@ func TestShareCrud(t *testing.T) {
 		Share:     entities.MakePrototype(&shares.SharePrototype{}),
 	}
 
-	req.Share.ShareID.Set("test")
+	req.Share.ShareId.Set("test")
 	req.Share.Owner.Set("user")
 	req.Share.Title.Set("some title")
 	req.Share.Description.Set("some description")
-	req.Share.ProviderID.Set("foo")
+	req.Share.ProviderId.Set("foo")
 	req.Share.Path.Set("/bar/baz")
 	req.Share.Recursive.Set(true)
 	req.Share.IsDir.Set(true)
@@ -164,11 +211,11 @@ func TestShareCrud(t *testing.T) {
 	assert.Equal(t, "", res.Error)
 	assert.NotNil(t, res.Share)
 	assert.Equal(t, 1, len(res.Share))
-	assert.Equal(t, "test", res.Share[0].ShareID)
+	assert.Equal(t, "test", res.Share[0].ShareId)
 	assert.Equal(t, "user", res.Share[0].Owner)
 	assert.Equal(t, "some title", res.Share[0].Title)
 	assert.Equal(t, "some description", res.Share[0].Description)
-	assert.Equal(t, "foo", res.Share[0].ProviderID)
+	assert.Equal(t, "foo", res.Share[0].ProviderId)
 	assert.Equal(t, "/bar/baz", res.Share[0].Path)
 	assert.Equal(t, true, res.Share[0].Recursive)
 	assert.Equal(t, true, res.Share[0].IsDir)
@@ -180,11 +227,11 @@ func TestShareCrud(t *testing.T) {
 		Share:     entities.MakePrototype(&shares.SharePrototype{}),
 	}
 
-	req.Share.ShareID.Set("test")
+	req.Share.ShareId.Set("test")
 	req.Share.Owner.Set("user")
 	req.Share.Title.Set("some title")
 	req.Share.Description.Set("some description")
-	req.Share.ProviderID.Set("foo")
+	req.Share.ProviderId.Set("foo")
 	req.Share.Path.Set("/bar/baz")
 	req.Share.Recursive.Set(true)
 	req.Share.IsDir.Set(true)
@@ -203,7 +250,7 @@ func TestShareCrud(t *testing.T) {
 		Share:     entities.MakePrototype(&shares.SharePrototype{}),
 	}
 
-	req.Share.ShareID.Set("test")
+	req.Share.ShareId.Set("test")
 	req.Share.Title.Set("some other title")
 	req.Share.Description.Set("some other description")
 
@@ -215,11 +262,11 @@ func TestShareCrud(t *testing.T) {
 	assert.Equal(t, "", res.Error)
 	assert.NotNil(t, res.Share)
 	assert.Equal(t, 1, len(res.Share))
-	assert.Equal(t, "test", res.Share[0].ShareID)
+	assert.Equal(t, "test", res.Share[0].ShareId)
 	assert.Equal(t, "user", res.Share[0].Owner)
 	assert.Equal(t, "some other title", res.Share[0].Title)
 	assert.Equal(t, "some other description", res.Share[0].Description)
-	assert.Equal(t, "foo", res.Share[0].ProviderID)
+	assert.Equal(t, "foo", res.Share[0].ProviderId)
 	assert.Equal(t, "/bar/baz", res.Share[0].Path)
 	assert.Equal(t, true, res.Share[0].Recursive)
 	assert.Equal(t, true, res.Share[0].IsDir)
@@ -230,7 +277,7 @@ func TestShareCrud(t *testing.T) {
 		Operation: "READ",
 		Share:     entities.MakePrototype(&shares.SharePrototype{}),
 	}
-	req.Share.ShareID.Set("test")
+	req.Share.ShareId.Set("test")
 
 	err = messaging.Request(context.Background(), nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
 	if err != nil {
@@ -240,11 +287,11 @@ func TestShareCrud(t *testing.T) {
 	assert.Equal(t, "", res.Error)
 	assert.NotNil(t, res.Share)
 	assert.Equal(t, 1, len(res.Share))
-	assert.Equal(t, "test", res.Share[0].ShareID)
+	assert.Equal(t, "test", res.Share[0].ShareId)
 	assert.Equal(t, "user", res.Share[0].Owner)
 	assert.Equal(t, "some other title", res.Share[0].Title)
 	assert.Equal(t, "some other description", res.Share[0].Description)
-	assert.Equal(t, "foo", res.Share[0].ProviderID)
+	assert.Equal(t, "foo", res.Share[0].ProviderId)
 	assert.Equal(t, "/bar/baz", res.Share[0].Path)
 	assert.Equal(t, true, res.Share[0].Recursive)
 	assert.Equal(t, true, res.Share[0].IsDir)
@@ -255,7 +302,7 @@ func TestShareCrud(t *testing.T) {
 		Operation: "DELETE",
 		Share:     entities.MakePrototype(&shares.SharePrototype{}),
 	}
-	req.Share.ShareID.Set("test")
+	req.Share.ShareId.Set("test")
 
 	err = messaging.Request(context.Background(), nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
 	if err != nil {
@@ -269,7 +316,7 @@ func TestShareCrud(t *testing.T) {
 		Operation: "READ",
 		Share:     entities.MakePrototype(&shares.SharePrototype{}),
 	}
-	req.Share.ShareID.Set("test")
+	req.Share.ShareId.Set("test")
 
 	err = messaging.Request(context.Background(), nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
 
@@ -284,20 +331,133 @@ func TestShareResolve(t *testing.T) {
 	sharesProvider.Start()
 	defer sharesProvider.Stop()
 
+	spacesProvider, nc, _ := getSpacesProvider(t)
+
+	spacesProvider.Start()
+	defer spacesProvider.Stop()
+
+	// CREATE space
+	spaceReq := spaces.SpaceCrudRequest{
+		Operation: "CREATE",
+		Space:     entities.MakePrototype(&spaces.SpacePrototype{}),
+	}
+	spaceReq.Space.Users.Set([]string{"user"})
+	spaceReq.Space.FileProviders.Set([]spaces.SpaceFileProvider{
+		{
+			SpaceProviderId: "foo",
+			ProviderId:      "foo-resolved",
+			Path:            "/",
+			ReadOnly:        false,
+		},
+		{
+			SpaceProviderId: "foo-with-path",
+			ProviderId:      "foo-resolved",
+			Path:            "/space/path",
+			ReadOnly:        false,
+		},
+		{
+			SpaceProviderId: "foo-read-only",
+			ProviderId:      "foo-resolved",
+			Path:            "/",
+			ReadOnly:        true,
+		},
+	})
+	err := messaging.RequestVoid(context.Background(), nc, string(spaces.SpaceCrudTopic), messaging.Json(&spaceReq))
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	// CREATE
 
 	req := shares.ShareCrudRequest{
 		Operation: "CREATE",
 		Share:     entities.MakePrototype(&shares.SharePrototype{}),
 	}
-	req.Share.ShareID.Set("test")
+	req.Share.ShareId.Set("test")
 	req.Share.Owner.Set("user")
-	req.Share.ProviderID.Set("foo")
+	req.Share.ProviderId.Set("foo")
 	req.Share.Path.Set("/bar/baz")
 	req.Share.Recursive.Set(false)
 	req.Share.IsDir.Set(true)
+	req.Share.ReadOnly.Set(false)
 
-	err := messaging.RequestVoid(context.Background(), nc, shares.ShareCrudTopic, messaging.Json(&req))
+	err = messaging.RequestVoid(context.Background(), nc, shares.ShareCrudTopic, messaging.Json(&req))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// CREATE - with-space-path
+
+	req = shares.ShareCrudRequest{
+		Operation: "CREATE",
+		Share:     entities.MakePrototype(&shares.SharePrototype{}),
+	}
+	req.Share.ShareId.Set("test-space-with-path")
+	req.Share.Owner.Set("user")
+	req.Share.ProviderId.Set("foo-with-path")
+	req.Share.Path.Set("/bar/baz")
+	req.Share.Recursive.Set(true)
+	req.Share.IsDir.Set(true)
+	req.Share.ReadOnly.Set(false)
+
+	err = messaging.RequestVoid(context.Background(), nc, shares.ShareCrudTopic, messaging.Json(&req))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// CREATE - readonly
+
+	req = shares.ShareCrudRequest{
+		Operation: "CREATE",
+		Share:     entities.MakePrototype(&shares.SharePrototype{}),
+	}
+	req.Share.ShareId.Set("test-read-only")
+	req.Share.Owner.Set("user")
+	req.Share.ProviderId.Set("foo")
+	req.Share.Path.Set("/bar/baz")
+	req.Share.Recursive.Set(true)
+	req.Share.IsDir.Set(true)
+	req.Share.ReadOnly.Set(true)
+
+	err = messaging.RequestVoid(context.Background(), nc, shares.ShareCrudTopic, messaging.Json(&req))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// CREATE - with-readonly-space
+
+	req = shares.ShareCrudRequest{
+		Operation: "CREATE",
+		Share:     entities.MakePrototype(&shares.SharePrototype{}),
+	}
+	req.Share.ShareId.Set("test-space-read-only")
+	req.Share.Owner.Set("user")
+	req.Share.ProviderId.Set("foo-read-only")
+	req.Share.Path.Set("/bar/baz")
+	req.Share.Recursive.Set(true)
+	req.Share.IsDir.Set(true)
+	req.Share.ReadOnly.Set(false)
+
+	err = messaging.RequestVoid(context.Background(), nc, shares.ShareCrudTopic, messaging.Json(&req))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// CREATE - readonly-with-readonly-space
+
+	req = shares.ShareCrudRequest{
+		Operation: "CREATE",
+		Share:     entities.MakePrototype(&shares.SharePrototype{}),
+	}
+	req.Share.ShareId.Set("test-readonly-space-readonly")
+	req.Share.Owner.Set("user")
+	req.Share.ProviderId.Set("foo-read-only")
+	req.Share.Path.Set("/bar/baz")
+	req.Share.Recursive.Set(true)
+	req.Share.IsDir.Set(true)
+	req.Share.ReadOnly.Set(true)
+
+	err = messaging.RequestVoid(context.Background(), nc, shares.ShareCrudTopic, messaging.Json(&req))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -305,7 +465,7 @@ func TestShareResolve(t *testing.T) {
 	// resolve empty path
 
 	resolveReq := shares.ShareResolveRequest{
-		ShareID: "test",
+		ShareId: "test",
 	}
 
 	res := shares.ShareResolveResponse{}
@@ -315,13 +475,14 @@ func TestShareResolve(t *testing.T) {
 	}
 
 	assert.Equal(t, "", res.Error)
-	assert.Equal(t, "foo", res.ProviderID)
+	assert.Equal(t, "foo-resolved", res.ProviderId)
 	assert.Equal(t, "/bar/baz", res.Path)
+	assert.False(t, res.ReadOnly)
 
 	// resolve file
 
 	resolveReq = shares.ShareResolveRequest{
-		ShareID: "test",
+		ShareId: "test",
 		Path:    "file.txt",
 	}
 
@@ -331,13 +492,14 @@ func TestShareResolve(t *testing.T) {
 	}
 
 	assert.Equal(t, "", res.Error)
-	assert.Equal(t, "foo", res.ProviderID)
+	assert.Equal(t, "foo-resolved", res.ProviderId)
 	assert.Equal(t, "/bar/baz/file.txt", res.Path)
+	assert.False(t, res.ReadOnly)
 
 	// resolve subfolder -> share not recursive -> expect error
 
 	resolveReq = shares.ShareResolveRequest{
-		ShareID: "test",
+		ShareId: "test",
 		Path:    "sub/file.txt",
 	}
 
@@ -347,7 +509,7 @@ func TestShareResolve(t *testing.T) {
 	}
 
 	assert.Equal(t, "", res.Error)
-	assert.Equal(t, "", res.ProviderID)
+	assert.Equal(t, "", res.ProviderId)
 	assert.Equal(t, "", res.Path)
 
 	// UPDATE make recursive
@@ -357,12 +519,8 @@ func TestShareResolve(t *testing.T) {
 		Share:     entities.MakePrototype(&shares.SharePrototype{}),
 	}
 
-	req.Share.ShareID.Set("test")
-	req.Share.Owner.Set("user")
-	req.Share.ProviderID.Set("foo")
-	req.Share.Path.Set("/bar/baz")
+	req.Share.ShareId.Set("test")
 	req.Share.Recursive.Set(true)
-	req.Share.IsDir.Set(true)
 
 	err = messaging.RequestVoid(context.Background(), nc, shares.ShareCrudTopic, messaging.Json(&req))
 	if err != nil {
@@ -372,7 +530,7 @@ func TestShareResolve(t *testing.T) {
 	// resolve subfolder
 
 	resolveReq = shares.ShareResolveRequest{
-		ShareID: "test",
+		ShareId: "test",
 		Path:    "sub/file.txt",
 	}
 
@@ -382,6 +540,75 @@ func TestShareResolve(t *testing.T) {
 	}
 
 	assert.Equal(t, "", res.Error)
-	assert.Equal(t, "foo", res.ProviderID)
+	assert.Equal(t, "foo-resolved", res.ProviderId)
 	assert.Equal(t, "/bar/baz/sub/file.txt", res.Path)
+	assert.False(t, res.ReadOnly)
+
+	// resolve subfolder in space subfolder
+
+	resolveReq = shares.ShareResolveRequest{
+		ShareId: "test-space-with-path",
+		Path:    "sub/file.txt",
+	}
+
+	err = messaging.Request(context.Background(), nc, shares.ShareResolveTopic, messaging.Json(&resolveReq), messaging.Json(&res))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assert.Equal(t, "", res.Error)
+	assert.Equal(t, "foo-resolved", res.ProviderId)
+	assert.Equal(t, "/space/path/bar/baz/sub/file.txt", res.Path)
+	assert.False(t, res.ReadOnly)
+
+	// resolve read-only share
+
+	resolveReq = shares.ShareResolveRequest{
+		ShareId: "test-read-only",
+		Path:    "sub/file.txt",
+	}
+
+	err = messaging.Request(context.Background(), nc, shares.ShareResolveTopic, messaging.Json(&resolveReq), messaging.Json(&res))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assert.Equal(t, "", res.Error)
+	assert.Equal(t, "foo-resolved", res.ProviderId)
+	assert.Equal(t, "/bar/baz/sub/file.txt", res.Path)
+	assert.True(t, res.ReadOnly)
+
+	// resolve read-only space
+
+	resolveReq = shares.ShareResolveRequest{
+		ShareId: "test-space-read-only",
+		Path:    "sub/file.txt",
+	}
+
+	err = messaging.Request(context.Background(), nc, shares.ShareResolveTopic, messaging.Json(&resolveReq), messaging.Json(&res))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assert.Equal(t, "", res.Error)
+	assert.Equal(t, "foo-resolved", res.ProviderId)
+	assert.Equal(t, "/bar/baz/sub/file.txt", res.Path)
+	assert.True(t, res.ReadOnly)
+
+	// resolve read-only share and read-only space
+
+	resolveReq = shares.ShareResolveRequest{
+		ShareId: "test-readonly-space-readonly",
+		Path:    "sub/file.txt",
+	}
+
+	err = messaging.Request(context.Background(), nc, shares.ShareResolveTopic, messaging.Json(&resolveReq), messaging.Json(&res))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assert.Equal(t, "", res.Error)
+	assert.Equal(t, "foo-resolved", res.ProviderId)
+	assert.Equal(t, "/bar/baz/sub/file.txt", res.Path)
+	assert.True(t, res.ReadOnly)
 }

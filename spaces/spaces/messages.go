@@ -27,6 +27,7 @@ type SpaceResolveResponse struct {
 	Error      string `bson:"error" json:"error"`
 	ProviderId string `bson:"providerId" json:"providerId"`
 	Path       string `bson:"path" json:"path"`
+	ReadOnly   bool   `bson:"readOnly" json:"readOnly"`
 }
 
 type SpaceCrudRequest struct {
