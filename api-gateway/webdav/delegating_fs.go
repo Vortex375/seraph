@@ -190,17 +190,23 @@ func (f *delegatingFs) resolveSpace(ctx context.Context, spaceProviderId string,
 }
 
 func (f *delegatingFs) resolveShare(ctx context.Context, shareId string, filePath string) (string, string, bool, error) {
-	resolveReq := shares.ShareResolveRequest{
-		ShareId: shareId,
-		Path:    filePath,
-	}
-	resolveRes := shares.ShareResolveResponse{}
-	err := messaging.Request(ctx, f.server.nc, shares.ShareResolveTopic, messaging.Json(&resolveReq), messaging.Json(&resolveRes))
-	if err != nil {
-		return "", "", false, err
-	}
-	if resolveRes.Error != "" {
-		return "", "", false, errors.New(resolveRes.Error)
+	cache := ctx.Value(shareResolveCacheKey{}).(map[string]shares.ShareResolveResponse)
+	var resolveRes shares.ShareResolveResponse
+	if fromCache, ok := cache[shareId+filePath]; ok {
+		resolveRes = fromCache
+	} else {
+		resolveReq := shares.ShareResolveRequest{
+			ShareId: shareId,
+			Path:    filePath,
+		}
+		err := messaging.Request(ctx, f.server.nc, shares.ShareResolveTopic, messaging.Json(&resolveReq), messaging.Json(&resolveRes))
+		if err != nil {
+			return "", "", false, err
+		}
+		if resolveRes.Error != "" {
+			return "", "", false, errors.New(resolveRes.Error)
+		}
+		cache[shareId+filePath] = resolveRes
 	}
 	return resolveRes.ProviderId, resolveRes.Path, resolveRes.ReadOnly, nil
 }
