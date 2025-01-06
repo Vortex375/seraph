@@ -105,7 +105,7 @@ func (server *webDavServer) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 		spaceCache := make(map[string]spaces.SpaceResolveResponse)
 		shareCache := make(map[string]shares.ShareResolveResponse)
 		r := ctx.Request.WithContext(context.WithValue(ctx.Request.Context(), spaceResolveCacheKey{}, spaceCache))
-		r = ctx.Request.WithContext(context.WithValue(ctx.Request.Context(), shareResolveCacheKey{}, shareCache))
+		r = r.WithContext(context.WithValue(r.Context(), shareResolveCacheKey{}, shareCache))
 		w := &fastResponseWriter{ctx.Writer}
 
 		handler.ServeHTTP(w, r)
