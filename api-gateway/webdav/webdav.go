@@ -92,13 +92,18 @@ func (server *webDavServer) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 		LockSystem: server.lockSystem,
 		Logger:     makeLogger(server.logger),
 	}
-	app.Use(scoped(PathPrefix, false, func(ctx *gin.Context) { passwordAuth(ctx) }))
 	app.Use(scoped(PathPrefix, false, func(ctx *gin.Context) {
 		// redirect requests to "dav/" to "dav/p/"
 		//TODO: doesn't seem to be understood by clients
 		trimmed := strings.TrimPrefix(ctx.Request.URL.Path, PathPrefix)
 		if trimmed == "" || trimmed == "/" {
 			ctx.Redirect(http.StatusPermanentRedirect, PathPrefix+"/p")
+		}
+	}))
+	app.Use(scoped(PathPrefix, false, func(ctx *gin.Context) {
+		// access to shares "/dav/s" do not require authentication
+		if !strings.HasPrefix(ctx.Request.URL.Path, PathPrefix+"/s") {
+			passwordAuth(ctx)
 		}
 	}))
 	app.Use(scoped(PathPrefix, true, func(ctx *gin.Context) {
