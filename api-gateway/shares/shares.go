@@ -75,7 +75,7 @@ func New(p Params) Result {
 func (h *sharesHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 	apiGroup.GET("shares/:shareId", func(ctx *gin.Context) {
 		shareId := ctx.Param("shareId")
-		owner := h.auth.GetUserId(ctx)
+		owner := h.auth.GetUserId(ctx.Request.Context())
 
 		req := shares.ShareCrudRequest{
 			Operation: "READ",
@@ -109,7 +109,7 @@ func (h *sharesHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 			return
 		}
 
-		owner := h.auth.GetUserId(ctx)
+		owner := h.auth.GetUserId(ctx.Request.Context())
 		share.Owner.Set(owner)
 
 		req := shares.ShareCrudRequest{
@@ -143,7 +143,7 @@ func (h *sharesHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 			return
 		}
 
-		owner := h.auth.GetUserId(ctx)
+		owner := h.auth.GetUserId(ctx.Request.Context())
 		share.Owner.Set(owner)
 		share.ShareId.Set(shareId)
 
@@ -170,7 +170,7 @@ func (h *sharesHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 	apiGroup.DELETE("shares/:shareId", func(ctx *gin.Context) {
 		shareId := ctx.Param("shareId")
 		share := entities.MakePrototype(&shares.SharePrototype{})
-		owner := h.auth.GetUserId(ctx)
+		owner := h.auth.GetUserId(ctx.Request.Context())
 		share.ShareId.Set(shareId)
 		share.Owner.Set(owner)
 

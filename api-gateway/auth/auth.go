@@ -312,7 +312,7 @@ func (a *oidcAuth) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 	})
 
 	authGroup.DELETE("/password", func(ctx *gin.Context) {
-		userId := a.GetUserId(ctx)
+		userId := a.GetUserId(ctx.Request.Context())
 		if userId == "" {
 			ctx.AbortWithStatus(http.StatusForbidden)
 			return

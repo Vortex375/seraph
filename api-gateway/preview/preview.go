@@ -22,6 +22,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 
@@ -34,6 +35,7 @@ import (
 	"umbasa.net/seraph/logging"
 	"umbasa.net/seraph/messaging"
 	"umbasa.net/seraph/shares/shares"
+	"umbasa.net/seraph/spaces/spaces"
 	"umbasa.net/seraph/thumbnailer/thumbnailer"
 	"umbasa.net/seraph/util"
 )
@@ -62,6 +64,7 @@ type previewHandler struct {
 	logger      *logging.Logger
 	log         *slog.Logger
 	nc          *nats.Conn
+	auth        auth.Auth
 	authHandler func(*gin.Context) bool
 }
 
@@ -71,6 +74,7 @@ func New(p Params) Result {
 			logger:      p.Log,
 			log:         p.Log.GetLogger("preview"),
 			nc:          p.Nc,
+			auth:        p.Auth,
 			authHandler: p.Auth.AuthMiddleware(false, ""),
 		},
 	}
@@ -94,7 +98,7 @@ func (h *previewHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 			return
 		}
 
-		var providerId, path string
+		var providerId, filePath string
 		if parameterS != "" {
 			shareId, sharePath := getProviderAndPath(parameterS)
 			resolveReq := shares.ShareResolveRequest{
@@ -119,17 +123,42 @@ func (h *previewHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 			}
 
 			providerId = resolveRes.ProviderId
-			path = resolveRes.Path
+			filePath = resolveRes.Path
 		} else {
 			if !h.authHandler(ctx) {
 				return
 			}
-			providerId, path = getProviderAndPath(parameterP)
-			if providerId == "" || path == "" {
+
+			spaceProviderId, spacePath := getProviderAndPath(parameterP)
+			if spaceProviderId == "" || spacePath == "" {
 				h.log.Error("path must include providerId and path resp. filename")
 				ctx.AbortWithStatus(http.StatusBadRequest)
 				return
 			}
+
+			resolveReq := spaces.SpaceResolveRequest{
+				UserId:          h.auth.GetUserId(ctx.Request.Context()),
+				SpaceProviderId: spaceProviderId,
+			}
+			resolveRes := spaces.SpaceResolveResponse{}
+			err = messaging.Request(ctx.Request.Context(), h.nc, spaces.SpaceResolveTopic, messaging.Json(&resolveReq), messaging.Json(&resolveRes))
+			if err != nil {
+				h.log.Error("While retrieving preview: error while resolving space", "error", err)
+				ctx.AbortWithStatus(http.StatusInternalServerError)
+				return
+			}
+			if resolveRes.Error != "" {
+				h.log.Error("While retrieving preview: error while resolving space", "error", resolveRes.Error)
+				ctx.AbortWithStatus(http.StatusInternalServerError)
+				return
+			}
+			if resolveRes.ProviderId == "" {
+				ctx.AbortWithStatus(http.StatusNotFound)
+				return
+			}
+
+			providerId = resolveRes.ProviderId
+			filePath = path.Join(resolveRes.Path, spacePath)
 		}
 
 		var width, height int
@@ -153,7 +182,7 @@ func (h *previewHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 
 		req := thumbnailer.ThumbnailRequest{
 			ProviderID: providerId,
-			Path:       path,
+			Path:       filePath,
 			Width:      width,
 			Height:     height,
 			Exact:      exact,
