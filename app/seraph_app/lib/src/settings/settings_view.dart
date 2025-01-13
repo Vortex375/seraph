@@ -18,7 +18,11 @@ class SettingsView extends StatelessWidget {
   Widget build(BuildContext context) {
     final urlController = TextEditingController(text: settings.serverUrl);
     return Scaffold(
-      appBar: seraphAppBar(context, 'Settings', routeName, []),
+      appBar: seraphAppBar(context, 
+        name: 'Settings', 
+        routeName: routeName, 
+        actions: []
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(

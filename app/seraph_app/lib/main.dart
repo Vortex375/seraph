@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:seraph_app/src/file_browser/file_service.dart';
 import 'package:seraph_app/src/login/login_service.dart';
 
 import 'src/app.dart';
@@ -16,8 +17,14 @@ void main() async {
 
   final loginService = LoginService();
 
+  print("serverUrl: ${settingsController.serverUrl}");
+  final fileService = FileService(settingsController, loginService);
+
   // Run the app and pass in the SettingsController. The app listens to the
   // SettingsController for changes, then passes it further down to the
   // SettingsView.
-  runApp(MyApp(settingsController: settingsController, loginService: loginService));
+  runApp(MyApp(
+    settingsController: settingsController,
+    fileService: fileService,
+    loginService: loginService));
 }

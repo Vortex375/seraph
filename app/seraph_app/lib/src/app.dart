@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:seraph_app/src/app_providers.dart';
 import 'package:seraph_app/src/file_browser/file_browser.dart';
 import 'package:go_router/go_router.dart';
+import 'package:seraph_app/src/file_browser/file_service.dart';
 import 'package:seraph_app/src/gallery/gallery_view.dart';
 
 import 'login/login_service.dart';
@@ -16,37 +18,48 @@ class MyApp extends StatelessWidget {
     super.key,
     required this.settingsController,
     required this.loginService,
+    required this.fileService
   });
 
   final SettingsController settingsController;
   final LoginService loginService;
+  final FileService fileService;
 
   @override
   Widget build(BuildContext context) {
+    Widget withProviders (child) => AppProviders(
+      settingsController: settingsController, 
+      loginService: loginService, 
+      fileService: fileService, 
+      child: child
+    );
+
+
     final router = GoRouter(
       debugLogDiagnostics: true,
       initialLocation: '/files',
       routes: [
         GoRoute(
           path: FileBrowser.routeName,
-          builder: (context, state) => LoginView(
+          builder: (context, state) => withProviders(LoginView(
             settings: settingsController, 
             loginService: loginService,
             child: FileBrowser(
               settings: settingsController, 
               loginService: loginService,
+              fileService: fileService,
               path: state.uri.queryParameters['path'] ?? '/'
             )
           )
-        ),
+        )),
         GoRoute(
           path: GalleryView.routeName,
-          builder: (context, state) => GalleryView(),
-        ),
+          builder: (context, state) => withProviders(const GalleryView(),
+        )),
         GoRoute(
           path: SettingsView.routeName,
-          builder: (context, state) => SettingsView(settings: settingsController),
-        ),
+          builder: (context, state) => withProviders(SettingsView(settings: settingsController),
+        )),
       ],
     );
     // Glue the SettingsController to the MaterialApp.

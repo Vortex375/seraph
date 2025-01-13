@@ -38,7 +38,7 @@ class SettingsController with ChangeNotifier {
   }
 
   Future<void> confirmServerUrl(bool confirmed) async {
-    print('set server url $serverUrl');
+    print('confirm server url $confirmed');
 
     _serverUrlConfirmed = confirmed;
 

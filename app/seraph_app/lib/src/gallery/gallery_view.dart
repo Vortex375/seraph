@@ -11,7 +11,11 @@ class GalleryView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: seraphAppBar(context, 'Gallery', routeName, []),
+      appBar: seraphAppBar(context, 
+        name: 'Gallery', 
+        routeName: routeName, 
+        actions: []
+      ),
       body: const Text('Gallery mode coming soon')
     );
   }

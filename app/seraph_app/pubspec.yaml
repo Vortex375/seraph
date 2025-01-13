@@ -13,6 +13,7 @@ dependencies:
   dio: ^5.7.0
   flutter:
     sdk: flutter
+  flutter_breadcrumb: ^1.0.1
   flutter_localizations:
     sdk: flutter
   go_router: ^14.3.0

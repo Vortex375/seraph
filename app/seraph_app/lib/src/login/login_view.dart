@@ -27,9 +27,9 @@ class _LoginViewState extends State<LoginView> {
 
   bool _hasServerUrl() {
     // server URL can't be changed on web
-   if (kIsWeb) {
-    return true;
-   }
+  //  if (kIsWeb) {
+  //   return true;
+  //  }
    // change requested
    if (!widget.settings.serverUrlConfirmed) {
     return false;
@@ -49,6 +49,7 @@ class _LoginViewState extends State<LoginView> {
       final response = await dio.get('/auth/config');
       if (response.data['Issuer'] == null) {
         print('no authentication');
+        widget.loginService.noAuth();
       } else {
         print('yes authentication');
         await widget.loginService.init(response.data['Issuer'], response.data['AppClientId']);
