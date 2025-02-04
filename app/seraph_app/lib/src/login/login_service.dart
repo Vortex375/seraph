@@ -1,5 +1,7 @@
 
-import 'package:flutter/material.dart';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:oidc/oidc.dart';
 import 'package:oidc_default_store/oidc_default_store.dart';
 
@@ -64,7 +66,11 @@ class LoginService with ChangeNotifier {
       ),
       clientCredentials: OidcClientAuthentication.none(clientId: clientId),
       store: OidcDefaultStore(),
-      settings: OidcUserManagerSettings(redirectUri: Uri.parse('http://localhost:0')) //TODO: other platforms
+      settings: OidcUserManagerSettings(
+        redirectUri: Platform.isIOS || Platform.isMacOS || Platform.isAndroid 
+            ? Uri.parse("net.umbasa.seraph.app:/oaut2redirect")
+            : Uri.parse('http://localhost:0')
+      ) //TODO: other platforms
     );
 
     await _manager?.init();
