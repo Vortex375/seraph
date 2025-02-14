@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:seraph_app/src/file_browser/file_service.dart';
 import 'package:seraph_app/src/login/login_service.dart';
 
@@ -10,6 +11,8 @@ void main() async {
   // Required or Android app hangs on startup
   WidgetsFlutterBinding.ensureInitialized();
 
+  const secureStorage = FlutterSecureStorage();
+
   // Set up the SettingsController, which will glue user settings to multiple
   // Flutter Widgets.
   final settingsController = SettingsController(SettingsService());
@@ -18,7 +21,7 @@ void main() async {
   // This prevents a sudden theme change when the app is first displayed.
   await settingsController.loadSettings();
 
-  final loginService = LoginService();
+  final loginService = LoginService(secureStorage: secureStorage);
 
   print("serverUrl: ${settingsController.serverUrl}");
   final fileService = FileService(settingsController, loginService);

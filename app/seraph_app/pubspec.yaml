@@ -16,8 +16,10 @@ dependencies:
   flutter_breadcrumb: ^1.0.1
   flutter_localizations:
     sdk: flutter
+  flutter_secure_storage: ^9.2.4
   go_router: ^14.3.0
   oidc: ^0.9.0+1
+  oidc_core: ^0.9.1
   oidc_default_store: ^0.2.0+12
   provider: ^6.1.2
   shared_preferences: ^2.3.2

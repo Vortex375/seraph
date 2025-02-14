@@ -4,10 +4,13 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:oidc/oidc.dart';
 import 'package:oidc_default_store/oidc_default_store.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class LoginService with ChangeNotifier {
 
-  LoginService();
+  LoginService({required this.secureStorage});
+
+  FlutterSecureStorage secureStorage;
 
   OidcUserManager? _manager;
   bool _initialized = false;
@@ -65,7 +68,7 @@ class LoginService with ChangeNotifier {
           Uri.parse(issuer),
       ),
       clientCredentials: OidcClientAuthentication.none(clientId: clientId),
-      store: OidcDefaultStore(),
+      store: OidcDefaultStore(secureStorageInstance: secureStorage),
       settings: OidcUserManagerSettings(
         redirectUri: Platform.isIOS || Platform.isMacOS || Platform.isAndroid 
             ? Uri.parse("net.umbasa.seraph.app:/oaut2redirect")
