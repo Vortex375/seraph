@@ -6,6 +6,7 @@ class SettingsService {
   static const keyThemeMode = 'theme_mode'; 
   static const keyServerUrl = 'server_url'; 
   static const keyServerUrlConfirmed = 'server_url_confirmed'; 
+  static const keyFileBrowserViewMode = 'file_browser_view_mode';
 
   Future<ThemeMode> themeMode() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -43,5 +44,15 @@ class SettingsService {
   Future<void> setServerUrlConfirmed(bool confirmed) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.setBool(keyServerUrlConfirmed, confirmed);
+  }
+
+  Future<String> fileBrowserViewMode() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    return prefs.getString(keyFileBrowserViewMode) ?? '';
+  }
+
+  Future<void> updateFileBrowserViewMode(String viewMode) async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setString(keyFileBrowserViewMode, viewMode);
   }
 }

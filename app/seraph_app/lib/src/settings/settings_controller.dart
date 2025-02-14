@@ -11,16 +11,19 @@ class SettingsController with ChangeNotifier {
   late ThemeMode _themeMode;
   late String _serverUrl;
   bool _serverUrlConfirmed = false;
+  late String _fileBrowserViewMode;
 
   // getters
   ThemeMode get themeMode => _themeMode;
   String get serverUrl => _serverUrl;
   bool get serverUrlConfirmed => _serverUrlConfirmed;
+  String get fileBrowserViewMode => _fileBrowserViewMode;
 
   Future<void> loadSettings() async {
     _themeMode = await _settingsService.themeMode();
     _serverUrl = await _settingsService.serverUrl();
     _serverUrlConfirmed = await _settingsService.serverUrlConfirmed();
+    _fileBrowserViewMode = await _settingsService.fileBrowserViewMode();
 
     notifyListeners();
   }
@@ -58,5 +61,15 @@ class SettingsController with ChangeNotifier {
 
     await _settingsService.updateServerUrl(serverUrl);
     await _settingsService.setServerUrlConfirmed(true);
+  }
+
+  Future<void> updateFileBrowserViewMode(String? viewMode) async {
+    if (viewMode == null) return;
+
+    _fileBrowserViewMode = viewMode;
+
+    notifyListeners();
+
+    await _settingsService.updateFileBrowserViewMode(viewMode);
   }
 }

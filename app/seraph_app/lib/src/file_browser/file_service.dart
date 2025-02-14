@@ -33,22 +33,22 @@ class FileService {
     return c.readDir(path);
   }
 
-  String getPreviewUrl(File file) {
-    return "${settingsController.serverUrl}/preview?p=${file.path}&w=64&h=64&exact=false";
+  String getPreviewUrl(File file, int w, int h) {
+    return "${settingsController.serverUrl}/preview?p=${file.path}&w=$w&h=$h&exact=false";
   }
 
-  Image getPreviewImage(File file) {
+  Image getPreviewImage(File file, int w, int h) {
     Map<String, String>? headers;
     if (loginService.currentUser != null) {
       headers = {
         "Authorization": "Bearer ${loginService.currentUser?.token.accessToken}"
       };
     }
-    return Image.network(getPreviewUrl(file),
+    return Image.network(getPreviewUrl(file, w, h),
       headers: headers,
       fit: BoxFit.cover,
-      width: 48,
-      height: 48,
+      width: w.toDouble(),
+      height: h.toDouble(),
     );
   }
 }

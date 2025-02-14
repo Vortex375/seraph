@@ -3,7 +3,10 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter_breadcrumb/flutter_breadcrumb.dart';
 import 'package:go_router/go_router.dart';
 import 'package:seraph_app/src/app_bar/app_bar.dart';
+import 'package:seraph_app/src/file_browser/file_browser_grid_view.dart';
+import 'package:seraph_app/src/file_browser/file_browser_list_view.dart';
 import 'package:seraph_app/src/file_browser/file_service.dart';
+import 'package:seraph_app/src/file_browser/selection_controller.dart';
 import 'package:webdav_client/webdav_client.dart';
 
 import '../login/login_service.dart';
@@ -31,21 +34,21 @@ class FileBrowser extends StatefulWidget {
 
 class _FileBrowserState extends State<FileBrowser> {
   
+  late SelectionController _selectionController;
+  late ScrollController _scrollController;
   late String _path;
   late List<File> _items;
-  late Set<String> _selectedItems;
   bool _refreshing = false;
   bool _loading = false;
-
-  get isSelecting => _selectedItems.isNotEmpty;
-  get numSelected => _selectedItems.length;
 
   @override
   void initState() {
     super.initState();
+    _selectionController = SelectionController();
+    _scrollController = ScrollController();
     _path = widget.path.endsWith('/') ? widget.path.substring(0, widget.path.length - 1) : widget.path;
     _items = [];
-    _selectedItems = {};
+    _selectionController.clearSelection();
     _refreshing = false;
     loadFiles();
   }
@@ -130,38 +133,18 @@ class _FileBrowserState extends State<FileBrowser> {
     }
   }
 
-  void selectItem(File item, bool selected) {
-    setState(() {
-      final path = item.path;
-      if (selected && path != null) {
-        _selectedItems.add(path);
-      } else {
-        _selectedItems.remove(path);
-      }
-    });
-  }
-
   void clearSelection() {
-    setState(() {
-      _selectedItems = {};
-    });
+    _selectionController.clearSelection();
   }
 
   Widget guardSelection(BuildContext context, Widget body) {
-    if (isSelecting) {
+    if (_selectionController.isSelecting) {
       return PopScope(
         canPop: false,
         child: body
       );
     }
     return body;
-  }
-
-  bool _hasPreview(File file) {
-    if (file.mimeType == "image/jpeg" || file.mimeType == "image/png" || file.mimeType == "image/gif ") {
-      return true;
-    }
-    return false;
   }
 
   List<BreadCrumbItem> _breadCrumbItems() {
@@ -204,80 +187,71 @@ class _FileBrowserState extends State<FileBrowser> {
     bottoms.add(const SizedBox(height: 4));
   }
 
-    return guardSelection(context, Scaffold(
-      appBar: isSelecting
-          ? AppBar(
-            backgroundColor: Theme.of(context).primaryColor,
-            foregroundColor: Theme.of(context).colorScheme.onPrimary,
-            title: Text('$numSelected Selected'),
-            leading: IconButton(onPressed: clearSelection, icon: const Icon(Icons.cancel)),
-          )
-          : seraphAppBar(context, 
-            name: 'Cloud Files', 
-            routeName: FileBrowser.routeName, 
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.refresh),
-                onPressed: () {
-                  _refreshing = true;
-                  loadFiles();
-                },
-              ),
-            ],
-            bottom: PreferredSize(
-              preferredSize: const Size.fromHeight(32),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.start,
-                mainAxisSize: MainAxisSize.max,
-                children: bottoms,
-              ),
-            )
-          ),
-
-      // To work with lists that may contain a large number of items, it’s best
-      // to use the ListView.builder constructor.
-      //
-      // In contrast to the default ListView constructor, which requires
-      // building all Widgets up front, the ListView.builder constructor lazily
-      // builds Widgets as they’re scrolled into view.
-      body: ListView.builder(
-        // Providing a restorationId allows the ListView to restore the
-        // scroll position when a user leaves and returns to the app after it
-        // has been killed while running in the background.
-        restorationId: 'sampleItemListView',
-        itemCount: _items.length,
-        itemBuilder: (BuildContext context, int index) {
-          final item = _items[index];
-          final selected = _selectedItems.contains(item.path);
-      
-          final Widget icon;
-          if (item.isDir ?? false) {
-            // icon = const SizedBox(height: 64, width: 64);
-            icon = const Icon(Icons.folder, size: 24);
-          } else if (_hasPreview(item)) {
-            icon = widget.fileService.getPreviewImage(item);
-          } else {
-            icon = const Icon(Icons.description, size: 24);
-          }
-      
-          return ListTile(
-              title: Text('${item.name}'),
-              leading: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (isSelecting) Checkbox(
-                    value: selected, 
-                    onChanged: (v) => selectItem(item, v ?? false)
+    return ListenableBuilder(
+      listenable: _selectionController,
+      builder: (context, _) {
+        return guardSelection(context, Scaffold(
+          appBar: _selectionController.isSelecting
+              ? AppBar(
+                backgroundColor: Theme.of(context).primaryColor,
+                foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                title: Text('${_selectionController.numSelected} Selected'),
+                leading: IconButton(onPressed: clearSelection, icon: const Icon(Icons.cancel)),
+                bottom: PreferredSize(
+                  preferredSize: const Size.fromHeight(32),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.max,
+                    children: bottoms,
                   ),
-                  if (isSelecting) const SizedBox(width: 4),
-                  icon,
+                ),
+              )
+              : seraphAppBar(context, 
+                name: 'Cloud Files', 
+                routeName: FileBrowser.routeName, 
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.refresh),
+                    onPressed: () {
+                      _refreshing = true;
+                      loadFiles();
+                    },
+                  ),
+                  IconButton(
+                    icon: Icon(widget.settings.fileBrowserViewMode == 'grid' ? Icons.list : Icons.grid_view),
+                    onPressed: () {
+                      widget.settings.updateFileBrowserViewMode(widget.settings.fileBrowserViewMode == 'grid' ? 'list' : 'grid');
+                    },
+                  ),
                 ],
+                bottom: PreferredSize(
+                  preferredSize: const Size.fromHeight(32),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.max,
+                    children: bottoms,
+                  ),
+                )
               ),
-              onTap: () => openItem(item),
-              onLongPress: () => selectItem(item, ! selected),
-            );
-        },
-      ),
-    ));
+        
+          
+          body: widget.settings.fileBrowserViewMode == 'grid' 
+          ? FileBrowserGridView(
+            fileService: widget.fileService,
+            scrollController: _scrollController,
+            selectionController: _selectionController,
+            items: _items,
+            onOpen: openItem,
+          )
+          : FileBrowserListView(
+            fileService: widget.fileService,
+            scrollController: _scrollController,
+            selectionController: _selectionController,
+            items: _items,
+            onOpen: openItem,
+          ),
+        ));
+      }
+    );
   }
 }
