@@ -44,8 +44,8 @@ class _FileBrowserState extends State<FileBrowser> {
   @override
   void initState() {
     super.initState();
-    _selectionController = SelectionController();
     _scrollController = ScrollController();
+    _selectionController = SelectionController(scrollController: _scrollController);
     _path = widget.path.endsWith('/') ? widget.path.substring(0, widget.path.length - 1) : widget.path;
     _items = [];
     _selectionController.clearSelection();
