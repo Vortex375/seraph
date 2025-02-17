@@ -72,7 +72,8 @@ class LoginService with ChangeNotifier {
       settings: OidcUserManagerSettings(
         redirectUri: Platform.isIOS || Platform.isMacOS || Platform.isAndroid 
             ? Uri.parse("net.umbasa.seraph.app:/oaut2redirect")
-            : Uri.parse('http://localhost:0')
+            : Uri.parse('http://localhost:0'),
+        scope: ["openid", "profile", "email", "offline_access"],
       ) //TODO: other platforms
     );
 
