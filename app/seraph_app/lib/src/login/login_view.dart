@@ -2,16 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:dio/dio.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:get/get.dart';
+import 'package:seraph_app/src/settings/settings_controller.dart';
 
-import '../settings/settings_controller.dart';
 import 'login_service.dart';
 
 class LoginView extends StatefulWidget {
-  const LoginView({super.key, required this.settings, required this.loginService, required this.child});
+  const LoginView({super.key, required this.loginService, required this.child});
 
   static const routeName = '/files';
 
-  final SettingsController settings;
   final LoginService loginService;
   final Widget child;
 
@@ -31,20 +31,26 @@ class _LoginViewState extends State<LoginView> {
   //   return true;
   //  }
    // change requested
-   if (!widget.settings.serverUrlConfirmed) {
+
+  SettingsController settings = Get.find();
+
+   if (!settings.serverUrlConfirmed.value) {
     return false;
    }
-   return widget.settings.serverUrl != "";
+   return settings.serverUrl.value != "";
   }
 
   void _setServerUrl(String url) async {
+    SettingsController settings = Get.find();
     await widget.loginService.reset();
-    await widget.settings.updateServerUrl(url);
+    settings.setServerUrl(url);
+    settings.setServerUrlConfirmed(true);
     _doLogin();
   }
 
   Future<void> _doLogin() async {
-    final dio = Dio(BaseOptions(baseUrl: widget.settings.serverUrl));
+    SettingsController settings = Get.find();
+    final dio = Dio(BaseOptions(baseUrl: settings.serverUrl.value));
     try {
       final response = await dio.get('/auth/config');
       if (response.data['Issuer'] == null) {
@@ -56,7 +62,7 @@ class _LoginViewState extends State<LoginView> {
       }
     } catch (err) {
       showError("Failed to connect to server: ${err.toString()}");
-      await widget.settings.confirmServerUrl(false);
+      settings.setServerUrlConfirmed(false);
     }
   }
 
@@ -91,22 +97,23 @@ class _LoginViewState extends State<LoginView> {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: Listenable.merge([widget.settings, widget.loginService]), 
-      builder: (BuildContext context, Widget? child) {
+      listenable: widget.loginService, 
+      builder: (BuildContext context, Widget? child) => Obx(() {
         if (!_hasServerUrl()) {
           return _serverSelection(context);
         }
         if (!_loggedIn()) {
           return _loginState(context);
         }
-
+    
         return widget.child;
-      }
+      })
     );
   }
 
   Widget _serverSelection(BuildContext context) {
-    final urlController = TextEditingController(text: widget.settings.serverUrl);
+    SettingsController settings = Get.find();
+    final urlController = TextEditingController(text: settings.serverUrl.value);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Seraph'),
@@ -147,6 +154,7 @@ class _LoginViewState extends State<LoginView> {
   }
 
   Widget _loginState(BuildContext context) {
+    SettingsController settings = Get.find();
     return Scaffold(
       appBar: AppBar(
         title: const Text('Seraph'),
@@ -169,10 +177,10 @@ class _LoginViewState extends State<LoginView> {
                       semanticsLabel: 'Login progress indicator',
                     ),
                     const SizedBox(height: 16),
-                    Text(widget.settings.serverUrl, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).disabledColor)),
+                    Text(settings.serverUrl.value, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).disabledColor)),
                     const SizedBox(height: 16),
                     FilledButton(onPressed: () {
-                      widget.settings.confirmServerUrl(false);
+                      settings.setServerUrlConfirmed(false);
                     }, child: const Text('Change Server'))
                   ]
                 )

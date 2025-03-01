@@ -1,75 +1,65 @@
+
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import 'package:get_storage/get_storage.dart';
+import 'package:path_provider/path_provider.dart';
 
-import 'settings_service.dart';
+class SettingsController extends GetxController {
 
-class SettingsController with ChangeNotifier {
-  SettingsController(this._settingsService);
-
-  final SettingsService _settingsService;
-
+  late GetStorage _box;
+  
   // settings
-  late ThemeMode _themeMode;
-  late String _serverUrl;
-  bool _serverUrlConfirmed = false;
-  late String _fileBrowserViewMode;
+
+  static const _keyThemeMode = 'themeMode';
+  late Rx<ThemeMode> _themeMode;
+
+  static const _keyServerUrl = 'serverUrl';
+  late Rx<String> _serverUrl;
+
+  static const _keyServerUrlConfirmed = 'serverUrlConfirmed';
+  late Rx<bool> _serverUrlConfirmed;
+
+  static const _keyFileBrowserViewMode = 'fileBrowserViewMode';
+  late Rx<String> _fileBrowserViewMode;
 
   // getters
-  ThemeMode get themeMode => _themeMode;
-  String get serverUrl => _serverUrl;
-  bool get serverUrlConfirmed => _serverUrlConfirmed;
-  String get fileBrowserViewMode => _fileBrowserViewMode;
 
-  Future<void> loadSettings() async {
-    _themeMode = await _settingsService.themeMode();
-    _serverUrl = await _settingsService.serverUrl();
-    _serverUrlConfirmed = await _settingsService.serverUrlConfirmed();
-    _fileBrowserViewMode = await _settingsService.fileBrowserViewMode();
+  Rx<ThemeMode> get themeMode => _themeMode;
+  Rx<String> get serverUrl => _serverUrl;
+  Rx<bool> get serverUrlConfirmed => _serverUrlConfirmed;
+  Rx<String> get fileBrowserViewMode => _fileBrowserViewMode;
 
-    notifyListeners();
+   Future<void> init() async {
+    _box = GetStorage('SeraphSettings', (await getApplicationSupportDirectory()).path);
+    await _box.initStorage;
+
+    _themeMode = ThemeMode.values.byName(_box.read(_keyThemeMode) ?? ThemeMode.system.name).obs;
+    _serverUrl = Rx<String>(_box.read(_keyServerUrl) ?? '');
+    _serverUrlConfirmed = Rx<bool>(_box.read(_keyServerUrlConfirmed) ?? false);
+    _fileBrowserViewMode = Rx<String>(_box.read(_keyFileBrowserViewMode) ?? 'list');
   }
 
-  Future<void> updateThemeMode(ThemeMode? newThemeMode) async {
-    print('set theme mode $newThemeMode');
-    if (newThemeMode == null) return;
-    if (newThemeMode == _themeMode) return;
-
-    _themeMode = newThemeMode;
-
-    notifyListeners();
-
-    await _settingsService.updateThemeMode(newThemeMode);
+  void setThemeMode(ThemeMode value) {
+    print('set theme mode: $value');
+    _themeMode.value = value;
+    _box.write(_keyThemeMode, value.name);
   }
 
-  Future<void> confirmServerUrl(bool confirmed) async {
-    print('confirm server url $confirmed');
-
-    _serverUrlConfirmed = confirmed;
-
-    notifyListeners();
-
-    await _settingsService.setServerUrlConfirmed(confirmed);
+  void setServerUrl(String value) {
+    print('set server url: $value');
+    _serverUrl.value = value;
+    _box.write(_keyServerUrl, value);
   }
 
-  Future<void> updateServerUrl(String? serverUrl) async {
-    print('set server url $serverUrl');
-    if (serverUrl == null) return;
-
-    _serverUrl = serverUrl;
-    _serverUrlConfirmed = true;
-
-    notifyListeners();
-
-    await _settingsService.updateServerUrl(serverUrl);
-    await _settingsService.setServerUrlConfirmed(true);
+  void setServerUrlConfirmed(bool value) {
+    print('set server url confirmed: $value');
+    _serverUrlConfirmed.value = value;
+    _box.write(_keyServerUrlConfirmed, value);
   }
 
-  Future<void> updateFileBrowserViewMode(String? viewMode) async {
-    if (viewMode == null) return;
-
-    _fileBrowserViewMode = viewMode;
-
-    notifyListeners();
-
-    await _settingsService.updateFileBrowserViewMode(viewMode);
+  void setFileBrowserViewMode(String value) {
+    print('set file browser view mode: $value');
+    _fileBrowserViewMode.value = value;
+    _box.write(_keyFileBrowserViewMode, value);
   }
 }

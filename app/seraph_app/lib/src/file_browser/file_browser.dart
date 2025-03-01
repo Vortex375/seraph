@@ -1,21 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_breadcrumb/flutter_breadcrumb.dart';
-import 'package:go_router/go_router.dart';
+import 'package:get/get.dart';
 import 'package:seraph_app/src/app_bar/app_bar.dart';
 import 'package:seraph_app/src/file_browser/file_browser_grid_view.dart';
 import 'package:seraph_app/src/file_browser/file_browser_list_view.dart';
 import 'package:seraph_app/src/file_browser/file_service.dart';
 import 'package:seraph_app/src/file_browser/selection_controller.dart';
+import 'package:seraph_app/src/settings/settings_controller.dart';
 import 'package:webdav_client/webdav_client.dart';
 
 import '../login/login_service.dart';
-import '../settings/settings_controller.dart';
 
 class FileBrowser extends StatefulWidget {
   const FileBrowser({
     super.key, 
-    required this.settings, 
     required this.loginService, 
     required this.fileService, 
     required this.path
@@ -23,7 +22,6 @@ class FileBrowser extends StatefulWidget {
 
   static const routeName = '/files';
 
-  final SettingsController settings;
   final FileService fileService;
   final LoginService loginService;
   final String path;
@@ -125,7 +123,7 @@ class _FileBrowserState extends State<FileBrowser> {
 
   void openItem(File item) {
     if (!_loading && (item.isDir ?? false)) {
-      GoRouter.of(context).replace('${FileBrowser.routeName}?path=$_path/${item.name}');
+      Get.offNamed('${FileBrowser.routeName}?path=$_path/${item.name}');
     } else {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text("${item.name} Selected"),
@@ -162,7 +160,7 @@ class _FileBrowserState extends State<FileBrowser> {
           if (newPath == '') {
             newPath = '/';
           }
-          GoRouter.of(context).replace('${FileBrowser.routeName}?path=$newPath');
+          Get.offNamed('${FileBrowser.routeName}?path=$newPath');
         }
       ));
     }
@@ -181,11 +179,13 @@ class _FileBrowserState extends State<FileBrowser> {
       ),
       ));
 
-  if (_loading) {
-    bottoms.add(const LinearProgressIndicator());
-  } else {
-    bottoms.add(const SizedBox(height: 4));
-  }
+    if (_loading) {
+      bottoms.add(const LinearProgressIndicator());
+    } else {
+      bottoms.add(const SizedBox(height: 4));
+    }
+
+    SettingsController settings = Get.find();
 
     return ListenableBuilder(
       listenable: _selectionController,
@@ -218,9 +218,9 @@ class _FileBrowserState extends State<FileBrowser> {
                     },
                   ),
                   IconButton(
-                    icon: Icon(widget.settings.fileBrowserViewMode == 'grid' ? Icons.list : Icons.grid_view),
+                    icon: Obx(() => Icon(settings.fileBrowserViewMode.value == 'grid' ? Icons.list : Icons.grid_view)),
                     onPressed: () {
-                      widget.settings.updateFileBrowserViewMode(widget.settings.fileBrowserViewMode == 'grid' ? 'list' : 'grid');
+                      settings.setFileBrowserViewMode(settings.fileBrowserViewMode.value == 'grid' ? 'list' : 'grid');
                     },
                   ),
                 ],
@@ -235,21 +235,22 @@ class _FileBrowserState extends State<FileBrowser> {
               ),
         
           
-          body: widget.settings.fileBrowserViewMode == 'grid' 
-          ? FileBrowserGridView(
-            fileService: widget.fileService,
-            scrollController: _scrollController,
-            selectionController: _selectionController,
-            items: _items,
-            onOpen: openItem,
+          body: Obx(() => settings.fileBrowserViewMode.value == 'grid' 
+            ? FileBrowserGridView(
+              fileService: widget.fileService,
+              scrollController: _scrollController,
+              selectionController: _selectionController,
+              items: _items,
+              onOpen: openItem,
+            )
+            : FileBrowserListView(
+              fileService: widget.fileService,
+              scrollController: _scrollController,
+              selectionController: _selectionController,
+              items: _items,
+              onOpen: openItem,
+            ),
           )
-          : FileBrowserListView(
-            fileService: widget.fileService,
-            scrollController: _scrollController,
-            selectionController: _selectionController,
-            items: _items,
-            onOpen: openItem,
-          ),
         ));
       }
     );

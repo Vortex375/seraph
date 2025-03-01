@@ -6,11 +6,11 @@ import '../login/login_service.dart';
 
 class FileService {
   FileService(this.settingsController, this.loginService) {
-      if (settingsController.serverUrlConfirmed) {
+      if (settingsController.serverUrlConfirmed.value) {
         client = newClient('${settingsController.serverUrl}/dav/p', debug: false);
       }
-    settingsController.addListener(() {
-      if (settingsController.serverUrlConfirmed) {
+    settingsController.serverUrlConfirmed.listen((value) {
+      if (value) {
         client = newClient('${settingsController.serverUrl}/dav/p', debug: false);
       }
     });

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 import 'package:provider/provider.dart';
 
-import 'package:go_router/go_router.dart';
 import 'package:seraph_app/src/gallery/gallery_view.dart';
 import 'package:seraph_app/src/login/login_service.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
@@ -16,13 +16,13 @@ AppBar seraphAppBar(BuildContext context, {
     PreferredSizeWidget? bottom
   }) {
 
-  final settings = context.watch<SettingsController>();
+  final settings = Get.find<SettingsController>();
   final loginService = context.watch<LoginService>();
 
   final logoutButton = IconButton(
     icon: const Icon(Icons.logout),
     onPressed: () {
-      settings.confirmServerUrl(false);
+      settings.setServerUrlConfirmed(false);
       loginService.logout();
     },
   );
@@ -44,7 +44,7 @@ AppBar seraphAppBar(BuildContext context, {
               DropdownMenuItem(
                   value: SettingsView.routeName, child: Text('App Settings'))
             ],
-            onChanged: (value) => GoRouter.of(context).go(value!),
+            onChanged: (value) => Get.offNamed(value!),
           ),
         ),
       ],

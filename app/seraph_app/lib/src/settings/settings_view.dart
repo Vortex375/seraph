@@ -1,22 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import 'package:seraph_app/src/settings/settings_controller.dart';
 
 import '../app_bar/app_bar.dart';
-import 'settings_controller.dart';
 
 /// Displays the various settings that can be customized by the user.
 ///
 /// When a user changes a setting, the SettingsController is updated and
 /// Widgets that listen to the SettingsController are rebuilt.
 class SettingsView extends StatelessWidget {
-  const SettingsView({super.key, required this.settings});
+  const SettingsView({super.key});
 
   static const routeName = '/settings';
 
-  final SettingsController settings;
-
   @override
   Widget build(BuildContext context) {
-    final urlController = TextEditingController(text: settings.serverUrl);
+    SettingsController settings = Get.find();
+
+    final urlController = TextEditingController(text: settings.serverUrl.value);
     return Scaffold(
       appBar: seraphAppBar(context, 
         name: 'Settings', 
@@ -38,8 +39,8 @@ class SettingsView extends StatelessWidget {
                     const SizedBox(height: 16),
                     DropdownMenu<ThemeMode>(
                       label: const Text('Theme'),
-                      initialSelection: settings.themeMode,
-                      onSelected: settings.updateThemeMode,
+                      initialSelection: settings.themeMode.value,
+                      onSelected: (v) => settings.setThemeMode(v ?? ThemeMode.system),
                       requestFocusOnTap: false,
                       dropdownMenuEntries: const [
                         DropdownMenuEntry(
@@ -75,7 +76,7 @@ class SettingsView extends StatelessWidget {
                         labelText: 'Url',
                       ),
                       controller: urlController,
-                      onSubmitted: settings.updateServerUrl,
+                      onSubmitted: settings.setServerUrl,
                     ),
                   ],
                 ),
