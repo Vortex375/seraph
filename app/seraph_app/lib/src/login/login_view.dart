@@ -1,104 +1,43 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:dio/dio.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:get/get.dart';
+import 'package:seraph_app/src/login/login_controller.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
 
-import 'login_service.dart';
-
-class LoginView extends StatefulWidget {
-  const LoginView({super.key, required this.loginService, required this.child});
+class LoginView extends StatelessWidget {
+  const LoginView({super.key, required this.child});
 
   static const routeName = '/files';
 
-  final LoginService loginService;
   final Widget child;
 
-  @override
-  createState() => _LoginViewState();
-}
-
-class _LoginViewState extends State<LoginView> {
-
   bool _loggedIn() {
-    return widget.loginService.isInitialized && (widget.loginService.isNoAuth || widget.loginService.currentUser != null);
+    LoginController loginController = Get.find();
+    return loginController.isInitialized.value && (loginController.isNoAuth.value || loginController.currentUser.value != null);
   }
 
   bool _hasServerUrl() {
     // server URL can't be changed on web
-  //  if (kIsWeb) {
-  //   return true;
-  //  }
-   // change requested
+    //  if (kIsWeb) {
+    //   return true;
+    //  }
 
-  SettingsController settings = Get.find();
+    SettingsController settings = Get.find();
 
-   if (!settings.serverUrlConfirmed.value) {
+    if (!settings.serverUrlConfirmed.value) {
     return false;
-   }
-   return settings.serverUrl.value != "";
+    }
+    return settings.serverUrl.value != "";
   }
 
   void _setServerUrl(String url) async {
     SettingsController settings = Get.find();
-    await widget.loginService.reset();
     settings.setServerUrl(url);
     settings.setServerUrlConfirmed(true);
-    _doLogin();
-  }
-
-  Future<void> _doLogin() async {
-    SettingsController settings = Get.find();
-    final dio = Dio(BaseOptions(baseUrl: settings.serverUrl.value));
-    try {
-      final response = await dio.get('/auth/config');
-      if (response.data['Issuer'] == null) {
-        print('no authentication');
-        widget.loginService.noAuth();
-      } else {
-        print('yes authentication');
-        await widget.loginService.init(response.data['Issuer'], response.data['AppClientId']);
-      }
-    } catch (err) {
-      showError("Failed to connect to server: ${err.toString()}");
-      settings.setServerUrlConfirmed(false);
-    }
-  }
-
-  void showError(String msg) {
-    showErr() {
-        ScaffoldMessenger.of(context).showMaterialBanner(MaterialBanner(
-          content: Text(msg),
-          backgroundColor: Colors.amber[800],
-          actions: [
-            TextButton(onPressed: () {
-              ScaffoldMessenger.of(context).clearMaterialBanners();
-            }, child: const Text('DISMISS'))
-          ],
-        ));
-      }
-      if (mounted) {
-        showErr();
-      } else {
-        SchedulerBinding.instance.addPostFrameCallback((_) =>showErr());
-      }
-  }
-
-  @override
-  void initState() {
-    super.initState();
-
-    if (_hasServerUrl() && ! kIsWeb && !widget.loginService.isInitialized) {
-      _doLogin();
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: widget.loginService, 
-      builder: (BuildContext context, Widget? child) => Obx(() {
+    return Obx(() {
         if (!_hasServerUrl()) {
           return _serverSelection(context);
         }
@@ -106,9 +45,8 @@ class _LoginViewState extends State<LoginView> {
           return _loginState(context);
         }
     
-        return widget.child;
-      })
-    );
+        return child;
+      });
   }
 
   Widget _serverSelection(BuildContext context) {

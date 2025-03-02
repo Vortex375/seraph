@@ -1,46 +1,59 @@
-
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
+import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:get/get.dart';
 import 'package:oidc/oidc.dart';
 import 'package:oidc_default_store/oidc_default_store.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:seraph_app/src/settings/settings_controller.dart';
 
-class LoginService with ChangeNotifier {
+class LoginController extends GetxController {
 
-  LoginService({required this.secureStorage});
-
-  FlutterSecureStorage secureStorage;
-
-  OidcUserManager? _manager;
-  bool _initialized = false;
-  bool _noAuth = false;
-  OidcUser? _currentUser;
-
-  bool get isInitialized => _initialized;
-  bool get isNoAuth => _noAuth;
-  OidcUser? get currentUser => _currentUser;
-
-  noAuth() {
-    if (_manager != null) {
-      _manager?.dispose();
-      _manager = null;
-    }
-    _initialized = true;
-    _noAuth = true;
-    _currentUser = null;
-    notifyListeners();
+  LoginController({required this.secureStorage, required this.settingsController}) {
+    _initialized = false.obs;
+    _noAuth = false.obs;
+    _currentUser = Rx<OidcUser?>(null);
+    
+    settingsController.serverUrlConfirmed.listenAndPump((confirmed) {
+      if (confirmed) {
+        init(settingsController.oidcIssuer.value, settingsController.oidcClientId.value);
+      }
+    });
   }
 
-  Future<void> init(String issuer, String clientId) async {
+  final FlutterSecureStorage secureStorage;
+  final SettingsController settingsController;
+
+  OidcUserManager? _manager;
+  
+  late Rx<bool> _initialized;
+  late Rx<bool> _noAuth;
+  late Rx<OidcUser?> _currentUser;
+
+  Rx<bool> get isInitialized => _initialized;
+  Rx<bool> get isNoAuth => _noAuth;
+  Rx<OidcUser?> get currentUser => _currentUser;
+
+  Future<void> init(String? oidcIssuer, String? clientId) async {
+    if (oidcIssuer == null) {
+      _oidcDiscovery();
+      return;
+    }
+
     if (_manager != null) {
       _manager?.dispose();
       _manager = null;
     }
-    _initialized = false;
-    _currentUser = null;
-    _noAuth = false;
-    notifyListeners();
+    _initialized.value = false;
+    _currentUser.value = null;
+    
+    if (oidcIssuer == '') {
+      _noAuth.value = true;
+      return;
+    }
+
+    _noAuth.value = false;
 
     // redirectUri: kIsWeb
     // // this url must be an actual html page.
@@ -65,33 +78,56 @@ class LoginService with ChangeNotifier {
 
     _manager = OidcUserManager.lazy(
       discoveryDocumentUri: OidcUtils.getOpenIdConfigWellKnownUri(
-          Uri.parse(issuer),
+          Uri.parse(oidcIssuer),
       ),
-      clientCredentials: OidcClientAuthentication.none(clientId: clientId),
+      clientCredentials: OidcClientAuthentication.none(clientId: clientId!),
       store: OidcDefaultStore(secureStorageInstance: secureStorage),
       settings: OidcUserManagerSettings(
         redirectUri: Platform.isIOS || Platform.isMacOS || Platform.isAndroid 
             ? Uri.parse("net.umbasa.seraph.app:/oaut2redirect")
             : Uri.parse('http://localhost:0'),
         scope: ["openid", "profile", "email", "offline_access"],
-      ) //TODO: other platforms
+      )
     );
 
     await _manager?.init();
     print("oidc: init complete");
-    _initialized = true;
-    notifyListeners();
-
+    
     bool first = true;
     _manager?.userChanges().listen((user) async {
       print('currentUser changed to ${user?.uid} ${user?.parsedIdToken.claims.toString()}');
-      _currentUser = user;
-      notifyListeners();
+      _currentUser.value = user;
       if (first && user == null) {
         await login();
+      } else {
+        _initialized.value = true;
       }
       first = false;
     });
+  }
+
+  Future<void> _oidcDiscovery() async {
+    final dio = Dio(BaseOptions(baseUrl: settingsController.serverUrl.value));
+    try {
+      final response = await dio.get('/auth/config');
+      final issuer = response.data['Issuer'];
+      final clientId = response.data['AppClientId'];
+      if (issuer == null) {
+        print('no authentication');
+        settingsController.setOidc('', '');
+        init('', '');
+      } else {
+        print('yes authentication');
+        settingsController.setOidc(issuer, clientId);
+        init(issuer, clientId);
+      }
+    } catch (err) {
+      Get.snackbar('Connection failed', 'Failed to connect to server',
+        backgroundColor: Colors.amber[800],
+        isDismissible: true
+      );
+      settingsController.setServerUrlConfirmed(false);
+    }
   }
 
   Future<void> login() async {
@@ -110,22 +146,8 @@ class LoginService with ChangeNotifier {
     }
     print("oidc: logout");
     await _manager?.logout();
-    _currentUser = null;
+    _currentUser.value = null;
     print("oidc: logout complete");
-    notifyListeners();
-  }
-
-  Future<void> reset() async {
-    if (_manager != null) {
-      //TODO: when to do this?
-      // await _manager?.forgetUser();
-      await _manager?.dispose();
-      _manager = null;
-    }
-    _noAuth = false;
-    _initialized = false;
-    _currentUser = null;
-    notifyListeners();
   }
 
 }

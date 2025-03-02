@@ -10,12 +10,10 @@ import 'package:seraph_app/src/file_browser/selection_controller.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
 import 'package:webdav_client/webdav_client.dart';
 
-import '../login/login_service.dart';
 
 class FileBrowser extends StatefulWidget {
   const FileBrowser({
     super.key, 
-    required this.loginService, 
     required this.fileService, 
     required this.path
   });
@@ -23,7 +21,6 @@ class FileBrowser extends StatefulWidget {
   static const routeName = '/files';
 
   final FileService fileService;
-  final LoginService loginService;
   final String path;
 
   @override

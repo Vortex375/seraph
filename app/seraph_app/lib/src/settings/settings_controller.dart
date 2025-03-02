@@ -22,12 +22,20 @@ class SettingsController extends GetxController {
   static const _keyFileBrowserViewMode = 'fileBrowserViewMode';
   late Rx<String> _fileBrowserViewMode;
 
+  static const _keyOidcIssuer = 'oidcIssuer';
+  late Rx<String?> _oidcIssuer;
+
+  static const _keyOidcClientId = 'oidcClientId';
+  late Rx<String?> _oidcClientId;
+
   // getters
 
   Rx<ThemeMode> get themeMode => _themeMode;
   Rx<String> get serverUrl => _serverUrl;
   Rx<bool> get serverUrlConfirmed => _serverUrlConfirmed;
   Rx<String> get fileBrowserViewMode => _fileBrowserViewMode;
+  Rx<String?> get oidcIssuer => _oidcIssuer;
+  Rx<String?> get oidcClientId => _oidcClientId;
 
    Future<void> init() async {
     _box = GetStorage('SeraphSettings', (await getApplicationSupportDirectory()).path);
@@ -37,6 +45,8 @@ class SettingsController extends GetxController {
     _serverUrl = Rx<String>(_box.read(_keyServerUrl) ?? '');
     _serverUrlConfirmed = Rx<bool>(_box.read(_keyServerUrlConfirmed) ?? false);
     _fileBrowserViewMode = Rx<String>(_box.read(_keyFileBrowserViewMode) ?? 'list');
+    _oidcIssuer = Rx<String?>(_box.read(_keyOidcIssuer));
+    _oidcClientId = Rx<String?>(_box.read(_keyOidcClientId));
   }
 
   void setThemeMode(ThemeMode value) {
@@ -53,6 +63,10 @@ class SettingsController extends GetxController {
 
   void setServerUrlConfirmed(bool value) {
     print('set server url confirmed: $value');
+    if (_serverUrlConfirmed.value != value) {
+      // reset the oidc issuer
+      setOidc(null, null);
+    }
     _serverUrlConfirmed.value = value;
     _box.write(_keyServerUrlConfirmed, value);
   }
@@ -61,5 +75,14 @@ class SettingsController extends GetxController {
     print('set file browser view mode: $value');
     _fileBrowserViewMode.value = value;
     _box.write(_keyFileBrowserViewMode, value);
+  }
+
+  void setOidc(String? issuer, String? clientId) {
+    print('set oidc issuer: $issuer');
+    print('set oidc client id: $clientId');
+    _oidcClientId.value = clientId;
+    _oidcIssuer.value = issuer;
+    _box.write(_keyOidcIssuer, issuer);
+    _box.write(_keyOidcClientId, clientId);
   }
 }

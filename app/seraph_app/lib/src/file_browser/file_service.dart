@@ -1,15 +1,11 @@
+import 'package:seraph_app/src/login/login_controller.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
 import 'package:webdav_client/webdav_client.dart';
 import 'package:flutter/material.dart';
 
-import '../login/login_service.dart';
-
 class FileService {
-  FileService(this.settingsController, this.loginService) {
-      if (settingsController.serverUrlConfirmed.value) {
-        client = newClient('${settingsController.serverUrl}/dav/p', debug: false);
-      }
-    settingsController.serverUrlConfirmed.listen((value) {
+  FileService(this.settingsController, this.loginController) {
+    settingsController.serverUrlConfirmed.listenAndPump((value) {
       if (value) {
         client = newClient('${settingsController.serverUrl}/dav/p', debug: false);
       }
@@ -17,7 +13,7 @@ class FileService {
   }
 
   final SettingsController settingsController;
-  final LoginService loginService;
+  final LoginController loginController;
   Client? client;
 
   Future<List<File>> readDir(String path) async {
@@ -25,8 +21,8 @@ class FileService {
     if (c == null) {
       return [];
     }
-    if (loginService.currentUser != null) {
-      c.setHeaders({"Authorization": "Bearer ${loginService.currentUser?.token.accessToken}"});
+    if (loginController.currentUser.value != null) {
+      c.setHeaders({"Authorization": "Bearer ${loginController.currentUser.value?.token.accessToken}"});
     } else {
       c.setHeaders({});
     }
@@ -39,9 +35,9 @@ class FileService {
 
   Image getPreviewImage(File file, int w, int h) {
     Map<String, String>? headers;
-    if (loginService.currentUser != null) {
+    if (loginController.currentUser.value != null) {
       headers = {
-        "Authorization": "Bearer ${loginService.currentUser?.token.accessToken}"
+        "Authorization": "Bearer ${loginController.currentUser.value?.token.accessToken}"
       };
     }
     return Image.network(getPreviewUrl(file, w, h),

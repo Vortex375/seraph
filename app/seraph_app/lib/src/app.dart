@@ -8,7 +8,6 @@ import 'package:seraph_app/src/file_browser/file_service.dart';
 import 'package:seraph_app/src/gallery/gallery_view.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
 
-import 'login/login_service.dart';
 import 'login/login_view.dart';
 import 'settings/settings_view.dart';
 
@@ -16,17 +15,14 @@ import 'settings/settings_view.dart';
 class MyApp extends StatelessWidget {
   const MyApp({
     super.key,
-    required this.loginService,
     required this.fileService
   });
 
-  final LoginService loginService;
   final FileService fileService;
 
   @override
   Widget build(BuildContext context) {
     Widget withProviders (child) => AppProviders(
-      loginService: loginService, 
       fileService: fileService, 
       child: child
     );
@@ -69,9 +65,7 @@ class MyApp extends StatelessWidget {
           initialRoute: FileBrowser.routeName,
           getPages: [
             GetPage(name: FileBrowser.routeName, page: () => withProviders(LoginView(
-              loginService: loginService,
               child: FileBrowser(
-                loginService: loginService,
                 fileService: fileService,
                 path: Get.parameters['path'] ?? '/'
               )

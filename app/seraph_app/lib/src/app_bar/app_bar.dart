@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:provider/provider.dart';
 
 import 'package:seraph_app/src/gallery/gallery_view.dart';
-import 'package:seraph_app/src/login/login_service.dart';
+import 'package:seraph_app/src/login/login_controller.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
 
 import '../file_browser/file_browser.dart';
@@ -16,14 +15,14 @@ AppBar seraphAppBar(BuildContext context, {
     PreferredSizeWidget? bottom
   }) {
 
-  final settings = Get.find<SettingsController>();
-  final loginService = context.watch<LoginService>();
+  final settingsController = Get.find<SettingsController>();
+  final loginController = Get.find<LoginController>();
 
   final logoutButton = IconButton(
     icon: const Icon(Icons.logout),
     onPressed: () {
-      settings.setServerUrlConfirmed(false);
-      loginService.logout();
+      settingsController.setServerUrlConfirmed(false);
+      loginController.logout();
     },
   );
 
