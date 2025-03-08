@@ -7,7 +7,6 @@ import 'package:webdav_client/webdav_client.dart';
 class FileBrowserListView extends StatelessWidget{
 
   final SelectionController selectionController;
-  final ScrollController scrollController;
   final FileService fileService;
   final List<File> items;
   final Function(File)? onOpen;
@@ -15,7 +14,6 @@ class FileBrowserListView extends StatelessWidget{
   const FileBrowserListView({
     super.key, 
     required this.selectionController, 
-    required this.scrollController,
     required this.fileService,
     required this.items,
     this.onOpen
@@ -28,7 +26,6 @@ class FileBrowserListView extends StatelessWidget{
       // scroll position when a user leaves and returns to the app after it
       // has been killed while running in the background.
       restorationId: 'fileBrowserListView',
-      controller: scrollController,
       itemCount: items.length,
       itemBuilder: (BuildContext context, int index) {
         final item = items[index];
@@ -50,11 +47,11 @@ class FileBrowserListView extends StatelessWidget{
             leading: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (selectionController.isSelecting) Checkbox(
+                if (selectionController.isSelecting.value) Checkbox(
                   value: selected, 
                   onChanged: (v) => selectItem(item, v ?? false)
                 ),
-                if (selectionController.isSelecting) const SizedBox(width: 4),
+                if (selectionController.isSelecting.value) const SizedBox(width: 4),
                 icon,
               ],
             ),

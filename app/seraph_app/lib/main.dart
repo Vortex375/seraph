@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:get/get.dart';
-import 'package:seraph_app/src/file_browser/file_service.dart';
 import 'package:seraph_app/src/login/login_controller.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
 
@@ -21,9 +20,10 @@ void main() async {
     return controller;
   }, permanent: true);
 
-  Get.put(LoginController(secureStorage: secureStorage, settingsController: settingsController));
-
-  final fileService = FileService(Get.find(), Get.find());
+  Get.put(LoginController(
+    secureStorage: secureStorage, 
+    settingsController: settingsController
+  ), permanent: true);
   
-  runApp(MyApp(fileService: fileService));
+  runApp(const MyApp());
 }

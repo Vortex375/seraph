@@ -7,7 +7,6 @@ import 'package:webdav_client/webdav_client.dart';
 class FileBrowserGridView extends StatelessWidget{
 
   final SelectionController selectionController;
-  final ScrollController scrollController;
   final FileService fileService;
   final List<File> items;
   final Function(File)? onOpen;
@@ -15,7 +14,6 @@ class FileBrowserGridView extends StatelessWidget{
   const FileBrowserGridView({
     super.key, 
     required this.selectionController, 
-    required this.scrollController,
     required this.fileService,
     required this.items,
     this.onOpen
@@ -31,7 +29,6 @@ class FileBrowserGridView extends StatelessWidget{
         crossAxisCount: 3,
       ),
       restorationId: 'fileBrowserGridView',
-      controller: scrollController,
       itemCount: items.length,
       itemBuilder: (BuildContext context, int index) {
         final item = items[index];
@@ -59,24 +56,27 @@ class FileBrowserGridView extends StatelessWidget{
                   ),
                   Align(
                     alignment: Alignment.bottomLeft,
-                    child: _withBackground(context, selectionController.isSelecting, Row(
-                      children: [
-                        if (selectionController.isSelecting) Checkbox(
-                          value: selected, 
-                          onChanged: (v) => selectItem(item, v ?? false)
-                        ),
-                        if (selectionController.isSelecting) const SizedBox(width: 4),
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.all(4.0),
-                            child: hasPreview ? _outlinedText('${item.name}')
-                              : Text('${item.name}',
-                              softWrap: false,
-                              overflow: TextOverflow.fade,
-                            )
+                    child: _withBackground(context, selectionController.isSelecting.value, InkWell(
+                      onTap: selectionController.isSelecting.value ? () => selectItem(item, !selected) : null,
+                      child: Row(
+                        children: [
+                          if (selectionController.isSelecting.value) Checkbox(
+                            value: selected, 
+                            onChanged: (v) => selectItem(item, v ?? false)
                           ),
-                        )
-                      ]
+                          if (selectionController.isSelecting.value) const SizedBox(width: 4),
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.all(4.0),
+                              child: hasPreview ? _outlinedText('${item.name}')
+                                : Text('${item.name}',
+                                softWrap: false,
+                                overflow: TextOverflow.fade,
+                              )
+                            ),
+                          )
+                        ]
+                      ),
                     )),
                   )
                 ],
@@ -119,7 +119,7 @@ class FileBrowserGridView extends StatelessWidget{
   }
 
   Widget _withBackground(BuildContext context, bool enable, Widget w) {
-    return enable ? Container(
+    return enable ? Material(
           color: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.8),
           child: w
         ) : w;

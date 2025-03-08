@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:get/get.dart';
-import 'package:seraph_app/src/app_providers.dart';
-import 'package:seraph_app/src/file_browser/file_browser.dart';
-import 'package:seraph_app/src/file_browser/file_service.dart';
+import 'package:seraph_app/src/file_browser/file_browser_controller.dart';
+import 'package:seraph_app/src/file_browser/file_browser_view.dart';
 import 'package:seraph_app/src/gallery/gallery_view.dart';
+import 'package:seraph_app/src/initial_binding.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
 
 import 'login/login_view.dart';
@@ -15,17 +15,31 @@ import 'settings/settings_view.dart';
 class MyApp extends StatelessWidget {
   const MyApp({
     super.key,
-    required this.fileService
   });
-
-  final FileService fileService;
 
   @override
   Widget build(BuildContext context) {
-    Widget withProviders (child) => AppProviders(
-      fileService: fileService, 
-      child: child
-    );
+
+    final pages = [
+      GetPage(
+        name: FileBrowserView.routeName,
+        page: () {
+          Get.find<FileBrowserController>().setPath(Get.parameters['path'] ?? '/');
+          return const LoginView(
+            child: FileBrowserView()
+          );
+        }, 
+        transition: Transition.noTransition,
+      ),
+      GetPage(
+        name: GalleryView.routeName, 
+        page: () => const GalleryView()
+      ),
+      GetPage(
+        name: SettingsView.routeName, 
+        page: () => const SettingsView()
+      )
+    ];
 
     return GetX<SettingsController>(
       builder: (settingsController) {
@@ -62,17 +76,9 @@ class MyApp extends StatelessWidget {
           ),
           themeMode: settingsController.themeMode.value,
 
-          initialRoute: FileBrowser.routeName,
-          getPages: [
-            GetPage(name: FileBrowser.routeName, page: () => withProviders(LoginView(
-              child: FileBrowser(
-                fileService: fileService,
-                path: Get.parameters['path'] ?? '/'
-              )
-            )), transition: Transition.noTransition),
-            GetPage(name: GalleryView.routeName, page: () => withProviders(const GalleryView())),
-            GetPage(name: SettingsView.routeName, page: () => withProviders(const SettingsView()))
-          ],
+          initialRoute: FileBrowserView.routeName,
+          getPages: pages,
+          initialBinding: InitialBinding(),
         );
       },
     );

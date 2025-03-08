@@ -1,42 +1,44 @@
 
-import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
+import 'package:get/get.dart';
 
-class SelectionController with ChangeNotifier {
-  
-  SelectionController({this.scrollController});
+class SelectionController extends GetxController {
 
-  ScrollController? scrollController;
-  double _storedOffset = 0.0;
+  final RxSet<String> _selectedItems = <String>{}.obs;
+  final RxBool _isSelecting = false.obs;
+  final RxInt _numSelected = 0.obs;
 
+   RxBool get isSelecting => _isSelecting;
+   RxInt get numSelected => _numSelected;
 
-  Set<String> _selectedItems = {};
+  late List<Worker> _workers;
 
-  get isSelecting => _selectedItems.isNotEmpty;
-  get numSelected => _selectedItems.length;
+  @override
+  void onInit() {
+    super.onInit();
+    _workers = [
+      ever(_selectedItems, (v) => _isSelecting(v.isNotEmpty)),
+      ever(_selectedItems, (v) => _numSelected(v.length)),
+    ];
+  }
+
+  @override
+  void onClose() {
+    super.onClose();
+    for (var w in _workers) {
+      w.dispose();
+    }
+  }
 
   clearSelection() {
-    if (_selectedItems.isNotEmpty) {
-      _restoreScrollPosition();
-    }
-    _selectedItems = {};
-    notifyListeners();
+    _selectedItems.clear();
   }
 
   add(String s) {
-    if (_selectedItems.isEmpty) {
-      _restoreScrollPosition();
-    }
     _selectedItems.add(s);
-    notifyListeners();
   }
 
   remove(String s) {
-    if (_selectedItems.length == 1) {
-      _restoreScrollPosition();
-    }
     _selectedItems.remove(s);
-    notifyListeners();
   }
 
   isSelected(String? s) {
@@ -44,14 +46,5 @@ class SelectionController with ChangeNotifier {
       return false;
     }
     return _selectedItems.contains(s);
-  }
-
-  _restoreScrollPosition() {
-    if (scrollController != null) {
-      _storedOffset = scrollController!.offset;
-      SchedulerBinding.instance.addPostFrameCallback((_) {
-        scrollController!.jumpTo(_storedOffset);
-      });
-    }
   }
 }

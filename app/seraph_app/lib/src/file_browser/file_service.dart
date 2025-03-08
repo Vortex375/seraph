@@ -1,11 +1,15 @@
 import 'package:seraph_app/src/login/login_controller.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
+import 'package:seraph_app/src/util.dart';
 import 'package:webdav_client/webdav_client.dart';
 import 'package:flutter/material.dart';
 
 class FileService {
   FileService(this.settingsController, this.loginController) {
-    settingsController.serverUrlConfirmed.listenAndPump((value) {
+    if (settingsController.serverUrlConfirmed.value) {
+      client = newClient('${settingsController.serverUrl}/dav/p', debug: false);
+    }
+    settingsController.serverUrlConfirmed.listen((value) {
       if (value) {
         client = newClient('${settingsController.serverUrl}/dav/p', debug: false);
       }
@@ -21,6 +25,7 @@ class FileService {
     if (c == null) {
       return [];
     }
+    await until(loginController.isInitialized, identity);
     if (loginController.currentUser.value != null) {
       c.setHeaders({"Authorization": "Bearer ${loginController.currentUser.value?.token.accessToken}"});
     } else {

@@ -8,14 +8,17 @@ import 'package:oidc/oidc.dart';
 import 'package:oidc_default_store/oidc_default_store.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
 
-class LoginController extends GetxController {
+class LoginController extends GetxController with WidgetsBindingObserver {
 
   LoginController({required this.secureStorage, required this.settingsController}) {
     _initialized = false.obs;
     _noAuth = false.obs;
     _currentUser = Rx<OidcUser?>(null);
     
-    settingsController.serverUrlConfirmed.listenAndPump((confirmed) {
+    if (settingsController.serverUrlConfirmed.value) {
+      init(settingsController.oidcIssuer.value, settingsController.oidcClientId.value);
+    }
+    settingsController.serverUrlConfirmed.listen((confirmed) {
       if (confirmed) {
         init(settingsController.oidcIssuer.value, settingsController.oidcClientId.value);
       }
@@ -45,14 +48,15 @@ class LoginController extends GetxController {
       _manager?.dispose();
       _manager = null;
     }
-    _initialized.value = false;
     _currentUser.value = null;
     
     if (oidcIssuer == '') {
       _noAuth.value = true;
+      _initialized.value = true;
       return;
     }
 
+    _initialized.value = false;
     _noAuth.value = false;
 
     // redirectUri: kIsWeb
@@ -92,21 +96,26 @@ class LoginController extends GetxController {
 
     await _manager?.init();
     print("oidc: init complete");
+
+    final user = await _manager?.refreshToken();
+    if (user == null) {
+      print("oidc: refresh failed -> perform login");
+      await login();
+    } else {
+      print("oidc: refresh successful");
+      _currentUser.value = user;
+      _initialized.value = true;
+    }
     
-    bool first = true;
     _manager?.userChanges().listen((user) async {
       print('currentUser changed to ${user?.uid} ${user?.parsedIdToken.claims.toString()}');
       _currentUser.value = user;
-      if (first && user == null) {
-        await login();
-      } else {
-        _initialized.value = true;
-      }
-      first = false;
+      _initialized.value = true;
     });
   }
 
   Future<void> _oidcDiscovery() async {
+    print("oidc: discovery");
     final dio = Dio(BaseOptions(baseUrl: settingsController.serverUrl.value));
     try {
       final response = await dio.get('/auth/config');
@@ -150,4 +159,28 @@ class LoginController extends GetxController {
     print("oidc: logout complete");
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.resumed:
+      /* manually refresh token on resume */
+        _manager?.refreshToken();
+        break;
+      default:
+    }
+  }
+
+  @override
+  void onInit() {
+    super.onInit();
+
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void onClose() {
+    super.onClose();
+
+    WidgetsBinding.instance.removeObserver(this);
+  }
 }
