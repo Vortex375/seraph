@@ -44,13 +44,19 @@ class FileBrowserView extends StatelessWidget{
     SelectionController selectionController = Get.find();
 
     final List<Widget> bottoms = [];
-    bottoms.add(Obx(() => BreadCrumb(
-      items: _breadCrumbItems(controller.path.value),
-      divider: const Icon(Icons.chevron_right),
-      overflow: ScrollableOverflow(
-        reverse: true
+    bottoms.add(Obx(() => SizedBox(
+      width: double.infinity,
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: BreadCrumb(
+          items: _breadCrumbItems(controller.path.value),
+          divider: const Icon(Icons.chevron_right),
+          overflow: ScrollableOverflow(
+            reverse: true
+          ),
+        ),
       ),
-      )));
+    )));
 
     bottoms.add(Obx(() {
       if (controller.status.value.isLoading) {
@@ -76,6 +82,7 @@ class FileBrowserView extends StatelessWidget{
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.start,
                 mainAxisSize: MainAxisSize.max,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: bottoms,
               ),
             ),
