@@ -31,7 +31,7 @@ class FileBrowserListView extends StatelessWidget{
         final item = items[index];
         final selected = selectionController.isSelected(item.path);
     
-        final bool hasPreview = fileService.supportsPreviewImage(item);
+        final bool hasPreview = fileService.isImageFile(item);
         final Widget icon;
         if (item.isDir ?? false) {
           // icon = const SizedBox(height: 64, width: 64);

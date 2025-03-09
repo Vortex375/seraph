@@ -33,7 +33,7 @@ class FileBrowserGridView extends StatelessWidget{
       itemBuilder: (BuildContext context, int index) {
         final item = items[index];
         final selected = selectionController.isSelected(item.path);
-        final hasPreview = fileService.supportsPreviewImage(item);
+        final hasPreview = fileService.isImageFile(item);
 
         return LayoutBuilder(
           builder: (context, constraints) {

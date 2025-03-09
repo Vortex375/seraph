@@ -20,17 +20,31 @@ class FileService {
   final LoginController loginController;
   Client? client;
 
+  Future<Map<String, String>> getRequestHeaders() async {
+    await until(loginController.isInitialized, identity);
+
+    if (loginController.currentUser.value != null) {
+      return {"Authorization": "Bearer ${loginController.currentUser.value?.token.accessToken}"};
+    } else {
+      return {};
+    }
+  }
+
+  Map<String, String> getRequestHeadersSync() {
+    if (loginController.currentUser.value != null) {
+      return {"Authorization": "Bearer ${loginController.currentUser.value?.token.accessToken}"};
+    } else {
+      return {};
+    }
+  }
+
   Future<List<File>> readDir(String path) async {
     Client? c = client;
     if (c == null) {
       return [];
     }
-    await until(loginController.isInitialized, identity);
-    if (loginController.currentUser.value != null) {
-      c.setHeaders({"Authorization": "Bearer ${loginController.currentUser.value?.token.accessToken}"});
-    } else {
-      c.setHeaders({});
-    }
+    final headers = await getRequestHeaders();
+    c.setHeaders(headers);
     return c.readDir(path);
   }
 
@@ -39,12 +53,8 @@ class FileService {
     if (c == null) {
       return null;
     }
-    await until(loginController.isInitialized, identity);
-    if (loginController.currentUser.value != null) {
-      c.setHeaders({"Authorization": "Bearer ${loginController.currentUser.value?.token.accessToken}"});
-    } else {
-      c.setHeaders({});
-    }
+    final headers = await getRequestHeaders();
+    c.setHeaders(headers);
     return c.readProps(path);
   }
 
@@ -53,27 +63,16 @@ class FileService {
   }
 
   Image getImage(String path, [ImageLoadingBuilder? loadingBuilder]) {
-    Map<String, String>? headers;
-    if (loginController.currentUser.value != null) {
-      headers = {
-        "Authorization": "Bearer ${loginController.currentUser.value?.token.accessToken}"
-      };
-    }
+    final headers = getRequestHeadersSync();
     return Image.network(getFileUrl(path), headers: headers, loadingBuilder: loadingBuilder);
   }
 
   String getPreviewUrl(String path, int w, int h) {
-    print("get preview url: ${settingsController.serverUrl}/preview?p=$path&w=$w&h=$h");
     return "${settingsController.serverUrl}/preview?p=$path&w=$w&h=$h";
   }
 
   Image getPreviewImage(String path, int w, int h) {
-    Map<String, String>? headers;
-    if (loginController.currentUser.value != null) {
-      headers = {
-        "Authorization": "Bearer ${loginController.currentUser.value?.token.accessToken}"
-      };
-    }
+    final headers = getRequestHeadersSync();
     return Image.network(getPreviewUrl(path, w, h),
       headers: headers,
       fit: BoxFit.cover,
@@ -82,7 +81,11 @@ class FileService {
     );
   }
 
-  bool supportsPreviewImage(File file) {
+  bool isImageFile(File file) {
     return file.mimeType?.startsWith("image/") ?? false;
+  }
+
+  bool isAudioFile(File file) {
+    return file.mimeType?.startsWith("audio/") ?? false;
   }
 }

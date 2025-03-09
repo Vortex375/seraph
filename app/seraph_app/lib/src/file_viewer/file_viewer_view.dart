@@ -32,7 +32,7 @@ class FileViewerView extends StatelessWidget{
         physics: controller.isZoomedIn.value ? const NeverScrollableScrollPhysics() : const PageScrollPhysics(),
         itemBuilder: (context, index) {
           final file = controller.files[index];
-          if (fileService.supportsPreviewImage(file)) {
+          if (fileService.isImageFile(file)) {
             return Hero(
               tag: "preview:${file.path}",
               child: Center(
@@ -43,6 +43,21 @@ class FileViewerView extends StatelessWidget{
                   child: fileService.getImage(file.path!, (context, child, loadingProgress) => 
                     (loadingProgress == null) ? SizedBox.expand(child: child) : (index == controller.initialIndex ? previewWidget : null) ?? Container())
                 )),
+              ),
+            );
+          } else if (fileService.isAudioFile(file)) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('File Viewer ${file.name}'),
+                  ElevatedButton(
+                    onPressed: () {
+                      controller.playAudioFile(index);
+                    }, 
+                    child: const Text('Play')
+                  )
+                ]
               ),
             );
           } else {

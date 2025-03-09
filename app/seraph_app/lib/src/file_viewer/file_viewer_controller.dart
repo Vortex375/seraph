@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:seraph_app/src/file_browser/file_browser_controller.dart';
 import 'package:seraph_app/src/file_browser/file_service.dart';
+import 'package:seraph_app/src/media_player/media_player_controller.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
 import 'package:webdav_client/webdav_client.dart';
 
@@ -53,11 +54,21 @@ class FileViewerController extends GetxController {
     Get.changeThemeMode(_themeMode ?? ThemeMode.system);
     pageController.dispose();
     transformationController.dispose();
+
+    //TODO: remove this
+    Get.find<MediaPlayerController>().closePlayer();
+  }
+
+  Future<void> playAudioFile(int index) async {
+    final MediaPlayerController mediaPlayerController = Get.find();
+    //TODO: passing only one file for now
+    mediaPlayerController.setPlaylist([files[index].path!], 0);
+    mediaPlayerController.play();
   }
 
   void _maybeChangeTheme(int currentPage) {
     final FileService fileService = Get.find();
-    if (currentPage >= 0 && currentPage < files.length && fileService.supportsPreviewImage(files[currentPage])) {
+    if (currentPage >= 0 && currentPage < files.length && fileService.isImageFile(files[currentPage])) {
       /* switch to dark theme for image viewing */
       Get.changeThemeMode(ThemeMode.dark);
     } else {
