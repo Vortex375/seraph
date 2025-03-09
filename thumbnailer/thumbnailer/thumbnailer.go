@@ -340,14 +340,12 @@ func (t *Thumbnailer) handleRequest(ctx context.Context, req ThumbnailRequest) (
 }
 
 func fitSize(s int) int {
-	l := ThumbnailSizes[0]
-	for _, t := range ThumbnailSizes[1:] {
-		if s < t {
-			return l
+	for _, t := range ThumbnailSizes {
+		if t >= s {
+			return t
 		}
-		l = t
 	}
-	return l
+	return ThumbnailSizes[len(ThumbnailSizes)-1]
 }
 
 func randomFileName() string {

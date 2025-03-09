@@ -176,3 +176,15 @@ func TestCreateThumbnail(t *testing.T) {
 
 	t.Log(tmpDir)
 }
+
+func TestFitSize(t *testing.T) {
+	sizes := []int{1, 15, 64, 80, 128, 180, 256, 270, 300, 512, 513, 1024, 9000}
+	/* should fit the next-largest thumbnail size */
+	expected := []int{128, 128, 128, 128, 128, 256, 256, 512, 512, 512, 1024, 1024, 1024}
+
+	assert.Equal(t, len(sizes), len(expected))
+
+	for i, _ := range sizes {
+		assert.Equal(t, expected[i], fitSize(sizes[i]), "real value: %d", sizes[i])
+	}
+}
