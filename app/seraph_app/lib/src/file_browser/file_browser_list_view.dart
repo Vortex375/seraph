@@ -1,5 +1,7 @@
 
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import 'package:seraph_app/src/file_browser/file_browser_controller.dart';
 import 'package:seraph_app/src/file_browser/file_service.dart';
 import 'package:seraph_app/src/file_browser/selection_controller.dart';
 import 'package:webdav_client/webdav_client.dart';
@@ -9,14 +11,12 @@ class FileBrowserListView extends StatelessWidget{
   final SelectionController selectionController;
   final FileService fileService;
   final List<File> items;
-  final Function(File)? onOpen;
 
   const FileBrowserListView({
     super.key, 
     required this.selectionController, 
     required this.fileService,
     required this.items,
-    this.onOpen
   });
 
   @override
@@ -31,12 +31,13 @@ class FileBrowserListView extends StatelessWidget{
         final item = items[index];
         final selected = selectionController.isSelected(item.path);
     
+        final bool hasPreview = fileService.supportsPreviewImage(item);
         final Widget icon;
         if (item.isDir ?? false) {
           // icon = const SizedBox(height: 64, width: 64);
           icon = const Icon(Icons.folder, size: 24);
-        } else if (hasPreview(item)) {
-          icon = fileService.getPreviewImage(item, 64, 64);
+        } else if (hasPreview) {
+          icon = fileService.getPreviewImage(item.path!, 64, 64);
         } else {
           icon = const Icon(Icons.description, size: 24);
         }
@@ -52,10 +53,18 @@ class FileBrowserListView extends StatelessWidget{
                   onChanged: (v) => selectItem(item, v ?? false)
                 ),
                 if (selectionController.isSelecting.value) const SizedBox(width: 4),
-                icon,
+                Hero(tag: "preview:${item.path}", child: icon),
               ],
             ),
-            onTap: () => openItem(item),
+            onTap: () {
+              final FileBrowserController controller = Get.find();
+              if (hasPreview) {
+                controller.setPreviewWidgetFactory(() => fileService.getPreviewImage(item.path!, 64, 64));
+              } else {
+                controller.setPreviewWidgetFactory(null);
+              }
+              controller.openItem(item);
+            },
             onLongPress: () => selectItem(item, ! selected),
           );
       },
@@ -68,19 +77,6 @@ class FileBrowserListView extends StatelessWidget{
       selectionController.add(path);
     } else if (path != null) {
       selectionController.remove(path);
-    }
-  }
-
-  hasPreview(File file) {
-    if (file.mimeType == "image/jpeg" || file.mimeType == "image/png" || file.mimeType == "image/gif ") {
-      return true;
-    }
-    return false;
-  }
-
-  openItem(File item) {
-    if (onOpen != null) {
-      onOpen!(item);
     }
   }
 

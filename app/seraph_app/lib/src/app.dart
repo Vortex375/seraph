@@ -4,6 +4,8 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:get/get.dart';
 import 'package:seraph_app/src/file_browser/file_browser_controller.dart';
 import 'package:seraph_app/src/file_browser/file_browser_view.dart';
+import 'package:seraph_app/src/file_viewer/file_viewer_controller.dart';
+import 'package:seraph_app/src/file_viewer/file_viewer_view.dart';
 import 'package:seraph_app/src/gallery/gallery_view.dart';
 import 'package:seraph_app/src/initial_binding.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
@@ -34,6 +36,13 @@ class MyApp extends StatelessWidget {
       GetPage(
         name: GalleryView.routeName, 
         page: () => const GalleryView()
+      ),
+      GetPage(
+        name: FileViewerView.routeName, 
+        page: () => const FileViewerView(),
+        binding: BindingsBuilder(() {
+          Get.put(FileViewerController(fileName: Get.parameters['file'] ?? '', hasPreview: bool.parse(Get.parameters['preview'] ?? 'false')));
+        })
       ),
       GetPage(
         name: SettingsView.routeName, 

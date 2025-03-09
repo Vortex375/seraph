@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:seraph_app/src/file_browser/file_browser_view.dart';
+import 'package:seraph_app/src/login/login_controller.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
 
 import '../app_bar/app_bar.dart';
@@ -16,6 +18,7 @@ class SettingsView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     SettingsController settings = Get.find();
+    LoginController loginController = Get.find();
 
     final urlController = TextEditingController(text: settings.serverUrl.value);
     return Scaffold(
@@ -76,8 +79,41 @@ class SettingsView extends StatelessWidget {
                         labelText: 'Url',
                       ),
                       controller: urlController,
-                      onSubmitted: settings.setServerUrl,
+                      enabled: false,
                     ),
+                    const SizedBox(height: 16),
+                    Obx(() {
+                      var currentUser = loginController.currentUser.value;
+                      if (currentUser == null) {
+                        return const Text("Unknown user");
+                      } else {
+                        return Text("Logged in as ${currentUser.userInfo['preferred_username']} (${currentUser.userInfo['email']})");
+                      }
+                    }),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Theme.of(context).colorScheme.error, // Use error color for warning
+                        foregroundColor: Theme.of(context).colorScheme.onError, // Ensures contrast
+                      ),
+                      onPressed: () {
+                        Get.defaultDialog(
+                          title: "Logout",
+                          middleText: "Are you sure you want to log out?",
+                          textConfirm: "Logout",
+                          textCancel: "Cancel",
+                          onConfirm: () {
+                            settings.setServerUrlConfirmed(false);
+                            loginController.logout();
+                            Get.offAllNamed(FileBrowserView.routeName);
+                          },
+                          onCancel: () {
+                            Get.back();
+                          },
+                        );
+                      },
+                      child: const Text('Logout'),
+                    )
                   ],
                 ),
               ),

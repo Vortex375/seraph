@@ -1,5 +1,7 @@
 
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import 'package:seraph_app/src/file_browser/file_browser_controller.dart';
 import 'package:seraph_app/src/file_browser/file_service.dart';
 import 'package:seraph_app/src/file_browser/selection_controller.dart';
 import 'package:webdav_client/webdav_client.dart';
@@ -9,14 +11,12 @@ class FileBrowserGridView extends StatelessWidget{
   final SelectionController selectionController;
   final FileService fileService;
   final List<File> items;
-  final Function(File)? onOpen;
 
   const FileBrowserGridView({
     super.key, 
     required this.selectionController, 
     required this.fileService,
-    required this.items,
-    this.onOpen
+    required this.items
   });
 
   @override
@@ -33,7 +33,7 @@ class FileBrowserGridView extends StatelessWidget{
       itemBuilder: (BuildContext context, int index) {
         final item = items[index];
         final selected = selectionController.isSelected(item.path);
-        final hasPreview = supportsPreview(item);
+        final hasPreview = fileService.supportsPreviewImage(item);
 
         return LayoutBuilder(
           builder: (context, constraints) {
@@ -41,13 +41,25 @@ class FileBrowserGridView extends StatelessWidget{
             if (item.isDir ?? false) {
               icon = const Icon(Icons.folder, size: 48);
             } else if (hasPreview) {
-              icon = fileService.getPreviewImage(item, constraints.maxWidth.toInt(), constraints.maxWidth.toInt());
+              icon = Hero(
+                tag: "preview:${item.path}",
+                child: fileService.getPreviewImage(item.path!, constraints.maxWidth.toInt(), constraints.maxWidth.toInt())
+              );
             } else {
               icon = const Icon(Icons.description, size: 48);
             }
 
             return InkWell(
-              onTap: () => openItem(item),
+              onTap: () {
+                final FileBrowserController controller = Get.find();
+                if (hasPreview) {
+                  controller.setPreviewWidgetFactory(() => 
+                    fileService.getPreviewImage(item.path!, constraints.maxWidth.toInt(), constraints.maxWidth.toInt()));
+                } else {
+                  controller.setPreviewWidgetFactory(null);
+                }
+                controller.openItem(item);
+              },
               onLongPress: () => selectItem(item, !selected),
               child: Stack(
                 children: [
@@ -133,18 +145,4 @@ class FileBrowserGridView extends StatelessWidget{
       selectionController.remove(path);
     }
   }
-
-  supportsPreview(File file) {
-    if (file.mimeType == "image/jpeg" || file.mimeType == "image/png" || file.mimeType == "image/gif ") {
-      return true;
-    }
-    return false;
-  }
-
-  openItem(File item) {
-    if (onOpen != null) {
-      onOpen!(item);
-    }
-  }
-
 }

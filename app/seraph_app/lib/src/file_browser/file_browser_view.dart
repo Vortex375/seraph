@@ -91,16 +91,26 @@ class FileBrowserView extends StatelessWidget{
             name: 'Cloud Files', 
             routeName: FileBrowserView.routeName, 
             actions: [
-              IconButton(
-                icon: const Icon(Icons.refresh),
-                onPressed: controller.loadFiles,
-              ),
-              IconButton(
-                icon: Obx(() => Icon(settings.fileBrowserViewMode.value == 'grid' ? Icons.list : Icons.grid_view)),
+              Obx(() => IconButton(
+                icon: Icon(settings.fileBrowserViewMode.value == 'grid' ? Icons.list : Icons.grid_view),
+                tooltip: settings.fileBrowserViewMode.value == 'grid' ? 'List View' : 'Grid View',
                 onPressed: () {
                   settings.setFileBrowserViewMode(settings.fileBrowserViewMode.value == 'grid' ? 'list' : 'grid');
                 },
-              ),
+              )),
+              PopupMenuButton(
+                itemBuilder: (builder) => [
+                  PopupMenuItem(
+                    onTap: controller.loadFiles,
+                    child: const Row(
+                      children: [
+                        Icon(Icons.refresh),
+                        Expanded(child: Text('Refresh')),
+                      ],
+                    )
+                  )
+                ]
+              )
             ],
             bottom: PreferredSize(
               preferredSize: const Size.fromHeight(32),
@@ -112,18 +122,16 @@ class FileBrowserView extends StatelessWidget{
             )
           ),
         
-        body: Obx(() => settings.fileBrowserViewMode.value == 'grid' 
+        body: Obx(() => settings.fileBrowserViewMode.value == 'grid'
           ? FileBrowserGridView(
             fileService: Get.find(),
             selectionController: selectionController,
             items: controller.files.value,
-            onOpen: controller.openItem,
           )
           : FileBrowserListView(
             fileService: Get.find(),
             selectionController: selectionController,
             items: controller.files.value,
-            onOpen: controller.openItem,
           ),
         )
       ))

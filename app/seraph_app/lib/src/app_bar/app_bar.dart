@@ -3,8 +3,6 @@ import 'package:get/get.dart';
 import 'package:seraph_app/src/file_browser/file_browser_view.dart';
 
 import 'package:seraph_app/src/gallery/gallery_view.dart';
-import 'package:seraph_app/src/login/login_controller.dart';
-import 'package:seraph_app/src/settings/settings_controller.dart';
 
 import '../settings/settings_view.dart';
 
@@ -14,17 +12,6 @@ AppBar seraphAppBar(BuildContext context, {
     List<Widget> actions = const [], 
     PreferredSizeWidget? bottom
   }) {
-
-  final settingsController = Get.find<SettingsController>();
-  final loginController = Get.find<LoginController>();
-
-  final logoutButton = IconButton(
-    icon: const Icon(Icons.logout),
-    onPressed: () {
-      settingsController.setServerUrlConfirmed(false);
-      loginController.logout();
-    },
-  );
 
   return AppBar(
     title: Row(
@@ -48,7 +35,7 @@ AppBar seraphAppBar(BuildContext context, {
         ),
       ],
     ),
-    actions: [...actions, logoutButton],
+    actions: actions,
     bottom: bottom,
   );
 }

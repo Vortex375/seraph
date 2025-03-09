@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:seraph_app/src/file_browser/file_browser_view.dart';
 import 'package:seraph_app/src/file_browser/file_service.dart';
+import 'package:seraph_app/src/file_viewer/file_viewer_view.dart';
 import 'package:webdav_client/webdav_client.dart';
 
 class FileBrowserController extends GetxController {
@@ -18,6 +19,8 @@ class FileBrowserController extends GetxController {
   Rx<String> get path => _path;
 
   bool _first = true;
+
+  Widget Function()? _previewFactory; 
 
   void setPath(String path) {
     scheduleMicrotask(() {
@@ -75,8 +78,20 @@ class FileBrowserController extends GetxController {
     if (!_status.value.isLoading && (item.isDir ?? false)) {
       Get.offNamed('${FileBrowserView.routeName}?path=$_path/${item.name}');
     } else {
-      Get.snackbar('Item Selected', item.name ?? '');
+      Get.toNamed('${FileViewerView.routeName}?file=$_path/${item.name}');
     }
+  }
+
+  void setPreviewWidgetFactory(Widget Function()? factory) {
+    _previewFactory = factory;
+  }
+
+  // widget used for Hero transition to file viewer
+  Widget? getPreviewWidget() {
+    if (_previewFactory == null) {
+      return null;
+    }
+    return _previewFactory!();
   }
 
   void _showError(String error) {
