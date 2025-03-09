@@ -41,7 +41,7 @@ class MyApp extends StatelessWidget {
         name: FileViewerView.routeName, 
         page: () => const FileViewerView(),
         binding: BindingsBuilder(() {
-          Get.put(FileViewerController(fileName: Get.parameters['file'] ?? '', hasPreview: bool.parse(Get.parameters['preview'] ?? 'false')));
+          Get.put(FileViewerController());
         })
       ),
       GetPage(

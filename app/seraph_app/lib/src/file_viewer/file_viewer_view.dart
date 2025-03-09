@@ -25,33 +25,31 @@ class FileViewerView extends StatelessWidget{
       ),
       extendBody: true,
       extendBodyBehindAppBar: true,
-      body: Obx(() {
-        final file = controller.file.value;
-        if (file == null) {
-          if (previewWidget != null) {
-            return Hero(
-              tag: "preview:${controller.fileName}",
-              child: Center(child: previewWidget)
-            );
-          } else {
-            return Container();
-          }
-        } else {
+      body: Obx(() => PageView.builder(
+        controller: controller.pageController,
+        itemCount: controller.files.length,
+        // Disable swipe when zoomed
+        physics: controller.isZoomedIn.value ? const NeverScrollableScrollPhysics() : const PageScrollPhysics(),
+        itemBuilder: (context, index) {
+          final file = controller.files[index];
           if (fileService.supportsPreviewImage(file)) {
             return Hero(
-              tag: "preview:${controller.fileName}",
+              tag: "preview:${file.path}",
               child: Center(
-                child: InteractiveViewer(
-                  child: fileService.getImage(controller.fileName, (context, child, loadingProgress) => 
-                    (loadingProgress == null) ? SizedBox.expand(child: child) : previewWidget ?? Container())
-                ),
+                child: Obx(() => InteractiveViewer(
+                  transformationController: controller.transformationController,
+                  // Disable pan when not zoomed
+                  panEnabled: controller.isZoomedIn.value,
+                  child: fileService.getImage(file.path!, (context, child, loadingProgress) => 
+                    (loadingProgress == null) ? SizedBox.expand(child: child) : (index == controller.initialIndex ? previewWidget : null) ?? Container())
+                )),
               ),
             );
           } else {
-            return Text('File Viewer ${controller.file.value?.name}');
+            return Text('File Viewer ${file.name}');
           }
         }
-      }),
+      )),
     );
   }
 }

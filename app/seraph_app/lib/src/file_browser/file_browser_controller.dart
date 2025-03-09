@@ -13,10 +13,12 @@ class FileBrowserController extends GetxController {
   final Rx<List<File>> _files = Rx([]);
   final Rx<RxStatus> _status = RxStatus.empty().obs;
   final Rx<String> _path = ''.obs;
+  final RxInt _openItemIndex = RxInt(-1);
 
   Rx<List<File>> get files => _files;
   Rx<RxStatus> get status => _status;
   Rx<String> get path => _path;
+  RxInt get openItemIndex => _openItemIndex;
 
   bool _first = true;
 
@@ -78,6 +80,7 @@ class FileBrowserController extends GetxController {
     if (!_status.value.isLoading && (item.isDir ?? false)) {
       Get.offNamed('${FileBrowserView.routeName}?path=$_path/${item.name}');
     } else {
+      _openItemIndex.value = files.value.indexOf(item);
       Get.toNamed('${FileViewerView.routeName}?file=$_path/${item.name}');
     }
   }
