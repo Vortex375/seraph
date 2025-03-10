@@ -50,7 +50,8 @@ class FileViewerView extends StatelessWidget{
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text('File Viewer ${file.name}'),
+                  Text('${file.name}'),
+                  const SizedBox(height: 16),
                   ElevatedButton(
                     onPressed: () {
                       controller.playAudioFile(index);
@@ -61,7 +62,7 @@ class FileViewerView extends StatelessWidget{
               ),
             );
           } else {
-            return Text('File Viewer ${file.name}');
+            return Center(child: Text('File Viewer ${file.name}'));
           }
         }
       )),
