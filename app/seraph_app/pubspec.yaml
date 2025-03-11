@@ -29,6 +29,9 @@ dependencies:
   provider: ^6.1.2
   shared_preferences: ^2.3.2
   webdav_client: ^1.2.2
+  audio_session: ^0.1.25
+  audio_service: ^0.18.17
+  audio_service_mpris: ^0.2.0
 
 dev_dependencies:
   flutter_test:
