@@ -16,10 +16,24 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         queueIndex: pl.index
       ));
     });
+    _player.stream.duration.listen((duration) {
+      mediaItem.add(mediaItem.value?.copyWith(duration: duration));
+    });
     _player.stream.playing.listen((playing) {
       playbackState.add(playbackState.value.copyWith(
-        processingState: playing ? AudioProcessingState.ready : AudioProcessingState.idle,
-        playing: playing
+        processingState:AudioProcessingState.ready,
+        playing: playing,
+        controls: playing ? [
+          MediaControl.pause,
+          MediaControl.skipToPrevious,
+          MediaControl.skipToNext
+        ] : [
+          MediaControl.play,
+          MediaControl.skipToPrevious,
+          MediaControl.skipToNext
+        ],
+        androidCompactActionIndices: playing ? [0, 1, 2] : [0, 1, 2],
+        updatePosition: _player.state.position,
       ));
     });
     _player.stream.error.listen((err) {
