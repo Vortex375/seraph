@@ -7,6 +7,7 @@ import 'package:seraph_app/src/file_browser/file_browser_controller.dart';
 import 'package:seraph_app/src/file_browser/file_browser_grid_view.dart';
 import 'package:seraph_app/src/file_browser/file_browser_list_view.dart';
 import 'package:seraph_app/src/file_browser/selection_controller.dart';
+import 'package:seraph_app/src/media_player/media_bottom_bar.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
 
 class FileBrowserView extends StatelessWidget{
@@ -121,6 +122,8 @@ class FileBrowserView extends StatelessWidget{
               ),
             )
           ),
+
+        bottomNavigationBar: const MediaBottomBar(),
         
         body: Obx(() => settings.fileBrowserViewMode.value == 'grid'
           ? FileBrowserGridView(

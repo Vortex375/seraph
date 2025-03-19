@@ -63,8 +63,8 @@ class FileViewerController extends GetxController {
     final initial = files[index].path!;
     final pl = files.where(fileService.isAudioFile).map((f) => f.path!).toList();
 
-    mediaPlayerController.setPlaylist(pl, pl.indexOf(initial));
-    mediaPlayerController.play();
+    await mediaPlayerController.setPlaylist(pl, pl.indexOf(initial));
+    await mediaPlayerController.play();
   }
 
   void _maybeChangeTheme(int currentPage) {

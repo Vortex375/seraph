@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:seraph_app/src/file_browser/file_browser_controller.dart';
 import 'package:seraph_app/src/file_viewer/file_viewer_controller.dart';
+import 'package:seraph_app/src/media_player/media_bottom_bar.dart';
 
 import '../file_browser/file_service.dart';
 
@@ -23,6 +24,7 @@ class FileViewerView extends StatelessWidget{
       appBar: AppBar(
         backgroundColor: Colors.transparent,
       ),
+      bottomNavigationBar: const MediaBottomBar(),
       extendBody: true,
       extendBodyBehindAppBar: true,
       body: Obx(() => PageView.builder(

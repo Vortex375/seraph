@@ -5,6 +5,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:seraph_app/src/file_browser/file_service.dart';
+import 'package:seraph_app/src/login/login_controller.dart';
 import 'package:seraph_app/src/media_player/audio_handler.dart';
 import 'package:path/path.dart' as p;
 
@@ -12,6 +13,7 @@ class AudioPlayerController extends GetxController {
 
   final RxList<String> playlist = RxList([]);
   final RxInt currentIndex = RxInt(-1);
+  final Rx<MediaItem?> currentMediaItem = Rx(null);
   final RxBool open = false.obs;
   final RxBool playing = false.obs;
 
@@ -22,6 +24,8 @@ class AudioPlayerController extends GetxController {
     super.onInit();
 
     final MyAudioHandler audioHandler = Get.find();
+    final LoginController loginController = Get.find();
+    final FileService fileService = Get.find();
     subscriptions = [];
 
     subscriptions.add(audioHandler.queue.listen((queue) {
@@ -31,14 +35,20 @@ class AudioPlayerController extends GetxController {
     subscriptions.add(audioHandler.playbackState.listen((state) {
       playing(state.playing);
       currentIndex(state.queueIndex);
+      open(state.processingState == AudioProcessingState.idle ? false : true);
 
       if (state.processingState == AudioProcessingState.error) {
         _showError(state.errorMessage ?? 'Unkown error');
       }
     }));
 
-    subscriptions.add(audioHandler.mediaItem.listen((mediaItem) {
-      print("Current Media Item: $mediaItem");
+    subscriptions.add(audioHandler.mediaItem.listen(currentMediaItem.call));
+
+    subscriptions.add(loginController.currentUser.listen((user) async {
+      if (user != null) {
+        final headers = await fileService.getRequestHeaders();
+        audioHandler.customAction('setHeaders', headers);
+      }
     }));
   }
 
@@ -52,8 +62,7 @@ class AudioPlayerController extends GetxController {
 
   Future<void> closePlayer() async {
     final MyAudioHandler audioHandler = Get.find();
-    audioHandler.stop();
-    open(false);
+    await audioHandler.stop();
   }
 
   Future<void> setPlaylist(List<String> files, int position) async {
@@ -69,23 +78,16 @@ class AudioPlayerController extends GetxController {
     ).toList());
 
     audioHandler.skipToQueueItem(position);
-    open(true);
   }
 
   Future<void> play() async {
-    if (!open.value) {
-      return;
-    }
     final MyAudioHandler audioHandler = Get.find();
-    audioHandler.play();
+    await audioHandler.play();
   }
 
   Future<void> pause() async {
-    if (!open.value) {
-      return;
-    }
     final MyAudioHandler audioHandler = Get.find();
-    audioHandler.pause();
+    await audioHandler.pause();
   }
 
   void _showError(String error) {
