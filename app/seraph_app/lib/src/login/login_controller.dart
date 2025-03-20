@@ -159,12 +159,18 @@ class LoginController extends GetxController with WidgetsBindingObserver {
     print("oidc: logout complete");
   }
 
+  Future<void> refreshTokenIfNeeded() async {
+    if (_manager?.currentUser?.token.isAccessTokenAboutToExpire() ?? false) {
+      await _manager?.refreshToken();
+    }
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     switch (state) {
       case AppLifecycleState.resumed:
       /* manually refresh token on resume */
-        _manager?.refreshToken();
+        refreshTokenIfNeeded();
         break;
       default:
     }

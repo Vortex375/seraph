@@ -6,13 +6,28 @@ import 'package:media_kit/media_kit.dart';
 class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   Player? _player;
+  Future<Player>? _playerSetupFuture;
+
   int _queuePosition = -1;
 
+  // Timer? _tokenRefreshTimer;
   Timer? _stopTimer;
 
   bool _updatingHeaders = false;
 
   Future<Player> _getPlayer() async {
+    if (_playerSetupFuture != null) {
+      return _playerSetupFuture!;
+    }
+
+    _playerSetupFuture = _doGetPlayer();
+    final ret = await _playerSetupFuture!;
+    _playerSetupFuture = null;
+
+    return ret;
+  }
+
+  Future<Player> _doGetPlayer() async {
     if (_stopTimer != null) {
       _stopTimer!.cancel();
       _stopTimer = null;
@@ -24,10 +39,6 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
     _player = Player();
     _player!.stream.playlist.listen((pl) {
-      print("playlist is now");
-      for (final m in pl.medias) {
-        print(m.uri);
-      }
       if (queue.value.isEmpty) {
         mediaItem.add(null);
       } else {
@@ -54,17 +65,26 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
           MediaControl.skipToNext
         ],
         androidCompactActionIndices: playing ? [0, 1, 2] : [0, 1, 2],
-        updatePosition: _player!.state.position,
+        updatePosition: _player?.state.position ?? const Duration(seconds: 0),
       ));
+
+      // if (playing) {
+      //   _tokenRefreshTimer = Timer(const Duration(seconds: 30), _refreshToken);
+      // } else {
+      //   _tokenRefreshTimer?.cancel();
+      //   _tokenRefreshTimer = null;
+      // }
     });
     _player!.stream.error.listen((err) {
+      print("playback error: $err");
       playbackState.add(playbackState.value.copyWith(
         processingState: AudioProcessingState.error,
         errorMessage: err
       ));
+      stop();
     });
 
-    await _player!.open(_getPlaylist());
+    await _player!.open(_getPlaylist(), play: false);
     if (_queuePosition > 0 && _queuePosition < queue.value.length) {
       await _player!.jump(_queuePosition);
     }
@@ -77,8 +97,9 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       _stopTimer!.cancel();
       _stopTimer = null;
     }
-    await _player!.dispose();
+    final player = _player;
     _player = null;
+    await player?.dispose();
 
     mediaItem.add(null);
     playbackState.add(playbackState.value.copyWith(
@@ -145,7 +166,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
           await _player!.remove(i);
           await _player!.stream.playlist.first;
-          await _player!.add(Media(queue.value[i].id, extras: extras?.map((k, v) => MapEntry(k, v.toString()))));
+          await _player!.add(Media(queue.value[i].id, httpHeaders: extras?.map((k, v) => MapEntry(k, v.toString()))));
           await _player!.stream.playlist.first;
           if (i != queue.value.length-1) {
             await _player!.move(queue.value.length-1, i);
@@ -154,6 +175,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         }
       }
       _updatingHeaders = false;
+      print("updating audio player request headers complete");
     }
   }
 
@@ -165,4 +187,17 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       )).toList(),
     );
   }
+
+  // void _triggerTokenRefresh() {
+  //   _tokenRefreshTimer = Timer(const Duration(seconds: 30), _refreshToken);
+  // }
+
+  // void _refreshToken() {
+  //   customEvent.add('refreshToken');
+  //   if (_player != null && (_player?.state.playing ?? false)) {
+  //     _triggerTokenRefresh();
+  //   } else {
+  //     _tokenRefreshTimer = null;
+  //   }
+  // }
 }

@@ -44,6 +44,13 @@ class AudioPlayerController extends GetxController {
 
     subscriptions.add(audioHandler.mediaItem.listen(currentMediaItem.call));
 
+    // subscriptions.add(audioHandler.customEvent.listen((event) {
+    //   if (event == 'refreshToken') {
+    //     print("ping from audio_handler: refreshing token");
+    //     loginController.refreshTokenIfNeeded();
+    //   }
+    // }));
+
     subscriptions.add(loginController.currentUser.listen((user) async {
       if (user != null) {
         final headers = await fileService.getRequestHeaders();
