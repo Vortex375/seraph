@@ -10,7 +10,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   int _queuePosition = -1;
 
-  // Timer? _tokenRefreshTimer;
+  Timer? _tokenRefreshTimer;
   Timer? _stopTimer;
 
   bool _updatingHeaders = false;
@@ -68,12 +68,12 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         updatePosition: _player?.state.position ?? const Duration(seconds: 0),
       ));
 
-      // if (playing) {
-      //   _tokenRefreshTimer = Timer(const Duration(seconds: 30), _refreshToken);
-      // } else {
-      //   _tokenRefreshTimer?.cancel();
-      //   _tokenRefreshTimer = null;
-      // }
+      if (playing) {
+        _tokenRefreshTimer = Timer(const Duration(seconds: 30), _refreshToken);
+      } else {
+        _tokenRefreshTimer?.cancel();
+        _tokenRefreshTimer = null;
+      }
     });
     _player!.stream.error.listen((err) {
       print("playback error: $err");
@@ -188,16 +188,16 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     );
   }
 
-  // void _triggerTokenRefresh() {
-  //   _tokenRefreshTimer = Timer(const Duration(seconds: 30), _refreshToken);
-  // }
+  void _triggerTokenRefresh() {
+    _tokenRefreshTimer = Timer(const Duration(seconds: 30), _refreshToken);
+  }
 
-  // void _refreshToken() {
-  //   customEvent.add('refreshToken');
-  //   if (_player != null && (_player?.state.playing ?? false)) {
-  //     _triggerTokenRefresh();
-  //   } else {
-  //     _tokenRefreshTimer = null;
-  //   }
-  // }
+  void _refreshToken() {
+    customEvent.add('refreshToken');
+    if (_player != null && (_player?.state.playing ?? false)) {
+      _triggerTokenRefresh();
+    } else {
+      _tokenRefreshTimer = null;
+    }
+  }
 }
