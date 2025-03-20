@@ -16,6 +16,7 @@ class AudioPlayerController extends GetxController {
   final Rx<MediaItem?> currentMediaItem = Rx(null);
   final RxBool open = false.obs;
   final RxBool playing = false.obs;
+  final Rx<Duration> position = Rx(const Duration());
 
   late List<StreamSubscription> subscriptions;
 
@@ -36,13 +37,17 @@ class AudioPlayerController extends GetxController {
       playing(state.playing);
       currentIndex(state.queueIndex);
       open(state.processingState == AudioProcessingState.idle ? false : true);
+      position(state.position);
 
       if (state.processingState == AudioProcessingState.error) {
         _showError(state.errorMessage ?? 'Unkown error');
       }
     }));
 
-    subscriptions.add(audioHandler.mediaItem.listen(currentMediaItem.call));
+    subscriptions.add(audioHandler.mediaItem.listen((item) {
+      currentMediaItem.firstRebuild = true; // required because of stupid operator== on MediaItem
+      currentMediaItem(item);
+    }));
 
     subscriptions.add(audioHandler.customEvent.listen((event) {
       if (event == 'refreshToken') {
@@ -95,6 +100,21 @@ class AudioPlayerController extends GetxController {
   Future<void> pause() async {
     final MyAudioHandler audioHandler = Get.find();
     await audioHandler.pause();
+  }
+
+  Future<void> seek(Duration position) async {
+    final MyAudioHandler audioHandler = Get.find();
+    await audioHandler.seek(position);
+  }
+
+  Future<void> next() async {
+    final MyAudioHandler audioHandler = Get.find();
+    await audioHandler.skipToNext();
+  }
+
+  Future<void> previous() async {
+    final MyAudioHandler audioHandler = Get.find();
+    await audioHandler.skipToPrevious();
   }
 
   void _showError(String error) {

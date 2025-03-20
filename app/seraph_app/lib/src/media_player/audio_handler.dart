@@ -47,9 +47,21 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       playbackState.add(playbackState.value.copyWith(
         queueIndex: pl.index
       ));
+      _queuePosition = pl.index;
     });
     _player!.stream.duration.listen((duration) {
+      if (_queuePosition > 0 && _queuePosition < queue.value.length) {
+        queue.value[_queuePosition] = queue.value[_queuePosition].copyWith(
+          duration: duration
+        );
+        mediaItem.add(queue.value[_queuePosition]);
+      }
       mediaItem.add(mediaItem.value?.copyWith(duration: duration));
+    });
+    _player!.stream.position.listen((position) {
+      playbackState.add(playbackState.value.copyWith(
+        updatePosition: position
+      ));
     });
     _player!.stream.playing.listen((playing) {
       playbackState.add(playbackState.value.copyWith(
@@ -145,6 +157,14 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       return;
     }
     await (await _getPlayer()).jump(index);
+  }
+
+  @override
+  Future<void> seek(Duration position) async {
+    if (_player == null) {
+      return;
+    }
+    await _player!.seek(position);
   }
 
   @override

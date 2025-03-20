@@ -8,6 +8,7 @@ import 'package:seraph_app/src/file_viewer/file_viewer_controller.dart';
 import 'package:seraph_app/src/file_viewer/file_viewer_view.dart';
 import 'package:seraph_app/src/gallery/gallery_view.dart';
 import 'package:seraph_app/src/initial_binding.dart';
+import 'package:seraph_app/src/media_player/audio_player_view.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
 
 import 'login/login_view.dart';
@@ -43,6 +44,11 @@ class MyApp extends StatelessWidget {
         binding: BindingsBuilder(() {
           Get.put(FileViewerController());
         })
+      ),
+      GetPage(
+        name: AudioPlayerView.routeName, 
+        page: () => const AudioPlayerView(),
+        transition: Transition.downToUp
       ),
       GetPage(
         name: SettingsView.routeName, 
