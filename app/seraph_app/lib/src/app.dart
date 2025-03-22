@@ -48,6 +48,7 @@ class MyApp extends StatelessWidget {
       GetPage(
         name: AudioPlayerView.routeName, 
         page: () => const AudioPlayerView(),
+        opaque: false,
         transition: Transition.downToUp
       ),
       GetPage(

@@ -16,6 +16,7 @@ class AudioPlayerController extends GetxController {
   final Rx<MediaItem?> currentMediaItem = Rx(null);
   final RxBool open = false.obs;
   final RxBool playing = false.obs;
+  final RxBool buffering = false.obs;
   final Rx<Duration> position = Rx(const Duration());
 
   late List<StreamSubscription> subscriptions;
@@ -36,8 +37,9 @@ class AudioPlayerController extends GetxController {
     subscriptions.add(audioHandler.playbackState.listen((state) {
       playing(state.playing);
       currentIndex(state.queueIndex);
-      open(state.processingState == AudioProcessingState.idle ? false : true);
+      open(state.processingState != AudioProcessingState.idle);
       position(state.position);
+      buffering(state.processingState == AudioProcessingState.buffering);
 
       if (state.processingState == AudioProcessingState.error) {
         _showError(state.errorMessage ?? 'Unkown error');
@@ -82,14 +84,14 @@ class AudioPlayerController extends GetxController {
     final headers = await fileService.getRequestHeaders();
 
     final MyAudioHandler audioHandler = Get.find();
-    audioHandler.updateQueue(files.map((f) => MediaItem(
+    await audioHandler.updateQueue(files.map((f) => MediaItem(
         id: fileService.getFileUrl(f), 
         title: p.basename(f),
         extras: headers
       )
     ).toList());
 
-    audioHandler.skipToQueueItem(position);
+    await audioHandler.skipToQueueItem(position);
   }
 
   Future<void> play() async {

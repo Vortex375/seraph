@@ -63,29 +63,10 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         updatePosition: position
       ));
     });
-    _player!.stream.playing.listen((playing) {
+    _player!.stream.buffering.listen((buffering) {
       playbackState.add(playbackState.value.copyWith(
-        processingState:AudioProcessingState.ready,
-        playing: playing,
-        controls: playing ? [
-          MediaControl.pause,
-          MediaControl.skipToPrevious,
-          MediaControl.skipToNext
-        ] : [
-          MediaControl.play,
-          MediaControl.skipToPrevious,
-          MediaControl.skipToNext
-        ],
-        androidCompactActionIndices: playing ? [0, 1, 2] : [0, 1, 2],
-        updatePosition: _player?.state.position ?? const Duration(seconds: 0),
+        processingState: buffering ? AudioProcessingState.buffering : AudioProcessingState.ready
       ));
-
-      if (playing) {
-        _tokenRefreshTimer = Timer(const Duration(seconds: 30), _refreshToken);
-      } else {
-        _tokenRefreshTimer?.cancel();
-        _tokenRefreshTimer = null;
-      }
     });
     _player!.stream.error.listen((err) {
       print("playback error: $err");
@@ -113,15 +94,40 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     _player = null;
     await player?.dispose();
 
+    await _setPlayingState(false);
     mediaItem.add(null);
+    playbackState.add(PlaybackState(processingState: AudioProcessingState.idle));
+  }
+
+  Future<void> _setPlayingState(bool playing) async {
     playbackState.add(playbackState.value.copyWith(
-      playing: false,
-      processingState: AudioProcessingState.idle
+      processingState:AudioProcessingState.ready,
+      playing: playing,
+      controls: playing ? [
+        MediaControl.pause,
+        MediaControl.skipToPrevious,
+        MediaControl.skipToNext
+      ] : [
+        MediaControl.play,
+        MediaControl.skipToPrevious,
+        MediaControl.skipToNext
+      ],
+      androidCompactActionIndices: playing ? [0, 1, 2] : [0, 1, 2],
+      updatePosition: _player?.state.position ?? const Duration(seconds: 0),
     ));
+    await playbackState.firstWhere((state) => state.playing == playing);
+
+    if (playing) {
+      _tokenRefreshTimer = Timer(const Duration(seconds: 30), _refreshToken);
+    } else {
+      _tokenRefreshTimer?.cancel();
+      _tokenRefreshTimer = null;
+    }
   }
 
   @override
   Future<void> play() async {
+    await _setPlayingState(true);
     await (await _getPlayer()).play();
   }
 
@@ -131,16 +137,15 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       return;
     }
     _stopTimer = Timer(const Duration(minutes: 5), stop);
+    await _setPlayingState(false);
     await _player!.pause();
   }
 
   @override
   Future<void> stop() async {
-    if (_player == null) {
-      return;
-    }
-    await _player!.stop();
+    await _player?.stop();
     await _disposePlayer();
+    await super.stop();
   }
 
   @override

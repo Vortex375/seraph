@@ -20,9 +20,10 @@ class MediaBottomBar extends StatelessWidget {
             padding: const EdgeInsets.all(8.0),
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
             child: Row(children: [
-              Obx(() => controller.playing.value 
-                ? IconButton.filledTonal(onPressed: controller.pause, icon: const Icon(Icons.pause))
-                : IconButton.filledTonal(onPressed: controller.play, icon: const Icon(Icons.play_arrow))),
+              Obx(() => IconButton.filledTonal(
+                icon: _playButtonIcon(controller.playing.value, controller.buffering.value),
+                onPressed: controller.playing.value ? controller.pause : controller.play
+              )),
               const SizedBox(width: 8),
               Expanded(child: Obx(() => Text(controller.currentMediaItem.value?.title ?? ''))),
               const SizedBox(width: 8),
@@ -35,4 +36,16 @@ class MediaBottomBar extends StatelessWidget {
     );
   }
 
+  Widget _playButtonIcon(bool playing, bool buffering) {
+    if (buffering) {
+      return const SizedBox(
+        width: 24,
+        height: 24,
+        child: CircularProgressIndicator(
+          strokeWidth: 2.5,
+        ),
+      );
+    }
+    return playing ? const Icon(Icons.pause) : const Icon(Icons.play_arrow);
+  }
 }

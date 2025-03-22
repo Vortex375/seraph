@@ -25,7 +25,6 @@ void main() async {
     config: const AudioServiceConfig(
       androidNotificationChannelId: 'net.umbasa.seraph_app.channel.audio',
       androidNotificationChannelName: 'Seraph - Music playback',
-      androidStopForegroundOnPause: false
     ),
   ));
 
