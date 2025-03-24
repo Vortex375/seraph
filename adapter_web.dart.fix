@@ -1,0 +1,8 @@
+import 'package:dio/browser.dart';
+import 'package:dio/dio.dart';
+
+HttpClientAdapter getAdapter()  {
+  final adapter = HttpClientAdapter() as BrowserHttpClientAdapter;
+  adapter.withCredentials = true;
+  return adapter;
+}

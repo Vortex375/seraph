@@ -1,0 +1,13 @@
+{
+    "title": "First",
+    "description": "First",
+    "users": ["anonymous"],
+    "fileProviders": [
+        {
+            "spaceProviderId": "files",
+            "providerId": "dirtest",
+            "path": "",
+            "readOnly": false
+        }
+    ]
+}

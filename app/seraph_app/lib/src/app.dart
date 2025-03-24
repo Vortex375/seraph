@@ -57,46 +57,43 @@ class MyApp extends StatelessWidget {
       )
     ];
 
-    return GetX<SettingsController>(
-      builder: (settingsController) {
-        return GetMaterialApp(
-          // Provide the generated AppLocalizations to the MaterialApp. This
-          // allows descendant Widgets to display the correct translations
-          // depending on the user's locale.
-          localizationsDelegates: const [
-            AppLocalizations.delegate,
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-          ],
-          supportedLocales: const [
-            Locale('en', ''), // English, no country code
-          ],
+    final SettingsController settingsController = Get.find();
+    return Obx(() => GetMaterialApp(
+      // Provide the generated AppLocalizations to the MaterialApp. This
+      // allows descendant Widgets to display the correct translations
+      // depending on the user's locale.
+      localizationsDelegates: const [
+        AppLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [
+        Locale('en', ''), // English, no country code
+      ],
 
-          // Use AppLocalizations to configure the correct application title
-          // depending on the user's locale.
-          //
-          // The appTitle is defined in .arb files found in the localization
-          // directory.
-          onGenerateTitle: (BuildContext context) =>
-              AppLocalizations.of(context)!.appTitle,
+      // Use AppLocalizations to configure the correct application title
+      // depending on the user's locale.
+      //
+      // The appTitle is defined in .arb files found in the localization
+      // directory.
+      onGenerateTitle: (BuildContext context) =>
+          AppLocalizations.of(context)!.appTitle,
 
-          // Define a light and dark color theme. Then, read the user's
-          // preferred ThemeMode (light, dark, or system default) from the
-          // SettingsController to display the correct theme.
-          theme: ThemeData(
-            useMaterial3: true
-          ),
-          darkTheme: ThemeData.dark(
-            useMaterial3: true
-          ),
-          themeMode: settingsController.themeMode.value,
+      // Define a light and dark color theme. Then, read the user's
+      // preferred ThemeMode (light, dark, or system default) from the
+      // SettingsController to display the correct theme.
+      theme: ThemeData(
+        useMaterial3: true
+      ),
+      darkTheme: ThemeData.dark(
+        useMaterial3: true
+      ),
+      themeMode: settingsController.themeMode.value,
 
-          initialRoute: FileBrowserView.routeName,
-          getPages: pages,
-          initialBinding: InitialBinding(),
-        );
-      },
-    );
+      initialRoute: FileBrowserView.routeName,
+      getPages: pages,
+      initialBinding: InitialBinding(),
+    ));
   }
 }

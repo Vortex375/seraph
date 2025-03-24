@@ -52,6 +52,7 @@ class AudioPlayerView extends StatelessWidget {
                     max = value + 1;
                   }
                   return Slider(
+                    year2023: false,
                     max: max,
                     value: value,
                     onChanged: (value) {

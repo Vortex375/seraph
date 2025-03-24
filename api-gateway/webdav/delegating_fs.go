@@ -162,6 +162,10 @@ func (f *delegatingFs) getSpacesFs(ctx context.Context) (webdav.FileSystem, erro
 		return nil, fmt.Errorf("unable to read spaces for user %s: %w", userId, errors.New(res.Error))
 	}
 
+	if len(res.Space) == 0 {
+		f.log.Warn("no spaces found for user " + userId)
+	}
+
 	return &spacesFileSystem{f.server, res.Space}, nil
 }
 

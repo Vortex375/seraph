@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:get/get.dart';
@@ -39,6 +40,12 @@ class LoginController extends GetxController with WidgetsBindingObserver {
   Rx<OidcUser?> get currentUser => _currentUser;
 
   Future<void> init(String? oidcIssuer, String? clientId) async {
+    if (kIsWeb) {
+      _noAuth.value = true;
+      _initialized.value = true;
+      return;
+    }
+
     if (oidcIssuer == null) {
       _oidcDiscovery();
       return;

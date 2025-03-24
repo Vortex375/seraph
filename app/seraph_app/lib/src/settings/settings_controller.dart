@@ -1,4 +1,5 @@
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
@@ -38,15 +39,26 @@ class SettingsController extends GetxController {
   Rx<String?> get oidcClientId => _oidcClientId;
 
    Future<void> init() async {
-    _box = GetStorage('SeraphSettings', (await getApplicationSupportDirectory()).path);
+    _box = GetStorage('SeraphSettings', kIsWeb ? null : (await getApplicationSupportDirectory()).path);
     await _box.initStorage;
 
     _themeMode = ThemeMode.values.byName(_box.read(_keyThemeMode) ?? ThemeMode.system.name).obs;
-    _serverUrl = Rx<String>(_box.read(_keyServerUrl) ?? '');
-    _serverUrlConfirmed = Rx<bool>(_box.read(_keyServerUrlConfirmed) ?? false);
     _fileBrowserViewMode = Rx<String>(_box.read(_keyFileBrowserViewMode) ?? 'list');
-    _oidcIssuer = Rx<String?>(_box.read(_keyOidcIssuer));
-    _oidcClientId = Rx<String?>(_box.read(_keyOidcClientId));
+    if (kIsWeb) {
+      if (kDebugMode) {
+        _serverUrl = 'http://localhost:8080'.obs;
+      } else {
+        _serverUrl = Uri.base.toString().obs;
+      }
+      _serverUrlConfirmed = true.obs;
+      _oidcIssuer = null.obs;
+      _oidcClientId = null.obs;
+    } else {
+      _serverUrl = Rx<String>(_box.read(_keyServerUrl) ?? '');
+      _serverUrlConfirmed = Rx<bool>(_box.read(_keyServerUrlConfirmed) ?? false);
+      _oidcIssuer = Rx<String?>(_box.read(_keyOidcIssuer));
+      _oidcClientId = Rx<String?>(_box.read(_keyOidcClientId));
+    }
   }
 
   void setThemeMode(ThemeMode value) {

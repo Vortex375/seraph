@@ -1,6 +1,7 @@
 volumes:
   nats-data:
   mongo-data:
+  thumbs:
 
 networks:
   internal:
@@ -14,9 +15,9 @@ services:
       - "--sd=/data"
     networks:
       - internal
-    # ports:
-    #   - 4222:4222 # for debugging
-    #   - 8222:8222 # for debugging
+    ports:
+      - 4222:4222 # for debugging
+      - 8222:8222 # for debugging
     volumes:
       - nats-data:/data
 
@@ -25,8 +26,8 @@ services:
     restart: always
     networks:
       - internal
-    # ports:
-    #   - 27017:27017 # for debugging
+    ports:
+      - 27017:27017 # for debugging
     volumes:
       - mongo-data:/data/db
 
@@ -34,7 +35,7 @@ services:
     image: mongo-express
     restart: always
     ports:
-      - 127.0.0.1:8081:8081
+      - 8081:8081
     depends_on:
       - mongodb
     networks:
@@ -56,13 +57,14 @@ services:
     ports:
       - 8080:8080
     environment:
-      GIN_MODE: release
+      GIN_MODE: debug
       SERAPH_NATS_URL: nats://nats:4222
       SERAPH_MONGO_URL: mongodb://mongodb:27017/
-      # SERAPH_AUTH_ENABLED: false
-      SERAPH_AUTH_CONFIGURL: https://localhost:8081/realms/seraph
+      SERAPH_AUTH_ENABLED: false
+      SERAPH_AUTH_CONFIGURL: https://localhost:8180/realms/seraph
       SERAPH_AUTH_REDIRECTURL: http://localhost:8080/auth/callback
       SERAPH_AUTH_CLIENTID: seraph
+      SERAPH_LOG_LEVEL: debug
 
   file-indexer:
     image: seraph
@@ -77,6 +79,7 @@ services:
     environment:
       SERAPH_NATS_URL: nats://nats:4222
       SERAPH_MONGO_URL: mongodb://mongodb:27017/
+      SERAPH_LOG_LEVEL: debug
 
   thumbnailer:
     image: seraph
@@ -85,13 +88,14 @@ services:
       - thumbnailer
     depends_on:
       - nats
+      - file-provider-thumbs
     networks:
       - internal
     environment:
       SERAPH_NATS_URL: nats://nats:4222
       SERAPH_THUMBNAILER_PROVIDERID: thumbs
-    deploy:
-      replicas: 6
+      SERAPH_THUMBNAILER_PARALLEL: 8
+      SERAPH_LOG_LEVEL: debug
 
   shares:
     image: seraph
@@ -106,6 +110,7 @@ services:
     environment:
       SERAPH_NATS_URL: nats://nats:4222
       SERAPH_MONGO_URL: mongodb://mongodb:27017/
+      SERAPH_LOG_LEVEL: debug
 
   spaces:
     image: seraph
@@ -120,6 +125,7 @@ services:
     environment:
       SERAPH_NATS_URL: nats://nats:4222
       SERAPH_MONGO_URL: mongodb://mongodb:27017/
+      SERAPH_LOG_LEVEL: debug
 
   jobs:
     image: seraph
@@ -132,6 +138,23 @@ services:
       - internal
     environment:
       SERAPH_NATS_URL: nats://nats:4222
+      SERAPH_LOG_LEVEL: debug
+
+  file-provider-thumbs:
+    image: seraph
+    restart: always
+    command: 
+      - file-provider-dir
+    depends_on:
+      - nats
+    networks:
+      - internal
+    volumes:
+      - thumbs:/data
+    environment:
+      SERAPH_NATS_URL: nats://nats:4222
+      SERAPH_FILEPROVIDER_ID: thumbs
+      SERAPH_FILEPROVIDER_DIR: /data
     
   file-provider-dir:
     image: seraph
@@ -142,28 +165,9 @@ services:
       - nats
     networks:
       - internal
-    # volumes:
-    #   - /some/local/dir:/data
+    volumes:
+      - /home/vortex/loeschen/test:/data
     environment:
       SERAPH_NATS_URL: nats://nats:4222
       SERAPH_FILEPROVIDER_ID: dirtest
       SERAPH_FILEPROVIDER_DIR: /data
-      SERAPH_FILEPROVIDER_READONLY: true
-
-  file-provider-smb:
-    image: seraph
-    restart: always
-    command: 
-      - file-provider-smb
-    depends_on:
-      - nats
-    networks:
-      - internal
-    environment:
-      SERAPH_NATS_URL: nats://nats:4222
-      SERAPH_FILEPROVIDER_ID: smbtest
-      SERAPH_FILEPROVIDER_ADDR: host:445
-      SERAPH_FILEPROVIDER_USERNAME:
-      SERAPH_FILEPROVIDER_PASSWORD:
-      SERAPH_FILEPROVIDER_SHARENAME: foo
-      SERAPH_FILEPROVIDER_READONLY: true
