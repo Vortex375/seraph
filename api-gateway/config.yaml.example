@@ -35,9 +35,12 @@ gateway:
   # OPTIONAL (default: ':8080')
   # address (host:port) on which the gateway's HTTP server listens
   address: :8080
+  # OPTIONAL (default: '/srv/app' - for use inside docker image)
+  # for development only: specify the location from where the (Flutter) app is served
+  appLocation: ../app/seraph_app/build/web
   # OPTIONAL (default: '/srv/webapp' - for use inside docker image)
   # for development only: specify the location from where the (Angular) web app is served
-  webappLocation: ../webapp/seraph-web-app/dist/seraph-web-app/browser
+  webAppLocation: ../webapp/seraph-web-app/dist/seraph-web-app/browser
 
 # Configure the database
 mongo:

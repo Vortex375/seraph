@@ -48,7 +48,8 @@ class SettingsController extends GetxController {
       if (kDebugMode) {
         _serverUrl = 'http://localhost:8080'.obs;
       } else {
-        _serverUrl = Uri.base.toString().obs;
+        //TODO: support context path!?
+        _serverUrl = Uri.base.replace(path: '').toString().obs;
       }
       _serverUrlConfirmed = true.obs;
       _oidcIssuer = null.obs;
