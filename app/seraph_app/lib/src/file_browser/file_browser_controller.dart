@@ -14,6 +14,9 @@ class FileBrowserController extends GetxController {
   final Rx<RxStatus> _status = RxStatus.empty().obs;
   final Rx<String> _path = ''.obs;
   final RxInt _openItemIndex = RxInt(-1);
+  final RxDouble gridViewSize = RxDouble(200);
+
+  double gridViewSizeInitial = 200;
 
   Rx<List<File>> get files => _files;
   Rx<RxStatus> get status => _status;

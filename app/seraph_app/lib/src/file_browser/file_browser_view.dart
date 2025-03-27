@@ -10,7 +10,7 @@ import 'package:seraph_app/src/file_browser/selection_controller.dart';
 import 'package:seraph_app/src/media_player/media_bottom_bar.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
 
-class FileBrowserView extends StatelessWidget{
+class FileBrowserView extends StatelessWidget {
 
   static const routeName = '/files';
   
@@ -126,10 +126,27 @@ class FileBrowserView extends StatelessWidget{
         bottomNavigationBar: const MediaBottomBar(),
         
         body: Obx(() => settings.fileBrowserViewMode.value == 'grid'
-          ? FileBrowserGridView(
-            fileService: Get.find(),
-            selectionController: selectionController,
-            items: controller.files.value,
+          ? GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onScaleStart: (details) {
+              controller.gridViewSizeInitial = controller.gridViewSize.value;
+            },
+            onScaleUpdate: (details) {
+              var size = controller.gridViewSizeInitial * details.scale;
+              if (size < 50) {
+                size = 50;
+              }
+              if (size > 500) {
+                size = 500;
+              }
+              controller.gridViewSize(size);
+            },
+            child: FileBrowserGridView(
+              fileService: Get.find(),
+              selectionController: selectionController,
+              items: controller.files.value,
+              gridSize: controller.gridViewSize.value,
+            ),
           )
           : FileBrowserListView(
             fileService: Get.find(),

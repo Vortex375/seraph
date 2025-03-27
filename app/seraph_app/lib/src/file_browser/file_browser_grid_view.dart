@@ -6,17 +6,19 @@ import 'package:seraph_app/src/file_browser/file_service.dart';
 import 'package:seraph_app/src/file_browser/selection_controller.dart';
 import 'package:webdav_client/webdav_client.dart';
 
-class FileBrowserGridView extends StatelessWidget{
+class FileBrowserGridView extends StatelessWidget {
 
   final SelectionController selectionController;
   final FileService fileService;
   final List<File> items;
+  final double gridSize;
 
   const FileBrowserGridView({
     super.key, 
     required this.selectionController, 
     required this.fileService,
-    required this.items
+    required this.items,
+    required this.gridSize,
   });
 
   @override
@@ -25,10 +27,10 @@ class FileBrowserGridView extends StatelessWidget{
       // Providing a restorationId allows the ListView to restore the
       // scroll position when a user leaves and returns to the app after it
       // has been killed while running in the background.
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-      ),
       restorationId: 'fileBrowserGridView',
+      gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: gridSize,
+      ),
       itemCount: items.length,
       itemBuilder: (BuildContext context, int index) {
         final item = items[index];
