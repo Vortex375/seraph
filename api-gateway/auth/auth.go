@@ -26,6 +26,7 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -336,20 +337,56 @@ func (a *oidcAuth) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 		ctx.Status(http.StatusNoContent)
 	})
 
-	//TODO: for debugging
-	authGroup.GET("/token", func(ctx *gin.Context) {
+	// check login status for current session or trigger redirect
+	authGroup.GET("/login", func(ctx *gin.Context) {
 		sess := sessions.Default(ctx)
 
-		oauth2Token, _ := a.getTokenFromSession(sess)
-		if oauth2Token == nil {
-			ctx.String(http.StatusOK, "no session")
+		var redirect bool = false
+		redirectParam := ctx.Query("redirect")
+		if redirectParam != "" {
+			var err error
+			redirect, err = strconv.ParseBool(redirectParam)
+			if err != nil {
+				redirect = false
+			}
+		}
+
+		token, _ := a.getTokenFromSession(sess)
+		if token == nil {
+			if redirect {
+				a.sendRedirect(ctx)
+			} else {
+				ctx.AbortWithStatus(http.StatusForbidden)
+			}
+			return
+		}
+
+		//attempt token refresh
+		token, err := a.config.TokenSource(ctx, token).Token()
+		if err != nil {
+			// token failed to refresh
+			// remove the stored token from the session
+			sess.Delete("auth_token")
+			sess.Save()
+
+			if redirect {
+				a.sendRedirect(ctx)
+			} else {
+				ctx.AbortWithStatus(http.StatusForbidden)
+			}
+			return
+		}
+
+		toParam := ctx.Query("to")
+		if toParam != "" {
+			ctx.Redirect(http.StatusFound, toParam)
 			return
 		}
 
 		var idToken *oidc.IDToken = nil
 		var idTokenClaims *json.RawMessage = new(json.RawMessage) // ID Token payload is just JSON.
 
-		if rawIDToken, ok := oauth2Token.Extra("id_token").(string); ok {
+		if rawIDToken, ok := token.Extra("id_token").(string); ok {
 			var err error
 			idToken, err = a.verifier.Verify(ctx.Request.Context(), rawIDToken)
 			if err == nil {
@@ -358,12 +395,12 @@ func (a *oidcAuth) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 		}
 
 		var userInfoClaims *json.RawMessage = new(json.RawMessage)
-		userInfo, err := a.provider.UserInfo(ctx.Request.Context(), oauth2.StaticTokenSource(oauth2Token))
+		userInfo, err := a.provider.UserInfo(ctx.Request.Context(), oauth2.StaticTokenSource(token))
 		if err == nil {
 			userInfo.Claims(&userInfoClaims)
 		}
 
-		introspectionResponse, _ := rs.Introspect[*zoidc.IntrospectionResponse](ctx.Request.Context(), a.resourceServer, oauth2Token.AccessToken)
+		introspectionResponse, _ := rs.Introspect[*zoidc.IntrospectionResponse](ctx.Request.Context(), a.resourceServer, token.AccessToken)
 
 		resp := struct {
 			OAuth2Token           *oauth2.Token
@@ -372,7 +409,7 @@ func (a *oidcAuth) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 			UserInfo              *oidc.UserInfo
 			UserInfoClaims        *json.RawMessage
 			IntrospectionResponse *zoidc.IntrospectionResponse
-		}{oauth2Token, idToken, idTokenClaims, userInfo, userInfoClaims, introspectionResponse}
+		}{token, idToken, idTokenClaims, userInfo, userInfoClaims, introspectionResponse}
 
 		data, err := json.MarshalIndent(resp, "", "  ")
 		if err != nil {

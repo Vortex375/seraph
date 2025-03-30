@@ -23,6 +23,7 @@ import (
 	"umbasa.net/seraph/entities"
 )
 
+// Prototype object for creating or updating [Share]
 type SharePrototype struct {
 	entities.Prototype
 
@@ -37,15 +38,38 @@ type SharePrototype struct {
 	IsDir       entities.Definable[bool]   `bson:"isDir"`
 }
 
+// Entity representing a "share", i.e. information that makes
+// a file or folder publicly available by sharing a link containig the shareId.
 type Share struct {
-	Id          primitive.ObjectID `bson:"_id"`
-	ShareId     string             `bson:"shareId" json:"shareId"`
-	Owner       string             `bson:"owner" json:"owner"`
-	Title       string             `bson:"title" json:"title"`
-	Description string             `bson:"description" json:"description"`
-	ProviderId  string             `bson:"providerId" json:"providerId"`
-	Path        string             `bson:"path" json:"path"`
-	Recursive   bool               `bson:"recursive" json:"recursive"`
-	ReadOnly    bool               `bson:"readOnly"`
-	IsDir       bool               `bson:"isDir" json:"isDir"`
+	// internal Id of the Share entity
+	Id primitive.ObjectID `bson:"_id"`
+
+	// the ShareId is publicly visible (e.g. in share links) and must be unique
+	ShareId string `bson:"shareId" json:"shareId"`
+
+	// user id of the Owner of the Share. The owner must have access to the shared files
+	// or else the share will not work
+	Owner string `bson:"owner" json:"owner"`
+
+	// an optional Title that can be shown when opening the share
+	Title string `bson:"title" json:"title"`
+
+	// an optional Description text that can be shown when opening the share
+	Description string `bson:"description" json:"description"`
+
+	// the ProviderId of the file provider that hosts the shared file or folder
+	ProviderId string `bson:"providerId" json:"providerId"`
+
+	// the Path to the shared file or folder (respective to the provider)
+	Path string `bson:"path" json:"path"`
+
+	// when sharing a folder, determines whether sub-folders are shared as well
+	Recursive bool `bson:"recursive" json:"recursive"`
+
+	// determines whether users can modify files using the share
+	// TODO: support multiple modes, e.g. "upload only"
+	ReadOnly bool `bson:"readOnly"`
+
+	// whether a file or folder is shared
+	IsDir bool `bson:"isDir" json:"isDir"`
 }

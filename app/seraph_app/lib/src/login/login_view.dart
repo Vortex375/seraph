@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:seraph_app/src/login/login_controller.dart';
@@ -17,9 +18,9 @@ class LoginView extends StatelessWidget {
 
   bool _hasServerUrl() {
     // server URL can't be changed on web
-    //  if (kIsWeb) {
-    //   return true;
-    //  }
+    if (kIsWeb) {
+      return true;
+    }
 
     SettingsController settings = Get.find();
 
@@ -117,7 +118,7 @@ class LoginView extends StatelessWidget {
                     const SizedBox(height: 16),
                     Text(settings.serverUrl.value, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).disabledColor)),
                     const SizedBox(height: 16),
-                    FilledButton(onPressed: () {
+                    if (!kIsWeb) FilledButton(onPressed: () {
                       settings.setServerUrlConfirmed(false);
                     }, child: const Text('Change Server'))
                   ]

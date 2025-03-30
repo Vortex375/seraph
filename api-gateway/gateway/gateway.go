@@ -117,7 +117,6 @@ func (g *gateway) Start(handlers []handler.GatewayHandler) {
 	apiGroup.GET("/test", getTest)
 
 	appGroup := engine.Group("/app",
-		func(ctx *gin.Context) { authMiddleware(ctx) },
 		func(ctx *gin.Context) {
 			path := ctx.Request.URL.Path
 			if path == "/app" || path == "/app/" || path == "/app/index.html" {

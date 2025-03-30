@@ -8,6 +8,7 @@ import 'package:get/get.dart';
 import 'package:oidc/oidc.dart';
 import 'package:oidc_default_store/oidc_default_store.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class LoginController extends GetxController with WidgetsBindingObserver {
 
@@ -16,7 +17,7 @@ class LoginController extends GetxController with WidgetsBindingObserver {
     _noAuth = false.obs;
     _currentUser = Rx<OidcUser?>(null);
     
-    if (settingsController.serverUrlConfirmed.value) {
+    if (settingsController.serverUrlConfirmed.value || kIsWeb) {
       init(settingsController.oidcIssuer.value, settingsController.oidcClientId.value);
     }
     settingsController.serverUrlConfirmed.listen((confirmed) {
@@ -41,14 +42,11 @@ class LoginController extends GetxController with WidgetsBindingObserver {
 
   Future<void> init(String? oidcIssuer, String? clientId) async {
     if (kIsWeb) {
-      _noAuth.value = true;
-      _initialized.value = true;
-      return;
+      return _initWeb();
     }
 
     if (oidcIssuer == null) {
-      _oidcDiscovery();
-      return;
+      return _oidcDiscovery();
     }
 
     if (_manager != null) {
@@ -119,6 +117,33 @@ class LoginController extends GetxController with WidgetsBindingObserver {
       _currentUser.value = user;
       _initialized.value = true;
     });
+  }
+
+  Future<void> _initWeb() async {
+    final dio = Dio(BaseOptions(
+      baseUrl: settingsController.serverUrl.value,
+      validateStatus: (status) => true,
+    ));
+
+    Object? err;
+    try {
+      final response = await dio.get('/auth/login');
+      print("*** login response");
+      print(response);
+      if (response.statusCode == 200) {
+        _initialized.value = true;
+        _noAuth.value = true;
+      } else {
+        await launchUrl(Uri.parse('${settingsController.serverUrl.value}/auth/login?' 
+          'redirect=true&to=${Uri.encodeFull(Uri.base.toString())}'),
+          webOnlyWindowName: '_self');
+      }
+    } catch (error) {
+      Get.snackbar('Connection failed', 'Failed to connect to server: $err',
+        backgroundColor: Colors.amber[800],
+        isDismissible: true
+      );
+    }
   }
 
   Future<void> _oidcDiscovery() async {
