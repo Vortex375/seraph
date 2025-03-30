@@ -49,7 +49,7 @@ class SettingsController extends GetxController {
         _serverUrl = 'http://localhost:8080'.obs;
       } else {
         //TODO: support context path!?
-        _serverUrl = Uri.base.replace(path: '').toString().obs;
+        _serverUrl = Uri.base.replace(path: '').removeFragment().toString().obs;
       }
       _serverUrlConfirmed = true.obs;
       _oidcIssuer = null.obs;
