@@ -9,6 +9,7 @@ import 'package:seraph_app/src/file_browser/file_browser_list_view.dart';
 import 'package:seraph_app/src/file_browser/selection_controller.dart';
 import 'package:seraph_app/src/media_player/media_bottom_bar.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
+import 'package:seraph_app/src/share/share_controller.dart';
 
 class FileBrowserView extends StatelessWidget {
 
@@ -17,24 +18,39 @@ class FileBrowserView extends StatelessWidget {
   const FileBrowserView({super.key});
 
   List<BreadCrumbItem> _breadCrumbItems(String path) {
+    final ShareController shareController = Get.find();
+
+    if (!path.startsWith("/")) {
+      path = "/$path";
+    }
+
     var split = path.split("/");
     List<BreadCrumbItem> ret = [];
-    for (var i = 0; i < split.length; i++) {
+    final start = shareController.shareMode.value ? 1 : 0;
+    for (var i = start; i < split.length; i++) {
+      if (i != start && split[i] == '') {
+        continue;
+      }
       final index = i;
       ret.add(BreadCrumbItem(
         content: Padding(
           padding: const EdgeInsets.all(8),
-          child: split[i] == '' ? const Icon(Icons.home) : Text(split[i])
+          child: i == start ? const Icon(Icons.home) : Text(split[i])
         ), 
         onTap: () {
           var newPath = split.sublist(0, index + 1).join('/');
           if (newPath == '') {
             newPath = '/';
           }
-          Get.offNamed('${FileBrowserView.routeName}?path=$newPath');
+          Get.offNamed('${shareController.shareMode.value ? ShareController.routeName : FileBrowserView.routeName}?path=$newPath');
         }
       ));
     }
+
+    if (ret.isEmpty) {
+      ret.add(BreadCrumbItem(content: Container()));
+    }
+
     return ret;
   }
   

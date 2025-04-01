@@ -116,6 +116,9 @@ func (g *gateway) Start(handlers []handler.GatewayHandler) {
 	apiGroup := engine.Group("/api", cachecontrol.New(cachecontrol.NoCachePreset), func(ctx *gin.Context) { authMiddleware(ctx) })
 	apiGroup.GET("/test", getTest)
 
+	publicApiGroup := engine.Group("/public-api", cachecontrol.New(cachecontrol.NoCachePreset))
+	publicApiGroup.GET("/test", getTest)
+
 	appGroup := engine.Group("/app",
 		func(ctx *gin.Context) {
 			path := ctx.Request.URL.Path
@@ -134,7 +137,7 @@ func (g *gateway) Start(handlers []handler.GatewayHandler) {
 	engine.GET("/", getRoot)
 
 	for _, handler := range handlers {
-		handler.Setup(engine, apiGroup)
+		handler.Setup(engine, apiGroup, publicApiGroup)
 	}
 
 	address := g.viper.GetString("gateway.address")

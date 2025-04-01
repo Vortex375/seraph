@@ -72,17 +72,12 @@ func New(p Params) Result {
 	}
 }
 
-func (h *sharesHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
-	apiGroup.GET("shares/:shareId", func(ctx *gin.Context) {
-		shareId := ctx.Param("shareId")
-		owner := h.auth.GetUserId(ctx.Request.Context())
-
+func (h *sharesHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup, publicApiGroup *gin.RouterGroup) {
+	getShare := func(ctx *gin.Context, share *shares.SharePrototype) {
 		req := shares.ShareCrudRequest{
 			Operation: "READ",
-			Share:     entities.MakePrototype(&shares.SharePrototype{}),
+			Share:     entities.MakePrototype(share),
 		}
-		req.Share.ShareId.Set(shareId)
-		req.Share.Owner.Set(owner)
 
 		res := shares.ShareCrudResponse{}
 		err := messaging.Request(ctx.Request.Context(), h.nc, shares.ShareCrudTopic, messaging.Json(&req), messaging.Json(&res))
@@ -97,7 +92,34 @@ func (h *sharesHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 			return
 		}
 
-		ctx.JSON(http.StatusOK, res)
+		ctx.JSON(http.StatusOK, res.Share)
+	}
+
+	publicApiGroup.GET("shares/:shareId", func(ctx *gin.Context) {
+		shareId := ctx.Param("shareId")
+
+		if shareId == "" {
+			ctx.AbortWithError(http.StatusBadRequest, errors.New("shareId is required"))
+			return
+		}
+
+		share := entities.MakePrototype(&shares.SharePrototype{})
+
+		share.ShareId.Set(shareId)
+
+		getShare(ctx, share)
+	})
+
+	apiGroup.GET("shares/:shareId", func(ctx *gin.Context) {
+		shareId := ctx.Param("shareId")
+		owner := h.auth.GetUserId(ctx.Request.Context())
+
+		share := entities.MakePrototype(&shares.SharePrototype{})
+
+		share.ShareId.Set(shareId)
+		share.Owner.Set(owner)
+
+		getShare(ctx, share)
 	})
 
 	apiGroup.POST("shares", func(ctx *gin.Context) {
@@ -129,7 +151,7 @@ func (h *sharesHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 			return
 		}
 
-		ctx.JSON(http.StatusCreated, res)
+		ctx.JSON(http.StatusCreated, res.Share)
 	})
 
 	apiGroup.PUT("shares/:shareId", func(ctx *gin.Context) {
@@ -164,7 +186,7 @@ func (h *sharesHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 			return
 		}
 
-		ctx.JSON(http.StatusOK, res)
+		ctx.JSON(http.StatusOK, res.Share)
 	})
 
 	apiGroup.DELETE("shares/:shareId", func(ctx *gin.Context) {
@@ -191,7 +213,7 @@ func (h *sharesHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
 			return
 		}
 
-		ctx.JSON(http.StatusOK, res)
+		ctx.JSON(http.StatusOK, res.Share)
 	})
 
 }

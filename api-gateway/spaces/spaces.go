@@ -74,7 +74,7 @@ func New(p Params) Result {
 	}
 }
 
-func (h *spacesHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
+func (h *spacesHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup, publicApiGroup *gin.RouterGroup) {
 	apiGroup.GET("spaces", func(ctx *gin.Context) {
 		user := h.auth.GetUserId(ctx.Request.Context())
 		isAdmin := h.auth.IsSpaceAdmin(ctx)

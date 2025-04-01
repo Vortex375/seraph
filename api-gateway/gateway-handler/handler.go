@@ -23,5 +23,5 @@ import (
 )
 
 type GatewayHandler interface {
-	Setup(engine *gin.Engine, apiGroup *gin.RouterGroup)
+	Setup(engine *gin.Engine, apiGroup *gin.RouterGroup, publicApiGroup *gin.RouterGroup)
 }

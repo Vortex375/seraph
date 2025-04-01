@@ -80,7 +80,7 @@ func New(p Params) (Result, error) {
 	}, nil
 }
 
-func (h *jobsHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
+func (h *jobsHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup, publicApiGroup *gin.RouterGroup) {
 	apiGroup.GET("jobs", func(ctx *gin.Context) {
 		watcher, err := h.kv.WatchAll(ctx)
 		if err != nil {

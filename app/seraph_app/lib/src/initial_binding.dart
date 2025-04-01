@@ -7,7 +7,7 @@ import 'package:seraph_app/src/media_player/audio_player_controller.dart';
 class InitialBinding extends Bindings {
   @override
   void dependencies() {
-    Get.put(FileService(Get.find(), Get.find()));
+    Get.put(FileService(Get.find(), Get.find(), Get.find()));
     Get.put(SelectionController());
     Get.put(FileBrowserController());
     Get.put(AudioPlayerController());

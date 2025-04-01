@@ -10,6 +10,8 @@ import 'package:seraph_app/src/gallery/gallery_view.dart';
 import 'package:seraph_app/src/initial_binding.dart';
 import 'package:seraph_app/src/media_player/audio_player_view.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
+import 'package:seraph_app/src/share/share_controller.dart';
+import 'package:seraph_app/src/share/share_view.dart';
 
 import 'login/login_view.dart';
 import 'settings/settings_view.dart';
@@ -22,40 +24,68 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ShareController shareController = Get.find();
 
-    final pages = [
-      GetPage(
-        name: FileBrowserView.routeName,
-        page: () {
-          Get.find<FileBrowserController>().setPath(Get.parameters['path'] ?? '/');
-          return const LoginView(
-            child: FileBrowserView()
-          );
-        }, 
-        transition: Transition.noTransition,
-      ),
-      GetPage(
-        name: GalleryView.routeName, 
-        page: () => const GalleryView()
-      ),
-      GetPage(
-        name: FileViewerView.routeName, 
-        page: () => const FileViewerView(),
-        binding: BindingsBuilder(() {
-          Get.put(FileViewerController());
-        })
-      ),
-      GetPage(
-        name: AudioPlayerView.routeName, 
-        page: () => const AudioPlayerView(),
-        opaque: false,
-        transition: Transition.downToUp
-      ),
-      GetPage(
-        name: SettingsView.routeName, 
-        page: () => const SettingsView()
-      )
-    ];
+    List<GetPage<dynamic>> pages;
+    if (shareController.shareMode.value) {
+      pages = [
+        GetPage(
+          name: ShareController.routeName,
+          page: () {
+            Get.find<FileBrowserController>().setPath(Get.parameters['path'] ?? '/');
+            return const ShareView();
+          }, 
+          transition: Transition.noTransition,
+        ),
+        GetPage(
+          name: FileViewerView.routeName, 
+          page: () => const FileViewerView(),
+          binding: BindingsBuilder(() {
+            Get.put(FileViewerController());
+          })
+        ),
+        GetPage(
+          name: AudioPlayerView.routeName, 
+          page: () => const AudioPlayerView(),
+          opaque: false,
+          transition: Transition.downToUp
+        ),
+      ];
+    } else {
+      pages = [
+        GetPage(
+          name: FileBrowserView.routeName,
+          page: () {
+            Get.find<FileBrowserController>().setPath(Get.parameters['path'] ?? '/');
+            return const LoginView(
+              child: FileBrowserView()
+            );
+          }, 
+          transition: Transition.noTransition,
+        ),
+        GetPage(
+          name: GalleryView.routeName, 
+          page: () => const GalleryView()
+        ),
+        GetPage(
+          name: FileViewerView.routeName, 
+          page: () => const FileViewerView(),
+          binding: BindingsBuilder(() {
+            Get.put(FileViewerController());
+          })
+        ),
+        GetPage(
+          name: AudioPlayerView.routeName, 
+          page: () => const AudioPlayerView(),
+          opaque: false,
+          transition: Transition.downToUp
+        ),
+        GetPage(
+          name: SettingsView.routeName, 
+          page: () => const SettingsView()
+        )
+      ];
+    }
 
     final SettingsController settingsController = Get.find();
     return Obx(() => GetMaterialApp(
@@ -91,7 +121,7 @@ class MyApp extends StatelessWidget {
       ),
       themeMode: settingsController.themeMode.value,
 
-      initialRoute: FileBrowserView.routeName,
+      initialRoute: shareController.shareMode.value ? ShareController.routeName : FileBrowserView.routeName,
       getPages: pages,
       initialBinding: InitialBinding(),
     ));

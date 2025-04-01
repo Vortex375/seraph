@@ -8,11 +8,12 @@ import 'package:get/get.dart';
 import 'package:oidc/oidc.dart';
 import 'package:oidc_default_store/oidc_default_store.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
+import 'package:seraph_app/src/share/share_controller.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class LoginController extends GetxController with WidgetsBindingObserver {
 
-  LoginController({required this.secureStorage, required this.settingsController}) {
+  LoginController({required this.secureStorage, required this.settingsController, required this.shareController}) {
     _initialized = false.obs;
     _noAuth = false.obs;
     _currentUser = Rx<OidcUser?>(null);
@@ -29,6 +30,7 @@ class LoginController extends GetxController with WidgetsBindingObserver {
 
   final FlutterSecureStorage secureStorage;
   final SettingsController settingsController;
+  final ShareController shareController;
 
   OidcUserManager? _manager;
   
@@ -120,6 +122,12 @@ class LoginController extends GetxController with WidgetsBindingObserver {
   }
 
   Future<void> _initWeb() async {
+    if (shareController.shareMode.value) {
+      _noAuth.value = true;
+      _initialized.value = true;
+      return;
+    }
+
     final dio = Dio(BaseOptions(
       baseUrl: settingsController.serverUrl.value,
       validateStatus: (status) => true,
@@ -131,8 +139,8 @@ class LoginController extends GetxController with WidgetsBindingObserver {
       print("*** login response");
       print(response);
       if (response.statusCode == 200) {
-        _initialized.value = true;
         _noAuth.value = true;
+        _initialized.value = true;
       } else {
         await launchUrl(Uri.parse('${settingsController.serverUrl.value}/auth/login?' 
           'redirect=true&to=${Uri.encodeFull(Uri.base.toString())}'),

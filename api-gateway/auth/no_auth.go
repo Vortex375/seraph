@@ -35,9 +35,12 @@ func (a *noAuth) AuthMiddleware(enablePasswordAuth bool, realm string) func(*gin
 	}
 }
 
-func (a *noAuth) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
+func (a *noAuth) Setup(app *gin.Engine, apiGroup *gin.RouterGroup, publicApiGroup *gin.RouterGroup) {
 	authGroup := app.Group("/auth", cachecontrol.New(cachecontrol.NoCachePreset))
 	authGroup.GET("/config", func(ctx *gin.Context) {
+		ctx.JSON(http.StatusOK, struct{}{})
+	})
+	authGroup.GET("/login", func(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, struct{}{})
 	})
 }

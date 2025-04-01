@@ -83,7 +83,7 @@ func New(p Params) Result {
 	return Result{Server: server, Handler: server}
 }
 
-func (server *webDavServer) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
+func (server *webDavServer) Setup(app *gin.Engine, apiGroup *gin.RouterGroup, publicApiGroup *gin.RouterGroup) {
 	// Gin's router doesn't handle WebDAV methods like PROPFIND, so we must register a global middleware here
 	passwordAuth := server.auth.AuthMiddleware(true, "Access to WebDAV")
 	handler := &webdav.Handler{

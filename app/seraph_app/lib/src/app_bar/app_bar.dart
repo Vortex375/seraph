@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:seraph_app/src/file_browser/file_browser_view.dart';
 
 import 'package:seraph_app/src/gallery/gallery_view.dart';
+import 'package:seraph_app/src/share/share_controller.dart';
 
 import '../settings/settings_view.dart';
 
@@ -13,12 +14,15 @@ AppBar seraphAppBar(BuildContext context, {
     PreferredSizeWidget? bottom
   }) {
 
+  final ShareController shareController = Get.find();
+
   return AppBar(
     title: Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         const Text('Seraph'),
         const SizedBox(width: 16),
-        DropdownButtonHideUnderline(
+        if (!shareController.shareMode.value) DropdownButtonHideUnderline(
           child: DropdownButton<String>(
             value: routeName,
             items: const [
@@ -33,6 +37,7 @@ AppBar seraphAppBar(BuildContext context, {
             onChanged: (value) => Get.offAllNamed(value!),
           ),
         ),
+        if (shareController.shareMode.value) Text(shareController.title.value ?? '', style: const TextStyle(fontSize: 18))
       ],
     ),
     actions: actions,

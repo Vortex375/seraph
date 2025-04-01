@@ -7,6 +7,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:seraph_app/src/login/login_controller.dart';
 import 'package:seraph_app/src/media_player/audio_handler.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
+import 'package:seraph_app/src/share/share_controller.dart';
 
 import 'src/app.dart';
 
@@ -38,9 +39,13 @@ void main() async {
     return controller;
   }, permanent: true);
 
+  final shareController = Get.put(ShareController());
+  await shareController.init();
+
   Get.put(LoginController(
     secureStorage: secureStorage, 
-    settingsController: settingsController
+    settingsController: settingsController,
+    shareController: shareController
   ), permanent: true);
   
   runApp(const MyApp());

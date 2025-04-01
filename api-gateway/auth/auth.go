@@ -192,7 +192,7 @@ func New(p Params) (Result, error) {
 	return Result{Auth: auth, Handler: auth}, nil
 }
 
-func (a *oidcAuth) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
+func (a *oidcAuth) Setup(app *gin.Engine, apiGroup *gin.RouterGroup, publicApiGroup *gin.RouterGroup) {
 	authGroup := app.Group("/auth", cachecontrol.New(cachecontrol.NoCachePreset))
 	authGroup.GET("/config", func(ctx *gin.Context) {
 		resp := struct {

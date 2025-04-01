@@ -1,23 +1,30 @@
 import 'package:seraph_app/src/login/login_controller.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
+import 'package:seraph_app/src/share/share_controller.dart';
 import 'package:seraph_app/src/util.dart';
 import 'package:webdav_client/webdav_client.dart';
 import 'package:flutter/material.dart';
 
 class FileService {
-  FileService(this.settingsController, this.loginController) {
+  FileService(this.settingsController, this.loginController, this.shareController) {
+    pathPrefix = shareController.shareMode.value ? '/dav/s' : '/dav/p';
+
     if (settingsController.serverUrlConfirmed.value) {
-      client = newClient('${settingsController.serverUrl}/dav/p', debug: false);
+      client = newClient('${settingsController.serverUrl}$pathPrefix', debug: false);
     }
     settingsController.serverUrlConfirmed.listen((value) {
       if (value) {
-        client = newClient('${settingsController.serverUrl}/dav/p', debug: false);
+        client = newClient('${settingsController.serverUrl}$pathPrefix', debug: false);
       }
     });
   }
 
   final SettingsController settingsController;
   final LoginController loginController;
+  final ShareController shareController;
+  
+  late String pathPrefix;
+
   Client? client;
 
   Future<Map<String, String>> getRequestHeaders() async {
@@ -59,7 +66,7 @@ class FileService {
   }
 
   String getFileUrl(String path) {
-    return '${settingsController.serverUrl}/dav/p$path';
+    return '${settingsController.serverUrl}$pathPrefix$path';
   }
 
   Image getImage(String path, [ImageLoadingBuilder? loadingBuilder]) {
@@ -68,7 +75,11 @@ class FileService {
   }
 
   String getPreviewUrl(String path, int w, int h) {
-    return "${settingsController.serverUrl}/preview?p=$path&w=$w&h=$h";
+    if (shareController.shareMode.value) {
+      return "${settingsController.serverUrl}/preview?s=$path&w=$w&h=$h";
+    } else {
+      return "${settingsController.serverUrl}/preview?p=$path&w=$w&h=$h";
+    }
   }
 
   Image getPreviewImage(String path, int w, int h) {

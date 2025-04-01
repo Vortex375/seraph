@@ -80,7 +80,7 @@ func New(p Params) Result {
 	}
 }
 
-func (h *previewHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup) {
+func (h *previewHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup, publicApiGroup *gin.RouterGroup) {
 	app.GET("preview", func(ctx *gin.Context) {
 		var err error
 		parameterP := ctx.Query("p")

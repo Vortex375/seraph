@@ -6,6 +6,7 @@ import 'package:get/get.dart';
 import 'package:seraph_app/src/file_browser/file_browser_view.dart';
 import 'package:seraph_app/src/file_browser/file_service.dart';
 import 'package:seraph_app/src/file_viewer/file_viewer_view.dart';
+import 'package:seraph_app/src/share/share_controller.dart';
 import 'package:webdav_client/webdav_client.dart';
 
 class FileBrowserController extends GetxController {
@@ -80,8 +81,10 @@ class FileBrowserController extends GetxController {
   }
 
   void openItem(File item) {
+    final ShareController shareController = Get.find();
+    
     if (!_status.value.isLoading && (item.isDir ?? false)) {
-      Get.offNamed('${FileBrowserView.routeName}?path=$_path/${item.name}');
+      Get.offNamed('${shareController.shareMode.value ? ShareController.routeName : FileBrowserView.routeName}?path=$_path/${item.name}');
     } else {
       _openItemIndex.value = files.value.indexOf(item);
       Get.toNamed('${FileViewerView.routeName}?file=$_path/${item.name}');
