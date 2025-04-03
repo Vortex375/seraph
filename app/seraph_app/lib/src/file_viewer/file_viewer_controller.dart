@@ -17,6 +17,7 @@ class FileViewerController extends GetxController {
   late TransformationController transformationController;
 
   final Rx<bool> isZoomedIn = false.obs;
+  final Rx<bool> isUiVisible = true.obs;
 
   ThemeMode? _themeMode;
 

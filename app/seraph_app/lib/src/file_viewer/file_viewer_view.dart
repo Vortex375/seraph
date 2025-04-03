@@ -20,11 +20,15 @@ class FileViewerView extends StatelessWidget{
 
     final Widget? previewWidget = fileBrowserController.getPreviewWidget();
 
-    return Scaffold(
-      appBar: AppBar(
+    return Obx(() => Scaffold(
+      appBar: !controller.isUiVisible.value ? null : AppBar(
         backgroundColor: Colors.transparent,
       ),
-      bottomNavigationBar: const MediaBottomBar(),
+      bottomNavigationBar: AnimatedOpacity(
+        opacity: controller.isUiVisible.value ? 1.0: 0.0,
+        duration: const Duration(milliseconds: 200),
+        child: const MediaBottomBar()
+      ),
       extendBody: true,
       extendBodyBehindAppBar: true,
       body: Obx(() => PageView.builder(
@@ -35,16 +39,19 @@ class FileViewerView extends StatelessWidget{
         itemBuilder: (context, index) {
           final file = controller.files[index];
           if (fileService.isImageFile(file)) {
-            return Hero(
-              tag: "preview:${file.path}",
-              child: Center(
-                child: Obx(() => InteractiveViewer(
-                  transformationController: controller.transformationController,
-                  // Disable pan when not zoomed
-                  panEnabled: controller.isZoomedIn.value,
-                  child: fileService.getImage(file.path!, (context, child, loadingProgress) => 
-                    (loadingProgress == null) ? SizedBox.expand(child: child) : (index == controller.initialIndex ? previewWidget : null) ?? Container())
-                )),
+            return Center(
+              child: Hero(
+                tag: "preview:${file.path}",
+                child: GestureDetector(
+                  onTap: () => controller.isUiVisible(!controller.isUiVisible.value),
+                  child: Obx(() => InteractiveViewer(
+                    transformationController: controller.transformationController,
+                    // Disable pan when not zoomed
+                    panEnabled: controller.isZoomedIn.value,
+                    child: fileService.getImage(file.path!, (context, child, loadingProgress) => 
+                      (loadingProgress == null) ? SizedBox.expand(child: child) : (index == controller.initialIndex ? previewWidget : null) ?? Container())
+                  )),
+                ),
               ),
             );
           } else if (fileService.isAudioFile(file)) {
@@ -68,6 +75,6 @@ class FileViewerView extends StatelessWidget{
           }
         }
       )),
-    );
+    ));
   }
 }
