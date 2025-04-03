@@ -15,6 +15,14 @@ RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go b
 RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go build -C file-provider-smb -o /out/file-provider-smb .
 RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go build -C log-viewer -o /out/log-viewer .
 
+# Build the flutter app for web
+FROM --platform=$BUILDPLATFORM ghcr.io/cirruslabs/flutter:stable AS flutter
+WORKDIR /app
+COPY app/seraph_app/pubspec.yaml app/seraph_app/pubspec.lock ./
+RUN flutter pub get
+COPY app/seraph_app .
+RUN flutter build web --release --base-href=/app/
+
 # Build the webapp
 FROM --platform=$BUILDPLATFORM node:20.18.0 AS webapp
 WORKDIR /src
@@ -31,5 +39,6 @@ RUN apk add mailcap
 FROM gcr.io/distroless/base-debian12
 COPY --from=mime /etc/mime.types /etc/mime.types
 COPY --from=build /out/api-gateway /out/file-indexer /out/thumbnailer /out/shares /out/spaces /out/jobs /out/file-provider-dir /out/file-provider-smb /out/log-viewer /bin
+COPY --from=flutter /app/build/web /srv/app
 COPY --from=webapp /src/dist/seraph-web-app/browser /srv/webapp
 CMD ["api-gateway"]

@@ -1,1 +1,19 @@
 **/node_modules
+
+# Flutter build artifacts
+app/seraph_app/build/
+
+# Dart & Flutter specific files
+app/seraph_app/.dart_tool/
+app/seraph_app/.flutter-plugins
+app/seraph_app/.flutter-plugins-dependencies
+app/seraph_app/.packages
+app/seraph_app/.pub-cache/
+app/seraph_app/.pub/
+
+# Flutter other platforms (for now we build only web in Docker)
+macos/
+linux/
+windows/
+android/
+ios/
