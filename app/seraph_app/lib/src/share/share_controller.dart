@@ -27,12 +27,7 @@ class ShareController extends GetxController{
         ready.value = true;
         return;
       }
-      final String? path = Uri.base.fragment.substring(index + 6);
-      if (path == null) {
-        fail.value = true;
-        ready.value = true;
-        return;
-      }
+      final String path = Uri.base.fragment.substring(index + 6);
       final split = path.split('/');
       if (path.startsWith('/') && split.length > 1) {
         shareId = split[1];
@@ -57,10 +52,5 @@ class ShareController extends GetxController{
         ready.value = true;
       }
     }
-  }
-
-  @override
-  void onInit() {
-    super.onInit();
   }
 }

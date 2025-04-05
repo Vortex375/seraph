@@ -43,9 +43,10 @@ class FileViewerView extends StatelessWidget{
               child: Hero(
                 tag: "preview:${file.path}",
                 child: GestureDetector(
-                  onTap: () => controller.isUiVisible(!controller.isUiVisible.value),
+                  onTap: controller.toggleUiVisible,
                   child: Obx(() => InteractiveViewer(
                     transformationController: controller.transformationController,
+                    maxScale: 4.0,
                     // Disable pan when not zoomed
                     panEnabled: controller.isZoomedIn.value,
                     child: fileService.getImage(file.path!, (context, child, loadingProgress) => 

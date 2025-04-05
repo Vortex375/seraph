@@ -2,6 +2,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:seraph_app/src/file_browser/file_browser_controller.dart';
 import 'package:seraph_app/src/file_browser/file_service.dart';
@@ -66,6 +67,16 @@ class FileViewerController extends GetxController {
 
     await mediaPlayerController.setPlaylist(pl, pl.indexOf(initial));
     await mediaPlayerController.play();
+  }
+
+  Future<void> toggleUiVisible() async {
+    if (isUiVisible.value) {
+      isUiVisible(false);
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
+    } else {
+      isUiVisible(true);
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    }
   }
 
   void _maybeChangeTheme(int currentPage) {
