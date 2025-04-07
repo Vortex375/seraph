@@ -2,8 +2,6 @@ module umbasa.net/seraph/file-provider-dir
 
 go 1.23.4
 
-toolchain go1.23.4
-
 require (
 	github.com/spf13/viper v1.19.0
 	go.uber.org/fx v1.23.0

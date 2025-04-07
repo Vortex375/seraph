@@ -2,8 +2,6 @@ module umbasa.net/seraph/file-indexer
 
 go 1.23.4
 
-toolchain go1.23.4
-
 require (
 	github.com/boz/go-throttle v0.0.0-20160922054636-fdc4eab740c1
 	github.com/gabriel-vasile/mimetype v1.4.7

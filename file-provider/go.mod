@@ -2,8 +2,6 @@ module umbasa.net/seraph/file-provider
 
 go 1.23.4
 
-toolchain go1.23.4
-
 require (
 	github.com/akyoto/cache v1.0.6
 	github.com/google/uuid v1.6.0

@@ -2,8 +2,6 @@ module umbasa.net/seraph/file-provider-smb
 
 go 1.23.4
 
-toolchain go1.23.4
-
 require (
 	github.com/hirochachacha/go-smb2 v1.1.0
 	github.com/spf13/viper v1.19.0

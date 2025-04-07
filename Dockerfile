@@ -1,5 +1,5 @@
 # Build the Go microservices
-FROM --platform=$BUILDPLATFORM golang:1.23.4 AS build
+FROM --platform=$BUILDPLATFORM golang:1.24.1 AS build
 WORKDIR /src
 COPY . .
 
@@ -16,7 +16,7 @@ RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go b
 RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go build -C log-viewer -o /out/log-viewer .
 
 # Build the flutter app for web
-FROM --platform=$BUILDPLATFORM ghcr.io/cirruslabs/flutter:stable AS flutter
+FROM --platform=$BUILDPLATFORM ghcr.io/cirruslabs/flutter:3.29.2 AS flutter
 WORKDIR /app
 COPY app/seraph_app/pubspec.yaml app/seraph_app/pubspec.lock ./
 RUN flutter pub get

@@ -2,8 +2,6 @@ module umbasa.net/seraph/mongodb
 
 go 1.23.4
 
-toolchain go1.23.4
-
 require (
 	github.com/golang-migrate/migrate/v4 v4.17.1
 	github.com/spf13/viper v1.19.0

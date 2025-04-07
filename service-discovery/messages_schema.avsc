@@ -1,0 +1,35 @@
+[
+  {
+    "type": "record",
+    "name": "ServiceInquiry",
+    "namespace": "seraph.servicediscovery",
+    "fields": [
+      { "name": "serviceType", "type": "string" },
+      { "name": "instanceId", "type": "string" }
+    ]
+  },
+  {
+    "type": "record",
+    "name": "ServiceAnnouncement",
+    "namespace": "seraph.servicediscovery",
+    "fields": [
+      { "name": "announcementType", "type": { 
+        "type": "enum", 
+        "name": "AnnouncementType",
+        "symbols": ["ANNOUNCE", "REMOVE"]
+      } },
+      { "name": "serviceType", "type": "string" },
+      { "name": "instanceId", "type": "string" },
+      { "name": "heartbeatInterval", "type": "int" },
+      { "name": "properties", "type": { "type": "map", "values": "string" } }
+    ]
+  },
+  {
+    "type": "record",
+    "name": "ServiceHeartbeat",
+    "namespace": "seraph.servicediscovery",
+    "fields": [
+      { "name": "instanceId", "type": "string" }
+    ]
+  }
+]

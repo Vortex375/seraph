@@ -2,8 +2,6 @@ module umbasa.net/seraph/api-gateway
 
 go 1.23.4
 
-toolchain go1.23.4
-
 require (
 	github.com/Cyprinus12138/otelgin v1.0.2
 	github.com/coreos/go-oidc v2.2.1+incompatible
