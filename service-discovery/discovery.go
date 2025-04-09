@@ -64,7 +64,7 @@ type LocalService interface {
 }
 
 type serviceDiscovery struct {
-	mu sync.Mutex
+	mu sync.RWMutex
 
 	nc  *nats.Conn
 	log *slog.Logger
@@ -108,7 +108,7 @@ func New(p Params) (Result, error) {
 	}
 
 	p.Lc.Append(fx.StartHook(discovery.start))
-	p.Lc.Append(fx.StartHook(discovery.stop))
+	p.Lc.Append(fx.StopHook(discovery.stop))
 
 	return Result{
 		ServiceDiscovery: discovery,
@@ -199,26 +199,34 @@ func (sd *serviceDiscovery) handleAnnouncement(announcement ServiceAnnouncement)
 	sd.mu.Lock()
 	defer sd.mu.Unlock()
 
-	sd.byInstanceId[announcement.InstanceID] = &remoteService{
-		announcement: announcement,
-		lastHearbeat: time.Now(),
-	}
-	byServiceType := sd.byServiceType[announcement.ServiceType]
-	if byServiceType == nil {
-		byServiceType = make([]*remoteService, 0)
-		sd.byServiceType[announcement.ServiceType] = byServiceType
-	}
-
-	index := slices.IndexFunc(byServiceType, func(s *remoteService) bool {
-		return s.announcement.InstanceID == announcement.InstanceID
-	})
-
+	var serviceType string
 	if announcement.AnnouncementType == string(AnnouncementTypeRemove) {
-		if index >= 0 {
-			byServiceType = slices.Delete(byServiceType, index, 1)
+		existing := sd.byInstanceId[announcement.InstanceID]
+		if existing == nil {
+			return
+		}
+		serviceType = existing.announcement.ServiceType
+		delete(sd.byInstanceId, announcement.InstanceID)
+		sd.byServiceType[existing.announcement.ServiceType] =
+			slices.DeleteFunc(sd.byServiceType[existing.announcement.ServiceType], func(s *remoteService) bool {
+				return s.announcement.InstanceID == announcement.InstanceID
+			})
+	} else {
+		serviceType = announcement.ServiceType
+		sd.byInstanceId[announcement.InstanceID] = &remoteService{
+			announcement: announcement,
+			lastHearbeat: time.Now(),
+		}
+		byServiceType := sd.byServiceType[announcement.ServiceType]
+		if byServiceType == nil {
+			byServiceType = make([]*remoteService, 0)
 			sd.byServiceType[announcement.ServiceType] = byServiceType
 		}
-	} else {
+
+		index := slices.IndexFunc(byServiceType, func(s *remoteService) bool {
+			return s.announcement.InstanceID == announcement.InstanceID
+		})
+
 		if index >= 0 {
 			byServiceType[index].announcement = announcement
 			byServiceType[index].lastHearbeat = time.Now()
@@ -232,7 +240,7 @@ func (sd *serviceDiscovery) handleAnnouncement(announcement ServiceAnnouncement)
 	}
 
 	for _, listener := range sd.listeners {
-		if listener.serviceType == announcement.ServiceType {
+		if listener.serviceType == "" || listener.serviceType == serviceType {
 			select {
 			case listener.updateChan <- &announcement:
 			case <-listener.cancelChan:
@@ -242,8 +250,8 @@ func (sd *serviceDiscovery) handleAnnouncement(announcement ServiceAnnouncement)
 }
 
 func (sd *serviceDiscovery) handleInquiry(inquiry ServiceInquiry) {
-	sd.mu.Lock()
-	defer sd.mu.Unlock()
+	sd.mu.RLock()
+	defer sd.mu.RUnlock()
 
 	for _, service := range sd.localServices {
 		if inquiry.ServiceType == "" || inquiry.ServiceType == service.announcement.ServiceType {
@@ -264,13 +272,20 @@ func (sd *serviceDiscovery) handleHeartbeat(heartbeat ServiceHeartbeat) {
 }
 
 func (sd *serviceDiscovery) Get(serviceType string) []*ServiceAnnouncement {
-	sd.mu.Lock()
-	defer sd.mu.Unlock()
+	sd.mu.RLock()
+	defer sd.mu.RUnlock()
 
-	services := sd.byServiceType[serviceType]
+	var services []*remoteService
+	if serviceType == "" {
+		services = make([]*remoteService, 0)
+		for _, service := range sd.byInstanceId {
+			services = append(services, service)
+		}
+	} else {
+		services = sd.byServiceType[serviceType]
+	}
 
 	announcements := make([]*ServiceAnnouncement, 0, len(services))
-
 	for _, service := range services {
 		announcements = append(announcements, &service.announcement)
 	}
@@ -290,6 +305,31 @@ func (sd *serviceDiscovery) Listen(serviceType string) ServiceListener {
 	}
 
 	sd.listeners = append(sd.listeners, listener)
+
+	// push the current services to the listener
+	go func() {
+		sd.mu.RLock()
+		defer sd.mu.RUnlock()
+
+		var services []*remoteService
+		if serviceType == "" {
+			services = make([]*remoteService, 0)
+			for _, service := range sd.byInstanceId {
+				services = append(services, service)
+			}
+		} else {
+			services = sd.byServiceType[serviceType]
+		}
+
+	push:
+		for _, service := range services {
+			select {
+			case listener.updateChan <- &service.announcement:
+			case <-listener.cancelChan:
+				break push
+			}
+		}
+	}()
 
 	return listener
 }
@@ -320,6 +360,9 @@ func (ls *localService) InstanceId() string {
 }
 
 func (ls *localService) Update(properties map[string]string) {
+	ls.sd.mu.Lock()
+	defer ls.sd.mu.Unlock()
+
 	ls.announcement.Properties = properties
 
 	ls.sd.announce(ls, AnnouncementTypeAnnounce)
