@@ -161,7 +161,7 @@ func (g *gateway) Stop() {
 }
 
 func getRoot(ctx *gin.Context) {
-	ctx.String(http.StatusOK, "Hello, World!")
+	ctx.Redirect(http.StatusFound, "/app")
 }
 
 func getTest(ctx *gin.Context) {
