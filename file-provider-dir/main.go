@@ -28,6 +28,7 @@ import (
 	"umbasa.net/seraph/file-provider/fileprovider"
 	"umbasa.net/seraph/logging"
 	"umbasa.net/seraph/messaging"
+	servicediscovery "umbasa.net/seraph/service-discovery"
 	"umbasa.net/seraph/tracing"
 )
 
@@ -38,13 +39,14 @@ func main() {
 		messaging.Module,
 		config.Module,
 		tracing.Module,
+		servicediscovery.Module,
 		logging.FxLogger(),
 		fx.Decorate(func(viper *viper.Viper) *viper.Viper {
 			id := viper.GetString("fileprovider.id")
 			viper.SetDefault("tracing.serviceName", "fileprovider."+id)
 			return viper
 		}),
-		fx.Invoke(func(params fileprovider.ServerParams, viper *viper.Viper, lc fx.Lifecycle) error {
+		fx.Invoke(func(params fileprovider.ServerParams, viper *viper.Viper, discovery servicediscovery.ServiceDiscovery, lc fx.Lifecycle) error {
 			id := viper.GetString("fileprovider.id")
 			dir := viper.GetString("fileprovider.dir")
 			readOnly := viper.GetBool("fileprovider.readOnly")
@@ -63,10 +65,16 @@ func main() {
 				return err
 			}
 
+			service := discovery.AnnounceService("file-provider", map[string]string{
+				"kind": "dir",
+				"id":   id,
+			})
+
 			lc.Append(fx.StartHook(func() {
 				server.Start()
 			}))
 			lc.Append(fx.StopHook(func() {
+				service.Remove()
 				server.Stop(false)
 			}))
 

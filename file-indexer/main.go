@@ -28,6 +28,7 @@ import (
 	"umbasa.net/seraph/logging"
 	"umbasa.net/seraph/messaging"
 	"umbasa.net/seraph/mongodb"
+	servicediscovery "umbasa.net/seraph/service-discovery"
 	"umbasa.net/seraph/tracing"
 )
 
@@ -38,6 +39,7 @@ func main() {
 		messaging.Module,
 		mongodb.Module,
 		tracing.Module,
+		servicediscovery.Module,
 		logging.FxLogger(),
 		fx.Decorate(func(viper *viper.Viper) *viper.Viper {
 			viper.SetDefault("tracing.serviceName", "fileindexer")
@@ -47,13 +49,16 @@ func main() {
 		}),
 		fx.Provide(fileindexer.NewMigrations),
 		fx.Provide(fileindexer.NewConsumer),
-		fx.Invoke(func(consumer fileindexer.Consumer, lc fx.Lifecycle) {
+		fx.Invoke(func(consumer fileindexer.Consumer, discovery servicediscovery.ServiceDiscovery, lc fx.Lifecycle) {
+
+			service := discovery.AnnounceService("file-indexer", map[string]string{})
 
 			lc.Append(fx.StartHook(func() error {
 				return consumer.Start()
 			}))
 
 			lc.Append(fx.StopHook(func() {
+				service.Remove()
 				consumer.Stop()
 			}))
 

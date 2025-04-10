@@ -26,12 +26,14 @@ import (
 	"umbasa.net/seraph/api-gateway/gateway"
 	"umbasa.net/seraph/api-gateway/jobs"
 	"umbasa.net/seraph/api-gateway/preview"
+	"umbasa.net/seraph/api-gateway/services"
 	"umbasa.net/seraph/api-gateway/shares"
 	"umbasa.net/seraph/api-gateway/webdav"
 	"umbasa.net/seraph/config"
 	"umbasa.net/seraph/logging"
 	"umbasa.net/seraph/messaging"
 	"umbasa.net/seraph/mongodb"
+	servicediscovery "umbasa.net/seraph/service-discovery"
 	"umbasa.net/seraph/tracing"
 )
 
@@ -47,7 +49,9 @@ func main() {
 		preview.Module,
 		shares.Module,
 		jobs.Module,
+		services.Module,
 		tracing.Module,
+		servicediscovery.Module,
 		logging.FxLogger(),
 		fx.Provide(auth.NewMigrations),
 		fx.Decorate(func(viper *viper.Viper) *viper.Viper {

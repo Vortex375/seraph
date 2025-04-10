@@ -60,6 +60,9 @@ func TestAnnounceUpdateRemove(t *testing.T) {
 	lc.Start(context.Background())
 	defer lc.Stop(context.Background())
 
+	// wait for the initial service inquiry before announcing any services as otherwise this will interfere with the test
+	time.Sleep(1 * time.Second)
+
 	c := make(chan *nats.Msg, 1)
 	sub, err := nc.ChanSubscribe(AnnouncementTopic, c)
 	if err != nil {
@@ -382,6 +385,34 @@ func TestListenGet(t *testing.T) {
 
 	gotAnnouncements = discovery.Get("myOtherService")
 	assert.Equal(t, 0, len(gotAnnouncements))
+}
+
+func TestInquiryOnStart(t *testing.T) {
+	nc, err := nats.Connect(natsServer.ClientURL())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, lc, err := getDiscovery(t, nc)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	c := make(chan *nats.Msg, 1)
+	sub, err := nc.ChanSubscribe(InquiryTopic, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sub.Unsubscribe()
+
+	lc.Start(context.Background())
+	defer lc.Stop(context.Background())
+
+	inquiry := ServiceInquiry{}
+	receive(t, c, &inquiry)
+
+	assert.Equal(t, "", inquiry.ServiceType)
+	assert.Equal(t, "", inquiry.InstanceID)
 }
 
 func getDiscovery(t *testing.T, nc *nats.Conn) (ServiceDiscovery, *fxtest.Lifecycle, error) {

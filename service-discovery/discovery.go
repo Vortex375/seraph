@@ -166,6 +166,14 @@ func (sd *serviceDiscovery) start() error {
 	}
 	sd.subscriptions = append(sd.subscriptions, sub)
 
+	// inquire already existing services on startup
+	inquiry := ServiceInquiry{}
+	data, err := inquiry.Marshal()
+	if err != nil {
+		return err
+	}
+	sd.nc.Publish(InquiryTopic, data)
+
 	return nil
 }
 

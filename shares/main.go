@@ -26,6 +26,7 @@ import (
 	"umbasa.net/seraph/logging"
 	"umbasa.net/seraph/messaging"
 	"umbasa.net/seraph/mongodb"
+	servicediscovery "umbasa.net/seraph/service-discovery"
 	"umbasa.net/seraph/shares/shares"
 	"umbasa.net/seraph/tracing"
 )
@@ -37,6 +38,7 @@ func main() {
 		config.Module,
 		mongodb.Module,
 		tracing.Module,
+		servicediscovery.Module,
 		logging.FxLogger(),
 		fx.Provide(shares.NewMigrations),
 		fx.Decorate(func(viper *viper.Viper) *viper.Viper {
@@ -47,7 +49,7 @@ func main() {
 			viper.SetDefault("mongo.db", "seraph-shares")
 			return client
 		}),
-		fx.Invoke(func(params shares.Params, lc fx.Lifecycle) error {
+		fx.Invoke(func(params shares.Params, discovery servicediscovery.ServiceDiscovery, lc fx.Lifecycle) error {
 
 			result, err := shares.New(params)
 
@@ -56,10 +58,14 @@ func main() {
 			}
 
 			provider := result.SharesProvider
+
+			service := discovery.AnnounceService("shares", map[string]string{})
+
 			lc.Append(fx.StartHook(func() error {
 				return provider.Start()
 			}))
 			lc.Append(fx.StopHook(func() error {
+				service.Remove()
 				return provider.Stop()
 			}))
 

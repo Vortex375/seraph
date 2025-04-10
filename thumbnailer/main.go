@@ -29,6 +29,7 @@ import (
 	"umbasa.net/seraph/file-provider/fileprovider"
 	"umbasa.net/seraph/logging"
 	"umbasa.net/seraph/messaging"
+	servicediscovery "umbasa.net/seraph/service-discovery"
 	"umbasa.net/seraph/thumbnailer/thumbnailer"
 	"umbasa.net/seraph/tracing"
 )
@@ -39,12 +40,13 @@ func main() {
 		messaging.Module,
 		config.Module,
 		tracing.Module,
+		servicediscovery.Module,
 		logging.FxLogger(),
 		fx.Decorate(func(viper *viper.Viper) *viper.Viper {
 			viper.SetDefault("tracing.serviceName", "thumbnailer")
 			return viper
 		}),
-		fx.Invoke(func(params thumbnailer.Params, viper *viper.Viper, lc fx.Lifecycle) error {
+		fx.Invoke(func(params thumbnailer.Params, viper *viper.Viper, discovery servicediscovery.ServiceDiscovery, lc fx.Lifecycle) error {
 			viper.SetDefault("thumbnailer.jpegQuality", jpeg.DefaultQuality)
 			viper.SetDefault("thumbnailer.parallel", runtime.NumCPU())
 
@@ -69,11 +71,18 @@ func main() {
 			}
 
 			thumb := result.Thumbnailer
+
+			service := discovery.AnnounceService("thumbnailer", map[string]string{
+				"providerId": providerId,
+				"path":       path,
+			})
+
 			lc.Append(fx.StartHook(func() error {
 				return thumb.Start()
 			}))
 			lc.Append(fx.StopHook(func() error {
 				client.Close()
+				service.Remove()
 				return thumb.Stop()
 			}))
 

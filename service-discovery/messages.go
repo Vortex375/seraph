@@ -8,8 +8,8 @@ import (
 
 // ServiceInquiry is a generated struct.
 type ServiceInquiry struct {
-	ServiceType string `avro:"serviceType"`
-	InstanceID  string `avro:"instanceId"`
+	ServiceType string `avro:"serviceType" json:"serviceType"`
+	InstanceID  string `avro:"instanceId" json:"instanceId"`
 }
 
 var schemaServiceInquiry = avro.MustParse(`{"name":"seraph.servicediscovery.ServiceInquiry","type":"record","fields":[{"name":"serviceType","type":"string"},{"name":"instanceId","type":"string"}]}`)
@@ -31,11 +31,11 @@ func (o *ServiceInquiry) Marshal() ([]byte, error) {
 
 // ServiceAnnouncement is a generated struct.
 type ServiceAnnouncement struct {
-	AnnouncementType  string            `avro:"announcementType"`
-	ServiceType       string            `avro:"serviceType"`
-	InstanceID        string            `avro:"instanceId"`
-	HeartbeatInterval int               `avro:"heartbeatInterval"`
-	Properties        map[string]string `avro:"properties"`
+	AnnouncementType  string            `avro:"announcementType" json:"announcementType"`
+	ServiceType       string            `avro:"serviceType" json:"serviceType"`
+	InstanceID        string            `avro:"instanceId" json:"instanceId"`
+	HeartbeatInterval int               `avro:"heartbeatInterval" json:"heartbeatInterval"`
+	Properties        map[string]string `avro:"properties" json:"properties"`
 }
 
 var schemaServiceAnnouncement = avro.MustParse(`{"name":"seraph.servicediscovery.ServiceAnnouncement","type":"record","fields":[{"name":"announcementType","type":{"name":"seraph.servicediscovery.AnnouncementType","type":"enum","symbols":["ANNOUNCE","REMOVE"]}},{"name":"serviceType","type":"string"},{"name":"instanceId","type":"string"},{"name":"heartbeatInterval","type":"int"},{"name":"properties","type":{"type":"map","values":"string"}}]}`)
@@ -57,7 +57,7 @@ func (o *ServiceAnnouncement) Marshal() ([]byte, error) {
 
 // ServiceHeartbeat is a generated struct.
 type ServiceHeartbeat struct {
-	InstanceID string `avro:"instanceId"`
+	InstanceID string `avro:"instanceId" json:"instanceId"`
 }
 
 var schemaServiceHeartbeat = avro.MustParse(`{"name":"seraph.servicediscovery.ServiceHeartbeat","type":"record","fields":[{"name":"instanceId","type":"string"}]}`)
