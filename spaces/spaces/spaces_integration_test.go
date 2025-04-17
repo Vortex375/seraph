@@ -393,6 +393,7 @@ func TestSpaceCrud(t *testing.T) {
 
 	err = messaging.Request(context.Background(), nc, spaces.SpaceCrudTopic, messaging.Json(&req), messaging.Json(&res))
 
+	assert.Nil(t, err)
 	assert.Equal(t, "", res.Error)
 	assert.NotNil(t, res.Space)
 	assert.Equal(t, 0, len(res.Space))

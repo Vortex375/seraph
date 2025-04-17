@@ -92,7 +92,7 @@ func (s *SpacesProvider) Start() error {
 		msg.Respond(data)
 	})
 	if err != nil {
-		return fmt.Errorf("While starting SpacesProvider: %w", err)
+		return fmt.Errorf("while starting SpacesProvider: %w", err)
 	}
 	s.resolveSub = sub
 	sub, err = s.nc.QueueSubscribe(SpaceCrudTopic, SpaceCrudTopic, func(msg *nats.Msg) {
@@ -111,7 +111,7 @@ func (s *SpacesProvider) Start() error {
 		msg.Respond(data)
 	})
 	if err != nil {
-		return fmt.Errorf("While starting SpacesProvider: %w", err)
+		return fmt.Errorf("while starting SpacesProvider: %w", err)
 	}
 	s.crudSub = sub
 	return nil
@@ -124,14 +124,14 @@ func (s *SpacesProvider) Stop() error {
 		s.crudSub = nil
 	}
 	if err != nil {
-		return fmt.Errorf("While stopping SpacesProvider: %w", err)
+		return fmt.Errorf("while stopping SpacesProvider: %w", err)
 	}
 	if s.resolveSub != nil {
 		err = s.resolveSub.Unsubscribe()
 		s.resolveSub = nil
 	}
 	if err != nil {
-		return fmt.Errorf("While stopping SpacesProvider: %w", err)
+		return fmt.Errorf("while stopping SpacesProvider: %w", err)
 	}
 	return nil
 }
@@ -149,7 +149,7 @@ func (s *SpacesProvider) resolveSpace(ctx context.Context, req *SpaceResolveRequ
 		return &SpaceResolveResponse{}
 	}
 	if res.Err() != nil {
-		err := fmt.Errorf("While retrieving spaces from the database for resolve: %w", res.Err())
+		err := fmt.Errorf("while retrieving spaces from the database for resolve: %w", res.Err())
 		s.log.Error("error while resolving space", "error", err)
 		return &SpaceResolveResponse{
 			Error: res.Err().Error(),

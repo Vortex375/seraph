@@ -56,7 +56,7 @@ func Json(v any) *JsonPayload {
 }
 
 func Request[Req RequestPayload, Res ResponsePayload](ctx context.Context, nc *nats.Conn, topic string, req Req, res Res) error {
-	return RequestTimeout[Req, Res](ctx, nc, topic, DefaultTimeout, req, res)
+	return RequestTimeout(ctx, nc, topic, DefaultTimeout, req, res)
 }
 
 func RequestVoid[Req RequestPayload](ctx context.Context, nc *nats.Conn, topic string, req Req) error {

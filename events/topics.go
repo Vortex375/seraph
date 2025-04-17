@@ -29,3 +29,7 @@ const FileChangedTopicPattern = "seraph.file.%s.changed"
 const JobsStream = "SERAPH_JOBS"
 const JobsTopic = "seraph.jobs.>"
 const JobsTopicPattern = "seraph.jobs.%s"
+
+const SearchRequestTopic = "seraph.search"
+const SearchAckTopicPattern = "seraph.search.%s.ack"
+const SearchReplyTopicPattern = "seraph.search.%s.reply"

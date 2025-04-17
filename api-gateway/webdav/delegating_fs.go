@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"golang.org/x/net/webdav"
-	"umbasa.net/seraph/entities"
 	"umbasa.net/seraph/file-provider/fileprovider"
 	"umbasa.net/seraph/messaging"
 	"umbasa.net/seraph/shares/shares"
@@ -147,26 +146,16 @@ func getModeAndProviderAndPath(p string) (string, string, string) {
 func (f *delegatingFs) getSpacesFs(ctx context.Context) (webdav.FileSystem, error) {
 	userId := f.server.auth.GetUserId(ctx)
 
-	proto := entities.MakePrototype(&spaces.SpacePrototype{})
-	proto.Users.Set([]string{userId})
-	req := spaces.SpaceCrudRequest{
-		Operation: "READ",
-		Space:     proto,
-	}
-	res := spaces.SpaceCrudResponse{}
-	err := messaging.Request(ctx, f.server.nc, spaces.SpaceCrudTopic, messaging.Json(&req), messaging.Json(&res))
+	spaces, err := spaces.GetSpacesForUser(ctx, f.server.nc, userId)
 	if err != nil {
-		return nil, fmt.Errorf("unable to read spaces for user %s: %w", userId, err)
-	}
-	if res.Error != "" {
-		return nil, fmt.Errorf("unable to read spaces for user %s: %w", userId, errors.New(res.Error))
+		return nil, err
 	}
 
-	if len(res.Space) == 0 {
+	if len(spaces) == 0 {
 		f.log.Warn("no spaces found for user " + userId)
 	}
 
-	return &spacesFileSystem{f.server, res.Space}, nil
+	return &spacesFileSystem{f.server, spaces}, nil
 }
 
 func (f *delegatingFs) resolveSpace(ctx context.Context, spaceProviderId string, filePath string) (string, string, bool, error) {

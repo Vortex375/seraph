@@ -35,6 +35,9 @@ import (
 	"umbasa.net/seraph/util"
 )
 
+const filesCollection = "files"
+const readdirCollection = "readdir"
+
 type Consumer interface {
 	Start() error
 	Stop()
@@ -61,7 +64,7 @@ type consumer struct {
 	tracer trace.Tracer
 }
 
-type Params struct {
+type ConsumerParams struct {
 	fx.In
 
 	Nc      *nats.Conn
@@ -73,9 +76,9 @@ type Params struct {
 	Mig     Migrations
 }
 
-var searchWordsRegex = regexp.MustCompile("\\W|_")
+var searchWordsRegex = regexp.MustCompile(`\W|_`)
 
-func NewConsumer(p Params) (Consumer, error) {
+func NewConsumer(p ConsumerParams) (Consumer, error) {
 	log := p.Logger.GetLogger("fileindexer")
 
 	// create stream for FileChangedEvent - we are producer for these
@@ -111,8 +114,8 @@ func NewConsumer(p Params) (Consumer, error) {
 		Durable: "SERAPH_FILE_INDEXER",
 	})
 
-	files := p.Db.Collection("files")
-	readdir := p.Db.Collection("readdir")
+	files := p.Db.Collection(filesCollection)
+	readdir := p.Db.Collection(readdirCollection)
 
 	limiter := util.NewLimiter(p.Viper.GetInt("fileindexer.parallel"))
 	progressThrottle := throttle.NewThrottle(2*time.Second, true)

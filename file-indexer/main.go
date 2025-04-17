@@ -49,7 +49,8 @@ func main() {
 		}),
 		fx.Provide(fileindexer.NewMigrations),
 		fx.Provide(fileindexer.NewConsumer),
-		fx.Invoke(func(consumer fileindexer.Consumer, discovery servicediscovery.ServiceDiscovery, lc fx.Lifecycle) {
+		fx.Provide(fileindexer.NewSearch),
+		fx.Invoke(func(consumer fileindexer.Consumer, search fileindexer.Search, discovery servicediscovery.ServiceDiscovery, lc fx.Lifecycle) {
 
 			service := discovery.AnnounceService("file-indexer", map[string]string{})
 
