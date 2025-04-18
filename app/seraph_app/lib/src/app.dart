@@ -9,6 +9,8 @@ import 'package:seraph_app/src/file_viewer/file_viewer_view.dart';
 import 'package:seraph_app/src/gallery/gallery_view.dart';
 import 'package:seraph_app/src/initial_binding.dart';
 import 'package:seraph_app/src/media_player/audio_player_view.dart';
+import 'package:seraph_app/src/search/search_controller.dart';
+import 'package:seraph_app/src/search/search_view.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
 import 'package:seraph_app/src/share/share_controller.dart';
 import 'package:seraph_app/src/share/share_view.dart';
@@ -79,6 +81,13 @@ class MyApp extends StatelessWidget {
           page: () => const AudioPlayerView(),
           opaque: false,
           transition: Transition.downToUp
+        ),
+        GetPage(
+          name: SearchView.routeName, 
+          page: () => const SearchView(),
+          binding: BindingsBuilder(() {
+            Get.put(MySearchController(Get.find()));
+          })
         ),
         GetPage(
           name: SettingsView.routeName, 

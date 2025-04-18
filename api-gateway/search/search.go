@@ -135,6 +135,7 @@ func (h *searchHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup, public
 					activeReplies[reply.ReplyId] = struct{}{}
 					ctx.Writer.Write(msg.Data)
 					ctx.Writer.WriteString("\n")
+					ctx.Writer.Flush()
 				}
 			case <-searchTimeout(len(activeReplies)):
 				return

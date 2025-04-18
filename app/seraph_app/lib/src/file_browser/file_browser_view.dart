@@ -8,6 +8,7 @@ import 'package:seraph_app/src/file_browser/file_browser_grid_view.dart';
 import 'package:seraph_app/src/file_browser/file_browser_list_view.dart';
 import 'package:seraph_app/src/file_browser/selection_controller.dart';
 import 'package:seraph_app/src/media_player/media_bottom_bar.dart';
+import 'package:seraph_app/src/search/search_view.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
 import 'package:seraph_app/src/share/share_controller.dart';
 
@@ -108,6 +109,13 @@ class FileBrowserView extends StatelessWidget {
             name: 'Cloud Files', 
             routeName: FileBrowserView.routeName, 
             actions: [
+              IconButton(
+                icon: const Icon(Icons.search),
+                tooltip: 'Search',
+                onPressed: () {
+                  Get.toNamed(SearchView.routeName);
+                },
+              ),
               Obx(() => IconButton(
                 icon: Icon(settings.fileBrowserViewMode.value == 'grid' ? Icons.list : Icons.grid_view),
                 tooltip: settings.fileBrowserViewMode.value == 'grid' ? 'List View' : 'Grid View',
