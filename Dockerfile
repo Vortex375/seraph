@@ -18,10 +18,11 @@ RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go b
 # Build the flutter app for web
 FROM --platform=$BUILDPLATFORM ghcr.io/cirruslabs/flutter:3.29.2 AS flutter
 WORKDIR /app
+RUN flutter precache --web
 COPY app/seraph_app/pubspec.yaml app/seraph_app/pubspec.lock ./
-RUN flutter pub get
+RUN --mount=type=cache,target=/root/.pub-cache flutter pub get
 COPY app/seraph_app .
-RUN flutter build web --release --base-href=/app/
+RUN --mount=type=cache,target=/root/.pub-cache flutter build web --release --base-href=/app/
 
 # Build the webapp
 FROM --platform=$BUILDPLATFORM node:20.18.0 AS webapp
