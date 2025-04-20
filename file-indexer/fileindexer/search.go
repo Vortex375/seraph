@@ -111,15 +111,18 @@ func (s *search) handleMessage(msg *nats.Msg) {
 	ackTopic := fmt.Sprintf(events.SearchAckTopicPattern, req.RequestId)
 	replyTopic := fmt.Sprintf(events.SearchReplyTopicPattern, req.RequestId)
 	if slices.Index(req.Types, events.SearchTypeFiles) < 0 {
-		ack := events.SearchAck{
+		s.log.Debug("nack search request", "requestId", req.RequestId, "replyId", replyId, "types", req.Types, "query", req.Query)
+		nack := events.SearchAck{
 			RequestId: req.RequestId,
 			ReplyId:   replyId,
 			Ack:       false,
 		}
-		data, _ := json.Marshal(ack)
+		data, _ := json.Marshal(nack)
 		s.nc.Publish(ackTopic, data)
 		return
 	}
+
+	s.log.Debug("ack search request", "requestId", req.RequestId, "replyId", replyId, "types", req.Types, "query", req.Query)
 	ack := events.SearchAck{
 		RequestId: req.RequestId,
 		ReplyId:   replyId,
@@ -141,7 +144,7 @@ func (s *search) handleMessage(msg *nats.Msg) {
 		return
 	}
 
-	filterList := bson.A{}
+	providerFilterList := bson.A{}
 	for _, space := range userSpaces {
 		for _, provider := range space.FileProviders {
 			providerFilter := bson.M{
@@ -150,13 +153,16 @@ func (s *search) handleMessage(msg *nats.Msg) {
 			if provider.Path != "" {
 				providerFilter["path"] = bson.M{"$regex": fmt.Sprintf("^%s", provider.Path)}
 			}
-			filterList = append(filterList, providerFilter)
+			providerFilterList = append(providerFilterList, providerFilter)
 		}
 	}
 
-	filterList = append(filterList, bson.M{"$text": bson.M{"$search": req.Query}})
-
-	filter := bson.M{"$and": filterList}
+	filter := bson.M{
+		"$and": bson.A{
+			bson.M{"$or": providerFilterList},
+			bson.M{"$text": bson.M{"$search": req.Query}},
+		},
+	}
 	projection := bson.M{"score": bson.M{"$meta": "textScore"}}
 
 	s.log.Debug(fmt.Sprintf("search query: %v", filter))
