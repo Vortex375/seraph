@@ -105,7 +105,7 @@ func (h *searchHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup, public
 
 		searchRequest := events.SearchRequest{
 			RequestId: requestId,
-			UserId:    h.auth.GetUserId(ctx),
+			UserId:    h.auth.GetUserId(ctx.Request.Context()),
 			Query:     query,
 			Types:     []string{events.SearchTypeFiles},
 		}
