@@ -165,7 +165,7 @@ func (s *search) handleMessage(msg *nats.Msg) {
 	}
 	projection := bson.M{"score": bson.M{"$meta": "textScore"}}
 
-	s.log.Debug(fmt.Sprintf("search query: %v", filter))
+	s.log.Debug("search query", "query", logging.JsonValue(filter))
 
 	cur, err := s.files.Find(ctx, filter, options.Find().SetProjection(projection).SetSort(projection))
 	if err != nil {

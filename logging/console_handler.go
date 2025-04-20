@@ -109,23 +109,24 @@ func (h *ConsoleHandler) Handle(ctx context.Context, r slog.Record) error {
 	var other = make([]slog.Attr, 0)
 
 	r.Attrs(func(attr slog.Attr) bool {
+		value := attr.Value.Resolve()
 		if attr.Key == "component" {
-			component = attr.Value.String()
+			component = value.String()
 		} else if attr.Key == "error" {
-			err = attr.Value.String()
+			err = value.String()
 		} else if attr.Key == "stack" || attr.Key == "stacktrace" {
-			if attr.Value.Kind() == slog.KindGroup {
-				for _, stackTraceAttr := range attr.Value.Group() {
-					stack += stackTraceAttr.Value.String() + "\n"
+			if value.Kind() == slog.KindGroup {
+				for _, stackTraceAttr := range value.Group() {
+					stack += stackTraceAttr.Value.Resolve().String() + "\n"
 				}
 			} else {
-				stack = attr.Value.String()
+				stack = value.String()
 			}
-		} else if attr.Key == "request" && attr.Value.Kind() == slog.KindGroup {
-			request = attr.Value.Group()
+		} else if attr.Key == "request" && value.Kind() == slog.KindGroup {
+			request = value.Group()
 			other = append(other, attr)
-		} else if attr.Key == "response" && attr.Value.Kind() == slog.KindGroup {
-			response = attr.Value.Group()
+		} else if attr.Key == "response" && value.Kind() == slog.KindGroup {
+			response = value.Group()
 			other = append(other, attr)
 		} else {
 			other = append(other, attr)
@@ -135,7 +136,7 @@ func (h *ConsoleHandler) Handle(ctx context.Context, r slog.Record) error {
 
 	for _, attr := range h.attrs {
 		if attr.Key == "component" {
-			component = attr.Value.String()
+			component = attr.Value.Resolve().String()
 		} else {
 			other = append(other, attr)
 		}
@@ -182,8 +183,16 @@ func (h *ConsoleHandler) Handle(ctx context.Context, r slog.Record) error {
 	fmt.Fprint(&w, r.Message)
 
 	if len(other) > 0 {
-		fmt.Fprint(&w, " ")
-		attrColor.Fprint(&w, other)
+		attrColor.Fprint(&w, " (")
+		for i, attr := range other {
+			if i > 0 {
+				attrColor.Fprint(&w, " ")
+			}
+			attrColor.Fprint(&w, attr.Key)
+			attrColor.Fprint(&w, "=")
+			attrColor.Fprint(&w, attr.Value.Resolve().String())
+		}
+		attrColor.Fprint(&w, ")")
 	}
 	fmt.Fprint(&w, "\n")
 

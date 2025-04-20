@@ -19,6 +19,7 @@
 package logging
 
 import (
+	"encoding/json"
 	"log/slog"
 
 	"go.uber.org/fx"
@@ -72,4 +73,20 @@ func (l *Logger) GetLogger(name string) *slog.Logger {
 		}
 	}
 	return slog.New(NewHandlerMux(handlers...)).With("component", name)
+}
+
+type jsonValue struct {
+	v any
+}
+
+func JsonValue(v any) slog.LogValuer {
+	return &jsonValue{v}
+}
+
+func (v *jsonValue) LogValue() slog.Value {
+	data, err := json.Marshal(v.v)
+	if err != nil {
+		return slog.AnyValue(v.v)
+	}
+	return slog.StringValue(string(data))
 }
