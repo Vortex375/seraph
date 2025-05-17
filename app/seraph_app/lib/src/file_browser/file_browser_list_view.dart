@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import 'package:seraph_app/src/file_browser/file_browser_controller.dart';
 import 'package:seraph_app/src/file_browser/file_service.dart';
 import 'package:seraph_app/src/file_browser/selection_controller.dart';
+import 'package:seraph_app/src/share/share_controller.dart';
 import 'package:webdav_client/webdav_client.dart';
 
 class FileBrowserListView extends StatelessWidget{
@@ -21,6 +22,8 @@ class FileBrowserListView extends StatelessWidget{
 
   @override
   Widget build(BuildContext context) {
+    ShareController shareController = Get.find();
+    
     return ListView.builder(
       // Providing a restorationId allows the ListView to restore the
       // scroll position when a user leaves and returns to the app after it
@@ -56,6 +59,21 @@ class FileBrowserListView extends StatelessWidget{
                 Hero(tag: "preview:${item.path}", child: icon),
               ],
             ),
+            trailing: shareController.isShared(item.path!) 
+            ? IconButton(icon: const Icon(Icons.share), onPressed: () => {})
+            : PopupMenuButton(
+                itemBuilder: (builder) => [
+                  PopupMenuItem(
+                    onTap: () {},
+                    child: const Row(
+                      children: [
+                        Icon(Icons.share),
+                        Expanded(child: Text('Share')),
+                      ],
+                    )
+                  )
+                ]
+              ),
             onTap: () {
               final FileBrowserController controller = Get.find();
               if (hasPreview) {

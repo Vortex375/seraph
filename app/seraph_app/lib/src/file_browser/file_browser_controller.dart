@@ -56,7 +56,6 @@ class FileBrowserController extends GetxController {
     
     List<File> files;
     try {
-      print("Loading $_path");
       files = await fileService.readDir(_path.value);
       files.sort((a, b) {
         var aIsDir = a.isDir ?? false;

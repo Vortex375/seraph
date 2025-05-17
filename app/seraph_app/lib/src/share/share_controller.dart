@@ -14,13 +14,15 @@ class ShareController extends GetxController{
   final Rx<String?> title = Rx(null);
   final RxBool isDir = false.obs;
 
+  final RxList<String> sharedPaths = RxList();
+
   init() async {
     shareMode.value = Uri.base.fragment.startsWith(routeName);
 
+    final SettingsController settingsController = Get.find();
+    final dio = Dio(BaseOptions(baseUrl: settingsController.serverUrl.value));
+    
     if (shareMode.value) {
-      final SettingsController settingsController = Get.find();
-      final dio = Dio(BaseOptions(baseUrl: settingsController.serverUrl.value));
-
       final String shareId;
       int index = Uri.base.fragment.indexOf('?path=');
       if (index < 0) {
@@ -53,6 +55,29 @@ class ShareController extends GetxController{
       } finally {
         ready.value = true;
       }
+    } else {
+      final shares = await dio.get('/api/shares');
+      final list = List.from(shares.data);
+      for (dynamic item in list) {
+        final map = Map.from(item);
+        String providerId = map['providerId'].toString();
+        String path = map['path'].toString();
+        if (!path.startsWith('/')) {
+          path = "/$path";
+        }
+        sharedPaths.add("/$providerId$path");
+      }
+      print("sharedPaths: $sharedPaths");
     }
+  }
+
+  bool isShared(String path) {
+    if (path.endsWith('/')) {
+      path = path.substring(0, path.length - 1);
+    }
+    if (!path.startsWith('/')) {
+      path = "/$path";
+    }
+    return sharedPaths.contains(path);
   }
 }
