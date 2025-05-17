@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:seraph_app/src/file_browser/file_browser_view.dart';
+import 'package:seraph_app/src/file_viewer/file_viewer_view.dart';
 import 'package:seraph_app/src/share/share_controller.dart';
 
 class ShareView extends StatelessWidget {
@@ -44,8 +45,10 @@ class ShareView extends StatelessWidget {
             ],
           ),
         );
-      } else {
+      } else if (shareController.isDir.value) {
         return const FileBrowserView();
+      } else {
+        return const FileViewerView(tag: 'shareview');
       }
     });
   }

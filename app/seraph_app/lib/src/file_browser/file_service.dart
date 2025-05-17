@@ -66,6 +66,9 @@ class FileService {
   }
 
   String getFileUrl(String path) {
+    if (!path.startsWith('/')) {
+      path = '/$path';
+    }
     return '${settingsController.serverUrl}$pathPrefix$path';
   }
 

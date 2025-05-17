@@ -1,6 +1,7 @@
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
@@ -8,15 +9,16 @@ import 'package:seraph_app/src/file_browser/file_browser_controller.dart';
 import 'package:seraph_app/src/file_browser/file_service.dart';
 import 'package:seraph_app/src/media_player/audio_player_controller.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:webdav_client/webdav_client.dart';
 
 class FileViewerController extends GetxController {
 
   late int initialIndex;
-  late List<File> files;
   late PageController pageController;
   late TransformationController transformationController;
 
+  final RxList<File> files = RxList();
   final Rx<bool> isZoomedIn = false.obs;
   final Rx<bool> isUiVisible = true.obs;
 
@@ -27,16 +29,37 @@ class FileViewerController extends GetxController {
     super.onInit();
     final SettingsController settings = Get.find();
     final FileBrowserController fileBrowserController = Get.find();
+    final FileService fileService = Get.find();
 
     _themeMode = settings.themeMode.value;
     initialIndex = fileBrowserController.openItemIndex.value;
-    files = fileBrowserController.files.value;
+    if (initialIndex == -1) {
+      print("NO FILE");
+      initialIndex = 0;
+      scheduleMicrotask(() async {
+        String? path = Get.parameters['path'];
+        if (path != null) {
+          print("for path: ${path}");
+          File? file = await fileService.stat(path);
+          if (file != null) {
+            // stat returns broken path, it seems, so fix it
+            file.path = path;
+            files.add(file);
+            scheduleMicrotask(() {
+              _maybeChangeTheme(initialIndex);
+            });
+          }
+        }
+      });
+    } else {
+      files.addAll(fileBrowserController.files.value);
+      scheduleMicrotask(() {
+        _maybeChangeTheme(initialIndex);
+      });
+    }
+
     pageController = PageController(initialPage: initialIndex);
     transformationController = TransformationController();
-
-    scheduleMicrotask(() {
-      _maybeChangeTheme(initialIndex);
-    });
 
     pageController.addListener(() {
       final currentPage = pageController.page?.toInt() ?? -1;
@@ -76,6 +99,14 @@ class FileViewerController extends GetxController {
     } else {
       isUiVisible(true);
       await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    }
+  }
+
+  Future<void> openExternally() async {
+    final FileService fileService = Get.find();
+    if (kIsWeb) {
+      await launchUrl(Uri.parse(fileService.getFileUrl(files[pageController.page!.toInt()].path!)),
+          webOnlyWindowName: '_blank');
     }
   }
 

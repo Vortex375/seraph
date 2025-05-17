@@ -9,13 +9,14 @@ import '../file_browser/file_service.dart';
 class FileViewerView extends StatelessWidget{
   
   static const String routeName = '/view';
+  final String? tag;
 
-  const FileViewerView({super.key});
+  const FileViewerView({super.key, this.tag});
 
   @override
   Widget build(BuildContext context) {
     final FileService fileService = Get.find();
-    final FileViewerController controller = Get.find();
+    final FileViewerController controller = Get.find(tag: tag);
     final FileBrowserController fileBrowserController = Get.find();
 
     final Widget? previewWidget = fileBrowserController.getPreviewWidget();
@@ -23,6 +24,11 @@ class FileViewerView extends StatelessWidget{
     return Obx(() => Scaffold(
       appBar: !controller.isUiVisible.value ? null : AppBar(
         backgroundColor: Colors.transparent,
+        actions: [
+          IconButton(icon: Icon(Icons.open_in_new), onPressed: () {
+            controller.openExternally();
+          })
+        ],
       ),
       bottomNavigationBar: AnimatedOpacity(
         opacity: controller.isUiVisible.value ? 1.0: 0.0,

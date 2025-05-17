@@ -87,7 +87,7 @@ class FileBrowserController extends GetxController {
       Get.offNamed('${shareController.shareMode.value ? ShareController.routeName : FileBrowserView.routeName}?path=$_path/${item.name}');
     } else {
       _openItemIndex.value = files.value.indexOf(item);
-      Get.toNamed('${FileViewerView.routeName}?file=$_path/${item.name}');
+      Get.toNamed('${FileViewerView.routeName}?path=$_path/${item.name}');
     }
   }
 

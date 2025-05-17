@@ -34,10 +34,15 @@ class MyApp extends StatelessWidget {
         GetPage(
           name: ShareController.routeName,
           page: () {
-            Get.find<FileBrowserController>().setPath(Get.parameters['path'] ?? '/');
+            if (shareController.isDir.value) {
+              Get.find<FileBrowserController>().setPath(Get.parameters['path'] ?? '/');
+            }
             return const ShareView();
-          }, 
+          },
           transition: Transition.noTransition,
+          binding: BindingsBuilder(() {
+            Get.put(FileViewerController(), tag: 'shareview');
+          })
         ),
         GetPage(
           name: FileViewerView.routeName, 

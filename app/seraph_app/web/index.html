@@ -33,6 +33,12 @@
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
+  <div id="loading-message" style="font-family: sans-serif;">Loading the app, please wait...</div>
   <script src="flutter_bootstrap.js" async></script>
+  <script>
+    window.addEventListener('flutter-first-frame', function () {
+      document.getElementById('loading-message')?.remove();
+    });
+  </script>
 </body>
 </html>

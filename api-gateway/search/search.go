@@ -113,6 +113,7 @@ func (h *searchHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup, public
 		h.nc.Publish(events.SearchRequestTopic, data)
 
 		ctx.Status(200)
+		ctx.Writer.WriteHeaderNow()
 		activeReplies := map[string]struct{}{}
 		startTs := time.Now()
 		for {

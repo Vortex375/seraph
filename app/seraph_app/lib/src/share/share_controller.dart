@@ -12,6 +12,7 @@ class ShareController extends GetxController{
   final RxBool ready = false.obs;
 
   final Rx<String?> title = Rx(null);
+  final RxBool isDir = false.obs;
 
   init() async {
     shareMode.value = Uri.base.fragment.startsWith(routeName);
@@ -44,6 +45,7 @@ class ShareController extends GetxController{
         
         final list = List.from(share.data);
         title.value = Map.from(list[0])['title'].toString();
+        isDir.value = Map.from(list[0])['isDir'];
 
       } catch (err) {
         print("Error while loading share: $err");
