@@ -110,6 +110,16 @@ func (h *sharesHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup, public
 		getShare(ctx, share)
 	})
 
+	apiGroup.GET("shares", func(ctx *gin.Context) {
+		owner := h.auth.GetUserId(ctx.Request.Context())
+
+		share := entities.MakePrototype(&shares.SharePrototype{})
+
+		share.Owner.Set(owner)
+
+		getShare(ctx, share)
+	})
+
 	apiGroup.GET("shares/:shareId", func(ctx *gin.Context) {
 		shareId := ctx.Param("shareId")
 		owner := h.auth.GetUserId(ctx.Request.Context())
