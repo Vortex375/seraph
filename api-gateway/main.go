@@ -23,6 +23,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.uber.org/fx"
 	"umbasa.net/seraph/api-gateway/auth"
+	"umbasa.net/seraph/api-gateway/download"
 	"umbasa.net/seraph/api-gateway/gateway"
 	"umbasa.net/seraph/api-gateway/jobs"
 	"umbasa.net/seraph/api-gateway/preview"
@@ -43,18 +44,21 @@ func main() {
 		logging.Module,
 		messaging.Module,
 		config.Module,
-		auth.Module,
 		mongodb.Module,
-		gateway.Module,
-		webdav.Module,
-		preview.Module,
-		shares.Module,
-		jobs.Module,
-		search.Module,
-		services.Module,
 		tracing.Module,
 		servicediscovery.Module,
+		gateway.Module,
+		auth.Module,
 		logging.FxLogger(),
+
+		download.Module,
+		jobs.Module,
+		preview.Module,
+		search.Module,
+		services.Module,
+		shares.Module,
+		webdav.Module,
+
 		fx.Provide(auth.NewMigrations),
 		fx.Decorate(func(viper *viper.Viper) *viper.Viper {
 			viper.SetDefault("tracing.serviceName", "api-gateway")

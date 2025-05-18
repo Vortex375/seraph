@@ -60,6 +60,7 @@ class FileBrowserView extends StatelessWidget {
     SettingsController settings = Get.find();
     FileBrowserController controller = Get.find();
     SelectionController selectionController = Get.find();
+    ShareController shareController = Get.find();
 
     final List<Widget> bottoms = [];
     bottoms.add(Obx(() => SizedBox(
@@ -109,7 +110,7 @@ class FileBrowserView extends StatelessWidget {
             name: 'Cloud Files', 
             routeName: FileBrowserView.routeName, 
             actions: [
-              IconButton(
+              if (!shareController.shareMode.value) IconButton(
                 icon: const Icon(Icons.search),
                 tooltip: 'Search',
                 onPressed: () {
@@ -131,6 +132,15 @@ class FileBrowserView extends StatelessWidget {
                       children: [
                         Icon(Icons.refresh),
                         Expanded(child: Text('Refresh')),
+                      ],
+                    )
+                  ),
+                  PopupMenuItem(
+                    onTap: controller.download,
+                    child: const Row(
+                      children: [
+                        Icon(Icons.download),
+                        Expanded(child: Text('Download')),
                       ],
                     )
                   )

@@ -61,7 +61,7 @@ type Result struct {
 }
 
 type WebDavServer interface {
-	//TODO
+	FileSystem() webdav.FileSystem
 }
 
 type webDavServer struct {
@@ -69,6 +69,7 @@ type webDavServer struct {
 	nc         *nats.Conn
 	auth       auth.Auth
 	clients    *sync.Map
+	fs         *delegatingFs
 	lockSystem webdav.LockSystem
 }
 
@@ -79,7 +80,15 @@ type spaceResolveCacheKey struct{}
 type shareResolveCacheKey struct{}
 
 func New(p Params) Result {
-	server := &webDavServer{p.Log, p.Nc, p.Auth, &sync.Map{}, webdav.NewMemLS()}
+	server := &webDavServer{
+		logger:     p.Log,
+		nc:         p.Nc,
+		auth:       p.Auth,
+		clients:    &sync.Map{},
+		lockSystem: webdav.NewMemLS(),
+	}
+	fs := &delegatingFs{server, *server.logger.GetLogger("webdav.fs")}
+	server.fs = fs
 	return Result{Server: server, Handler: server}
 }
 
@@ -106,19 +115,24 @@ func (server *webDavServer) Setup(app *gin.Engine, apiGroup *gin.RouterGroup, pu
 			passwordAuth(ctx)
 		}
 	}))
-	app.Use(scoped(PathPrefix, true, func(ctx *gin.Context) {
-		spaceCache := make(map[string]spaces.SpaceResolveResponse)
-		shareCache := make(map[string]shares.ShareResolveResponse)
-		r := ctx.Request.WithContext(context.WithValue(ctx.Request.Context(), spaceResolveCacheKey{}, spaceCache))
-		r = r.WithContext(context.WithValue(r.Context(), shareResolveCacheKey{}, shareCache))
-		w := &fastResponseWriter{ctx.Writer}
+	app.Use(scoped(PathPrefix, false, CacheMiddleware()),
+		scoped(PathPrefix, true, func(ctx *gin.Context) {
+			spaceCache := make(map[string]spaces.SpaceResolveResponse)
+			shareCache := make(map[string]shares.ShareResolveResponse)
+			r := ctx.Request.WithContext(context.WithValue(ctx.Request.Context(), spaceResolveCacheKey{}, spaceCache))
+			r = r.WithContext(context.WithValue(r.Context(), shareResolveCacheKey{}, shareCache))
+			w := &fastResponseWriter{ctx.Writer}
 
-		handler.ServeHTTP(w, r)
-		ctx.Abort()
-	}))
+			handler.ServeHTTP(w, r)
+			ctx.Abort()
+		}))
 	app.Any("/dav/*path", func(*gin.Context) {
 		// dummy method to prevent GIN returning 404
 	})
+}
+
+func (server *webDavServer) FileSystem() webdav.FileSystem {
+	return server.fs
 }
 
 func (server *webDavServer) getClient(providerId string) fileprovider.Client {
@@ -134,6 +148,18 @@ func (server *webDavServer) getClient(providerId string) fileprovider.Client {
 		}
 	}
 	return client.(fileprovider.Client)
+}
+
+func CacheMiddleware() func(*gin.Context) {
+	return func(ctx *gin.Context) {
+		spaceCache := make(map[string]spaces.SpaceResolveResponse)
+		shareCache := make(map[string]shares.ShareResolveResponse)
+		r := ctx.Request.WithContext(context.WithValue(ctx.Request.Context(), spaceResolveCacheKey{}, spaceCache))
+		r = r.WithContext(context.WithValue(r.Context(), shareResolveCacheKey{}, shareCache))
+		w := &fastResponseWriter{ctx.Writer}
+		ctx.Writer = w
+		ctx.Request = r
+	}
 }
 
 func makeLogger(logger *logging.Logger) func(*http.Request, error) {

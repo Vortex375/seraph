@@ -1,12 +1,14 @@
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:seraph_app/src/file_browser/file_browser_view.dart';
 import 'package:seraph_app/src/file_browser/file_service.dart';
 import 'package:seraph_app/src/file_viewer/file_viewer_view.dart';
 import 'package:seraph_app/src/share/share_controller.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:webdav_client/webdav_client.dart';
 
 class FileBrowserController extends GetxController {
@@ -87,6 +89,14 @@ class FileBrowserController extends GetxController {
     } else {
       _openItemIndex.value = files.value.indexOf(item);
       Get.toNamed('${FileViewerView.routeName}?path=$_path/${item.name}');
+    }
+  }
+
+  Future<void> download() async {
+    final FileService fileService = Get.find();
+    if (kIsWeb) {
+      await launchUrl(Uri.parse(fileService.getDownloadUrl(_path.value)),
+          webOnlyWindowName: '_blank');
     }
   }
 

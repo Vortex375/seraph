@@ -72,6 +72,14 @@ class FileService {
     return '${settingsController.serverUrl}$pathPrefix$path';
   }
 
+  String getDownloadUrl(String path) {
+    if (!path.startsWith('/')) {
+      path = '/$path';
+    }
+    final prefix = shareController.shareMode.value ? '/download/s' : '/download/p';
+    return '${settingsController.serverUrl}$prefix$path';
+  }
+
   Image getImage(String path, [ImageLoadingBuilder? loadingBuilder]) {
     final headers = getRequestHeadersSync();
     return Image.network(getFileUrl(path), headers: headers, loadingBuilder: loadingBuilder);
