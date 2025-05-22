@@ -2,6 +2,8 @@
 import 'package:dio/dio.dart';
 import 'package:get/get.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
+import 'package:seraph_app/src/share/share_dialog.dart';
+import 'package:seraph_app/src/share/share_edit_controller.dart';
 
 class ShareController extends GetxController{
 
@@ -55,19 +57,6 @@ class ShareController extends GetxController{
       } finally {
         ready.value = true;
       }
-    } else {
-      final shares = await dio.get('/api/shares');
-      final list = List.from(shares.data);
-      for (dynamic item in list) {
-        final map = Map.from(item);
-        String providerId = map['providerId'].toString();
-        String path = map['path'].toString();
-        if (!path.startsWith('/')) {
-          path = "/$path";
-        }
-        sharedPaths.add("/$providerId$path");
-      }
-      print("sharedPaths: $sharedPaths");
     }
   }
 
@@ -79,5 +68,29 @@ class ShareController extends GetxController{
       path = "/$path";
     }
     return sharedPaths.contains(path);
+  }
+
+  Future<void> loadShares() async {
+    final SettingsController settingsController = Get.find();
+    final dio = Dio(BaseOptions(baseUrl: settingsController.serverUrl.value));
+
+    final shares = await dio.get('/api/shares');
+    final list = List.from(shares.data);
+    sharedPaths.clear();
+    for (dynamic item in list) {
+      final map = Map.from(item);
+      String providerId = map['providerId'].toString();
+      String path = map['path'].toString();
+      if (!path.startsWith('/')) {
+        path = "/$path";
+      }
+      sharedPaths.add("/$providerId$path");
+    }
+    print("sharedPaths: $sharedPaths");
+  }
+
+  void editShare() {
+    Get.put(ShareEditController());
+    Get.dialog(const ShareDialog());
   }
 }

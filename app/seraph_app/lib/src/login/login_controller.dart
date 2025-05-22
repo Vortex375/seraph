@@ -118,6 +118,7 @@ class LoginController extends GetxController with WidgetsBindingObserver {
       print('currentUser changed to ${user?.uid} ${user?.parsedIdToken.claims.toString()}');
       _currentUser.value = user;
       _initialized.value = true;
+      shareController.loadShares();
     });
   }
 
@@ -141,6 +142,7 @@ class LoginController extends GetxController with WidgetsBindingObserver {
       if (response.statusCode == 200) {
         _noAuth.value = true;
         _initialized.value = true;
+        shareController.loadShares();
       } else {
         await launchUrl(Uri.parse('${settingsController.serverUrl.value}/auth/login?' 
           'redirect=true&to=${Uri.encodeFull(Uri.base.toString())}'),
