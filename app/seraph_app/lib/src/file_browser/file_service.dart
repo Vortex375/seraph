@@ -110,4 +110,8 @@ class FileService {
   bool isAudioFile(File file) {
     return file.mimeType?.startsWith("audio/") ?? false;
   }
+
+  bool isVideoFile(File file) {
+    return file.mimeType?.startsWith("video/") ?? false;
+  }
 }

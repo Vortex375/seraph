@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 import 'package:seraph_app/src/file_browser/file_browser_controller.dart';
 import 'package:seraph_app/src/file_viewer/file_viewer_controller.dart';
 import 'package:seraph_app/src/media_player/media_bottom_bar.dart';
+import 'package:seraph_app/src/media_player/video_player_controller.dart';
 
 import '../file_browser/file_service.dart';
 
@@ -18,14 +20,16 @@ class FileViewerView extends StatelessWidget{
     final FileService fileService = Get.find();
     final FileViewerController controller = Get.find(tag: tag);
     final FileBrowserController fileBrowserController = Get.find();
+    final VideoPlayerController videoPlayerController = Get.find();
 
     final Widget? previewWidget = fileBrowserController.getPreviewWidget();
 
     return Obx(() => Scaffold(
       appBar: !controller.isUiVisible.value ? null : AppBar(
+        leading: videoPlayerController.open.value ? IconButton(onPressed: videoPlayerController.stop, icon: const Icon(Icons.arrow_back)) : null,
         backgroundColor: Colors.transparent,
         actions: [
-          IconButton(icon: Icon(Icons.open_in_new), onPressed: () {
+          IconButton(icon: const Icon(Icons.open_in_new), onPressed: () {
             controller.openExternally();
           })
         ],
@@ -77,6 +81,40 @@ class FileViewerView extends StatelessWidget{
                 ]
               ),
             );
+          } else if (fileService.isVideoFile(file)) {
+            return Obx(() { 
+              if (videoPlayerController.open.value) {
+                return SafeArea(
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: SizedBox.expand(
+                        child: Video(
+                          controller: videoPlayerController.controller,
+                          controls: MaterialVideoControls,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              } else {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text('${file.name}'),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () {
+                          videoPlayerController.openFile(file.path!);
+                        }, 
+                        child: const Text('Play')
+                      )
+                    ]
+                  ),
+                );
+              }
+            });
           } else {
             return Center(child: Text('File Viewer ${file.name}'));
           }

@@ -9,6 +9,7 @@ import 'package:seraph_app/src/file_viewer/file_viewer_view.dart';
 import 'package:seraph_app/src/gallery/gallery_view.dart';
 import 'package:seraph_app/src/initial_binding.dart';
 import 'package:seraph_app/src/media_player/audio_player_view.dart';
+import 'package:seraph_app/src/media_player/video_player_controller.dart';
 import 'package:seraph_app/src/search/search_controller.dart';
 import 'package:seraph_app/src/search/search_view.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
@@ -79,6 +80,7 @@ class MyApp extends StatelessWidget {
           page: () => const FileViewerView(),
           binding: BindingsBuilder(() {
             Get.put(FileViewerController());
+            Get.put(VideoPlayerController());
           })
         ),
         GetPage(
