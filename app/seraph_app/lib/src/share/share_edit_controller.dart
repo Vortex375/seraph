@@ -24,6 +24,7 @@ class ShareEditController extends GetxController {
     isDir.value = file.isDir ?? false;
     path.value = file.path ?? "";
     shareId.text = generateRandomShareId(24);
+    title.text = file.name ?? "";
   }
   
   Future<void> existingShare(String existingShareId) async {
@@ -57,6 +58,9 @@ class ShareEditController extends GetxController {
     String p = path.value;
     if (p.startsWith("/")) {
       p = p.substring(1);
+    }
+    if (p.endsWith("/")) {
+      p = p.substring(0, p.length - 1);
     }
     int index = p.indexOf("/");
     if (index < 0) {
