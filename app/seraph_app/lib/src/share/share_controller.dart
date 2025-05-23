@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
 import 'package:seraph_app/src/share/share_dialog.dart';
 import 'package:seraph_app/src/share/share_edit_controller.dart';
+import 'package:webdav_client/webdav_client.dart';
 
 class ShareController extends GetxController{
 
@@ -16,7 +17,7 @@ class ShareController extends GetxController{
   final Rx<String?> title = Rx(null);
   final RxBool isDir = false.obs;
 
-  final RxList<String> sharedPaths = RxList();
+  final RxMap<String, String> sharedPaths = RxMap();
 
   init() async {
     shareMode.value = Uri.base.fragment.startsWith(routeName);
@@ -67,7 +68,17 @@ class ShareController extends GetxController{
     if (!path.startsWith('/')) {
       path = "/$path";
     }
-    return sharedPaths.contains(path);
+    return sharedPaths.containsKey(path);
+  }
+
+  String? getShareFor(String path) {
+    if (path.endsWith('/')) {
+      path = path.substring(0, path.length - 1);
+    }
+    if (!path.startsWith('/')) {
+      path = "/$path";
+    }
+    return sharedPaths[path];
   }
 
   Future<void> loadShares() async {
@@ -79,18 +90,28 @@ class ShareController extends GetxController{
     sharedPaths.clear();
     for (dynamic item in list) {
       final map = Map.from(item);
+      String shareId = map['shareId'].toString();
       String providerId = map['providerId'].toString();
       String path = map['path'].toString();
       if (!path.startsWith('/')) {
         path = "/$path";
       }
-      sharedPaths.add("/$providerId$path");
+      sharedPaths["/$providerId$path"] = shareId;
     }
     print("sharedPaths: $sharedPaths");
   }
 
-  void editShare() {
-    Get.put(ShareEditController());
-    Get.dialog(const ShareDialog());
+  Future<void> createShare(File file) async {
+    final controller = ShareEditController();
+    await controller.newShare(file);
+    Get.put(controller);
+    Get.dialog(const ShareDialog()).then((_) => Get.delete<ShareEditController>());
+  }
+
+  Future<void> editShare(String shareId) async {
+    final controller = ShareEditController();
+    await controller.existingShare(shareId);
+    Get.put(controller);
+    Get.dialog(const ShareDialog()).then((_) => Get.delete<ShareEditController>());
   }
 }

@@ -59,12 +59,15 @@ class FileBrowserListView extends StatelessWidget{
                 Hero(tag: "preview:${item.path}", child: icon),
               ],
             ),
-            trailing: shareController.isShared(item.path!) 
-            ? IconButton(icon: const Icon(Icons.share), onPressed: () => {})
+            trailing: Obx(() => shareController.isShared(item.path!)
+            ? IconButton(
+              icon: const Icon(Icons.share), 
+              onPressed: () => shareController.editShare(shareController.getShareFor(item.path!)!)
+            )
             : PopupMenuButton(
                 itemBuilder: (builder) => [
                   PopupMenuItem(
-                    onTap: () {},
+                    onTap: () => shareController.createShare(item),
                     child: const Row(
                       children: [
                         Icon(Icons.share),
@@ -73,7 +76,7 @@ class FileBrowserListView extends StatelessWidget{
                     )
                   )
                 ]
-              ),
+              )),
             onTap: () {
               final FileBrowserController controller = Get.find();
               if (hasPreview) {

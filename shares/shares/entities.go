@@ -27,22 +27,22 @@ import (
 type SharePrototype struct {
 	entities.Prototype
 
-	ShareId     entities.Definable[string] `bson:"shareId"`
-	Owner       entities.Definable[string] `bson:"owner"`
-	Title       entities.Definable[string] `bson:"title"`
-	Description entities.Definable[string] `bson:"description"`
-	ProviderId  entities.Definable[string] `bson:"providerId"`
-	Path        entities.Definable[string] `bson:"path"`
-	Recursive   entities.Definable[bool]   `bson:"recursive"`
-	ReadOnly    entities.Definable[bool]   `bson:"readOnly"`
-	IsDir       entities.Definable[bool]   `bson:"isDir"`
+	ShareId     entities.Definable[string] `bson:"shareId" json:"shareId"`
+	Owner       entities.Definable[string] `bson:"owner" json:"owner"`
+	Title       entities.Definable[string] `bson:"title" json:"title"`
+	Description entities.Definable[string] `bson:"description" json:"description"`
+	ProviderId  entities.Definable[string] `bson:"providerId" json:"providerId"`
+	Path        entities.Definable[string] `bson:"path" json:"path"`
+	Recursive   entities.Definable[bool]   `bson:"recursive" json:"recursive"`
+	ReadOnly    entities.Definable[bool]   `bson:"readOnly" json:"readOnly"`
+	IsDir       entities.Definable[bool]   `bson:"isDir" json:"isDir"`
 }
 
 // Entity representing a "share", i.e. information that makes
 // a file or folder publicly available by sharing a link containig the shareId.
 type Share struct {
 	// internal Id of the Share entity
-	Id primitive.ObjectID `bson:"_id"`
+	Id primitive.ObjectID `bson:"_id" json:"id"`
 
 	// the ShareId is publicly visible (e.g. in share links) and must be unique
 	ShareId string `bson:"shareId" json:"shareId"`
@@ -68,7 +68,7 @@ type Share struct {
 
 	// determines whether users can modify files using the share
 	// TODO: support multiple modes, e.g. "upload only"
-	ReadOnly bool `bson:"readOnly"`
+	ReadOnly bool `bson:"readOnly" json:"readOnly"`
 
 	// whether a file or folder is shared
 	IsDir bool `bson:"isDir" json:"isDir"`
