@@ -24,5 +24,8 @@ import (
 )
 
 func ThumbnailHash(path string) string {
-	return hex.EncodeToString(sha256.New().Sum(([]byte(path))))
+	sha := sha256.New()
+	sha.Write([]byte(path))
+
+	return hex.EncodeToString(sha.Sum([]byte{}))
 }
