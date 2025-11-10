@@ -1,6 +1,6 @@
 module umbasa.net/seraph/taglib
 
-go 1.22.0
+go 1.25.4
 
 require (
 	github.com/stretchr/testify v1.10.0

@@ -1,6 +1,6 @@
 module umbasa.net/seraph/spaces
 
-go 1.23.4
+go 1.25.4
 
 require (
 	github.com/golang-migrate/migrate/v4 v4.17.1

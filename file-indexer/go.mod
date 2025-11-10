@@ -1,6 +1,6 @@
 module umbasa.net/seraph/file-indexer
 
-go 1.23.4
+go 1.25.4
 
 require (
 	github.com/boz/go-throttle v0.0.0-20160922054636-fdc4eab740c1
