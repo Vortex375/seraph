@@ -186,6 +186,19 @@ my_agent = Agent(
 2. Regenerate requirements: `./scripts/generate_requirements.sh`
 3. Rebuild: `docker compose up -d --build`
 
+### Run file provider integration tests
+
+The async Python file provider client integration tests spin up the Go file provider server
+and an embedded NATS instance via a helper binary.
+
+```sh
+uv pip install -e .[dev]
+pytest tests/test_fileprovider_client_integration.py
+```
+
+Optional environment variable:
+- `FILEPROVIDER_TEST_DIR`: use a fixed directory instead of a temp dir
+
 ### Use a different model provider
 
 1. Add your API key to `.env` (e.g., `ANTHROPIC_API_KEY`)

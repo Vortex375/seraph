@@ -23,6 +23,12 @@ dependencies = [
   "mcp",
   "reportlab",
   "duckduckgo-search",
+  # Messaging
+  "nats-py",
+  # Serialization
+  "fastavro",
+  # Cache
+  "cachetools",
   # Tracing
   "opentelemetry-api",
   "opentelemetry-sdk",
@@ -30,7 +36,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["mypy", "ruff"]
+dev = ["mypy", "ruff", "pytest", "pytest-asyncio"]
+
+[dependency-groups]
+dev = ["mypy", "ruff", "pytest", "pytest-asyncio"]
 
 [build-system]
 requires = ["setuptools"]
@@ -58,3 +67,6 @@ ignore_missing_imports = true
 
 [tool.uv.pip]
 no-annotate = true
+
+[tool.uv]
+default-groups = ["dev"]
