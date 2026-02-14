@@ -21,8 +21,10 @@ package search
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -61,8 +63,8 @@ type searchHandler struct {
 	auth auth.Auth
 }
 
-const searchAckTime = 3 * time.Second
-const searchReplyTime = 30 * time.Second
+var searchAckTime = 3 * time.Second
+var searchReplyTime = 30 * time.Second
 
 func New(p Params) Result {
 	return Result{
@@ -78,7 +80,10 @@ func (h *searchHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup, public
 	apiGroup.GET("/search", func(ctx *gin.Context) {
 		query := ctx.Query("q")
 
-		ctx.Header("Content-Type", "application/x-ndjson")
+		ctx.Header("Content-Type", "text/event-stream")
+		ctx.Header("Cache-Control", "no-cache")
+		ctx.Header("Connection", "keep-alive")
+		ctx.Header("X-Accel-Buffering", "no")
 
 		if query == "" {
 			ctx.Status(200)
@@ -114,10 +119,13 @@ func (h *searchHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup, public
 
 		ctx.Status(200)
 		ctx.Writer.WriteHeaderNow()
+		ctx.Writer.Flush()
 		activeReplies := map[string]struct{}{}
 		startTs := time.Now()
 		for {
 			select {
+			case <-ctx.Request.Context().Done():
+				return
 			case msg := <-ackChan:
 				ack := events.SearchAck{}
 				json.Unmarshal(msg.Data, &ack)
@@ -134,9 +142,10 @@ func (h *searchHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup, public
 					}
 				} else {
 					activeReplies[reply.ReplyId] = struct{}{}
-					ctx.Writer.Write(msg.Data)
-					ctx.Writer.WriteString("\n")
-					ctx.Writer.Flush()
+					if err := writeSSE(ctx.Writer, msg.Data); err != nil {
+						h.log.Warn("failed to write search reply", "error", err)
+						return
+					}
 				}
 			case <-searchTimeout(len(activeReplies)):
 				return
@@ -152,4 +161,15 @@ func searchTimeout(numReplies int) <-chan time.Time {
 	} else {
 		return time.After(searchReplyTime)
 	}
+}
+
+func writeSSE(w io.Writer, data []byte) error {
+	payload := strings.ReplaceAll(string(data), "\n", "\ndata: ")
+	if _, err := fmt.Fprintf(w, "data: %s\n\n", payload); err != nil {
+		return err
+	}
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
+	}
+	return nil
 }

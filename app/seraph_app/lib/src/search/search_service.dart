@@ -32,7 +32,7 @@ class SearchService {
       options: Options(
         responseType: ResponseType.stream,
         headers: {
-          'Accept': 'application/x-ndjson',
+          'Accept': 'text/event-stream',
           ...authHeaders
         },
       ),
@@ -43,12 +43,22 @@ class SearchService {
         .transform(utf8.decoder) // Convert bytes to string
         .transform(const LineSplitter()); // Split by lines
 
+    final dataLines = <String>[];
     await for (final line in stream) {
-      if (line.trim().isEmpty) continue;
-      try {
-        yield json.decode(line) as Map<String, dynamic>;
-      } catch (e) {
-        print('Failed to decode line: $line');
+      if (line.isEmpty) {
+        if (dataLines.isEmpty) continue;
+        final payload = dataLines.join('\n');
+        dataLines.clear();
+        try {
+          yield json.decode(payload) as Map<String, dynamic>;
+        } catch (e) {
+          print('Failed to decode SSE payload: $payload');
+        }
+        continue;
+      }
+
+      if (line.startsWith('data:')) {
+        dataLines.add(line.substring(5).trimLeft());
       }
     }
   }
