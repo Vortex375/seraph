@@ -12,6 +12,7 @@ Services communicate over NATS (JetStream) and use `fx` for dependency injection
 - `entities/`, `messaging/`, `logging/`, `tracing/`, `config/`, `mongodb/`: shared Go libraries.
 - `webapp/seraph-web-app/`: Angular web app (Angular CLI 18.x).
 - `app/seraph_app/`: Flutter mobile app.
+- `agents/`: Agno/AgentOS multi-agent app (Python/FastAPI + Postgres + DuckDB).
 - `events/`, `service-discovery/`, `thumbnailer/thumbnailer/`: codegen Makefiles (avrogen for NATS schemas).
 - `taglib/`: SWIG wrapper for TagLib; see `taglib/README.md` for build notes.
 
@@ -54,6 +55,23 @@ Location: `app/seraph_app/`
 - Test: `flutter test`
 - Run a single test: `flutter test test/widget_test.dart`
 - Analyze (lint): `flutter analyze` (uses `flutter_lints` via `analysis_options.yaml`)
+
+## Agents app (Agno/AgentOS)
+
+Location: `agents/`
+
+- Docker dev: `docker compose up -d --build`
+- Run API locally: `python -m app.main`
+- Setup venv (uv): `./scripts/venv_setup.sh`
+- Generate requirements: `./scripts/generate_requirements.sh`
+- Lint: `ruff check .`
+- Type check: `mypy .`
+
+Agents structure:
+- `agents/agents/`: individual agent definitions (Pal, knowledge, MCP).
+- `agents/app/main.py`: AgentOS entry point.
+- `agents/app/config.yaml`: agent prompt/config file.
+- `agents/db/`: database session and URL helpers.
 
 # Code Generation
 
@@ -124,6 +142,16 @@ Formatting:
 
 Testing:
 - `flutter test` for all tests; pass a specific file for single tests.
+
+## Python / Agno
+
+Formatting and linting:
+- Use Ruff (line length 120) and keep configs in `agents/pyproject.toml`.
+- `ruff` and `mypy` are the expected lint/type tools.
+
+Typing:
+- Prefer type hints on public functions.
+- `mypy` uses strict-ish settings (`check_untyped_defs`, `no_implicit_optional`).
 
 # Agent Notes
 
