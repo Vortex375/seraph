@@ -22,6 +22,7 @@ dependencies = [
   # Tools
   "mcp",
   "reportlab",
+  "pypdf",
   "duckduckgo-search",
   # Messaging
   "nats-py",

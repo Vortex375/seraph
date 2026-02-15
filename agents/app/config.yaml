@@ -8,6 +8,10 @@ chat:
       - "What is Agno?"
       - "How do I create my first agent?"
       - "What documents are in your knowledge base?"
+    documents-agent:
+      - "Summarize the latest document"
+      - "What do you know about the architecture?"
+      - "List documents you can access"
     mcp-agent:
       - "What is Agno?"
       - "What tools do you have access to?"

@@ -45,7 +45,20 @@ type output struct {
 }
 
 func main() {
-	opts := &server.Options{Port: -1}
+	jsDir, jsCleanup, err := initJetStreamDir()
+	if err != nil {
+		log.Printf("failed to init jetstream dir: %v", err)
+		return
+	}
+	defer jsCleanup()
+
+	opts := &server.Options{
+		Port:      -1,
+		JetStream: true,
+		StoreDir:  jsDir,
+		NoSigs:    true,
+		NoLog:     true,
+	}
 	natsServer, err := server.NewServer(opts)
 	if err != nil {
 		log.Fatal(err)
@@ -121,6 +134,17 @@ func initTmpDir() (string, func(), error) {
 	}
 
 	dir, err := os.MkdirTemp("", "seraph-fileprovider-test-")
+	if err != nil {
+		return "", func() {}, err
+	}
+
+	return dir, func() {
+		_ = os.RemoveAll(dir)
+	}, nil
+}
+
+func initJetStreamDir() (string, func(), error) {
+	dir, err := os.MkdirTemp("", "seraph-nats-js-")
 	if err != nil {
 		return "", func() {}, err
 	}

@@ -40,6 +40,14 @@ services:
       PRINT_ENV_ON_LOAD: "True"
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       EXA_API_KEY: ${EXA_API_KEY:-}
+      NATS_URL: ${NATS_URL:-nats://host.docker.internal:4222}
+      KB_INGEST_ENABLED: ${KB_INGEST_ENABLED:-true}
+      KB_MAX_FILE_BYTES: ${KB_MAX_FILE_BYTES:-20971520}
+      KB_PULL_BATCH: ${KB_PULL_BATCH:-20}
+      KB_FETCH_TIMEOUT: ${KB_FETCH_TIMEOUT:-1.0}
+      KB_ACK_WAIT_SECONDS: ${KB_ACK_WAIT_SECONDS:-30}
+      KB_CONSUMER_NAME: ${KB_CONSUMER_NAME:-seraph-agents-kb}
+      KB_INGEST_PARALLELISM: ${KB_INGEST_PARALLELISM:-4}
     depends_on:
       - agentos-db
     networks:
