@@ -6,6 +6,22 @@ Backend services are Go microservices; the mobile app is Flutter/Dart; the web U
 Each folder (except `app` and `webapp`) is a Go module hosting a microservice.
 Services communicate over NATS (JetStream) and use `fx` for dependency injection.
 
+# Tech Stack
+
+- Backend microservices: Go `1.25.4` with multi-module workspace via `go.work`
+- Backend architecture: distributed microservices with Uber `fx` dependency injection
+- Messaging/eventing: NATS with JetStream
+- Backend data storage: MongoDB
+- Observability: `slog`-based logging and OpenTelemetry tracing
+- Schema/code generation: Avro schemas with generated Go sources (`avrogen`/`fastavro` related workflow)
+- Web app: Angular `18`, TypeScript `5.5`, RxJS, Jasmine/Karma
+- Mobile app: Flutter with Dart `>=3.4.3 <4.0.0`
+- Mobile libraries in use: Dio, Get/GetX, Provider, OIDC, WebDAV client, media_kit/audio packages
+- Agents app: Python `3.12` with FastAPI and Agno/AgentOS
+- Agents data/storage: PostgreSQL with `pgvector`, DuckDB
+- Agents tooling/integration: NATS (`nats-py`), OpenTelemetry, `mypy`, `ruff`, `pytest`
+- Native/media integration: TagLib via SWIG wrapper
+
 # Repository Layout
 
 - `api-gateway/`, `spaces/`, `shares/`, `file-indexer/`, `jobs/`, etc.: Go microservices (each has its own `go.mod`).
