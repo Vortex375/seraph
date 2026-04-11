@@ -1,6 +1,8 @@
 volumes:
   nats-data:
   mongo-data:
+  agentos-pgdata:
+  agentos-data:
 
 networks:
   internal:
@@ -42,6 +44,58 @@ services:
     environment:
       ME_CONFIG_MONGODB_URL: mongodb://mongodb:27017/
       ME_CONFIG_BASICAUTH: false
+
+  agentos-db:
+    image: agnohq/pgvector:18
+    restart: always
+    networks:
+      - internal
+    # ports:
+    #   - 5432:5432 # for debugging
+    volumes:
+      - agentos-pgdata:/var/lib/postgresql
+    environment:
+      POSTGRES_USER: ${DB_USER:-ai}
+      POSTGRES_PASSWORD: ${DB_PASS:-ai}
+      POSTGRES_DB: ${DB_DATABASE:-ai}
+
+  agentos-api:
+    image: seraph-agents
+    build:
+      context: ./agents
+      dockerfile: Dockerfile
+    restart: always
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    depends_on:
+      - agentos-db
+      - nats
+    networks:
+      - internal
+    ports:
+      - 8000:8000
+    volumes:
+      - agentos-data:/data
+    environment:
+      DATA_DIR: /data
+      RUNTIME_ENV: prd
+      AGNO_DEBUG: "False"
+      DB_HOST: agentos-db
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-ai}
+      DB_PASS: ${DB_PASS:-ai}
+      DB_DATABASE: ${DB_DATABASE:-ai}
+      WAIT_FOR_DB: "True"
+      PRINT_ENV_ON_LOAD: "False"
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      EXA_API_KEY: ${EXA_API_KEY:-}
+      NATS_URL: nats://nats:4222
+      KB_INGEST_ENABLED: ${KB_INGEST_ENABLED:-true}
+      KB_MAX_FILE_BYTES: ${KB_MAX_FILE_BYTES:-20971520}
+      KB_PULL_BATCH: ${KB_PULL_BATCH:-20}
+      KB_FETCH_TIMEOUT: ${KB_FETCH_TIMEOUT:-1.0}
+      KB_ACK_WAIT_SECONDS: ${KB_ACK_WAIT_SECONDS:-30}
+      KB_CONSUMER_NAME: ${KB_CONSUMER_NAME:-seraph-agents-kb}
+      KB_INGEST_PARALLELISM: ${KB_INGEST_PARALLELISM:-4}
   
   api-gateway:
     image: seraph

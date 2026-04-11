@@ -8,9 +8,12 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
+from nats import errors as nats_errors
 from nats.js import api as js_api
-from nats.js.errors import FetchTimeoutError
+from sqlalchemy import select
 
+from agno.knowledge.content import Content, FileData
+from agno.utils.log import logger as agno_logger
 from fileprovider.client import FileProviderClient
 from fileprovider.nats_client import connect_nats_from_env
 from ingestion.file_changed_events import FileChangedEvent, decode_file_changed_event
@@ -74,6 +77,8 @@ class FileChangedIngestionConfig:
     ack_wait: float
     consumer_name: Optional[str]
     parallelism: int
+    idle_backoff_base: float
+    idle_backoff_max: float
 
 
 class FileChangedIngestionService:
@@ -84,7 +89,7 @@ class FileChangedIngestionService:
         knowledge=None,
     ) -> None:
         self._config = config
-        self._log = logger or logging.getLogger("agents.ingestion")
+        self._log = self._configure_logger(logger)
         self._knowledge = knowledge or user_documents_knowledge
         self._nc = None
         self._js = None
@@ -93,6 +98,20 @@ class FileChangedIngestionService:
         self._stop_event = asyncio.Event()
         self._semaphore = asyncio.Semaphore(config.parallelism)
         self._tasks: set[asyncio.Task] = set()
+        self._idle_backoff = config.idle_backoff_base
+
+    def _configure_logger(self, logger: Optional[logging.Logger]) -> logging.Logger:
+        if logger is not None:
+            return logger
+
+        ingest_logger = agno_logger
+        level_name = os.getenv("LOG_LEVEL")
+        if level_name:
+            try:
+                ingest_logger.setLevel(level_name.upper())
+            except ValueError:
+                ingest_logger.setLevel(logging.INFO)
+        return ingest_logger
 
     async def start(self) -> None:
         if not self._config.enabled:
@@ -150,13 +169,17 @@ class FileChangedIngestionService:
         while not self._stop_event.is_set():
             try:
                 messages = await self._sub.fetch(self._config.pull_batch, timeout=self._config.fetch_timeout)
-            except FetchTimeoutError:
+            except (nats_errors.TimeoutError, asyncio.TimeoutError):
+                await self._sleep_idle_backoff()
                 continue
+            except asyncio.CancelledError:
+                return
             except Exception as exc:
                 self._log.exception("Failed to fetch messages", exc_info=exc)
                 await asyncio.sleep(1)
                 continue
 
+            self._reset_idle_backoff()
             for msg in messages:
                 await self._semaphore.acquire()
                 task = asyncio.create_task(self._handle_message(msg))
@@ -169,6 +192,15 @@ class FileChangedIngestionService:
     def _task_done(self, task: asyncio.Task) -> None:
         self._tasks.discard(task)
         self._semaphore.release()
+
+    def _reset_idle_backoff(self) -> None:
+        self._idle_backoff = self._config.idle_backoff_base
+
+    async def _sleep_idle_backoff(self) -> None:
+        if self._idle_backoff <= 0:
+            return
+        await asyncio.sleep(self._idle_backoff)
+        self._idle_backoff = min(self._idle_backoff * 2, self._config.idle_backoff_max)
 
     async def _handle_message(self, msg) -> None:
         try:
@@ -188,7 +220,20 @@ class FileChangedIngestionService:
             self._log.error("Failed to decode FileChangedEvent", exc_info=exc)
             return
 
+        self._log.debug(
+            "Processing FileChangedEvent",
+            extra={
+                "event_id": event.event_id,
+                "change": event.change,
+                "path": event.path,
+                "mime": event.mime,
+                "provider_id": event.provider_id,
+                "file_id": event.file_id,
+            },
+        )
+
         if event.is_dir:
+            self._log.debug("Skipping directory event", extra={"path": event.path})
             return
 
         if not event.path or not event.provider_id:
@@ -199,20 +244,35 @@ class FileChangedIngestionService:
 
         if event.change == "deleted":
             self._knowledge.remove_vectors_by_metadata({"file_id": event.file_id, "provider_id": event.provider_id})
+            self._log.debug(
+                "Processed delete event",
+                extra={"path": event.path, "provider_id": event.provider_id, "file_id": event.file_id},
+            )
             return
 
         if not _is_supported_mime(normalized_mime):
-            self._log.debug("Skipping unsupported mime", extra={"mime": normalized_mime, "path": event.path})
+            self._log.debug(
+                "Skipping unsupported mime",
+                extra={"mime": normalized_mime, "path": event.path, "provider_id": event.provider_id},
+            )
             return
 
         if event.size and event.size > self._config.max_file_bytes:
-            self._log.info(
+            self._log.debug(
                 "Skipping large file",
                 extra={"path": event.path, "size": event.size, "limit": self._config.max_file_bytes},
             )
             return
 
         await self._ingest_file(event, normalized_mime)
+        self._log.info(
+            "Ingested file",
+            extra={"path": event.path, "provider_id": event.provider_id, "file_id": event.file_id},
+        )
+        self._log.debug(
+            "Ingestion completed",
+            extra={"path": event.path, "provider_id": event.provider_id, "file_id": event.file_id},
+        )
 
     async def _ingest_file(self, event: FileChangedEvent, normalized_mime: str) -> None:
         if self._nc is None:
@@ -220,6 +280,7 @@ class FileChangedIngestionService:
 
         doc_name = os.path.basename(event.path) or event.path
         metadata = _build_metadata(event, normalized_mime)
+        content_hash = self._build_content_hash(doc_name, normalized_mime)
 
         self._knowledge.remove_vectors_by_metadata({"file_id": event.file_id, "provider_id": event.provider_id})
 
@@ -241,8 +302,7 @@ class FileChangedIngestionService:
         if normalized_mime == "application/pdf":
             pdf_reader = self._knowledge.pdf_reader
             if pdf_reader is None:
-                self._log.error("PDF reader not available; ensure pypdf is installed")
-                return
+                raise RuntimeError("PDF reader not available; ensure pypdf is installed")
 
             await self._knowledge.ainsert(
                 name=doc_name,
@@ -250,6 +310,7 @@ class FileChangedIngestionService:
                 metadata=metadata,
                 reader=pdf_reader,
             )
+            self._ensure_ingested(metadata, content_hash)
             return
 
         text = payload.decode("utf-8", errors="replace")
@@ -258,6 +319,30 @@ class FileChangedIngestionService:
             text_content=text,
             metadata=metadata,
         )
+        self._ensure_ingested(metadata, content_hash)
+
+    def _build_content_hash(self, name: str, mime: str) -> str:
+        file_data = FileData(content=b"", type="Text")
+        if mime == "application/pdf":
+            file_data = FileData(content=b"", type="Text")
+        content = Content(name=name, file_data=file_data)
+        return self._knowledge._build_content_hash(content)
+
+    def _ensure_ingested(self, metadata: dict, content_hash: str) -> None:
+        vector_db = self._knowledge.vector_db
+        if vector_db is None:
+            raise RuntimeError("Vector database not configured")
+        if hasattr(vector_db, "Session") and hasattr(vector_db, "table"):
+            try:
+                with vector_db.Session() as sess, sess.begin():
+                    stmt = select(vector_db.table.c.id).where(vector_db.table.c.meta_data.contains(metadata)).limit(1)
+                    row = sess.execute(stmt).fetchone()
+                if row is not None:
+                    return
+            except Exception as exc:
+                self._log.warning("Metadata verification failed", exc_info=exc)
+        if not vector_db.content_hash_exists(content_hash):
+            raise RuntimeError("Embedding insert failed; will retry")
 
 
 def build_ingestion_config() -> FileChangedIngestionConfig:
@@ -265,10 +350,12 @@ def build_ingestion_config() -> FileChangedIngestionConfig:
         enabled=_env_bool("KB_INGEST_ENABLED", True),
         max_file_bytes=int(os.getenv("KB_MAX_FILE_BYTES", str(20 * 1024 * 1024))),
         pull_batch=int(os.getenv("KB_PULL_BATCH", "20")),
-        fetch_timeout=float(os.getenv("KB_FETCH_TIMEOUT", "1.0")),
+        fetch_timeout=float(os.getenv("KB_FETCH_TIMEOUT", "10.0")),
         ack_wait=float(os.getenv("KB_ACK_WAIT_SECONDS", "30")),
         consumer_name=os.getenv("KB_CONSUMER_NAME", "seraph-agents-kb"),
         parallelism=max(1, int(os.getenv("KB_INGEST_PARALLELISM", "4"))),
+        idle_backoff_base=float(os.getenv("KB_IDLE_BACKOFF_BASE", "0.5")),
+        idle_backoff_max=float(os.getenv("KB_IDLE_BACKOFF_MAX", "5.0")),
     )
 
 

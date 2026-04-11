@@ -49,6 +49,18 @@ class DummyEmbedder(Embedder):
         return self._embed(text), {}
 
 
+class FailOncePgVector(PgVector):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._failed = False
+
+    async def async_upsert(self, content_hash, documents, filters=None, batch_size=100) -> None:
+        if not self._failed:
+            self._failed = True
+            raise RuntimeError("vector insert unavailable")
+        await super().async_upsert(content_hash, documents, filters=filters, batch_size=batch_size)
+
+
 def _read_line_with_timeout(proc: subprocess.Popen, timeout: float) -> str:
     if proc.stdout is None:
         raise RuntimeError("missing stdout for testserver")
@@ -204,6 +216,8 @@ async def test_ingestion_create_update_delete(nats_client, testserver_info: Dict
         ack_wait=5.0,
         consumer_name=None,
         parallelism=1,
+        idle_backoff_base=0.0,
+        idle_backoff_max=0.0,
     )
     ingestion_service = FileChangedIngestionService(config, knowledge=knowledge)
 
@@ -302,6 +316,92 @@ async def test_ingestion_create_update_delete(nats_client, testserver_info: Dict
             {"file_id": file_id, "provider_id": provider_id},
             timeout=10.0,
         )
+    finally:
+        await ingestion_service.stop()
+        await client.close()
+        with engine.connect() as conn:
+            conn.execute(text(f"DROP TABLE IF EXISTS ai.{table_name}"))
+
+
+@pytest.mark.asyncio
+async def test_ingestion_retries_after_failure(nats_client, testserver_info: Dict[str, str], monkeypatch):
+    if not _can_connect_db():
+        pytest.skip("Postgres not available for pgvector integration test")
+
+    monkeypatch.setenv("NATS_URL", testserver_info["nats_url"])
+
+    engine = create_engine(db_url)
+    table_name = f"user_documents_kb_test_{secrets.token_hex(4)}"
+
+    knowledge = Knowledge(
+        name="Retry Knowledge",
+        vector_db=FailOncePgVector(
+            db_url=db_url,
+            table_name=table_name,
+            search_type=SearchType.hybrid,
+            embedder=DummyEmbedder(dimensions=8),
+        ),
+        max_results=10,
+    )
+
+    config = FileChangedIngestionConfig(
+        enabled=True,
+        max_file_bytes=5 * 1024 * 1024,
+        pull_batch=1,
+        fetch_timeout=0.5,
+        ack_wait=1.0,
+        consumer_name=None,
+        parallelism=1,
+        idle_backoff_base=0.0,
+        idle_backoff_max=0.0,
+    )
+    ingestion_service = FileChangedIngestionService(config, knowledge=knowledge)
+
+    js = nats_client.jetstream()
+    try:
+        await js.add_stream(name="SERAPH_FILE_CHANGED", subjects=["seraph.file.*.changed"])
+    except Exception as exc:
+        pytest.skip(f"JetStream not available: {exc}")
+
+    provider_id = testserver_info["provider_id"]
+    file_id = f"file-{secrets.token_hex(4)}"
+    file_path = "test_ingestion_retry.txt"
+    payload = b"Retry ingestion payload"
+
+    client = FileProviderClient(provider_id, nats_client)
+    try:
+        file_handle = await client.open_file(file_path, os.O_CREAT | os.O_TRUNC | os.O_WRONLY, 0o644)
+        await file_handle.write(payload)
+        await file_handle.close()
+
+        await ingestion_service.start()
+
+        created_event = {
+            "event": {"id": secrets.token_hex(6), "version": 1},
+            "fileId": file_id,
+            "providerId": provider_id,
+            "change": "created",
+            "path": file_path,
+            "size": len(payload),
+            "mode": 0,
+            "modTime": int(time.time()),
+            "isDir": False,
+            "mime": "text/plain",
+        }
+        event_payload = _encode_file_changed_event(created_event)
+        await js.publish(f"seraph.file.{file_id}.changed", event_payload)
+
+        await asyncio.sleep(0.2)
+        assert knowledge.vector_db._failed is True
+
+        rows = await _wait_for_rows_matching(
+            engine,
+            table_name,
+            {"file_id": file_id, "provider_id": provider_id},
+            timeout=10.0,
+            predicate=lambda items: any("Retry ingestion payload" in row["content"] for row in items),
+        )
+        assert rows
     finally:
         await ingestion_service.stop()
         await client.close()
