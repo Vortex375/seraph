@@ -59,6 +59,9 @@ Thumbs.db
 # Project-specific
 # =========================
 tmp
+ui/node_modules/
+ui/dist/
+ui/package-lock.json
 
 # Optional: local PyPI creds (uncomment if you ever create it)
 # .pypirc
