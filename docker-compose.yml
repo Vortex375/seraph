@@ -1,8 +1,8 @@
 volumes:
   nats-data:
   mongo-data:
-  agentos-pgdata:
-  agentos-data:
+  agents-pgdata:
+  agents-data:
 
 networks:
   internal:
@@ -45,7 +45,7 @@ services:
       ME_CONFIG_MONGODB_URL: mongodb://mongodb:27017/
       ME_CONFIG_BASICAUTH: false
 
-  agentos-db:
+  agents-db:
     image: agnohq/pgvector:18
     restart: always
     networks:
@@ -53,13 +53,13 @@ services:
     # ports:
     #   - 5432:5432 # for debugging
     volumes:
-      - agentos-pgdata:/var/lib/postgresql
+      - agents-pgdata:/var/lib/postgresql
     environment:
       POSTGRES_USER: ${DB_USER:-ai}
       POSTGRES_PASSWORD: ${DB_PASS:-ai}
       POSTGRES_DB: ${DB_DATABASE:-ai}
 
-  agentos-api:
+  agents-api:
     image: seraph-agents
     build:
       context: ./agents
@@ -67,35 +67,37 @@ services:
     restart: always
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     depends_on:
-      - agentos-db
+      - agents-db
       - nats
     networks:
       - internal
     ports:
       - 8000:8000
     volumes:
-      - agentos-data:/data
+      - agents-data:/data
     environment:
-      DATA_DIR: /data
       RUNTIME_ENV: prd
-      AGNO_DEBUG: "False"
-      DB_HOST: agentos-db
+      DB_HOST: agents-db
       DB_PORT: 5432
       DB_USER: ${DB_USER:-ai}
       DB_PASS: ${DB_PASS:-ai}
       DB_DATABASE: ${DB_DATABASE:-ai}
-      WAIT_FOR_DB: "True"
-      PRINT_ENV_ON_LOAD: "False"
       OPENAI_API_KEY: ${OPENAI_API_KEY}
-      EXA_API_KEY: ${EXA_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      CHAT_MODEL_NAME: ${CHAT_MODEL_NAME:-gpt-5.2}
+      EMBEDDING_MODEL_NAME: ${EMBEDDING_MODEL_NAME:-text-embedding-3-small}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1536}
       NATS_URL: nats://nats:4222
       KB_INGEST_ENABLED: ${KB_INGEST_ENABLED:-true}
       KB_MAX_FILE_BYTES: ${KB_MAX_FILE_BYTES:-20971520}
       KB_PULL_BATCH: ${KB_PULL_BATCH:-20}
-      KB_FETCH_TIMEOUT: ${KB_FETCH_TIMEOUT:-1.0}
+      KB_FETCH_TIMEOUT: ${KB_FETCH_TIMEOUT:-10.0}
       KB_ACK_WAIT_SECONDS: ${KB_ACK_WAIT_SECONDS:-30}
       KB_CONSUMER_NAME: ${KB_CONSUMER_NAME:-seraph-agents-kb}
       KB_INGEST_PARALLELISM: ${KB_INGEST_PARALLELISM:-4}
+      KB_IDLE_BACKOFF_BASE: ${KB_IDLE_BACKOFF_BASE:-0.5}
+      KB_IDLE_BACKOFF_MAX: ${KB_IDLE_BACKOFF_MAX:-5.0}
+      SERAPH_AUTH_USER_HEADER: ${SERAPH_AUTH_USER_HEADER:-X-Seraph-User}
   
   api-gateway:
     image: seraph
