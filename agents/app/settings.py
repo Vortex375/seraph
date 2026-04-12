@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     kb_idle_backoff_base: float = 0.5
     kb_idle_backoff_max: float = 5.0
 
+    seraph_auth_enabled: bool = True
     seraph_auth_user_header: str = "X-Seraph-User"
 
 

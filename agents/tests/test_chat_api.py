@@ -1,6 +1,8 @@
 import asyncio
 import importlib
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, cast
 
@@ -14,12 +16,60 @@ from db.session import get_db_session
 from spaces.access import SpaceScope
 
 
+@contextmanager
+def settings_env(monkeypatch: pytest.MonkeyPatch, **env: str) -> Iterator[None]:
+    settings_module = importlib.import_module("app.settings")
+
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+
+    settings_module.get_settings.cache_clear()
+    try:
+        yield
+    finally:
+        settings_module.get_settings.cache_clear()
+
+
 def test_list_sessions_requires_authenticated_user() -> None:
     client = TestClient(create_app())
 
     response = client.get("/api/v1/chat/sessions")
 
     assert response.status_code == 401
+
+
+def test_create_session_defaults_to_anonymous_when_auth_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorded: dict[str, str] = {}
+
+    with settings_env(monkeypatch, SERAPH_AUTH_ENABLED="false"):
+        app = create_app()
+
+        class StubSession:
+            def __init__(self) -> None:
+                self.id = "session-1"
+                self.user_id = "anonymous"
+                self.title = "Anonymous session"
+                self.created_at = "2026-04-11T00:00:00Z"
+                self.updated_at = "2026-04-11T00:00:00Z"
+                self.last_message_at = "2026-04-11T00:00:00Z"
+
+        class StubSessionService:
+            def __init__(self, session: object) -> None:
+                del session
+
+            async def create_session(self, user_id: str, title: str) -> StubSession:
+                recorded["user_id"] = user_id
+                recorded["title"] = title
+                return StubSession()
+
+        monkeypatch.setattr("api.chat.SessionService", StubSessionService)
+
+        with TestClient(app) as client:
+            response = client.post("/api/v1/chat/sessions", json={"title": "Anonymous session"})
+
+    assert response.status_code == 201
+    assert response.json()["user_id"] == "anonymous"
+    assert recorded == {"user_id": "anonymous", "title": "Anonymous session"}
 
 
 @pytest.mark.asyncio
