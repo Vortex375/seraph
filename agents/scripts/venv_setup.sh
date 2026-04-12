@@ -2,9 +2,9 @@
 
 ############################################################################
 #
-#    Agno Virtual Environment Setup
+#    Seraph Agents Virtual Environment Setup
 #
-#    Usage: ./scripts/dev_setup.sh
+#    Usage: ./scripts/venv_setup.sh
 #
 ############################################################################
 
@@ -56,7 +56,7 @@ echo -e "    ${DIM}> uv venv ${VENV_DIR} --python 3.12${NC}"
 uv venv ${VENV_DIR} --python 3.12 --quiet
 
 echo ""
-echo -e "    ${DIM}Installing requirements...${NC}"
+echo -e "    ${DIM}Installing Seraph Agents requirements...${NC}"
 echo -e "    ${DIM}> uv pip install -r requirements.txt --no-cache${NC}"
 VIRTUAL_ENV=${VENV_DIR} uv pip install -r ${REPO_ROOT}/requirements.txt --no-cache --quiet
 

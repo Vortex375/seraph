@@ -22,20 +22,13 @@ async def connect_nats(
 ) -> NatsClient:
     nc = NatsClient()
 
-    connect_kwargs = {
-        "servers": [url or _get_nats_url()],
-    }
-
-    if user:
-        connect_kwargs["user"] = user
-    if password:
-        connect_kwargs["password"] = password
-    if token:
-        connect_kwargs["token"] = token
-    if creds:
-        connect_kwargs["user_credentials"] = creds
-
-    await nc.connect(**connect_kwargs)
+    await nc.connect(
+        servers=[url or _get_nats_url()],
+        user=user,
+        password=password,
+        token=token,
+        user_credentials=creds,
+    )
     return nc
 
 

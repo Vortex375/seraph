@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, TypeAlias
 
 from fastavro import parse_schema
 
@@ -12,7 +12,10 @@ FILE_PROVIDER_TOPIC_PREFIX = "seraph.fileprovider."
 FILE_PROVIDER_FILE_TOPIC_PREFIX = "seraph.fileprovider_file."
 FILE_PROVIDER_READDIR_TOPIC_PREFIX = "seraph.fileprovider_readdir."
 
-_SCHEMA_JSON = {
+SchemaDefinition: TypeAlias = dict[str, Any]
+
+
+_SCHEMA_JSON: dict[str, SchemaDefinition] = {
     "IoError": {
         "type": "record",
         "name": "IoError",

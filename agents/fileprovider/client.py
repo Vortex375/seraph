@@ -9,7 +9,7 @@ import posixpath
 import uuid
 from dataclasses import dataclass
 from io import BytesIO
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from cachetools import TTLCache
 from fastavro import schemaless_reader, schemaless_writer
@@ -47,7 +47,7 @@ def _encode(schema: Any, payload: Dict[str, Any]) -> bytes:
 
 def _decode(schema: Any, payload: bytes) -> Dict[str, Any]:
     buffer = BytesIO(payload)
-    return schemaless_reader(buffer, schema, None)
+    return cast(Dict[str, Any], schemaless_reader(buffer, schema, None))
 
 
 def _io_error_to_exception(err: Dict[str, str]) -> Optional[Exception]:

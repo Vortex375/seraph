@@ -1,7 +1,7 @@
 services:
-  agentos-db:
+  agents-db:
     image: agnohq/pgvector:18
-    container_name: agentos-db
+    container_name: agents-db
     restart: unless-stopped
     ports:
       - "5432:5432"
@@ -12,34 +12,33 @@ services:
       POSTGRES_PASSWORD: ${DB_PASS:-ai}
       POSTGRES_DB: ${DB_DATABASE:-ai}
     networks:
-      - agentos
+      - agents
 
-  agentos-api:
-    container_name: agentos-api
+  agents-api:
+    container_name: agents-api
     build:
       context: .
       dockerfile: Dockerfile
-    image: ${IMAGE_NAME:-agno-agentos}:${IMAGE_TAG:-latest}
+    image: ${IMAGE_NAME:-seraph-agents}:${IMAGE_TAG:-latest}
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     restart: unless-stopped
     ports:
       - "8000:8000"
     volumes:
       - .:/app
-      - agentos-data:/data
+      - agents-data:/data
     environment:
-      DATA_DIR: /data
       RUNTIME_ENV: dev
-      AGNO_DEBUG: "True"
-      DB_HOST: agentos-db
+      DB_HOST: agents-db
       DB_PORT: 5432
       DB_USER: ${DB_USER:-ai}
       DB_PASS: ${DB_PASS:-ai}
       DB_DATABASE: ${DB_DATABASE:-ai}
-      WAIT_FOR_DB: "True"
-      PRINT_ENV_ON_LOAD: "True"
       OPENAI_API_KEY: ${OPENAI_API_KEY}
-      EXA_API_KEY: ${EXA_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      CHAT_MODEL_NAME: ${CHAT_MODEL_NAME:-gpt-5.2}
+      EMBEDDING_MODEL_NAME: ${EMBEDDING_MODEL_NAME:-text-embedding-3-small}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1536}
       NATS_URL: ${NATS_URL:-nats://host.docker.internal:4222}
       KB_INGEST_ENABLED: ${KB_INGEST_ENABLED:-true}
       KB_MAX_FILE_BYTES: ${KB_MAX_FILE_BYTES:-20971520}
@@ -50,16 +49,17 @@ services:
       KB_INGEST_PARALLELISM: ${KB_INGEST_PARALLELISM:-4}
       KB_IDLE_BACKOFF_BASE: ${KB_IDLE_BACKOFF_BASE:-0.5}
       KB_IDLE_BACKOFF_MAX: ${KB_IDLE_BACKOFF_MAX:-5.0}
+      SERAPH_AUTH_USER_HEADER: ${SERAPH_AUTH_USER_HEADER:-X-Seraph-User}
     depends_on:
-      - agentos-db
+      - agents-db
     networks:
-      - agentos
+      - agents
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
 networks:
-  agentos:
+  agents:
 
 volumes:
   pgdata:
-  agentos-data:
+  agents-data:

@@ -1,4 +1,4 @@
-"""JetStream consumer that ingests FileChangedEvent documents into the knowledge base."""
+"""JetStream consumer that ingests FileChangedEvent documents into canonical storage."""
 
 from __future__ import annotations
 
@@ -6,18 +6,17 @@ import asyncio
 import logging
 import os
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 from nats import errors as nats_errors
 from nats.js import api as js_api
-from sqlalchemy import select
 
-from agno.knowledge.content import Content, FileData
-from agno.utils.log import logger as agno_logger
+from db.session import SessionLocal
+from documents.repository import DocumentsRepository
 from fileprovider.client import FileProviderClient
 from fileprovider.nats_client import connect_nats_from_env
+from ingestion.content import extract_text
 from ingestion.file_changed_events import FileChangedEvent, decode_file_changed_event
-from knowledge.user_documents import user_documents_knowledge
 
 FILE_CHANGED_STREAM = "SERAPH_FILE_CHANGED"
 FILE_CHANGED_SUBJECT = "seraph.file.*.changed"
@@ -42,17 +41,6 @@ def _is_supported_mime(mime: str) -> bool:
     if mime in {"application/json", "application/xml", "application/csv", "application/javascript", "application/sql"}:
         return True
     return False
-
-
-def _build_metadata(event: FileChangedEvent, mime: str) -> dict:
-    return {
-        "file_id": event.file_id,
-        "provider_id": event.provider_id,
-        "path": event.path,
-        "mime": mime,
-        "size": event.size,
-        "mod_time": event.mod_time,
-    }
 
 
 async def _read_all(file_handle, chunk_size: int) -> bytes:
@@ -87,24 +75,34 @@ class FileChangedIngestionService:
         config: FileChangedIngestionConfig,
         logger: Optional[logging.Logger] = None,
         knowledge=None,
+        session_factory=SessionLocal,
     ) -> None:
         self._config = config
         self._log = self._configure_logger(logger)
-        self._knowledge = knowledge or user_documents_knowledge
-        self._nc = None
-        self._js = None
-        self._sub = None
-        self._task: Optional[asyncio.Task] = None
+        self._session_factory = session_factory
+        self._nc: Any | None = None
+        self._js: Any | None = None
+        self._sub: Any | None = None
+        self._task: asyncio.Task[None] | None = None
         self._stop_event = asyncio.Event()
         self._semaphore = asyncio.Semaphore(config.parallelism)
-        self._tasks: set[asyncio.Task] = set()
+        self._tasks: set[asyncio.Task[None]] = set()
         self._idle_backoff = config.idle_backoff_base
+        self._document_locks: dict[tuple[str, str], asyncio.Lock] = {}
+
+    def _lock_for_document(self, provider_id: str, path: str) -> asyncio.Lock:
+        key = (provider_id, path)
+        lock = self._document_locks.get(key)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._document_locks[key] = lock
+        return lock
 
     def _configure_logger(self, logger: Optional[logging.Logger]) -> logging.Logger:
         if logger is not None:
             return logger
 
-        ingest_logger = agno_logger
+        ingest_logger = logging.getLogger(__name__)
         level_name = os.getenv("LOG_LEVEL")
         if level_name:
             try:
@@ -189,7 +187,7 @@ class FileChangedIngestionService:
         if self._tasks:
             await asyncio.gather(*self._tasks, return_exceptions=True)
 
-    def _task_done(self, task: asyncio.Task) -> None:
+    def _task_done(self, task: asyncio.Task[None]) -> None:
         self._tasks.discard(task)
         self._semaphore.release()
 
@@ -203,22 +201,42 @@ class FileChangedIngestionService:
         self._idle_backoff = min(self._idle_backoff * 2, self._config.idle_backoff_max)
 
     async def _handle_message(self, msg) -> None:
-        try:
-            await self._process_message(msg)
+        prepared = self._prepare_message(msg)
+        if prepared is None:
             await msg.ack()
-        except Exception as exc:
-            self._log.exception("Failed to process FileChangedEvent", exc_info=exc)
-            try:
-                await msg.nak()
-            except Exception:
-                self._log.debug("Failed to NAK message", exc_info=True)
+            return
 
-    async def _process_message(self, msg) -> None:
+        event, normalized_mime = prepared
+        async with self._lock_for_document(event.provider_id, event.path):
+            try:
+                await self._process_document_event(event, normalized_mime)
+            except Exception as exc:
+                async with self._session_factory() as session:
+                    repository = DocumentsRepository(session)
+                    await repository.record_ingest_failure(
+                        provider_id=event.provider_id,
+                        file_id=event.file_id,
+                        path=event.path,
+                        mime=normalized_mime,
+                        size=event.size,
+                        mod_time=event.mod_time,
+                        error=str(exc),
+                    )
+                self._log.exception("Failed to process FileChangedEvent", exc_info=exc)
+                try:
+                    await msg.nak()
+                except Exception:
+                    self._log.debug("Failed to NAK message", exc_info=True)
+                return
+
+        await msg.ack()
+
+    def _prepare_message(self, msg) -> tuple[FileChangedEvent, str] | None:
         try:
             event = decode_file_changed_event(msg.data)
         except Exception as exc:
             self._log.error("Failed to decode FileChangedEvent", exc_info=exc)
-            return
+            return None
 
         self._log.debug(
             "Processing FileChangedEvent",
@@ -234,16 +252,34 @@ class FileChangedIngestionService:
 
         if event.is_dir:
             self._log.debug("Skipping directory event", extra={"path": event.path})
-            return
+            return None
 
         if not event.path or not event.provider_id:
             self._log.warning("Skipping event with missing path/provider", extra={"event": event})
-            return
+            return None
 
-        normalized_mime = _normalize_mime(event.mime)
+        return event, _normalize_mime(event.mime)
+
+    async def _process_message(self, msg) -> FileChangedEvent | None:
+        prepared = self._prepare_message(msg)
+        if prepared is None:
+            return None
+
+        event, normalized_mime = prepared
+
+        async with self._lock_for_document(event.provider_id, event.path):
+            await self._process_document_event(event, normalized_mime)
+
+        return event
+
+    async def _process_document_event(self, event: FileChangedEvent, normalized_mime: str) -> None:
 
         if event.change == "deleted":
-            self._knowledge.remove_vectors_by_metadata({"file_id": event.file_id, "provider_id": event.provider_id})
+            async with self._session_factory() as session:
+                repository = DocumentsRepository(session)
+                await repository.delete_document(
+                    provider_id=event.provider_id, path=event.path, mod_time=event.mod_time
+                )
             self._log.debug(
                 "Processed delete event",
                 extra={"path": event.path, "provider_id": event.provider_id, "file_id": event.file_id},
@@ -269,20 +305,10 @@ class FileChangedIngestionService:
             "Ingested file",
             extra={"path": event.path, "provider_id": event.provider_id, "file_id": event.file_id},
         )
-        self._log.debug(
-            "Ingestion completed",
-            extra={"path": event.path, "provider_id": event.provider_id, "file_id": event.file_id},
-        )
 
     async def _ingest_file(self, event: FileChangedEvent, normalized_mime: str) -> None:
         if self._nc is None:
             raise RuntimeError("NATS client not available")
-
-        doc_name = os.path.basename(event.path) or event.path
-        metadata = _build_metadata(event, normalized_mime)
-        content_hash = self._build_content_hash(doc_name, normalized_mime)
-
-        self._knowledge.remove_vectors_by_metadata({"file_id": event.file_id, "provider_id": event.provider_id})
 
         client = FileProviderClient(event.provider_id, self._nc, self._log)
         file_handle = await client.open_file(event.path, os.O_RDONLY, 0)
@@ -299,50 +325,18 @@ class FileChangedIngestionService:
             self._log.info("Skipping empty file", extra={"path": event.path})
             return
 
-        if normalized_mime == "application/pdf":
-            pdf_reader = self._knowledge.pdf_reader
-            if pdf_reader is None:
-                raise RuntimeError("PDF reader not available; ensure pypdf is installed")
-
-            await self._knowledge.ainsert(
-                name=doc_name,
-                text_content=payload,
-                metadata=metadata,
-                reader=pdf_reader,
+        text = extract_text(payload, normalized_mime)
+        async with self._session_factory() as session:
+            repository = DocumentsRepository(session)
+            await repository.upsert_document(
+                provider_id=event.provider_id,
+                file_id=event.file_id,
+                path=event.path,
+                mime=normalized_mime,
+                size=event.size,
+                mod_time=event.mod_time,
+                text=text,
             )
-            self._ensure_ingested(metadata, content_hash)
-            return
-
-        text = payload.decode("utf-8", errors="replace")
-        await self._knowledge.ainsert(
-            name=doc_name,
-            text_content=text,
-            metadata=metadata,
-        )
-        self._ensure_ingested(metadata, content_hash)
-
-    def _build_content_hash(self, name: str, mime: str) -> str:
-        file_data = FileData(content=b"", type="Text")
-        if mime == "application/pdf":
-            file_data = FileData(content=b"", type="Text")
-        content = Content(name=name, file_data=file_data)
-        return self._knowledge._build_content_hash(content)
-
-    def _ensure_ingested(self, metadata: dict, content_hash: str) -> None:
-        vector_db = self._knowledge.vector_db
-        if vector_db is None:
-            raise RuntimeError("Vector database not configured")
-        if hasattr(vector_db, "Session") and hasattr(vector_db, "table"):
-            try:
-                with vector_db.Session() as sess, sess.begin():
-                    stmt = select(vector_db.table.c.id).where(vector_db.table.c.meta_data.contains(metadata)).limit(1)
-                    row = sess.execute(stmt).fetchone()
-                if row is not None:
-                    return
-            except Exception as exc:
-                self._log.warning("Metadata verification failed", exc_info=exc)
-        if not vector_db.content_hash_exists(content_hash):
-            raise RuntimeError("Embedding insert failed; will retry")
 
 
 def build_ingestion_config() -> FileChangedIngestionConfig:
@@ -363,5 +357,11 @@ def create_ingestion_service(
     logger: Optional[logging.Logger] = None,
     config: Optional[FileChangedIngestionConfig] = None,
     knowledge=None,
+    session_factory=SessionLocal,
 ) -> FileChangedIngestionService:
-    return FileChangedIngestionService(config or build_ingestion_config(), logger=logger, knowledge=knowledge)
+    return FileChangedIngestionService(
+        config or build_ingestion_config(),
+        logger=logger,
+        knowledge=knowledge,
+        session_factory=session_factory,
+    )

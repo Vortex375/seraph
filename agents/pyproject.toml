@@ -1,23 +1,25 @@
 [project]
-name = "agentos-docker"
+name = "seraph-agents"
 version = "1.0.0"
 requires-python = ">=3.12,<4"
 readme = "README.md"
 license-files = ["LICENSE"]
-authors = [{ name = "Agno", email = "hello@agno.com" }]
+authors = [{ name = "Seraph" }]
 
 dependencies = [
-  # Agno
-  "agno",
-  "agno-infra",
   # API
   "fastapi[standard]",
+  "sse-starlette",
+  "pydantic-settings",
   # Models
+  "agentscope",
   "openai",
   # Database
+  "alembic",
   "pgvector",
   "psycopg[binary]",
   "sqlalchemy",
+  "aiosqlite",
   "duckdb",
   # Tools
   "mcp",
@@ -33,14 +35,20 @@ dependencies = [
   # Tracing
   "opentelemetry-api",
   "opentelemetry-sdk",
-  "openinference-instrumentation-agno",
+  "opentelemetry-instrumentation-fastapi",
 ]
 
 [project.optional-dependencies]
 dev = ["mypy", "ruff", "pytest", "pytest-asyncio"]
 
 [dependency-groups]
-dev = ["mypy", "ruff", "pytest", "pytest-asyncio"]
+dev = [
+    "mypy",
+    "ruff",
+    "pytest",
+    "pytest-asyncio",
+    "types-cachetools>=6.2.0.20260408",
+]
 
 [build-system]
 requires = ["setuptools"]
@@ -63,7 +71,7 @@ plugins = ["pydantic.mypy"]
 exclude = [".venv*"]
 
 [[tool.mypy.overrides]]
-module = ["pgvector.*", "setuptools.*", "agno.*", "duckdb.*"]
+module = ["pgvector.*", "setuptools.*", "agentscope.*", "duckdb.*"]
 ignore_missing_imports = true
 
 [tool.uv.pip]
