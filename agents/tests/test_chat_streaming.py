@@ -25,7 +25,7 @@ async def test_stream_agent_reply_formats_sse_payload(monkeypatch: pytest.Monkey
     async def fake_stream_printing_messages(*, agents, coroutine_task, **kwargs):
         del agents, kwargs
         coroutine_task.close()
-        yield StubMessage({"role": "assistant", "content": "hello"}), False
+        yield StubMessage({"role": "assistant", "content": "hello"}), True
 
     monkeypatch.setattr(streaming, "stream_printing_messages", fake_stream_printing_messages)
 
@@ -34,6 +34,36 @@ async def test_stream_agent_reply_formats_sse_payload(monkeypatch: pytest.Monkey
         chunks.append(chunk)
 
     assert chunks == ['data: {"role": "assistant", "content": "hello"}\n\n']
+
+
+@pytest.mark.asyncio
+async def test_stream_agent_reply_emits_only_final_chunk_after_repeated_intermediate_chunks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    streaming = importlib.import_module("chat.streaming")
+
+    class StubMessage:
+        def __init__(self, payload: dict[str, object]) -> None:
+            self._payload = payload
+
+        def to_dict(self) -> dict[str, object]:
+            return self._payload
+
+    async def fake_stream_printing_messages(*, agents, coroutine_task, **kwargs):
+        del agents, kwargs
+        coroutine_task.close()
+        yield StubMessage({"id": "assistant-1", "role": "assistant", "content": "p"}), False
+        yield StubMessage({"id": "assistant-1", "role": "assistant", "content": "po"}), False
+        yield StubMessage({"id": "assistant-1", "role": "assistant", "content": "pon"}), False
+        yield StubMessage({"id": "assistant-1", "role": "assistant", "content": "pong"}), True
+
+    monkeypatch.setattr(streaming, "stream_printing_messages", fake_stream_printing_messages)
+
+    chunks: list[str] = []
+    async for chunk in streaming.stream_agent_reply(agent=object(), user_input="say pong"):
+        chunks.append(chunk)
+
+    assert chunks == ['data: {"id": "assistant-1", "role": "assistant", "content": "pong"}\n\n']
 
 
 @pytest.mark.asyncio
