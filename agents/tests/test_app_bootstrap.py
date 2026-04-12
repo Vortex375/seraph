@@ -222,3 +222,103 @@ def test_app_shutdown_raises_agent_factory_close_failure(monkeypatch: pytest.Mon
             pass
 
     assert calls == ["ingestion_start", "ingestion_stop", "agent_factory_close"]
+
+
+def test_openai_embedder_normalizes_blank_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    app_main = importlib.import_module("app.main")
+    recorded: dict[str, object] = {}
+
+    class StubAsyncOpenAI:
+        def __init__(self, **kwargs: object) -> None:
+            recorded.update(kwargs)
+
+    monkeypatch.setattr(app_main, "AsyncOpenAI", StubAsyncOpenAI)
+
+    embedder = app_main._OpenAIEmbedder(
+        model_name="text-embedding-3-small",
+        api_key="test-key",
+        base_url="",
+    )
+
+    embedder._get_client()
+
+    assert recorded == {"api_key": "test-key", "base_url": "https://api.openai.com/v1"}
+
+
+def test_runtime_agent_factory_normalizes_blank_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    app_main = importlib.import_module("app.main")
+    recorded: dict[str, object] = {}
+
+    class StubAgentFactory:
+        def __init__(self, **kwargs: object) -> None:
+            recorded.update(kwargs)
+
+    monkeypatch.setattr(app_main, "AgentFactory", StubAgentFactory)
+
+    settings = Settings(openai_api_key="test-key", openai_base_url="")
+
+    app_main.RuntimeAgentFactory(settings)
+
+    assert recorded["api_key"] == "test-key"
+    assert recorded["base_url"] is None
+
+
+def test_openai_embedder_uses_default_base_url_when_env_is_blank(monkeypatch: pytest.MonkeyPatch) -> None:
+    app_main = importlib.import_module("app.main")
+    recorded: dict[str, object] = {}
+
+    class StubAsyncOpenAI:
+        def __init__(self, **kwargs: object) -> None:
+            recorded.update(kwargs)
+
+    monkeypatch.setattr(app_main, "AsyncOpenAI", StubAsyncOpenAI)
+    monkeypatch.setenv("OPENAI_BASE_URL", "")
+
+    embedder = app_main._OpenAIEmbedder(
+        model_name="text-embedding-3-small",
+        api_key="test-key",
+        base_url=None,
+    )
+
+    embedder._get_client()
+
+    assert recorded == {"api_key": "test-key", "base_url": "https://api.openai.com/v1"}
+
+
+def test_openai_embedder_treats_whitespace_only_base_url_as_blank(monkeypatch: pytest.MonkeyPatch) -> None:
+    app_main = importlib.import_module("app.main")
+    recorded: dict[str, object] = {}
+
+    class StubAsyncOpenAI:
+        def __init__(self, **kwargs: object) -> None:
+            recorded.update(kwargs)
+
+    monkeypatch.setattr(app_main, "AsyncOpenAI", StubAsyncOpenAI)
+
+    embedder = app_main._OpenAIEmbedder(
+        model_name="text-embedding-3-small",
+        api_key="test-key",
+        base_url="   ",
+    )
+
+    embedder._get_client()
+
+    assert recorded == {"api_key": "test-key", "base_url": "https://api.openai.com/v1"}
+
+
+def test_runtime_agent_factory_treats_whitespace_only_base_url_as_blank(monkeypatch: pytest.MonkeyPatch) -> None:
+    app_main = importlib.import_module("app.main")
+    recorded: dict[str, object] = {}
+
+    class StubAgentFactory:
+        def __init__(self, **kwargs: object) -> None:
+            recorded.update(kwargs)
+
+    monkeypatch.setattr(app_main, "AgentFactory", StubAgentFactory)
+
+    settings = Settings(openai_api_key="test-key", openai_base_url="   ")
+
+    app_main.RuntimeAgentFactory(settings)
+
+    assert recorded["api_key"] == "test-key"
+    assert recorded["base_url"] is None

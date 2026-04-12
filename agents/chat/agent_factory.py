@@ -12,6 +12,16 @@ from chat.prompts import DOCUMENT_CHAT_PROMPT
 from knowledge.seraph_knowledge import SeraphKnowledgeBase
 
 
+DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
+
+
+def _normalize_openai_base_url(base_url: str | None) -> str | None:
+    if base_url is None:
+        return None
+    normalized = base_url.strip()
+    return normalized or None
+
+
 class AgentFactory:
     def __init__(
         self,
@@ -32,7 +42,9 @@ class AgentFactory:
         self._spaces_client = spaces_client
 
     def create(self, user_id: str, session_id: str) -> ReActAgent:
-        client_kwargs: dict[str, Any] | None = {"base_url": self._base_url} if self._base_url else None
+        client_kwargs: dict[str, Any] = {
+            "base_url": _normalize_openai_base_url(self._base_url) or DEFAULT_OPENAI_BASE_URL
+        }
         return ReActAgent(
             name="seraph-documents",
             sys_prompt=DOCUMENT_CHAT_PROMPT,

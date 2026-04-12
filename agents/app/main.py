@@ -23,6 +23,14 @@ from spaces.client import SpacesClient
 
 
 logger = logging.getLogger(__name__)
+DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
+
+
+def _normalize_openai_base_url(base_url: str | None) -> str | None:
+    if base_url is None:
+        return None
+    normalized = base_url.strip()
+    return normalized or None
 
 
 class _EmbeddingResponseProtocol(Protocol):
@@ -38,12 +46,14 @@ class _OpenAIEmbedder:
     def __init__(self, model_name: str, api_key: str | None, base_url: str | None) -> None:
         self._model_name = model_name
         self._api_key = api_key
-        self._base_url = base_url
+        self._base_url = _normalize_openai_base_url(base_url)
         self._client: AsyncOpenAI | None = None
 
     def _get_client(self) -> AsyncOpenAI:
         if self._client is None:
-            self._client = AsyncOpenAI(api_key=self._api_key, base_url=self._base_url)
+            client_kwargs: dict[str, str | None] = {"api_key": self._api_key}
+            client_kwargs["base_url"] = self._base_url or DEFAULT_OPENAI_BASE_URL
+            self._client = AsyncOpenAI(**client_kwargs)
         return self._client
 
     async def __call__(self, values: list[str]) -> _EmbeddingResponse:
@@ -94,17 +104,18 @@ class _LazyRetrievalService:
 
 class RuntimeAgentFactory:
     def __init__(self, settings: Settings) -> None:
+        openai_base_url = _normalize_openai_base_url(settings.openai_base_url)
         embedder = _OpenAIEmbedder(
             model_name=settings.embedding_model_name,
             api_key=settings.openai_api_key,
-            base_url=settings.openai_base_url,
+            base_url=openai_base_url,
         )
         self._spaces_client = _LazySpacesClient(settings.nats_url)
         self._factory = AgentFactory(
             engine=engine,
             chat_model_name=settings.chat_model_name,
             api_key=settings.openai_api_key,
-            base_url=settings.openai_base_url,
+            base_url=openai_base_url,
             embedding_model=embedder,
             retrieval_service=_LazyRetrievalService(embedder),
             spaces_client=self._spaces_client,

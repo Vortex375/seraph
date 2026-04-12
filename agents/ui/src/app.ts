@@ -7,6 +7,25 @@ function messageNode(text: string, role: string): HTMLDivElement {
   return node
 }
 
+function messageText(content: unknown, fallback: string): string {
+  if (typeof content === 'string') {
+    return content
+  }
+
+  if (Array.isArray(content)) {
+    const text = content
+      .filter((part): part is { type?: unknown; text?: unknown } => typeof part === 'object' && part !== null)
+      .map((part) => (part.type === 'text' && typeof part.text === 'string' ? part.text : ''))
+      .join('')
+
+    if (text) {
+      return text
+    }
+  }
+
+  return fallback
+}
+
 export function mountApp(root: HTMLElement): void {
   let activeSessionId = ''
   let stream: EventSource | null = null
@@ -54,9 +73,9 @@ export function mountApp(root: HTMLElement): void {
     }
     stream.onmessage = (event) => {
       try {
-        const payload = JSON.parse(event.data) as { content?: string }
+        const payload = JSON.parse(event.data) as { content?: unknown }
         clearStatus()
-        messages.appendChild(messageNode(payload.content ?? event.data, 'assistant'))
+        messages.appendChild(messageNode(messageText(payload.content, event.data), 'assistant'))
       } catch {
         clearStatus()
         messages.appendChild(messageNode(event.data, 'assistant'))
@@ -74,7 +93,6 @@ export function mountApp(root: HTMLElement): void {
       button.addEventListener('click', () => {
         activeSessionId = session.id
         messages.innerHTML = ''
-        connectStream(session.id)
       })
       item.appendChild(button)
       sessionsList.appendChild(item)
@@ -96,7 +114,6 @@ export function mountApp(root: HTMLElement): void {
       activeSessionId = session.id
       await refreshSessions()
       messages.innerHTML = ''
-      connectStream(session.id)
     } catch {
       showError('Failed to create a session.')
     }
@@ -113,6 +130,7 @@ export function mountApp(root: HTMLElement): void {
     try {
       clearStatus()
       await sendMessage(activeSessionId, message)
+      connectStream(activeSessionId)
     } catch {
       showError('Failed to send message.')
     }
