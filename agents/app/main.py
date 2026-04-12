@@ -1,6 +1,7 @@
 import asyncio
 from contextlib import asynccontextmanager
 import importlib
+import logging
 from pathlib import Path
 from typing import Any, Protocol, cast
 
@@ -15,9 +16,13 @@ from app.otel import setup_telemetry
 from app.settings import Settings, get_settings
 from chat.agent_factory import AgentFactory
 from db.session import SessionLocal, engine
+from documents.models import Base
 from retrieval.repository import PgVectorRetrievalRepository
 from retrieval.service import RetrievalService
 from spaces.client import SpacesClient
+
+
+logger = logging.getLogger(__name__)
 
 
 class _EmbeddingResponseProtocol(Protocol):
@@ -115,18 +120,11 @@ class RuntimeAgentFactory:
 class _ManagedIngestionService:
     def __init__(self, service: Any) -> None:
         self._service = service
-        self._start_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
-        if self._start_task is None:
-            self._start_task = asyncio.create_task(self._service.start())
+        await self._service.start()
 
     async def stop(self) -> None:
-        if self._start_task is not None:
-            if not self._start_task.done():
-                self._start_task.cancel()
-            await asyncio.gather(self._start_task, return_exceptions=True)
-            self._start_task = None
         await self._service.stop()
 
 
@@ -143,19 +141,50 @@ def create_ingestion_service(settings: Settings) -> Any:
     return _ManagedIngestionService(build_ingestion_service())
 
 
+async def initialize_database_schema() -> None:
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.settings = get_settings()
+    await initialize_database_schema()
     ingestion_service = create_ingestion_service(app.state.settings)
     app.state.ingestion_service = ingestion_service
-    await ingestion_service.start()
+
+    async def cleanup() -> None:
+        cleanup_error: Exception | None = None
+
+        try:
+            await ingestion_service.stop()
+        except Exception as exc:
+            cleanup_error = exc
+
+        close = getattr(app.state.agent_factory, "aclose", None)
+        if close is not None:
+            try:
+                await close()
+            except Exception:
+                if cleanup_error is None:
+                    raise
+
+        if cleanup_error is not None:
+            raise cleanup_error
+
+    try:
+        await ingestion_service.start()
+    except Exception as start_error:
+        try:
+            await cleanup()
+        except Exception:
+            logger.exception("Cleanup failed after ingestion startup failure")
+        raise start_error
+
     try:
         yield
     finally:
-        await ingestion_service.stop()
-        close = getattr(app.state.agent_factory, "aclose", None)
-        if close is not None:
-            await close()
+        await cleanup()
 
 
 def create_app() -> FastAPI:
