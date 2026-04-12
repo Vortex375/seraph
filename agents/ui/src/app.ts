@@ -1,9 +1,14 @@
-import { createSession, listSessions, openStream, sendMessage, type ChatSession } from './api'
+import { createSession, listMessages, listSessions, openStream, sendMessage, type ChatMessage, type ChatSession } from './api'
 
-function messageNode(text: string, role: string): HTMLDivElement {
+function messageNode(text: string, role: string, citations: string[] = []): HTMLDivElement {
   const node = document.createElement('div')
   node.dataset.role = role
   node.textContent = `${role}: ${text}`
+  if (citations.length > 0) {
+    const citationsNode = document.createElement('div')
+    citationsNode.textContent = `Sources: ${citations.join(', ')}`
+    node.appendChild(citationsNode)
+  }
   return node
 }
 
@@ -65,11 +70,21 @@ export function mountApp(root: HTMLElement): void {
     status.textContent = message
   }
 
+  const refreshHistory = async (sessionId: string) => {
+    renderMessages(await listMessages(sessionId))
+  }
+
   const connectStream = (sessionId: string) => {
     stream?.close()
     stream = openStream(sessionId)
-    stream.onerror = () => {
-      showError('Connection lost. Try reopening the session.')
+    stream.onerror = async () => {
+      try {
+        await refreshHistory(sessionId)
+        clearStatus()
+      } catch {
+        showError('Connection lost. Try reopening the session.')
+      }
+      stream?.close()
     }
     stream.onmessage = (event) => {
       try {
@@ -83,6 +98,13 @@ export function mountApp(root: HTMLElement): void {
     }
   }
 
+  const renderMessages = (history: ChatMessage[]) => {
+    messages.innerHTML = ''
+    for (const item of history) {
+      messages.appendChild(messageNode(item.content, item.role, item.role === 'assistant' ? item.citations : []))
+    }
+  }
+
   const renderSessions = (sessions: ChatSession[]) => {
     sessionsList.innerHTML = ''
     for (const session of sessions) {
@@ -90,9 +112,14 @@ export function mountApp(root: HTMLElement): void {
       const button = document.createElement('button')
       button.type = 'button'
       button.textContent = session.title
-      button.addEventListener('click', () => {
+      button.addEventListener('click', async () => {
         activeSessionId = session.id
-        messages.innerHTML = ''
+        try {
+          clearStatus()
+          await refreshHistory(session.id)
+        } catch {
+          showError('Failed to load message history.')
+        }
       })
       item.appendChild(button)
       sessionsList.appendChild(item)

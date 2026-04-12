@@ -322,3 +322,22 @@ def test_runtime_agent_factory_treats_whitespace_only_base_url_as_blank(monkeypa
 
     assert recorded["api_key"] == "test-key"
     assert recorded["base_url"] is None
+
+
+def test_ingestion_service_embedder_normalizes_blank_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    consumer_module = importlib.import_module("ingestion.file_changed_consumer")
+    recorded: dict[str, object] = {}
+
+    class StubAsyncOpenAI:
+        def __init__(self, **kwargs: object) -> None:
+            recorded.update(kwargs)
+
+    monkeypatch.setattr(consumer_module, "AsyncOpenAI", StubAsyncOpenAI)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_BASE_URL", "")
+    monkeypatch.setenv("EMBEDDING_MODEL_NAME", "text-embedding-3-small")
+
+    service = consumer_module.create_ingestion_service()
+    service._get_embedding_client()
+
+    assert recorded == {"api_key": "test-key", "base_url": "https://api.openai.com/v1"}

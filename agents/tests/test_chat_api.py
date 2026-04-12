@@ -38,6 +38,139 @@ def test_list_sessions_requires_authenticated_user() -> None:
     assert response.status_code == 401
 
 
+@pytest.mark.asyncio
+async def test_list_session_messages_returns_visible_history_with_citations(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = create_app()
+
+    class StubHistoryMessage:
+        def __init__(self, message_id: str, role: str, content: str, citations: list[str]) -> None:
+            self.id = message_id
+            self.role = role
+            self.content = content
+            self.citations = citations
+            self.created_at = "2026-04-12T00:00:00Z"
+
+    class StubSession:
+        def __init__(self, session_id: str, user_id: str, title: str) -> None:
+            self.id = session_id
+            self.user_id = user_id
+            self.title = title
+            self.created_at = "2026-04-12T00:00:00Z"
+            self.updated_at = "2026-04-12T00:00:00Z"
+            self.last_message_at = "2026-04-12T00:00:00Z"
+
+    class StubSessionService:
+        def __init__(self, session: object) -> None:
+            del session
+
+        async def get_session(self, user_id: str, session_id: str) -> StubSession | None:
+            if user_id == "alice" and session_id == "session-1":
+                return StubSession(session_id, user_id, "Inbox")
+            return None
+
+        async def list_sessions(self, user_id: str) -> list[StubSession]:
+            if user_id == "alice":
+                return [StubSession("session-1", user_id, "Inbox")]
+            return []
+
+        async def list_messages(self, user_id: str, session_id: str) -> list[StubHistoryMessage]:
+            assert user_id == "alice"
+            assert session_id == "session-1"
+            return [
+                StubHistoryMessage("user-1", "user", "Find documents related to music", []),
+                StubHistoryMessage(
+                    "assistant-1",
+                    "assistant",
+                    "I found these documents related to music.",
+                    [
+                        "/Music/Maki Otsuki - Destiny/visit JPOP.ru.url",
+                        "/Music/Maki Otsuki - Destiny/visit aziophrenia.com - Japan and Korea - music, video, idols.url",
+                    ],
+                ),
+            ]
+
+    monkeypatch.setattr("api.chat.SessionService", StubSessionService)
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/chat/sessions/session-1/messages", headers={"X-Seraph-User": "alice"})
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "id": "user-1",
+            "role": "user",
+            "content": "Find documents related to music",
+            "created_at": "2026-04-12T00:00:00Z",
+            "citations": [],
+        },
+        {
+            "id": "assistant-1",
+            "role": "assistant",
+            "content": "I found these documents related to music.",
+            "created_at": "2026-04-12T00:00:00Z",
+            "citations": [
+                "/Music/Maki Otsuki - Destiny/visit JPOP.ru.url",
+                "/Music/Maki Otsuki - Destiny/visit aziophrenia.com - Japan and Korea - music, video, idols.url",
+            ],
+        },
+    ]
+
+
+@pytest.mark.asyncio
+async def test_session_service_uses_persisted_message_payload_id_for_citations() -> None:
+    from chat.session_service import SessionService
+    from documents.models import Base, ChatSession, ChatTurnSource
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    sqlalchemy_memory = importlib.import_module("agentscope.memory._working_memory._sqlalchemy_memory")
+    message_table = sqlalchemy_memory.AsyncSQLAlchemyMemory.MessageTable
+    session_table = sqlalchemy_memory.AsyncSQLAlchemyMemory.SessionTable
+    user_table = sqlalchemy_memory.AsyncSQLAlchemyMemory.UserTable
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(sqlalchemy_memory.Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as db:
+        db.add(ChatSession(id="session-1", user_id="alice", title="Inbox"))
+        db.add(user_table(id="alice"))
+        db.add(session_table(id="session-1", user_id="alice"))
+        db.add(
+            message_table(
+                id="alice-session-1-row-id",
+                session_id="session-1",
+                index=1,
+                msg={
+                    "id": "assistant-1",
+                    "name": "seraph-documents",
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "hello"}],
+                    "timestamp": "2026-04-12T00:00:01",
+                },
+            )
+        )
+        db.add(
+            ChatTurnSource(
+                session_id="session-1",
+                assistant_message_id="assistant-1",
+                provider_id="dirtest",
+                path="/Music/example.url",
+            )
+        )
+        await db.commit()
+
+        service = SessionService(db)
+        messages = await service.list_messages("alice", "session-1")
+
+    assert len(messages) == 1
+    assert messages[0].id == "assistant-1"
+    assert messages[0].citations == ["/Music/example.url"]
+
+    await engine.dispose()
+
+
 def test_create_session_defaults_to_anonymous_when_auth_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     recorded: dict[str, str] = {}
 

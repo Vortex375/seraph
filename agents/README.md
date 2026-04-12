@@ -34,6 +34,18 @@ uv run mypy .
 The ingestion service starts with the FastAPI lifespan. For local runs without NATS, export `KB_INGEST_ENABLED=false`
 before running `python -m app.main`.
 
+## Repair Existing Documents
+
+If the canonical `documents` and `document_chunks` tables are empty because historical `SERAPH_FILE_CHANGED` messages were
+already acknowledged before this storage path existed, run the one-shot repair command inside the agents container:
+
+```sh
+docker exec -w /app agentscope-refactor-agents-api-1 uv run python -m app.repair backfill-documents
+```
+
+The command replays the current `SERAPH_FILE_CHANGED` JetStream history into canonical document storage and prints a short
+`processed` / `failed` summary.
+
 ## Key Files
 
 ```text

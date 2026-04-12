@@ -57,7 +57,7 @@ async def test_seraph_knowledge_returns_agentscope_documents_with_provenance() -
     text_content = doc.metadata.content
     assert text_content["type"] == "text"
     typed_content = text_content
-    assert typed_content["text"] == "release notes body"
+    assert typed_content["text"] == "Path: /team/docs/release.md\n\nrelease notes body"
     assert doc.metadata.doc_id == "doc-1"
     assert doc.metadata.chunk_id == 2
     assert doc.metadata.total_chunks == 4

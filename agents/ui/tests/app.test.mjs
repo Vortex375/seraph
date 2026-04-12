@@ -30,6 +30,49 @@ test('creating or selecting a session does not open a stream', async () => {
   assert.equal(root.querySelector('#messages')?.children.length, 0)
 })
 
+test('selecting a session loads full history and renders assistant citations', async () => {
+  const { root, flushAsyncWork } = await renderApp({
+    sessions: [{ id: 'existing-session', title: 'Existing Session', user_id: 'alice' }],
+    messagesBySession: {
+      'existing-session': [
+        {
+          id: 'user-1',
+          role: 'user',
+          content: 'Find documents related to music',
+          created_at: '2026-04-12T00:00:00Z',
+          citations: []
+        },
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          content: 'I found these documents related to music.',
+          created_at: '2026-04-12T00:00:01Z',
+          citations: [
+            '/Music/Maki Otsuki - Destiny/visit JPOP.ru.url',
+            '/Music/Maki Otsuki - Destiny/visit aziophrenia.com - Japan and Korea - music, video, idols.url'
+          ]
+        }
+      ]
+    }
+  })
+
+  await flushAsyncWork()
+
+  const existingSessionButton = root.querySelectorAll('button').find((button) => button.textContent === 'Existing Session')
+  assert.ok(existingSessionButton)
+  existingSessionButton.dispatchEvent({ type: 'click' })
+  await flushAsyncWork()
+
+  const renderedMessages = root.querySelector('#messages')?.children ?? []
+  assert.equal(renderedMessages.length, 2)
+  assert.equal(renderedMessages[0]?.textContent, 'user: Find documents related to music')
+  assert.match(renderedMessages[1]?.textContent ?? '', /assistant: I found these documents related to music\./)
+  assert.equal(renderedMessages[1]?.children.length, 1)
+  assert.match(renderedMessages[1]?.children[0]?.textContent ?? '', /Sources:/)
+  assert.match(renderedMessages[1]?.children[0]?.textContent ?? '', /visit JPOP\.ru\.url/)
+  assert.match(renderedMessages[1]?.children[0]?.textContent ?? '', /visit aziophrenia\.com - Japan and Korea - music, video, idols\.url/)
+})
+
 test('sending a message opens the stream for the active session', async () => {
   const { apiCalls, root, flushAsyncWork } = await renderApp({
     sessions: [{ id: 'session-1', title: 'Inbox', user_id: 'alice' }]
@@ -92,8 +135,65 @@ test('assistant stream renders text from array content blocks', async () => {
   assert.equal(renderedMessages.at(-1)?.textContent, 'assistant: pong')
 })
 
+test('stream completion refreshes history so assistant citations appear immediately', async () => {
+  const { apiCalls, root, flushAsyncWork } = await renderApp({
+    sessions: [{ id: 'session-1', title: 'Inbox', user_id: 'alice' }],
+    messagesBySession: {
+      'session-1': [
+        {
+          id: 'user-1',
+          role: 'user',
+          content: 'Find documents related to music',
+          created_at: '2026-04-12T00:00:00Z',
+          citations: []
+        },
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          content: 'I found these music-related documents.',
+          created_at: '2026-04-12T00:00:01Z',
+          citations: ['/Music/example.url']
+        }
+      ]
+    }
+  })
+
+  await flushAsyncWork()
+
+  const sessionButton = root.querySelectorAll('button').find((button) => button.textContent === 'Inbox')
+  assert.ok(sessionButton)
+  sessionButton.dispatchEvent({ type: 'click' })
+  await flushAsyncWork()
+
+  const input = root.querySelector('#message-input')
+  assert.ok(input)
+  input.value = 'Find documents related to music'
+
+  const form = root.querySelector('#composer')
+  assert.ok(form)
+  form.dispatchEvent({
+    type: 'submit',
+    preventDefault() {}
+  })
+  await flushAsyncWork()
+
+  apiCalls.streams.at(-1)?.onmessage?.({
+    data: JSON.stringify({
+      content: [{ type: 'text', text: 'I found these music-related documents.' }]
+    })
+  })
+  apiCalls.streams.at(-1)?.onerror?.({ type: 'error' })
+  await flushAsyncWork()
+  await flushAsyncWork()
+
+  const renderedMessages = root.querySelector('#messages')?.children ?? []
+  assert.match(renderedMessages.at(-1)?.textContent ?? '', /assistant: I found these music-related documents\./)
+  assert.equal(renderedMessages.at(-1)?.children.length, 1)
+  assert.match(renderedMessages.at(-1)?.children[0]?.textContent ?? '', /Sources: \/Music\/example\.url/)
+})
+
 async function loadAppModule() {
-  const bundlePath = path.resolve('dist/app.js')
+  const bundlePath = path.resolve('ui/dist/app.js')
   const bundled = await readFile(bundlePath, 'utf8')
   const rewritten = bundled
     .replace('function openStream(sessionId) {', 'function openStream(sessionId) { return globalThis.__appTestOpenStream(sessionId); }\nfunction __unused_openStream(sessionId) {')
@@ -117,7 +217,8 @@ async function renderApp(fixtures) {
   globalThis.__appTestApiCalls = apiCalls
   globalThis.__appTestFixtures = {
     sessions: fixtures.sessions ?? [],
-    createdSession: fixtures.createdSession
+    createdSession: fixtures.createdSession,
+    messagesBySession: fixtures.messagesBySession ?? {}
   }
   globalThis.fetch = async (url, options = {}) => {
     const method = options.method ?? 'GET'
@@ -133,6 +234,10 @@ async function renderApp(fixtures) {
     }
 
     const messageMatch = String(url).match(/^\/api\/v1\/chat\/sessions\/([^/]+)\/messages$/)
+    if (messageMatch && method === 'GET') {
+      return jsonResponse(globalThis.__appTestFixtures.messagesBySession[messageMatch[1]] ?? [])
+    }
+
     if (messageMatch && method === 'POST') {
       const payload = JSON.parse(options.body ?? '{}')
       apiCalls.sendMessage.push({ sessionId: messageMatch[1], message: payload.message })

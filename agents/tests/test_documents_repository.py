@@ -51,6 +51,46 @@ async def test_upsert_document_replaces_existing_chunks() -> None:
     await engine.dispose()
 
 
+class StubEmbeddingResponse:
+    def __init__(self, embeddings: list[list[float]]) -> None:
+        self.embeddings = embeddings
+
+
+class StubEmbedder:
+    async def __call__(self, values: list[str]) -> StubEmbeddingResponse:
+        return StubEmbeddingResponse([[0.1, 0.2] + [0.0] * 1534 for _ in values])
+
+
+@pytest.mark.asyncio
+async def test_upsert_document_persists_chunk_embeddings() -> None:
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as db_session:
+        repo = DocumentsRepository(db_session)
+
+        await repo.upsert_document(
+            provider_id="provider-a",
+            file_id="file-embed",
+            path="/team/embedded.md",
+            mime="text/plain",
+            size=18,
+            mod_time=1,
+            text="hello embedded world",
+            embedder=StubEmbedder(),
+        )
+
+        _, chunks = await repo.get_document_with_chunks("provider-a", "/team/embedded.md")
+
+    assert len(chunks) == 1
+    assert chunks[0].embedding is not None
+    assert chunks[0].embedding[:2] == [0.1, 0.2]
+
+    await engine.dispose()
+
+
 @pytest.mark.asyncio
 async def test_delete_document_removes_document_and_chunks() -> None:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")

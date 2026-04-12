@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from collections.abc import Awaitable, Callable
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,9 +40,21 @@ class DocumentsRepository:
         size: int,
         mod_time: int,
         text: str,
+        embedder: Callable[[list[str]], Awaitable[object]] | None = None,
     ) -> IndexedDocument:
         async with self._lock_for_document(provider_id, path):
             content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
+            chunk_specs = list(chunk_text(text))
+            embeddings: list[list[float] | None]
+            if embedder is None or not chunk_specs:
+                embeddings = [None] * len(chunk_specs)
+            else:
+                response = await embedder([chunk.text for chunk in chunk_specs])
+                raw_embeddings = getattr(response, "embeddings", [])
+                embeddings = [list(embedding) for embedding in raw_embeddings]
+                if len(embeddings) != len(chunk_specs):
+                    raise ValueError("embedding count does not match document chunks")
+
             result = await self._session.execute(
                 select(IndexedDocument).where(
                     IndexedDocument.provider_id == provider_id,
@@ -77,14 +90,14 @@ class DocumentsRepository:
                 document.last_error = None
                 await self._session.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document.id))
 
-            for chunk in chunk_text(text):
+            for chunk, embedding in zip(chunk_specs, embeddings):
                 self._session.add(
                     DocumentChunk(
                         document_id=document.id,
                         chunk_index=chunk.index,
                         content=chunk.text,
                         token_count=len(chunk.text.split()),
-                        embedding=None,
+                        embedding=embedding,
                         metadata_json={"start_offset": chunk.start_offset, "end_offset": chunk.end_offset},
                     )
                 )

@@ -11,7 +11,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import Select, delete, select, update
 
-from api.models import AcceptedMessageResponse, MessageCreateRequest, SessionCreateRequest, SessionResponse
+from api.models import (
+    AcceptedMessageResponse,
+    ChatMessageResponse,
+    MessageCreateRequest,
+    SessionCreateRequest,
+    SessionResponse,
+)
 from auth.current_user import AuthenticatedUser, get_current_user
 from chat.citations import record_failure, record_sources, sources_from_knowledge_documents
 from chat.session_service import SessionService
@@ -61,14 +67,16 @@ def _assistant_message_id_from_error(error: str) -> str | None:
 
 
 async def _retrieve_turn_sources(agent: Any, user_input: str) -> list[dict[str, str]]:
-    retrieve = getattr(agent, "_retrieve_from_knowledge", None)
-    if not callable(retrieve):
+    knowledge_bases = getattr(agent, "knowledge", None)
+    if not isinstance(knowledge_bases, list) or not knowledge_bases:
         return []
 
-    await retrieve(Msg("user", user_input, "user"))
-    knowledge_docs = getattr(agent, "_knowledge_list", None)
-    if not isinstance(knowledge_docs, list):
-        return []
+    knowledge_docs: list[Any] = []
+    for knowledge_base in knowledge_bases:
+        retrieve = getattr(knowledge_base, "retrieve", None)
+        if not callable(retrieve):
+            continue
+        knowledge_docs.extend(await retrieve(query=user_input, limit=5))
     return sources_from_knowledge_documents(knowledge_docs)
 
 
@@ -317,6 +325,19 @@ async def create_message(
     await _get_owned_session(db, user.user_id, session_id)
     await _accept_pending_turn(db=db, session_id=session_id, user_id=user.user_id, message=payload.message)
     return AcceptedMessageResponse(accepted=True)
+
+
+@router.get("/sessions/{session_id}/messages", response_model=list[ChatMessageResponse])
+async def list_messages(
+    session_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
+    db: Any = Depends(get_db_session),
+) -> list[ChatMessageResponse]:
+    service = SessionService(db)
+    messages = await service.list_messages(user.user_id, session_id)
+    if not messages and await service.get_session(user.user_id, session_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="chat session not found")
+    return [ChatMessageResponse.model_validate(message) for message in messages]
 
 
 @router.get("/sessions/{session_id}/stream")

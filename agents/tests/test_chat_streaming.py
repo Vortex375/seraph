@@ -1291,27 +1291,29 @@ async def test_stream_chat_events_records_sources(monkeypatch: pytest.MonkeyPatc
 
     class StubAgent:
         def __init__(self) -> None:
-            self._knowledge_list: list[object] = []
+            class StubKnowledge:
+                async def retrieve(self, query: str, limit: int = 5):
+                    assert query == "hello"
+                    assert limit == 5
+                    return [
+                        knowledge_module.SeraphKnowledgeDocument(
+                            id="chunk-1",
+                            score=0.9,
+                            provenance=knowledge_module.SeraphChunkProvenance(
+                                provider_id="provider-a",
+                                path="/team/spec.md",
+                            ),
+                            metadata=document_module.DocMetadata(
+                                content={"type": "text", "text": "Path: /team/spec.md\n\nspec excerpt"},
+                                doc_id="doc-1",
+                                chunk_id=0,
+                                total_chunks=1,
+                            ),
+                        ),
+                        {"provider_id": "ignored", "path": "/wrong.md"},
+                    ]
 
-        async def _retrieve_from_knowledge(self, msg: object) -> None:
-            del msg
-            self._knowledge_list = [
-                knowledge_module.SeraphKnowledgeDocument(
-                    id="chunk-1",
-                    score=0.9,
-                    provenance=knowledge_module.SeraphChunkProvenance(
-                        provider_id="provider-a",
-                        path="/team/spec.md",
-                    ),
-                    metadata=document_module.DocMetadata(
-                        content={"type": "text", "text": "spec excerpt"},
-                        doc_id="doc-1",
-                        chunk_id=0,
-                        total_chunks=1,
-                    ),
-                ),
-                {"provider_id": "ignored", "path": "/wrong.md"},
-            ]
+            self.knowledge = [StubKnowledge()]
 
     async def fake_stream_agent_reply(*, agent: object, user_input: str):
         del agent, user_input
@@ -1360,6 +1362,42 @@ async def test_stream_chat_events_records_sources(monkeypatch: pytest.MonkeyPatc
     assert recorded["sources"] == [{"provider_id": "provider-a", "path": "/team/spec.md"}]
     assert recorded["db"] is recorded["isolated_db"]
     assert recorded["db"] is not claim_db
+
+
+@pytest.mark.asyncio
+async def test_retrieve_turn_sources_uses_retrieved_knowledge_documents(monkeypatch: pytest.MonkeyPatch) -> None:
+    chat_module = importlib.import_module("api.chat")
+    knowledge_module = importlib.import_module("knowledge.seraph_knowledge")
+    document_module = importlib.import_module("agentscope.rag._document")
+
+    class StubKnowledge:
+        async def retrieve(self, query: str, limit: int = 5):
+            assert query == "hello"
+            assert limit == 5
+            return [
+                knowledge_module.SeraphKnowledgeDocument(
+                    id="chunk-1",
+                    score=0.9,
+                    provenance=knowledge_module.SeraphChunkProvenance(
+                        provider_id="provider-a",
+                        path="/team/spec.md",
+                    ),
+                    metadata=document_module.DocMetadata(
+                        content={"type": "text", "text": "Path: /team/spec.md\n\nspec excerpt"},
+                        doc_id="doc-1",
+                        chunk_id=0,
+                        total_chunks=1,
+                    ),
+                ),
+            ]
+
+    class StubAgent:
+        def __init__(self) -> None:
+            self.knowledge = [StubKnowledge()]
+
+    sources = await chat_module._retrieve_turn_sources(StubAgent(), "hello")
+
+    assert sources == [{"provider_id": "provider-a", "path": "/team/spec.md"}]
 
 
 @pytest.mark.asyncio

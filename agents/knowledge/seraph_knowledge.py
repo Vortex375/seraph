@@ -45,7 +45,7 @@ class SeraphKnowledgeBase(KnowledgeBase):
                     score=result.score,
                     provenance=SeraphChunkProvenance(provider_id=result.provider_id, path=result.path),
                     metadata=DocMetadata(
-                        content={"type": "text", "text": result.content},
+                        content={"type": "text", "text": _format_prompt_visible_content(result.path, result.content)},
                         doc_id=result.document_id,
                         chunk_id=result.chunk_index,
                         total_chunks=result.total_chunks,
@@ -57,3 +57,7 @@ class SeraphKnowledgeBase(KnowledgeBase):
     async def add_documents(self, documents: list[Document], **kwargs: Any) -> None:
         del documents, kwargs
         return None
+
+
+def _format_prompt_visible_content(path: str, content: str) -> str:
+    return f"Path: {path}\n\n{content}"

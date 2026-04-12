@@ -6,8 +6,10 @@ import asyncio
 import logging
 import os
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any, Optional
 
+from openai import AsyncOpenAI
 from nats import errors as nats_errors
 from nats.js import api as js_api
 
@@ -20,6 +22,7 @@ from ingestion.file_changed_events import FileChangedEvent, decode_file_changed_
 
 FILE_CHANGED_STREAM = "SERAPH_FILE_CHANGED"
 FILE_CHANGED_SUBJECT = "seraph.file.*.changed"
+DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -31,6 +34,13 @@ def _env_bool(name: str, default: bool) -> bool:
 
 def _normalize_mime(mime: str) -> str:
     return mime.split(";")[0].strip().lower()
+
+
+def _normalize_openai_base_url(base_url: str | None) -> str | None:
+    if base_url is None:
+        return None
+    normalized = base_url.strip()
+    return normalized or None
 
 
 def _is_supported_mime(mime: str) -> bool:
@@ -69,6 +79,12 @@ class FileChangedIngestionConfig:
     idle_backoff_max: float
 
 
+class MessageOutcome(StrEnum):
+    INDEXED = "indexed"
+    SKIPPED = "skipped"
+    FAILED = "failed"
+
+
 class FileChangedIngestionService:
     def __init__(
         self,
@@ -89,6 +105,21 @@ class FileChangedIngestionService:
         self._tasks: set[asyncio.Task[None]] = set()
         self._idle_backoff = config.idle_backoff_base
         self._document_locks: dict[tuple[str, str], asyncio.Lock] = {}
+        self._embedding_model_name = os.getenv("EMBEDDING_MODEL_NAME", "text-embedding-3-small")
+        self._openai_api_key = os.getenv("OPENAI_API_KEY")
+        self._openai_base_url = _normalize_openai_base_url(os.getenv("OPENAI_BASE_URL"))
+        self._embedding_client: AsyncOpenAI | None = None
+
+    def _get_embedding_client(self) -> AsyncOpenAI:
+        if self._embedding_client is None:
+            client_kwargs: dict[str, str | None] = {"api_key": self._openai_api_key}
+            client_kwargs["base_url"] = self._openai_base_url or DEFAULT_OPENAI_BASE_URL
+            self._embedding_client = AsyncOpenAI(**client_kwargs)
+        return self._embedding_client
+
+    async def _embed_chunks(self, values: list[str]):
+        response = await self._get_embedding_client().embeddings.create(model=self._embedding_model_name, input=values)
+        return type("EmbeddingResponse", (), {"embeddings": [list(item.embedding) for item in response.data]})()
 
     def _lock_for_document(self, provider_id: str, path: str) -> asyncio.Lock:
         key = (provider_id, path)
@@ -200,11 +231,11 @@ class FileChangedIngestionService:
         await asyncio.sleep(self._idle_backoff)
         self._idle_backoff = min(self._idle_backoff * 2, self._config.idle_backoff_max)
 
-    async def _handle_message(self, msg) -> None:
+    async def _handle_message(self, msg) -> MessageOutcome:
         prepared = self._prepare_message(msg)
         if prepared is None:
             await msg.ack()
-            return
+            return MessageOutcome.SKIPPED
 
         event, normalized_mime = prepared
         async with self._lock_for_document(event.provider_id, event.path):
@@ -227,9 +258,10 @@ class FileChangedIngestionService:
                     await msg.nak()
                 except Exception:
                     self._log.debug("Failed to NAK message", exc_info=True)
-                return
+                return MessageOutcome.FAILED
 
         await msg.ack()
+        return MessageOutcome.INDEXED
 
     def _prepare_message(self, msg) -> tuple[FileChangedEvent, str] | None:
         try:
@@ -336,6 +368,7 @@ class FileChangedIngestionService:
                 size=event.size,
                 mod_time=event.mod_time,
                 text=text,
+                embedder=self._embed_chunks,
             )
 
 

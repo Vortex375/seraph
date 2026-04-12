@@ -4,6 +4,14 @@ export type ChatSession = {
   user_id: string
 }
 
+export type ChatMessage = {
+  id: string
+  role: string
+  content: string
+  created_at: string
+  citations: string[]
+}
+
 export async function listSessions(): Promise<ChatSession[]> {
   const response = await fetch('/api/v1/chat/sessions', { credentials: 'same-origin' })
   if (!response.ok) {
@@ -35,6 +43,14 @@ export async function sendMessage(sessionId: string, message: string): Promise<v
   if (!response.ok) {
     throw new Error('failed to send message')
   }
+}
+
+export async function listMessages(sessionId: string): Promise<ChatMessage[]> {
+  const response = await fetch(`/api/v1/chat/sessions/${sessionId}/messages`, { credentials: 'same-origin' })
+  if (!response.ok) {
+    throw new Error('failed to load messages')
+  }
+  return response.json() as Promise<ChatMessage[]>
 }
 
 export function openStream(sessionId: string): EventSource {
