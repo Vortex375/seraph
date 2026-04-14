@@ -37,7 +37,7 @@ async def test_stream_agent_reply_formats_sse_payload(monkeypatch: pytest.Monkey
 
 
 @pytest.mark.asyncio
-async def test_stream_agent_reply_emits_only_final_chunk_after_repeated_intermediate_chunks(
+async def test_stream_agent_reply_emits_each_chunk_during_generation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     streaming = importlib.import_module("chat.streaming")
@@ -63,7 +63,12 @@ async def test_stream_agent_reply_emits_only_final_chunk_after_repeated_intermed
     async for chunk in streaming.stream_agent_reply(agent=object(), user_input="say pong"):
         chunks.append(chunk)
 
-    assert chunks == ['data: {"id": "assistant-1", "role": "assistant", "content": "pong"}\n\n']
+    assert chunks == [
+        'data: {"id": "assistant-1", "role": "assistant", "content": "p"}\n\n',
+        'data: {"id": "assistant-1", "role": "assistant", "content": "po"}\n\n',
+        'data: {"id": "assistant-1", "role": "assistant", "content": "pon"}\n\n',
+        'data: {"id": "assistant-1", "role": "assistant", "content": "pong"}\n\n',
+    ]
 
 
 @pytest.mark.asyncio

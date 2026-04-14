@@ -20,12 +20,27 @@ from api.models import (
 )
 from auth.current_user import AuthenticatedUser, get_current_user
 from chat.citations import record_failure, record_sources, sources_from_knowledge_documents
-from chat.session_service import SessionService
+from chat.session_service import DEFAULT_SESSION_TITLE, SessionService, SessionTitleSummarizer, summarize_session_title
 from chat.streaming import stream_agent_reply
 from db.session import SessionLocal, get_db_session
 from documents.models import ChatSession, PendingChatTurn
 
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
+
+
+def _session_response_payload(session: Any) -> dict[str, Any]:
+    title = getattr(session, "title")
+    return {
+        "id": getattr(session, "id"),
+        "user_id": getattr(session, "user_id"),
+        "title": title,
+        "headline": getattr(session, "headline", title),
+        "preview": getattr(session, "preview", ""),
+        "status": getattr(session, "status", "finished"),
+        "created_at": getattr(session, "created_at"),
+        "updated_at": getattr(session, "updated_at"),
+        "last_message_at": getattr(session, "last_message_at"),
+    }
 
 
 async def _get_owned_session(db: Any, user_id: str, session_id: str) -> Any:
@@ -80,17 +95,36 @@ async def _retrieve_turn_sources(agent: Any, user_input: str) -> list[dict[str, 
     return sources_from_knowledge_documents(knowledge_docs)
 
 
-async def _accept_pending_turn(*, db: Any, session_id: str, user_id: str, message: str) -> PendingChatTurn:
+async def _accept_pending_turn(
+    *,
+    db: Any,
+    session_id: str,
+    user_id: str,
+    message: str,
+    title_summarizer: SessionTitleSummarizer | None = None,
+) -> PendingChatTurn:
     pending_turn = PendingChatTurn(id=str(uuid4()), session_id=session_id, user_id=user_id, message=message)
     now = datetime.now(timezone.utc)
     db.add(pending_turn)
+    get_session = getattr(db, "get", None)
+    rollback = getattr(db, "rollback", None)
     try:
-        await db.execute(
-            update(ChatSession).where(ChatSession.id == session_id).values(last_message_at=now, updated_at=now)
-        )
+        session = await get_session(ChatSession, session_id) if callable(get_session) else None
+        title = None
+        if session is not None and session.title == DEFAULT_SESSION_TITLE:
+            try:
+                title = await title_summarizer.summarize(message) if title_summarizer is not None else None
+            except Exception:
+                title = None
+            title = title or summarize_session_title(message)
+        update_values: dict[str, Any] = {"last_message_at": now, "updated_at": now}
+        if title is not None:
+            update_values["title"] = title
+        await db.execute(update(ChatSession).where(ChatSession.id == session_id).values(**update_values))
         await db.commit()
     except BaseException:
-        await db.rollback()
+        if callable(rollback):
+            await rollback()
         raise
     await db.refresh(pending_turn)
     return pending_turn
@@ -299,7 +333,7 @@ async def list_sessions(
 ) -> list[SessionResponse]:
     service = SessionService(db)
     sessions = await service.list_sessions(user.user_id)
-    return [SessionResponse.model_validate(session) for session in sessions]
+    return [SessionResponse.model_validate(_session_response_payload(session)) for session in sessions]
 
 
 @router.post("/sessions", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)
@@ -310,7 +344,20 @@ async def create_session(
 ) -> SessionResponse:
     service = SessionService(db)
     session = await service.create_session(user.user_id, payload.title)
-    return SessionResponse.model_validate(session)
+    return SessionResponse.model_validate(_session_response_payload(session))
+
+
+@router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_session(
+    session_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
+    db: Any = Depends(get_db_session),
+) -> Response:
+    service = SessionService(db)
+    deleted = await service.delete_session(user.user_id, session_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="chat session not found")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(
@@ -319,11 +366,19 @@ async def create_session(
 async def create_message(
     session_id: str,
     payload: MessageCreateRequest,
+    request: Request,
     user: AuthenticatedUser = Depends(get_current_user),
     db: Any = Depends(get_db_session),
 ) -> AcceptedMessageResponse:
     await _get_owned_session(db, user.user_id, session_id)
-    await _accept_pending_turn(db=db, session_id=session_id, user_id=user.user_id, message=payload.message)
+    title_summarizer = getattr(request.app.state, "session_title_summarizer", None)
+    await _accept_pending_turn(
+        db=db,
+        session_id=session_id,
+        user_id=user.user_id,
+        message=payload.message,
+        title_summarizer=title_summarizer,
+    )
     return AcceptedMessageResponse(accepted=True)
 
 

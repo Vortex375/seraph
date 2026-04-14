@@ -1,7 +1,13 @@
 export type ChatSession = {
   id: string
   title: string
+  headline: string
+  preview: string
+  status: 'running' | 'finished'
   user_id: string
+  created_at: string
+  updated_at: string
+  last_message_at: string
 }
 
 export type ChatMessage = {
@@ -12,45 +18,53 @@ export type ChatMessage = {
   citations: string[]
 }
 
-export async function listSessions(): Promise<ChatSession[]> {
-  const response = await fetch('/api/v1/chat/sessions', { credentials: 'same-origin' })
+export type AcceptedMessageResponse = {
+  accepted: boolean
+}
+
+async function requestJson<T>(input: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(input, {
+    credentials: 'same-origin',
+    ...init,
+  })
   if (!response.ok) {
-    return []
+    throw new Error(`request failed: ${response.status}`)
   }
-  return response.json() as Promise<ChatSession[]>
+  return response.json() as Promise<T>
+}
+
+export async function listSessions(): Promise<ChatSession[]> {
+  return requestJson<ChatSession[]>('/api/v1/chat/sessions')
 }
 
 export async function createSession(title: string): Promise<ChatSession> {
-  const response = await fetch('/api/v1/chat/sessions', {
+  return requestJson<ChatSession>('/api/v1/chat/sessions', {
     method: 'POST',
-    credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title })
   })
-  if (!response.ok) {
-    throw new Error('failed to create session')
-  }
-  return response.json() as Promise<ChatSession>
 }
 
-export async function sendMessage(sessionId: string, message: string): Promise<void> {
-  const response = await fetch(`/api/v1/chat/sessions/${sessionId}/messages`, {
+export async function sendMessage(sessionId: string, message: string): Promise<AcceptedMessageResponse> {
+  return requestJson<AcceptedMessageResponse>(`/api/v1/chat/sessions/${sessionId}/messages`, {
     method: 'POST',
-    credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ message })
   })
-  if (!response.ok) {
-    throw new Error('failed to send message')
-  }
 }
 
 export async function listMessages(sessionId: string): Promise<ChatMessage[]> {
-  const response = await fetch(`/api/v1/chat/sessions/${sessionId}/messages`, { credentials: 'same-origin' })
+  return requestJson<ChatMessage[]>(`/api/v1/chat/sessions/${sessionId}/messages`)
+}
+
+export async function deleteSession(sessionId: string): Promise<void> {
+  const response = await fetch(`/api/v1/chat/sessions/${sessionId}`, {
+    method: 'DELETE',
+    credentials: 'same-origin',
+  })
   if (!response.ok) {
-    throw new Error('failed to load messages')
+    throw new Error('failed to delete session')
   }
-  return response.json() as Promise<ChatMessage[]>
 }
 
 export function openStream(sessionId: string): EventSource {

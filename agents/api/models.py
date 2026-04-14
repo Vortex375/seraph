@@ -17,6 +17,9 @@ class SessionResponse(BaseModel):
     id: str
     user_id: str
     title: str
+    headline: str
+    preview: str
+    status: str
     created_at: datetime
     updated_at: datetime
     last_message_at: datetime

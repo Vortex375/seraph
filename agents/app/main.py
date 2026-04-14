@@ -5,10 +5,12 @@ import logging
 from pathlib import Path
 from typing import Any, Protocol, cast
 
+from agentscope.model import OpenAIChatModel
 from openai import AsyncOpenAI
+from pydantic import BaseModel
 import uvicorn
-from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Response
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from nats.aio.client import Client as NatsClient
 
@@ -128,6 +130,49 @@ class RuntimeAgentFactory:
         await self._spaces_client.aclose()
 
 
+class _SessionTitleSummary(BaseModel):
+    title: str
+
+
+class RuntimeSessionTitleSummarizer:
+    def __init__(self, settings: Settings) -> None:
+        self._enabled = bool(settings.openai_api_key)
+        self._model: OpenAIChatModel | None = None
+        if not self._enabled:
+            return
+        client_kwargs: dict[str, str] = {
+            "base_url": _normalize_openai_base_url(settings.openai_base_url) or DEFAULT_OPENAI_BASE_URL,
+        }
+        self._model = OpenAIChatModel(
+            model_name=settings.chat_model_name,
+            api_key=settings.openai_api_key,
+            client_kwargs=client_kwargs,
+            stream=False,
+        )
+
+    async def summarize(self, message: str) -> str:
+        if not self._enabled or self._model is None:
+            raise RuntimeError("session title summarizer is disabled")
+        response = await self._model(
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "Generate a concise conversation title for a chat sidebar. "
+                        "Return 3 to 7 words, plain text, no quotes, no punctuation unless required."
+                    ),
+                },
+                {"role": "user", "content": message},
+            ],
+            structured_model=_SessionTitleSummary,
+        )
+        metadata = response.metadata or {}
+        title = metadata.get("title")
+        if not isinstance(title, str):
+            raise ValueError("title summary missing")
+        return title.strip()
+
+
 class _ManagedIngestionService:
     def __init__(self, service: Any) -> None:
         self._service = service
@@ -141,7 +186,8 @@ class _ManagedIngestionService:
 
 UI_DIR = Path(__file__).resolve().parents[1] / "ui"
 UI_DIST_DIR = UI_DIR / "dist"
-UI_INDEX_FILE = UI_DIR / "index.html"
+UI_INDEX_FILE = UI_DIST_DIR / "index.html"
+DEFAULT_UI_DEV_SERVER_URL = "http://127.0.0.1:5173"
 
 
 def create_ingestion_service(settings: Settings) -> Any:
@@ -206,6 +252,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Seraph Agents", lifespan=lifespan)
     setup_telemetry(app)
     app.state.agent_factory = RuntimeAgentFactory(settings)
+    app.state.session_title_summarizer = RuntimeSessionTitleSummarizer(settings)
     app.state.spaces_client = app.state.agent_factory._spaces_client
 
     @app.get("/healthz")
@@ -213,8 +260,18 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     @app.get("/")
-    async def root() -> FileResponse:
+    async def root() -> Response:
+        if settings.runtime_env == "dev" and settings.ui_dev_server_url:
+            return RedirectResponse(url="/ui-dev/", status_code=307)
         return FileResponse(UI_INDEX_FILE)
+
+    if settings.runtime_env == "dev" and settings.ui_dev_server_url:
+        ui_dev_module = importlib.import_module("api.ui_dev_proxy")
+        app.mount(
+            "/ui-dev",
+            ui_dev_module.create_ui_dev_proxy(settings.ui_dev_server_url),
+            name="ui-dev",
+        )
 
     app.include_router(chat_api.router)
     app.include_router(documents_api.router)

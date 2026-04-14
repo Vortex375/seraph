@@ -38,6 +38,72 @@ def test_list_sessions_requires_authenticated_user() -> None:
     assert response.status_code == 401
 
 
+def test_list_sessions_returns_sidebar_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = create_app()
+
+    class StubSessionSummary:
+        def __init__(self) -> None:
+            self.id = "session-1"
+            self.user_id = "alice"
+            self.title = "Roadmap Review"
+            self.headline = "Roadmap Review"
+            self.preview = "Last preview line"
+            self.status = "finished"
+            self.created_at = "2026-04-12T00:00:00Z"
+            self.updated_at = "2026-04-12T00:00:00Z"
+            self.last_message_at = "2026-04-12T00:00:00Z"
+
+    class StubSessionService:
+        def __init__(self, session: object) -> None:
+            del session
+
+        async def list_sessions(self, user_id: str) -> list[StubSessionSummary]:
+            assert user_id == "alice"
+            return [StubSessionSummary()]
+
+    monkeypatch.setattr("api.chat.SessionService", StubSessionService)
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/chat/sessions", headers={"X-Seraph-User": "alice"})
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "id": "session-1",
+            "user_id": "alice",
+            "title": "Roadmap Review",
+            "headline": "Roadmap Review",
+            "preview": "Last preview line",
+            "status": "finished",
+            "created_at": "2026-04-12T00:00:00Z",
+            "updated_at": "2026-04-12T00:00:00Z",
+            "last_message_at": "2026-04-12T00:00:00Z",
+        }
+    ]
+
+
+def test_delete_session_removes_owned_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = create_app()
+    recorded: dict[str, str] = {}
+
+    class StubSessionService:
+        def __init__(self, session: object) -> None:
+            del session
+
+        async def delete_session(self, user_id: str, session_id: str) -> bool:
+            recorded["user_id"] = user_id
+            recorded["session_id"] = session_id
+            return True
+
+    monkeypatch.setattr("api.chat.SessionService", StubSessionService)
+
+    with TestClient(app) as client:
+        response = client.delete("/api/v1/chat/sessions/session-1", headers={"X-Seraph-User": "alice"})
+
+    assert response.status_code == 204
+    assert recorded == {"user_id": "alice", "session_id": "session-1"}
+
+
 @pytest.mark.asyncio
 async def test_list_session_messages_returns_visible_history_with_citations(monkeypatch: pytest.MonkeyPatch) -> None:
     app = create_app()
@@ -279,11 +345,14 @@ async def test_create_message_accepts_owned_session(monkeypatch: pytest.MonkeyPa
                 return None
             return StubSession(session_id, user_id, "Inbox")
 
-    async def fake_accept_pending_turn(*, db: object, session_id: str, user_id: str, message: str):
+    async def fake_accept_pending_turn(
+        *, db: object, session_id: str, user_id: str, message: str, title_summarizer=None
+    ):
         recorded["db"] = db
         recorded["session_id"] = session_id
         recorded["user_id"] = user_id
         recorded["message"] = message
+        recorded["title_summarizer"] = title_summarizer
 
     monkeypatch.setattr("api.chat.SessionService", StubSessionService)
     monkeypatch.setattr("api.chat._accept_pending_turn", fake_accept_pending_turn)
@@ -367,6 +436,79 @@ async def test_accept_pending_turn_updates_last_message_time() -> None:
     assert pending_turn.message == "hello"
     assert recorded["statement"] is not None
     assert recorded["committed"] is True
+
+
+@pytest.mark.asyncio
+async def test_accept_pending_turn_promotes_default_title_to_llm_summary() -> None:
+    from documents.models import Base, ChatSession
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    chat_module = importlib.import_module("api.chat")
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as db:
+        db.add(ChatSession(id="session-1", user_id="alice", title="New conversation"))
+        await db.commit()
+
+        class StubSummarizer:
+            async def summarize(self, message: str) -> str:
+                assert message == "   Draft roadmap for distributed search rollout with milestones and risks   "
+                return "Search rollout roadmap"
+
+        await chat_module._accept_pending_turn(
+            db=db,
+            session_id="session-1",
+            user_id="alice",
+            message="   Draft roadmap for distributed search rollout with milestones and risks   ",
+            title_summarizer=StubSummarizer(),
+        )
+
+        persisted_session = await db.get(ChatSession, "session-1")
+
+    assert persisted_session is not None
+    assert persisted_session.title == "Search rollout roadmap"
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_accept_pending_turn_falls_back_to_local_summary_when_llm_title_generation_fails() -> None:
+    from documents.models import Base, ChatSession
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    chat_module = importlib.import_module("api.chat")
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as db:
+        db.add(ChatSession(id="session-1", user_id="alice", title="New conversation"))
+        await db.commit()
+
+        class FailingSummarizer:
+            async def summarize(self, message: str) -> str:
+                raise RuntimeError(f"cannot summarize {message}")
+
+        await chat_module._accept_pending_turn(
+            db=db,
+            session_id="session-1",
+            user_id="alice",
+            message="   Draft roadmap for distributed search rollout with milestones and risks   ",
+            title_summarizer=FailingSummarizer(),
+        )
+
+        persisted_session = await db.get(ChatSession, "session-1")
+
+    assert persisted_session is not None
+    assert persisted_session.title == "Draft roadmap for distributed search rollout with milestones and risks"
+
+    await engine.dispose()
 
 
 @pytest.mark.asyncio

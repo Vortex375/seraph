@@ -13,9 +13,6 @@ async def stream_agent_reply(agent: Any, user_input: str) -> AsyncGenerator[str,
         coroutine_task=coroutine_task,
     ):
         msg = event[0]
-        is_last_chunk = event[1]
-        if not is_last_chunk:
-            continue
         yield f"data: {json.dumps(msg.to_dict(), ensure_ascii=False)}\n\n"
 
 

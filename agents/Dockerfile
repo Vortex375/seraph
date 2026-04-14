@@ -1,3 +1,17 @@
+FROM node:20-bookworm-slim AS ui-builder
+
+WORKDIR /ui
+
+COPY ui/package.json ./package.json
+COPY ui/package-lock.json ./package-lock.json
+COPY ui/tsconfig.json ./tsconfig.json
+COPY ui/vite.config.ts ./vite.config.ts
+COPY ui/index.html ./index.html
+COPY ui/src ./src
+
+RUN npm ci
+RUN npm run build
+
 FROM agnohq/python:3.12
 
 # Environment variables that actually matter
@@ -23,6 +37,7 @@ RUN uv pip sync requirements.txt --system
 
 # Copy app code
 COPY --chown=${USER}:${USER} . .
+COPY --from=ui-builder /ui/dist ./ui/dist
 
 USER ${USER}
 
