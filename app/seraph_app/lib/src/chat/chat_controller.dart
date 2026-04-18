@@ -23,6 +23,7 @@ class ChatController extends GetxController {
   StreamSubscription<Map<String, dynamic>>? _replySubscription;
   Completer<void>? _replyCompleter;
   int _selectionRequestId = 0;
+  int _replyGeneration = 0;
 
   @override
   void onClose() {
@@ -128,32 +129,39 @@ class ChatController extends GetxController {
     try {
       await chatService.sendMessage(sessionId, draft);
       _cancelReplySubscription();
+      final replyGeneration = ++_replyGeneration;
       _replyCompleter = Completer<void>();
       _replySubscription = chatService.streamAssistantReply(sessionId).listen(
         (event) async {
+          if (replyGeneration != _replyGeneration || activeSessionId.value != sessionId || messages.isEmpty) {
+            return;
+          }
           final content = _extractStreamContent(event['content']);
           final type = event['type'];
-          if (content is String && messages.isNotEmpty) {
+          if (content is String) {
             final last = messages.removeLast();
-            final citations = event['citations'];
             messages.add(ChatMessage(
               id: event['id'] as String? ?? last.id,
               role: last.role,
               content: type == 'delta' ? '${last.content}$content' : content,
               createdAt: last.createdAt,
-              citations: citations is List<dynamic>
-                  ? citations.whereType<String>().toList()
-                  : last.citations,
+              citations: _extractStreamCitations(event['citations'], last.citations),
             ));
             await _refreshSessionMetadata(sessionId);
           }
         },
         onError: (_) {
+          if (replyGeneration != _replyGeneration || activeSessionId.value != sessionId) {
+            return;
+          }
           historyError.value = 'Failed to stream assistant reply';
           sending.value = false;
           _completeReply();
         },
         onDone: () {
+          if (replyGeneration != _replyGeneration || activeSessionId.value != sessionId) {
+            return;
+          }
           sending.value = false;
           _completeReply();
         },
@@ -200,6 +208,7 @@ class ChatController extends GetxController {
   }
 
   void _cancelReplySubscription({bool resetSending = false}) {
+    _replyGeneration++;
     _replySubscription?.cancel();
     _replySubscription = null;
     if (resetSending) {
@@ -214,6 +223,29 @@ class ChatController extends GetxController {
     if (completer != null && !completer.isCompleted) {
       completer.complete();
     }
+  }
+
+  List<String> _extractStreamCitations(dynamic rawCitations, List<String> fallback) {
+    if (rawCitations is! List<dynamic>) {
+      return fallback;
+    }
+
+    return rawCitations.map(_extractCitationPath).whereType<String>().toList();
+  }
+
+  String? _extractCitationPath(dynamic citation) {
+    if (citation is String && citation.isNotEmpty) {
+      return citation;
+    }
+
+    if (citation is Map<dynamic, dynamic>) {
+      final path = citation['path'];
+      if (path is String && path.isNotEmpty) {
+        return path;
+      }
+    }
+
+    return null;
   }
 
   Future<void> _refreshSessionMetadata(String sessionId) async {

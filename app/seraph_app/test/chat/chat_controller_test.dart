@@ -99,6 +99,32 @@ void main() {
       await sendFuture;
     });
 
+    test('sendCurrentMessage maps streamed citation objects to source paths', () async {
+      final streamController = StreamController<Map<String, dynamic>>();
+      chatService.replyStreams['session-1'] = streamController.stream;
+
+      await controller.selectSession('session-1');
+      controller.draftController.text = 'Hello there';
+
+      final sendFuture = controller.sendCurrentMessage();
+      await Future<void>.microtask(() {});
+
+      streamController.add({
+        'id': 'assistant-remote-1',
+        'content': 'Hello',
+        'citations': [
+          {'provider_id': 'provider-a', 'path': '/team/spec.md'},
+          {'provider_id': 'provider-b', 'path': '/team/notes.md'},
+        ],
+      });
+      await Future<void>.microtask(() {});
+
+      expect(controller.messages[1].citations, ['/team/spec.md', '/team/notes.md']);
+
+      await streamController.close();
+      await sendFuture;
+    });
+
     test('sendCurrentMessage updates assistant content from typed content block payloads', () async {
       final streamController = StreamController<Map<String, dynamic>>();
       chatService.replyStreams['session-1'] = streamController.stream;
@@ -285,6 +311,110 @@ void main() {
 
       await firstStream.close();
     });
+
+    test('late events from a cancelled stream do not mutate the newly selected session', () async {
+      final firstStream = StreamController<Map<String, dynamic>>.broadcast();
+      final secondStream = StreamController<Map<String, dynamic>>();
+      chatService.sessions.add(_session(id: 'session-2', title: 'Archive'));
+      chatService.messagesBySession['session-2'] = [
+        _message(id: 'assistant-2', role: 'assistant', content: 'Existing session-2 reply'),
+      ];
+      chatService.replyStreams['session-1'] = firstStream.stream;
+      chatService.replyStreams['session-2'] = secondStream.stream;
+
+      await controller.selectSession('session-1');
+      controller.draftController.text = 'Hello there';
+
+      final firstSend = controller.sendCurrentMessage();
+      await Future<void>.microtask(() {});
+
+      await controller.selectSession('session-2');
+      expect(controller.activeSessionId.value, 'session-2');
+      expect(controller.messages.single.content, 'Existing session-2 reply');
+
+      firstStream.add({
+        'id': 'assistant-remote-1',
+        'type': 'delta',
+        'content': 'late reply',
+        'citations': [
+          {'provider_id': 'provider-a', 'path': '/team/spec.md'},
+        ],
+      });
+      await Future<void>.microtask(() {});
+      await firstSend;
+
+      expect(controller.activeSessionId.value, 'session-2');
+      expect(controller.messages, hasLength(1));
+      expect(controller.messages.single.content, 'Existing session-2 reply');
+      expect(controller.messages.single.citations, isEmpty);
+
+      await firstStream.close();
+      await secondStream.close();
+    });
+
+    test('late stream completion from a cancelled session does not finish the active send', () async {
+      final firstStream = _ManualReplyStream();
+      final secondStream = StreamController<Map<String, dynamic>>();
+      chatService.sessions.add(_session(id: 'session-2', title: 'Archive'));
+      chatService.messagesBySession['session-2'] = [];
+      chatService.replyStreams['session-1'] = firstStream;
+      chatService.replyStreams['session-2'] = secondStream.stream;
+
+      await controller.selectSession('session-1');
+      controller.draftController.text = 'Hello there';
+
+      final firstSend = controller.sendCurrentMessage();
+      await Future<void>.microtask(() {});
+
+      await controller.selectSession('session-2');
+      controller.draftController.text = 'Follow up';
+
+      final secondSend = controller.sendCurrentMessage();
+      await Future<void>.microtask(() {});
+      expect(controller.sending.value, isTrue);
+
+      firstStream.emitDone();
+      await Future<void>.microtask(() {});
+
+      expect(controller.sending.value, isTrue);
+      expect(controller.historyError.value, isNull);
+
+      await firstSend;
+      await secondStream.close();
+      await secondSend;
+    });
+
+    test('late stream errors from a cancelled session do not fail the active send', () async {
+      final firstStream = _ManualReplyStream();
+      final secondStream = StreamController<Map<String, dynamic>>();
+      chatService.sessions.add(_session(id: 'session-2', title: 'Archive'));
+      chatService.messagesBySession['session-2'] = [];
+      chatService.replyStreams['session-1'] = firstStream;
+      chatService.replyStreams['session-2'] = secondStream.stream;
+
+      await controller.selectSession('session-1');
+      controller.draftController.text = 'Hello there';
+
+      final firstSend = controller.sendCurrentMessage();
+      await Future<void>.microtask(() {});
+
+      await controller.selectSession('session-2');
+      controller.draftController.text = 'Follow up';
+
+      final secondSend = controller.sendCurrentMessage();
+      await Future<void>.microtask(() {});
+      expect(controller.sending.value, isTrue);
+
+      firstStream.emitError(StateError('stale error'));
+      await Future<void>.microtask(() {});
+
+      expect(controller.sending.value, isTrue);
+      expect(controller.historyError.value, isNull);
+
+      await firstSend;
+      await secondStream.close();
+      await secondSend;
+    });
   });
 }
 
@@ -408,6 +538,103 @@ class _SentMessage {
 
   @override
   int get hashCode => Object.hash(sessionId, message);
+}
+
+class _ManualReplyStream extends Stream<Map<String, dynamic>> {
+  _ManualReplySubscription? _subscription;
+
+  void emitDone() {
+    _subscription?.emitDone();
+  }
+
+  void emitError(Object error) {
+    _subscription?.emitError(error);
+  }
+
+  @override
+  StreamSubscription<Map<String, dynamic>> listen(
+    void Function(Map<String, dynamic> event)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) {
+    final subscription = _ManualReplySubscription(
+      onData: onData,
+      onError: onError,
+      onDone: onDone,
+    );
+    _subscription = subscription;
+    return subscription;
+  }
+}
+
+class _ManualReplySubscription implements StreamSubscription<Map<String, dynamic>> {
+  _ManualReplySubscription({
+    void Function(Map<String, dynamic> event)? onData,
+    Function? onError,
+    void Function()? onDone,
+  })  : _onData = onData,
+        _onError = onError,
+        _onDone = onDone;
+
+  void Function(Map<String, dynamic> event)? _onData;
+  Function? _onError;
+  void Function()? _onDone;
+  bool _isPaused = false;
+
+  void emitDone() {
+    _onDone?.call();
+  }
+
+  void emitError(Object error) {
+    final handler = _onError;
+    if (handler is void Function(Object)) {
+      handler(error);
+      return;
+    }
+    if (handler is void Function(Object, StackTrace)) {
+      handler(error, StackTrace.empty);
+      return;
+    }
+    if (handler is void Function()) {
+      handler();
+    }
+  }
+
+  @override
+  Future<E> asFuture<E>([E? futureValue]) => Future<E>.value(futureValue as E);
+
+  @override
+  Future<void> cancel() async {}
+
+  @override
+  bool get isPaused => _isPaused;
+
+  @override
+  void onData(void Function(Map<String, dynamic> data)? handleData) {
+    _onData = handleData;
+  }
+
+  @override
+  void onDone(void Function()? handleDone) {
+    _onDone = handleDone;
+  }
+
+  @override
+  void onError(Function? handleError) {
+    _onError = handleError;
+  }
+
+  @override
+  void pause([Future<void>? resumeSignal]) {
+    _isPaused = true;
+    resumeSignal?.whenComplete(resume);
+  }
+
+  @override
+  void resume() {
+    _isPaused = false;
+  }
 }
 
 ChatSession _session({

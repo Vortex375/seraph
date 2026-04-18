@@ -44,8 +44,11 @@ def test_app_startup_initializes_database_schema(monkeypatch: pytest.MonkeyPatch
             return DummyBegin()
 
     class DummyMetadata:
+        def __init__(self, label: str) -> None:
+            self._label = label
+
         def create_all(self, bind):
-            calls.append(f"create_all:{bind}")
+            calls.append(f"create_all:{self._label}:{bind}")
 
     class StubIngestionService:
         async def start(self) -> None:
@@ -54,15 +57,38 @@ def test_app_startup_initializes_database_schema(monkeypatch: pytest.MonkeyPatch
         async def stop(self) -> None:
             calls.append("ingestion_stop")
 
+    class StubAgentScopeBase:
+        metadata = DummyMetadata("agentscope")
+
+    class StubAgentScopeModule:
+        Base = StubAgentScopeBase
+
+    original_import_module = importlib.import_module
+
+    def fake_import_module(name: str):
+        if name == "agentscope.memory._working_memory._sqlalchemy_memory":
+            return StubAgentScopeModule
+        return original_import_module(name)
+
     monkeypatch.setattr(app_main, "engine", DummyEngine())
     monkeypatch.setattr(app_main, "create_ingestion_service", lambda settings: StubIngestionService())
-    monkeypatch.setattr(importlib.import_module("documents.models").Base, "metadata", DummyMetadata())
+    monkeypatch.setattr(app_main.Base, "metadata", DummyMetadata("documents"))
+    monkeypatch.setattr(importlib, "import_module", fake_import_module)
 
     app = app_main.create_app()
     with TestClient(app):
         pass
 
-    assert calls == ["begin", "run_sync", "create_all:sync-conn", "end", "ingestion_start", "ingestion_stop"]
+    assert calls == [
+        "begin",
+        "run_sync",
+        "create_all:documents:sync-conn",
+        "run_sync",
+        "create_all:agentscope:sync-conn",
+        "end",
+        "ingestion_start",
+        "ingestion_stop",
+    ]
 
 
 def test_app_startup_initializes_agentscope_database_schema(monkeypatch: pytest.MonkeyPatch) -> None:
