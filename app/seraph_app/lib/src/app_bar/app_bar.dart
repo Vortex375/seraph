@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:seraph_app/src/chat/chat_view.dart';
 import 'package:seraph_app/src/file_browser/file_browser_view.dart';
 
 import 'package:seraph_app/src/gallery/gallery_view.dart';
@@ -20,24 +21,46 @@ AppBar seraphAppBar(BuildContext context, {
     title: Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        const Text('Seraph'),
-        const SizedBox(width: 16),
-        if (!shareController.shareMode.value) DropdownButtonHideUnderline(
-          child: DropdownButton<String>(
-            value: routeName,
-            items: const [
-              DropdownMenuItem(
-                  value: FileBrowserView.routeName, child: Text('Cloud Files')),
-              DropdownMenuItem(
-                  value: GalleryView.routeName, child: Text('Gallery')),
-              DropdownMenuItem(enabled: false, child: Divider()),
-              DropdownMenuItem(
-                  value: SettingsView.routeName, child: Text('App Settings'))
-            ],
-            onChanged: (value) => Get.offAllNamed(value!),
+        const Flexible(
+          fit: FlexFit.loose,
+          child: Text(
+            'Seraph',
+            overflow: TextOverflow.ellipsis,
           ),
         ),
-        if (shareController.shareMode.value) Text(shareController.title.value ?? '', style: const TextStyle(fontSize: 18))
+        const SizedBox(width: 12),
+        if (!shareController.shareMode.value)
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  isExpanded: true,
+                  value: routeName,
+                  items: const [
+                    DropdownMenuItem(
+                        value: FileBrowserView.routeName, child: Text('Cloud Files', overflow: TextOverflow.ellipsis)),
+                    DropdownMenuItem(
+                        value: GalleryView.routeName, child: Text('Gallery', overflow: TextOverflow.ellipsis)),
+                    DropdownMenuItem(
+                        value: ChatView.routeName, child: Text('Chat', overflow: TextOverflow.ellipsis)),
+                    DropdownMenuItem(enabled: false, child: Divider()),
+                    DropdownMenuItem(
+                        value: SettingsView.routeName, child: Text('App Settings', overflow: TextOverflow.ellipsis))
+                  ],
+                  onChanged: (value) => Get.offAllNamed(value!),
+                ),
+              ),
+            ),
+          ),
+        if (shareController.shareMode.value)
+          Expanded(
+            child: Text(
+              shareController.title.value ?? '',
+              style: const TextStyle(fontSize: 18),
+              overflow: TextOverflow.ellipsis,
+            ),
+          )
       ],
     ),
     actions: actions,

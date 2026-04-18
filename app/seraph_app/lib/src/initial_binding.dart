@@ -1,4 +1,6 @@
 import 'package:get/get.dart';
+import 'package:seraph_app/src/chat/chat_controller.dart';
+import 'package:seraph_app/src/chat/chat_service.dart';
 import 'package:seraph_app/src/file_browser/file_browser_controller.dart';
 import 'package:seraph_app/src/file_browser/file_service.dart';
 import 'package:seraph_app/src/file_browser/selection_controller.dart';
@@ -10,6 +12,8 @@ class InitialBinding extends Bindings {
   void dependencies() {
     Get.put(FileService(Get.find(), Get.find(), Get.find()));
     Get.put(SearchService(Get.find(), Get.find()));
+    Get.put(ChatService(Get.find(), Get.find()));
+    Get.put(ChatController(Get.find()));
     Get.put(SelectionController());
     Get.put(FileBrowserController());
     Get.put(AudioPlayerController());

@@ -41,6 +41,10 @@ gateway:
   # OPTIONAL (default: '/srv/webapp' - for use inside docker image)
   # for development only: specify the location from where the (Angular) web app is served
   webAppLocation: ../webapp/seraph-web-app/dist/seraph-web-app/browser
+  agents:
+    # OPTIONAL (default: 'http://agents-api:8000' in docker-compose)
+    # base URL for the agents HTTP API that serves chat and document endpoints
+    baseURL: http://agents-api:8000
 
 # Configure the database
 mongo:

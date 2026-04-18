@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:get/get.dart';
+import 'package:seraph_app/src/chat/chat_view.dart';
 import 'package:seraph_app/src/file_browser/file_browser_controller.dart';
 import 'package:seraph_app/src/file_browser/file_browser_view.dart';
 import 'package:seraph_app/src/file_viewer/file_viewer_controller.dart';
 import 'package:seraph_app/src/file_viewer/file_viewer_view.dart';
 import 'package:seraph_app/src/gallery/gallery_view.dart';
 import 'package:seraph_app/src/initial_binding.dart';
+import 'package:seraph_app/src/localization/app_localizations.dart';
 import 'package:seraph_app/src/media_player/audio_player_view.dart';
 import 'package:seraph_app/src/media_player/video_player_controller.dart';
 import 'package:seraph_app/src/search/search_controller.dart';
@@ -97,6 +97,10 @@ class MyApp extends StatelessWidget {
           })
         ),
         GetPage(
+          name: ChatView.routeName,
+          page: () => const ChatView(),
+        ),
+        GetPage(
           name: SettingsView.routeName, 
           page: () => const SettingsView()
         )
@@ -108,15 +112,8 @@ class MyApp extends StatelessWidget {
       // Provide the generated AppLocalizations to the MaterialApp. This
       // allows descendant Widgets to display the correct translations
       // depending on the user's locale.
-      localizationsDelegates: const [
-        AppLocalizations.delegate,
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      supportedLocales: const [
-        Locale('en', ''), // English, no country code
-      ],
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
 
       // Use AppLocalizations to configure the correct application title
       // depending on the user's locale.

@@ -22,6 +22,7 @@ import (
 	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.uber.org/fx"
+	"umbasa.net/seraph/api-gateway/agents"
 	"umbasa.net/seraph/api-gateway/auth"
 	"umbasa.net/seraph/api-gateway/download"
 	"umbasa.net/seraph/api-gateway/gateway"
@@ -48,6 +49,7 @@ func main() {
 		tracing.Module,
 		servicediscovery.Module,
 		gateway.Module,
+		agents.Module,
 		auth.Module,
 		logging.FxLogger(),
 

@@ -65,6 +65,75 @@ def test_app_startup_initializes_database_schema(monkeypatch: pytest.MonkeyPatch
     assert calls == ["begin", "run_sync", "create_all:sync-conn", "end", "ingestion_start", "ingestion_stop"]
 
 
+def test_app_startup_initializes_agentscope_database_schema(monkeypatch: pytest.MonkeyPatch) -> None:
+    app_main = importlib.import_module("app.main")
+    calls: list[str] = []
+
+    class DummyConn:
+        async def run_sync(self, fn):
+            calls.append("run_sync")
+            fn("sync-conn")
+
+    class DummyBegin:
+        async def __aenter__(self):
+            calls.append("begin")
+            return DummyConn()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            calls.append("end")
+
+    class DummyEngine:
+        def begin(self):
+            return DummyBegin()
+
+    class DummyMetadata:
+        def __init__(self, label: str) -> None:
+            self._label = label
+
+        def create_all(self, bind):
+            calls.append(f"create_all:{self._label}:{bind}")
+
+    class StubIngestionService:
+        async def start(self) -> None:
+            calls.append("ingestion_start")
+
+        async def stop(self) -> None:
+            calls.append("ingestion_stop")
+
+    class StubAgentScopeBase:
+        metadata = DummyMetadata("agentscope")
+
+    class StubAgentScopeModule:
+        Base = StubAgentScopeBase
+
+    original_import_module = importlib.import_module
+
+    def fake_import_module(name: str):
+        if name == "agentscope.memory._working_memory._sqlalchemy_memory":
+            return StubAgentScopeModule
+        return original_import_module(name)
+
+    monkeypatch.setattr(app_main, "engine", DummyEngine())
+    monkeypatch.setattr(app_main, "create_ingestion_service", lambda settings: StubIngestionService())
+    monkeypatch.setattr(app_main.Base, "metadata", DummyMetadata("documents"))
+    monkeypatch.setattr(importlib, "import_module", fake_import_module)
+
+    app = app_main.create_app()
+    with TestClient(app):
+        pass
+
+    assert calls == [
+        "begin",
+        "run_sync",
+        "create_all:documents:sync-conn",
+        "run_sync",
+        "create_all:agentscope:sync-conn",
+        "end",
+        "ingestion_start",
+        "ingestion_stop",
+    ]
+
+
 def test_app_startup_failure_cleans_up_partial_resources(monkeypatch: pytest.MonkeyPatch) -> None:
     app_main = importlib.import_module("app.main")
     calls: list[str] = []

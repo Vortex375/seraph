@@ -199,8 +199,10 @@ def create_ingestion_service(settings: Settings) -> Any:
 
 
 async def initialize_database_schema() -> None:
+    sqlalchemy_memory = importlib.import_module("agentscope.memory._working_memory._sqlalchemy_memory")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(sqlalchemy_memory.Base.metadata.create_all)
 
 
 @asynccontextmanager

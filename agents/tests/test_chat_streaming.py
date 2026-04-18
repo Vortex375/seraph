@@ -1604,3 +1604,55 @@ async def test_stream_chat_events_records_failures(monkeypatch: pytest.MonkeyPat
     assert recorded["assistant_message_id"] == "assistant-9"
     assert recorded["error"] == "assistant id=assistant-9 boom"
     assert recorded["db_id"] == recorded["isolated_db_id"]
+
+
+@pytest.mark.asyncio
+async def test_stream_chat_events_yields_error_chunk_for_missing_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    chat_module = importlib.import_module("api.chat")
+    recorded: dict[str, str] = {}
+
+    class AuthenticationError(Exception):
+        pass
+
+    class StubKnowledge:
+        async def retrieve(self, query: str, limit: int = 5):
+            assert query == "hello"
+            assert limit == 5
+            raise AuthenticationError("You didn't provide an API key")
+
+    class StubAgent:
+        def __init__(self) -> None:
+            self.knowledge = [StubKnowledge()]
+
+    async def fake_record_failure(db: object, *, session_id: str, assistant_message_id: str, error: str) -> None:
+        recorded["db_id"] = str(id(db))
+        recorded["session_id"] = session_id
+        recorded["assistant_message_id"] = assistant_message_id
+        recorded["error"] = error
+
+    class StubContextManager:
+        async def __aenter__(self) -> object:
+            db = object()
+            recorded["isolated_db_id"] = str(id(db))
+            return db
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            del exc_type, exc, tb
+            return None
+
+    monkeypatch.setattr(chat_module, "record_failure", fake_record_failure)
+    monkeypatch.setattr(chat_module, "SessionLocal", lambda: StubContextManager())
+
+    chunks: list[str] = []
+    async for chunk in chat_module._stream_chat_events(
+        db=object(), session_id="session-1", agent=StubAgent(), user_input="hello"
+    ):
+        chunks.append(chunk)
+
+    assert len(chunks) == 1
+    assert '"role": "assistant"' in chunks[0]
+    assert '"type": "error"' in chunks[0]
+    assert "OPENAI_API_KEY" in chunks[0]
+    assert recorded["session_id"] == "session-1"
+    assert "api key" in recorded["error"].lower()
+    assert recorded["db_id"] == recorded["isolated_db_id"]

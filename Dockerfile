@@ -16,7 +16,7 @@ RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go b
 RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go build -C log-viewer -o /out/log-viewer .
 
 # Build the flutter app for web
-FROM --platform=$BUILDPLATFORM ghcr.io/cirruslabs/flutter:3.29.2 AS flutter
+FROM --platform=$BUILDPLATFORM ghcr.io/cirruslabs/flutter:3.41.6 AS flutter
 WORKDIR /app
 RUN flutter precache --web
 COPY app/seraph_app/pubspec.yaml app/seraph_app/pubspec.lock ./

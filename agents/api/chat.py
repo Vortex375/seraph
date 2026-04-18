@@ -81,6 +81,21 @@ def _assistant_message_id_from_error(error: str) -> str | None:
     return suffix.split()[0] if suffix else None
 
 
+def _looks_like_missing_model_credentials(error: str) -> bool:
+    normalized = error.lower()
+    return "api key" in normalized or "authenticationerror" in normalized or "401" in normalized
+
+
+def _stream_setup_error_chunk(*, assistant_message_id: str) -> str:
+    payload = {
+        "id": assistant_message_id,
+        "role": "assistant",
+        "type": "error",
+        "content": "Chat streaming is unavailable until OPENAI_API_KEY is configured for agents-api.",
+    }
+    return f"data: {json.dumps(payload)}\n\n"
+
+
 async def _retrieve_turn_sources(agent: Any, user_input: str) -> list[dict[str, str]]:
     knowledge_bases = getattr(agent, "knowledge", None)
     if not isinstance(knowledge_bases, list) or not knowledge_bases:
@@ -291,9 +306,9 @@ async def _record_failure_with_isolated_session(*, session_id: str, assistant_me
 
 async def _stream_chat_events(db: Any, session_id: str, agent: Any, user_input: str) -> AsyncIterator[str]:
     assistant_message_id = str(uuid4())
-    pending_sources = await _retrieve_turn_sources(agent, user_input)
-    del db
     try:
+        pending_sources = await _retrieve_turn_sources(agent, user_input)
+        del db
         async for chunk in stream_agent_reply(agent=agent, user_input=user_input):
             payload = _parse_sse_payload(chunk)
             if payload is not None:
@@ -323,6 +338,9 @@ async def _stream_chat_events(db: Any, session_id: str, agent: Any, user_input: 
             assistant_message_id=assistant_message_id,
             error=str(exc),
         )
+        if _looks_like_missing_model_credentials(str(exc)):
+            yield _stream_setup_error_chunk(assistant_message_id=assistant_message_id)
+            return
         raise
 
 

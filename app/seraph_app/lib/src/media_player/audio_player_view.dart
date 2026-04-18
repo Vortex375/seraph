@@ -1,7 +1,6 @@
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:seraph_app/src/media_player/audio_player_controller.dart';
 
 class AudioPlayerView extends StatelessWidget {
@@ -52,7 +51,6 @@ class AudioPlayerView extends StatelessWidget {
                     max = value + 1;
                   }
                   return Slider(
-                    year2023: false,
                     max: max,
                     value: value,
                     onChanged: (value) {
@@ -63,7 +61,10 @@ class AudioPlayerView extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    Obx(() => Text("${format(controller.position.value)} / ${format(controller.currentMediaItem.value?.duration ?? const Duration())}", style: GoogleFonts.robotoMono()))
+                    Obx(() => Text(
+                      "${format(controller.position.value)} / ${format(controller.currentMediaItem.value?.duration ?? const Duration())}",
+                      style: const TextStyle(fontFamily: 'monospace'),
+                    ))
                   ],
                 ),
                 const SizedBox(height: 16),
