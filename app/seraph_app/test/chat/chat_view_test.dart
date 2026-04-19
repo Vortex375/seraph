@@ -8,6 +8,7 @@ import 'package:seraph_app/src/chat/chat_controller.dart';
 import 'package:seraph_app/src/chat/chat_models.dart';
 import 'package:seraph_app/src/chat/chat_service.dart';
 import 'package:seraph_app/src/chat/chat_view.dart';
+import 'package:seraph_app/src/file_viewer/file_viewer_view.dart';
 import 'package:seraph_app/src/login/login_controller.dart';
 import 'package:seraph_app/src/settings/settings_view.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
@@ -164,7 +165,10 @@ void main() {
           role: 'assistant',
           content: 'See the referenced notes.',
           createdAt: DateTime.parse('2026-04-12T00:00:03Z'),
-          citations: const ['RFC-101', 'Meeting notes'],
+          citations: const [
+            ChatCitation(path: 'RFC-101', label: 'RFC-101'),
+            ChatCitation(path: 'Meeting notes', label: 'Meeting notes'),
+          ],
         ),
       ]);
       controller.activeSessionId.value = 'session-1';
@@ -180,6 +184,86 @@ void main() {
 
       expect(find.text('RFC-101'), findsOneWidget);
       expect(find.text('Meeting notes'), findsOneWidget);
+    });
+
+    testWidgets('assistant citations open the file viewer route when tapped', (tester) async {
+      final observer = _TestNavigatorObserver();
+      controller.sessions.assignAll([
+        _session(id: 'session-1', title: 'Design review'),
+      ]);
+      controller.messages.assignAll([
+        ChatMessage(
+          id: 'message-1',
+          role: 'assistant',
+          content: 'See the referenced notes.',
+          createdAt: DateTime.parse('2026-04-12T00:00:03Z'),
+          citations: const [
+            ChatCitation(
+              providerId: 'space-a',
+              path: '/team/spec.md',
+              label: '/team/spec.md',
+            ),
+          ],
+        ),
+      ]);
+      controller.activeSessionId.value = 'session-1';
+
+      await tester.pumpWidget(
+        _wrapApp(
+          const ChatView(),
+          size: const Size(1200, 900),
+          navigatorObservers: [observer],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Sources'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('/team/spec.md'));
+      await tester.pumpAndSettle();
+
+      expect(observer.pushedRoutes, contains('/view?path=space-a%2Fteam%2Fspec.md'));
+      expect(Get.currentRoute, FileViewerView.routeName);
+      expect(Get.parameters['path'], 'space-a/team/spec.md');
+    });
+
+    testWidgets('legacy citations render but do not navigate when tapped', (tester) async {
+      final observer = _TestNavigatorObserver();
+      controller.sessions.assignAll([
+        _session(id: 'session-1', title: 'Design review'),
+      ]);
+      controller.messages.assignAll([
+        ChatMessage(
+          id: 'message-1',
+          role: 'assistant',
+          content: 'See the referenced notes.',
+          createdAt: DateTime.parse('2026-04-12T00:00:03Z'),
+          citations: const [
+            ChatCitation(
+              path: '/legacy/path.txt',
+              label: '/legacy/path.txt',
+            ),
+          ],
+        ),
+      ]);
+      controller.activeSessionId.value = 'session-1';
+
+      await tester.pumpWidget(
+        _wrapApp(
+          const ChatView(),
+          size: const Size(1200, 900),
+          navigatorObservers: [observer],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Sources'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('/legacy/path.txt'));
+      await tester.pumpAndSettle();
+
+      expect(observer.pushedRoutes, isEmpty);
+      expect(Get.currentRoute, ChatView.routeName);
     });
 
     testWidgets('visible transcript updates immediately when the active message list changes', (tester) async {
@@ -245,13 +329,31 @@ void main() {
   });
 }
 
-Widget _wrapApp(Widget child, {Size size = const Size(1200, 900)}) {
+Widget _wrapApp(
+  Widget child, {
+  Size size = const Size(1200, 900),
+  List<NavigatorObserver> navigatorObservers = const [],
+}) {
   return MediaQuery(
     data: MediaQueryData(size: size, textScaler: const TextScaler.linear(1.3)),
     child: GetMaterialApp(
       home: child,
+      getPages: [
+        GetPage(name: FileViewerView.routeName, page: () => const Scaffold(body: SizedBox.shrink())),
+      ],
+      navigatorObservers: navigatorObservers,
     ),
   );
+}
+
+class _TestNavigatorObserver extends NavigatorObserver {
+  final List<String?> pushedRoutes = <String?>[];
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didPush(route, previousRoute);
+    pushedRoutes.add(route.settings.name);
+  }
 }
 
 class _AppBarHost extends StatelessWidget {

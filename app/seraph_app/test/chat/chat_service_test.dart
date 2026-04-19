@@ -33,12 +33,29 @@ void main() {
       'role': 'assistant',
       'content': 'I found these documents.',
       'created_at': '2026-04-12T00:00:03Z',
-      'citations': ['/Music/example.url'],
+      'citations': [
+        {
+          'provider_id': 'space-a',
+          'path': '/Music/example.url',
+          'label': 'Example URL',
+        },
+        '/legacy/path.txt',
+      ],
     });
 
     expect(session.headline, 'Inbox');
     expect(session.status, ChatSessionStatus.finished);
-    expect(message.citations, ['/Music/example.url']);
+    expect(message.citations, hasLength(2));
+    expect(message.citations[0].providerId, 'space-a');
+    expect(message.citations[0].path, '/Music/example.url');
+    expect(message.citations[0].label, 'Example URL');
+    expect(message.citations[0].viewerPath, 'space-a/Music/example.url');
+    expect(message.citations[0].isNavigable, isTrue);
+    expect(message.citations[1].providerId, isNull);
+    expect(message.citations[1].path, '/legacy/path.txt');
+    expect(message.citations[1].label, '/legacy/path.txt');
+    expect(message.citations[1].viewerPath, '/legacy/path.txt');
+    expect(message.citations[1].isNavigable, isFalse);
   });
 
   test('chat session decode rejects unknown backend status', () {

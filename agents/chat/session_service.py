@@ -6,6 +6,7 @@ from typing import Protocol
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from chat.file_models import FileCitation
 from documents.models import ChatSession, ChatTurnFailure, ChatTurnSource, PendingChatTurn
 
 
@@ -15,7 +16,7 @@ class ChatHistoryMessage:
     role: str
     content: str
     created_at: datetime
-    citations: list[str]
+    citations: list[dict[str, str]]
 
 
 @dataclass(frozen=True)
@@ -167,14 +168,16 @@ class SessionService:
         history_rows = await self._session.execute(
             select(
                 ChatTurnSource.assistant_message_id,
+                ChatTurnSource.provider_id,
                 ChatTurnSource.path,
             ).where(ChatTurnSource.session_id == session_id)
         )
-        citations_by_message: dict[str, list[str]] = {}
-        for assistant_message_id, path in history_rows.all():
+        citations_by_message: dict[str, list[dict[str, str]]] = {}
+        for assistant_message_id, provider_id, path in history_rows.all():
             citations_by_message.setdefault(assistant_message_id, [])
-            if path not in citations_by_message[assistant_message_id]:
-                citations_by_message[assistant_message_id].append(path)
+            citation = FileCitation(provider_id=provider_id, path=path, label=path).to_dict()
+            if citation not in citations_by_message[assistant_message_id]:
+                citations_by_message[assistant_message_id].append(citation)
 
         agentscope_messages = await self._session.execute(
             select(

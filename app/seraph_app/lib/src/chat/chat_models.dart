@@ -1,5 +1,50 @@
 enum ChatSessionStatus { running, finished }
 
+class ChatCitation {
+  const ChatCitation({
+    this.providerId,
+    required this.path,
+    required this.label,
+  });
+
+  final String? providerId;
+  final String path;
+  final String label;
+
+  bool get isNavigable => providerId != null && providerId!.isNotEmpty;
+
+  factory ChatCitation.fromJson(dynamic json) {
+    if (json is String) {
+      return ChatCitation(providerId: null, path: json, label: json);
+    }
+
+    if (json is! Map<String, dynamic>) {
+      throw FormatException('Unknown chat citation payload: $json');
+    }
+
+    final path = json['path'] as String?;
+    if (path == null || path.isEmpty) {
+      throw const FormatException('Chat citation path is required');
+    }
+
+    final providerId = json['provider_id'] as String?;
+    return ChatCitation(
+      providerId: providerId == null || providerId.isEmpty ? null : providerId,
+      path: path,
+      label: (json['label'] as String?) ?? path,
+    );
+  }
+
+  String get viewerPath {
+    final normalizedPath = path.startsWith('/') ? path : '/$path';
+    final providerId = this.providerId;
+    if (providerId == null || providerId.isEmpty) {
+      return normalizedPath;
+    }
+    return '$providerId$normalizedPath';
+  }
+}
+
 class ChatSession {
   ChatSession({
     required this.id,
@@ -62,7 +107,7 @@ class ChatMessage {
   final String role;
   final String content;
   final DateTime createdAt;
-  final List<String> citations;
+  final List<ChatCitation> citations;
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
     return ChatMessage(
@@ -71,7 +116,7 @@ class ChatMessage {
       content: json['content'] as String,
       createdAt: DateTime.parse(json['created_at'] as String),
       citations: ((json['citations'] as List<dynamic>?) ?? const [])
-          .map((item) => item as String)
+          .map(ChatCitation.fromJson)
           .toList(),
     );
   }

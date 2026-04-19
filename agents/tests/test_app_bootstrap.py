@@ -2,6 +2,7 @@ import importlib
 import sys
 from pathlib import Path
 
+from agentscope.tool import ToolResponse
 from fastapi.testclient import TestClient
 import pytest
 
@@ -417,6 +418,170 @@ def test_runtime_agent_factory_treats_whitespace_only_base_url_as_blank(monkeypa
 
     assert recorded["api_key"] == "test-key"
     assert recorded["base_url"] is None
+
+
+def test_agent_factory_registers_read_only_file_tools(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = importlib.import_module("chat.agent_factory")
+    recorded: dict[str, object] = {}
+
+    class StubOpenAIChatModel:
+        def __init__(self, **kwargs: object) -> None:
+            recorded["model_kwargs"] = kwargs
+
+    class StubToolkit:
+        def __init__(self) -> None:
+            self.tools = []
+
+        def register_tool_function(self, tool_func, **kwargs):
+            self.tools.append({"tool_func": tool_func, **kwargs})
+
+    class StubAgent:
+        def __init__(self, **kwargs: object) -> None:
+            recorded.update(kwargs)
+
+    monkeypatch.setattr(module, "OpenAIChatModel", StubOpenAIChatModel)
+    monkeypatch.setattr(module, "Toolkit", StubToolkit)
+    monkeypatch.setattr(module, "ReActAgent", StubAgent)
+    monkeypatch.setattr(module, "AsyncSQLAlchemyMemory", lambda *args, **kwargs: object())
+    monkeypatch.setattr(module, "OpenAIChatFormatter", lambda: object())
+    monkeypatch.setattr(module, "SeraphKnowledgeBase", lambda **kwargs: object())
+
+    class StubFileAccessService:
+        async def search_files(self, query: str):
+            del query
+            return []
+
+        async def list_directory(self, provider_id: str, path: str):
+            del provider_id, path
+            return []
+
+        async def stat_file(self, provider_id: str, path: str):
+            del provider_id, path
+            return None
+
+        async def read_file_excerpt(
+            self,
+            provider_id: str,
+            path: str,
+            start_line: int = 1,
+            max_lines: int = 80,
+            max_chars: int = 12000,
+        ):
+            del provider_id, path, start_line, max_lines, max_chars
+            return None
+
+    factory = module.AgentFactory(
+        engine=object(),
+        chat_model_name="gpt-test",
+        api_key=None,
+        base_url=None,
+        embedding_model=object(),
+        retrieval_service=object(),
+        spaces_client=object(),
+        search_client=object(),
+        file_access_service_factory=lambda user_id: StubFileAccessService(),
+    )
+
+    factory.create("alice", "session-1")
+
+    toolkit = recorded["toolkit"]
+    assert len(toolkit.tools) == 4
+    assert [tool["func_name"] for tool in toolkit.tools] == [
+        "search_files",
+        "list_directory",
+        "stat_file",
+        "read_file_excerpt",
+    ]
+    assert all(tool["async_execution"] is False for tool in toolkit.tools)
+
+
+@pytest.mark.asyncio
+async def test_agent_factory_file_tools_return_tool_responses(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = importlib.import_module("chat.agent_factory")
+    recorded: dict[str, object] = {}
+
+    class StubOpenAIChatModel:
+        def __init__(self, **kwargs: object) -> None:
+            recorded["model_kwargs"] = kwargs
+
+    class StubToolkit:
+        def __init__(self) -> None:
+            self.tools = []
+
+        def register_tool_function(self, tool_func, **kwargs):
+            self.tools.append({"tool_func": tool_func, **kwargs})
+
+    class StubAgent:
+        def __init__(self, **kwargs: object) -> None:
+            recorded.update(kwargs)
+
+    monkeypatch.setattr(module, "OpenAIChatModel", StubOpenAIChatModel)
+    monkeypatch.setattr(module, "Toolkit", StubToolkit)
+    monkeypatch.setattr(module, "ReActAgent", StubAgent)
+    monkeypatch.setattr(module, "AsyncSQLAlchemyMemory", lambda *args, **kwargs: object())
+    monkeypatch.setattr(module, "OpenAIChatFormatter", lambda: object())
+    monkeypatch.setattr(module, "SeraphKnowledgeBase", lambda **kwargs: object())
+
+    class StubFileAccessService:
+        async def search_files(self, *, user_id: str, query: str):
+            del user_id, query
+            return [{"provider_id": "space-a", "path": "/team/spec.md", "label": "/team/spec.md"}]
+
+        async def list_directory(self, *, user_id: str, provider_id: str, path: str):
+            del user_id, provider_id, path
+            return [{"path": "/team/spec.md", "is_dir": False}]
+
+        async def stat_file(self, *, user_id: str, provider_id: str, path: str):
+            del user_id, provider_id, path
+            return {"path": "/team/spec.md", "size": 12, "is_dir": False}
+
+        async def read_file_excerpt(
+            self,
+            *,
+            user_id: str,
+            provider_id: str,
+            path: str,
+            start_line: int = 1,
+            max_lines: int = 80,
+            max_chars: int = 12000,
+        ):
+            del user_id, provider_id, path, start_line, max_lines, max_chars
+            return {"content": "hello", "start_line": 1, "end_line": 1, "truncated": False}
+
+    factory = module.AgentFactory(
+        engine=object(),
+        chat_model_name="gpt-test",
+        api_key=None,
+        base_url=None,
+        embedding_model=object(),
+        retrieval_service=object(),
+        spaces_client=object(),
+        search_client=object(),
+        file_access_service_factory=lambda user_id: StubFileAccessService(),
+    )
+
+    factory.create("alice", "session-1")
+
+    toolkit = recorded["toolkit"]
+    responses = []
+    for tool in toolkit.tools:
+        func = tool["tool_func"]
+        if tool["func_name"] == "search_files":
+            responses.append(await func("spec"))
+        elif tool["func_name"] == "list_directory":
+            responses.append(await func("space-a", "/team"))
+        elif tool["func_name"] == "stat_file":
+            responses.append(await func("space-a", "/team/spec.md"))
+        else:
+            responses.append(await func("space-a", "/team/spec.md"))
+
+    assert all(isinstance(response, ToolResponse) for response in responses)
+    assert [tool["func_name"] for tool in toolkit.tools] == [
+        "search_files",
+        "list_directory",
+        "stat_file",
+        "read_file_excerpt",
+    ]
 
 
 def test_ingestion_service_embedder_normalizes_blank_base_url(monkeypatch: pytest.MonkeyPatch) -> None:

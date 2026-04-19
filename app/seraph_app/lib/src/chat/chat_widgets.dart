@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:seraph_app/src/chat/chat_navigation.dart';
 import 'package:seraph_app/src/chat/chat_models.dart';
 
 class ChatSessionList extends StatelessWidget {
@@ -307,8 +308,10 @@ class ChatMessageCard extends StatelessWidget {
                         .map(
                           (citation) => ListTile(
                             contentPadding: EdgeInsets.zero,
-                            title: Text(citation),
+                            title: Text(citation.label),
                             dense: true,
+                            enabled: citation.isNavigable,
+                            onTap: citation.isNavigable ? () => openChatCitation(citation) : null,
                           ),
                         )
                         .toList(),

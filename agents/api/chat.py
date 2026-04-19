@@ -6,7 +6,6 @@ import json
 from typing import Any
 from uuid import uuid4
 
-from agentscope.message import Msg
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import Select, delete, select, update
@@ -20,6 +19,7 @@ from api.models import (
 )
 from auth.current_user import AuthenticatedUser, get_current_user
 from chat.citations import record_failure, record_sources, sources_from_knowledge_documents
+from chat.file_models import FileCitation
 from chat.session_service import DEFAULT_SESSION_TITLE, SessionService, SessionTitleSummarizer, summarize_session_title
 from chat.streaming import stream_agent_reply
 from db.session import SessionLocal, get_db_session
@@ -94,6 +94,69 @@ def _stream_setup_error_chunk(*, assistant_message_id: str) -> str:
         "content": "Chat streaming is unavailable until OPENAI_API_KEY is configured for agents-api.",
     }
     return f"data: {json.dumps(payload)}\n\n"
+
+
+def _normalize_citations(citations: object) -> list[dict[str, str]]:
+    if not isinstance(citations, list):
+        return []
+
+    normalized: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for citation in citations:
+        if not isinstance(citation, dict):
+            continue
+        provider_id = citation.get("provider_id")
+        path = citation.get("path")
+        if not isinstance(provider_id, str) or not provider_id:
+            continue
+        if not isinstance(path, str) or not path:
+            continue
+        citation_key = (provider_id, path)
+        if citation_key in seen:
+            continue
+        seen.add(citation_key)
+        label = citation.get("label")
+        normalized.append(
+            FileCitation(
+                provider_id=provider_id,
+                path=path,
+                label=label if isinstance(label, str) and label else path,
+            ).to_dict()
+        )
+    return normalized
+
+
+def _trusted_turn_citations(*, retrieval_sources: list[dict[str, str]], tool_citations: object) -> list[dict[str, str]]:
+    if not isinstance(tool_citations, list):
+        tool_citations = []
+    return _normalize_citations([*retrieval_sources, *tool_citations])
+
+
+def _citation_sources(citations: list[dict[str, str]]) -> list[dict[str, str]]:
+    return [{"provider_id": citation["provider_id"], "path": citation["path"]} for citation in citations]
+
+
+def _install_turn_tool_citations(agent: Any) -> tuple[bool, Any] | None:
+    had_attr = hasattr(agent, "_seraph_tool_citations")
+    original = getattr(agent, "_seraph_tool_citations", None) if had_attr else None
+    try:
+        setattr(agent, "_seraph_tool_citations", [])
+    except Exception:
+        return None
+    return had_attr, original
+
+
+def _restore_turn_tool_citations(agent: Any, state: tuple[bool, Any] | None) -> None:
+    if state is None:
+        return
+    had_attr, original = state
+    try:
+        if had_attr:
+            setattr(agent, "_seraph_tool_citations", original)
+            return
+        delattr(agent, "_seraph_tool_citations")
+    except Exception:
+        return None
 
 
 async def _retrieve_turn_sources(agent: Any, user_input: str) -> list[dict[str, str]]:
@@ -306,28 +369,52 @@ async def _record_failure_with_isolated_session(*, session_id: str, assistant_me
 
 async def _stream_chat_events(db: Any, session_id: str, agent: Any, user_input: str) -> AsyncIterator[str]:
     assistant_message_id = str(uuid4())
+    tool_citation_state = _install_turn_tool_citations(agent)
     try:
         pending_sources = await _retrieve_turn_sources(agent, user_input)
+        persisted_sources_by_message: dict[str, set[tuple[str, str]]] = {}
         del db
         async for chunk in stream_agent_reply(agent=agent, user_input=user_input):
             payload = _parse_sse_payload(chunk)
             if payload is not None:
+                trusted_citations = _trusted_turn_citations(
+                    retrieval_sources=pending_sources,
+                    tool_citations=getattr(agent, "_seraph_tool_citations", []) if tool_citation_state is not None else [],
+                )
+                trusted_sources = _citation_sources(trusted_citations)
+                payload["citations"] = trusted_citations
                 payload_message_id = payload.get("id") if isinstance(payload.get("id"), str) else None
                 if payload_message_id:
                     assistant_message_id = payload_message_id
-                    if pending_sources:
+                    persisted_sources = persisted_sources_by_message.setdefault(assistant_message_id, set())
+                    new_sources = [
+                        source
+                        for source in trusted_sources
+                        if (source["provider_id"], source["path"]) not in persisted_sources
+                    ]
+                    if new_sources:
                         await _record_sources_with_isolated_session(
                             session_id=session_id,
                             assistant_message_id=assistant_message_id,
-                            sources=pending_sources,
+                            sources=new_sources,
                         )
-                        pending_sources = []
+                        persisted_sources.update((source["provider_id"], source["path"]) for source in new_sources)
+                chunk = f"data: {json.dumps(payload)}\n\n"
             yield chunk
-        if pending_sources:
+        trusted_citations = _trusted_turn_citations(
+            retrieval_sources=pending_sources,
+            tool_citations=getattr(agent, "_seraph_tool_citations", []) if tool_citation_state is not None else [],
+        )
+        trusted_sources = _citation_sources(trusted_citations)
+        persisted_sources = persisted_sources_by_message.setdefault(assistant_message_id, set())
+        new_sources = [
+            source for source in trusted_sources if (source["provider_id"], source["path"]) not in persisted_sources
+        ]
+        if new_sources:
             await _record_sources_with_isolated_session(
                 session_id=session_id,
                 assistant_message_id=assistant_message_id,
-                sources=pending_sources,
+                sources=new_sources,
             )
     except Exception as exc:
         parsed_assistant_message_id = _assistant_message_id_from_error(str(exc))
@@ -335,13 +422,15 @@ async def _stream_chat_events(db: Any, session_id: str, agent: Any, user_input: 
             assistant_message_id = parsed_assistant_message_id
         await _record_failure_with_isolated_session(
             session_id=session_id,
-            assistant_message_id=assistant_message_id,
-            error=str(exc),
-        )
+                assistant_message_id=assistant_message_id,
+                error=str(exc),
+            )
         if _looks_like_missing_model_credentials(str(exc)):
             yield _stream_setup_error_chunk(assistant_message_id=assistant_message_id)
             return
         raise
+    finally:
+        _restore_turn_tool_citations(agent, tool_citation_state)
 
 
 @router.get("/sessions", response_model=list[SessionResponse])

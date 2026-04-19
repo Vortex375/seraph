@@ -225,23 +225,30 @@ class ChatController extends GetxController {
     }
   }
 
-  List<String> _extractStreamCitations(dynamic rawCitations, List<String> fallback) {
+  List<ChatCitation> _extractStreamCitations(dynamic rawCitations, List<ChatCitation> fallback) {
     if (rawCitations is! List<dynamic>) {
       return fallback;
     }
 
-    return rawCitations.map(_extractCitationPath).whereType<String>().toList();
+    return rawCitations
+        .map(_extractCitation)
+        .whereType<ChatCitation>()
+        .toList();
   }
 
-  String? _extractCitationPath(dynamic citation) {
+  ChatCitation? _extractCitation(dynamic citation) {
     if (citation is String && citation.isNotEmpty) {
-      return citation;
+      return ChatCitation.fromJson(citation);
     }
 
     if (citation is Map<dynamic, dynamic>) {
-      final path = citation['path'];
-      if (path is String && path.isNotEmpty) {
-        return path;
+      final normalized = citation.map(
+        (key, value) => MapEntry(key.toString(), value),
+      );
+      try {
+        return ChatCitation.fromJson(normalized);
+      } on FormatException {
+        return null;
       }
     }
 

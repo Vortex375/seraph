@@ -2,6 +2,7 @@ import asyncio
 from contextlib import asynccontextmanager
 import importlib
 import logging
+import os
 from pathlib import Path
 from typing import Any, Protocol, cast
 
@@ -17,8 +18,11 @@ from nats.aio.client import Client as NatsClient
 from app.otel import setup_telemetry
 from app.settings import Settings, get_settings
 from chat.agent_factory import AgentFactory
+from chat.file_access import AgentFileAccessService
+from chat.search_client import AgentSearchClient
 from db.session import SessionLocal, engine
 from documents.models import Base
+from fileprovider.client import FileProviderClient
 from retrieval.repository import PgVectorRetrievalRepository
 from retrieval.service import RetrievalService
 from spaces.client import SpacesClient
@@ -90,6 +94,36 @@ class _LazySpacesClient:
             self._client = None
 
 
+class _LazyNatsConnection:
+    def __init__(self, nats_url: str) -> None:
+        self._nats_url = nats_url
+        self._nc: NatsClient | None = None
+        self._lock = asyncio.Lock()
+
+    async def get(self) -> NatsClient:
+        if self._nc is None:
+            async with self._lock:
+                if self._nc is None:
+                    self._nc = await self._connect_nats()
+        return self._nc
+
+    async def subscribe(self, subject: str):
+        return await (await self.get()).subscribe(subject)
+
+    async def publish(self, subject: str, payload: bytes) -> None:
+        await (await self.get()).publish(subject, payload)
+
+    async def _connect_nats(self) -> NatsClient:
+        nc = NatsClient()
+        await nc.connect(servers=[self._nats_url])
+        return nc
+
+    async def aclose(self) -> None:
+        if self._nc is not None:
+            await self._nc.close()
+            self._nc = None
+
+
 class _LazyRetrievalService:
     def __init__(self, embedder: _OpenAIEmbedder) -> None:
         self._embedder = embedder
@@ -113,6 +147,7 @@ class RuntimeAgentFactory:
             base_url=openai_base_url,
         )
         self._spaces_client = _LazySpacesClient(settings.nats_url)
+        self._nats = _LazyNatsConnection(settings.nats_url)
         self._factory = AgentFactory(
             engine=engine,
             chat_model_name=settings.chat_model_name,
@@ -121,13 +156,44 @@ class RuntimeAgentFactory:
             embedding_model=embedder,
             retrieval_service=_LazyRetrievalService(embedder),
             spaces_client=self._spaces_client,
+            search_client=None,
+            file_access_service_factory=self._create_file_access_service,
         )
 
     def create(self, user_id: str, session_id: str):
         return self._factory.create(user_id, session_id)
 
+    def _create_file_access_service(self, user_id: str) -> AgentFileAccessService:
+        del user_id
+
+        class _LazyFileProviderClient:
+            def __init__(self, provider_id: str, nats_connection: _LazyNatsConnection) -> None:
+                self._provider_id = provider_id
+                self._nats_connection = nats_connection
+                self._client: FileProviderClient | None = None
+
+            async def _get_client(self) -> FileProviderClient:
+                if self._client is None:
+                    self._client = FileProviderClient(self._provider_id, await self._nats_connection.get())
+                return self._client
+
+            async def stat(self, path: str):
+                return await (await self._get_client()).stat(path)
+
+            async def open_file(self, path: str, flag: int, perm: int):
+                return await (await self._get_client()).open_file(path, flag, perm)
+
+        return AgentFileAccessService(
+            spaces_client=self._spaces_client,
+            file_provider_factory=lambda provider_id: _LazyFileProviderClient(provider_id, self._nats),
+            search_client=AgentSearchClient(self._nats),
+            max_read_bytes=int(os.getenv("SERAPH_AGENT_FILE_READ_BYTES", "131072")),
+            max_inline_file_size=int(os.getenv("SERAPH_AGENT_FILE_MAX_SIZE", "262144")),
+        )
+
     async def aclose(self) -> None:
         await self._spaces_client.aclose()
+        await self._nats.aclose()
 
 
 class _SessionTitleSummary(BaseModel):
@@ -265,7 +331,7 @@ def create_app() -> FastAPI:
     async def root() -> Response:
         if settings.runtime_env == "dev" and settings.ui_dev_server_url:
             return RedirectResponse(url="/ui-dev/", status_code=307)
-        return FileResponse(UI_INDEX_FILE)
+        return FileResponse(UI_INDEX_FILE if UI_INDEX_FILE.exists() else (UI_DIR / "index.html"))
 
     if settings.runtime_env == "dev" and settings.ui_dev_server_url:
         ui_dev_module = importlib.import_module("api.ui_dev_proxy")
@@ -277,7 +343,7 @@ def create_app() -> FastAPI:
 
     app.include_router(chat_api.router)
     app.include_router(documents_api.router)
-    app.mount("/ui", StaticFiles(directory=UI_DIST_DIR), name="ui")
+    app.mount("/ui", StaticFiles(directory=UI_DIST_DIR if UI_DIST_DIR.exists() else UI_DIR), name="ui")
 
     return app
 

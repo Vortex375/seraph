@@ -93,13 +93,15 @@ void main() {
 
       expect(controller.messages[1].id, 'assistant-remote-1');
       expect(controller.messages[1].content, 'Hello world');
-      expect(controller.messages[1].citations, ['RFC-101']);
+      expect(controller.messages[1].citations, hasLength(1));
+      expect(controller.messages[1].citations.single.providerId, isNull);
+      expect(controller.messages[1].citations.single.path, 'RFC-101');
 
       await streamController.close();
       await sendFuture;
     });
 
-    test('sendCurrentMessage maps streamed citation objects to source paths', () async {
+    test('sendCurrentMessage preserves structured streamed citations', () async {
       final streamController = StreamController<Map<String, dynamic>>();
       chatService.replyStreams['session-1'] = streamController.stream;
 
@@ -119,7 +121,36 @@ void main() {
       });
       await Future<void>.microtask(() {});
 
-      expect(controller.messages[1].citations, ['/team/spec.md', '/team/notes.md']);
+      expect(controller.messages[1].citations, hasLength(2));
+      expect(controller.messages[1].citations[0].providerId, 'provider-a');
+      expect(controller.messages[1].citations[0].path, '/team/spec.md');
+      expect(controller.messages[1].citations[1].providerId, 'provider-b');
+      expect(controller.messages[1].citations[1].path, '/team/notes.md');
+
+      await streamController.close();
+      await sendFuture;
+    });
+
+    test('sendCurrentMessage preserves legacy string citations from streamed events', () async {
+      final streamController = StreamController<Map<String, dynamic>>();
+      chatService.replyStreams['session-1'] = streamController.stream;
+
+      await controller.selectSession('session-1');
+      controller.draftController.text = 'Hello there';
+
+      final sendFuture = controller.sendCurrentMessage();
+      await Future<void>.microtask(() {});
+
+      streamController.add({
+        'id': 'assistant-remote-1',
+        'content': 'Hello',
+        'citations': ['/team/spec.md'],
+      });
+      await Future<void>.microtask(() {});
+
+      expect(controller.messages[1].citations, hasLength(1));
+      expect(controller.messages[1].citations.single.providerId, isNull);
+      expect(controller.messages[1].citations.single.path, '/team/spec.md');
 
       await streamController.close();
       await sendFuture;

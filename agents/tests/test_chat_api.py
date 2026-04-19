@@ -104,12 +104,26 @@ def test_delete_session_removes_owned_session(monkeypatch: pytest.MonkeyPatch) -
     assert recorded == {"user_id": "alice", "session_id": "session-1"}
 
 
+def test_chat_message_response_supports_structured_citations() -> None:
+    from api.models import ChatMessageResponse
+
+    response = ChatMessageResponse(
+        id="assistant-1",
+        role="assistant",
+        content="See spec",
+        created_at="2026-04-19T00:00:00Z",
+        citations=[{"provider_id": "space-a", "path": "/team/spec.md", "label": "/team/spec.md"}],
+    )
+
+    assert response.citations[0].provider_id == "space-a"
+
+
 @pytest.mark.asyncio
 async def test_list_session_messages_returns_visible_history_with_citations(monkeypatch: pytest.MonkeyPatch) -> None:
     app = create_app()
 
     class StubHistoryMessage:
-        def __init__(self, message_id: str, role: str, content: str, citations: list[str]) -> None:
+        def __init__(self, message_id: str, role: str, content: str, citations: list[dict[str, str]]) -> None:
             self.id = message_id
             self.role = role
             self.content = content
@@ -149,8 +163,16 @@ async def test_list_session_messages_returns_visible_history_with_citations(monk
                     "assistant",
                     "I found these documents related to music.",
                     [
-                        "/Music/Maki Otsuki - Destiny/visit JPOP.ru.url",
-                        "/Music/Maki Otsuki - Destiny/visit aziophrenia.com - Japan and Korea - music, video, idols.url",
+                        {
+                            "provider_id": "dirtest",
+                            "path": "/Music/Maki Otsuki - Destiny/visit JPOP.ru.url",
+                            "label": "/Music/Maki Otsuki - Destiny/visit JPOP.ru.url",
+                        },
+                        {
+                            "provider_id": "dirtest",
+                            "path": "/Music/Maki Otsuki - Destiny/visit aziophrenia.com - Japan and Korea - music, video, idols.url",
+                            "label": "/Music/Maki Otsuki - Destiny/visit aziophrenia.com - Japan and Korea - music, video, idols.url",
+                        },
                     ],
                 ),
             ]
@@ -175,8 +197,16 @@ async def test_list_session_messages_returns_visible_history_with_citations(monk
             "content": "I found these documents related to music.",
             "created_at": "2026-04-12T00:00:00Z",
             "citations": [
-                "/Music/Maki Otsuki - Destiny/visit JPOP.ru.url",
-                "/Music/Maki Otsuki - Destiny/visit aziophrenia.com - Japan and Korea - music, video, idols.url",
+                {
+                    "provider_id": "dirtest",
+                    "path": "/Music/Maki Otsuki - Destiny/visit JPOP.ru.url",
+                    "label": "/Music/Maki Otsuki - Destiny/visit JPOP.ru.url",
+                },
+                {
+                    "provider_id": "dirtest",
+                    "path": "/Music/Maki Otsuki - Destiny/visit aziophrenia.com - Japan and Korea - music, video, idols.url",
+                    "label": "/Music/Maki Otsuki - Destiny/visit aziophrenia.com - Japan and Korea - music, video, idols.url",
+                },
             ],
         },
     ]
@@ -232,7 +262,9 @@ async def test_session_service_uses_persisted_message_payload_id_for_citations()
 
     assert len(messages) == 1
     assert messages[0].id == "assistant-1"
-    assert messages[0].citations == ["/Music/example.url"]
+    assert messages[0].citations == [
+        {"provider_id": "dirtest", "path": "/Music/example.url", "label": "/Music/example.url"}
+    ]
 
     await engine.dispose()
 
