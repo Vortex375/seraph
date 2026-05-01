@@ -1,13 +1,13 @@
 import importlib
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Protocol
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from chat.file_models import FileCitation
-from documents.models import ChatSession, ChatTurnFailure, ChatTurnSource, PendingChatTurn
+from documents.models import ChatSession, ChatTurnFailure, ChatTurnSource, ChatTurnState
 
 
 @dataclass(frozen=True)
@@ -17,6 +17,8 @@ class ChatHistoryMessage:
     content: str
     created_at: datetime
     citations: list[dict[str, str]]
+    status: str = "finished"
+    error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -72,6 +74,12 @@ def _message_preview_from_record(role: object, content: object) -> str:
     return _message_text_preview(content)
 
 
+def _normalize_created_at(created_at: datetime) -> datetime:
+    if created_at.tzinfo is None:
+        return created_at.replace(tzinfo=timezone.utc)
+    return created_at.astimezone(timezone.utc)
+
+
 class SessionService:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -94,26 +102,33 @@ class SessionService:
 
         session_ids = [session.id for session in sessions]
 
-        pending_rows = await self._session.execute(
-            select(PendingChatTurn.session_id).where(
-                PendingChatTurn.user_id == user_id, PendingChatTurn.session_id.in_(session_ids)
-            )
+        turn_state_rows = await self._session.execute(
+            select(ChatTurnState.session_id, ChatTurnState.status, ChatTurnState.content)
+            .where(ChatTurnState.user_id == user_id, ChatTurnState.session_id.in_(session_ids))
+            .order_by(ChatTurnState.created_at.desc())
         )
-        running_session_ids = {session_id for (session_id,) in pending_rows.all()}
+        preview_by_session: dict[str, str] = {}
+        running_session_ids: set[str] = set()
+        for session_id, status, content in turn_state_rows.all():
+            if status == "running":
+                running_session_ids.add(session_id)
+            if session_id not in preview_by_session:
+                preview = _message_text_preview(content)
+                if preview:
+                    preview_by_session[session_id] = preview
 
         sqlalchemy_memory = importlib.import_module("agentscope.memory._working_memory._sqlalchemy_memory")
         message_table = sqlalchemy_memory.AsyncSQLAlchemyMemory.MessageTable
         agentscope_messages = await self._session.execute(
             select(message_table.session_id, message_table.msg, message_table.index)
             .where(message_table.session_id.in_(session_ids))
-            .order_by(message_table.session_id.asc(), message_table.index.asc())
+            .order_by(message_table.session_id.asc(), message_table.index.desc())
         )
-        preview_by_session: dict[str, str] = {}
         for session_id, raw_msg, _index in agentscope_messages.all():
             if not isinstance(raw_msg, dict):
                 continue
             preview = _message_preview_from_record(raw_msg.get("role"), raw_msg.get("content"))
-            if preview:
+            if preview and session_id not in preview_by_session:
                 preview_by_session[session_id] = preview
 
         return [
@@ -146,9 +161,9 @@ class SessionService:
         message_table = sqlalchemy_memory.AsyncSQLAlchemyMemory.MessageTable
         session_table = sqlalchemy_memory.AsyncSQLAlchemyMemory.SessionTable
 
-        await self._session.execute(delete(PendingChatTurn).where(PendingChatTurn.session_id == session_id))
         await self._session.execute(delete(ChatTurnSource).where(ChatTurnSource.session_id == session_id))
         await self._session.execute(delete(ChatTurnFailure).where(ChatTurnFailure.session_id == session_id))
+        await self._session.execute(delete(ChatTurnState).where(ChatTurnState.session_id == session_id))
         await self._session.execute(delete(message_table).where(message_table.session_id == session_id))
         await self._session.execute(
             delete(session_table).where(session_table.id == session_id, session_table.user_id == user_id)
@@ -178,6 +193,27 @@ class SessionService:
             citation = FileCitation(provider_id=provider_id, path=path, label=path).to_dict()
             if citation not in citations_by_message[assistant_message_id]:
                 citations_by_message[assistant_message_id].append(citation)
+
+        turn_state_rows = await self._session.execute(
+            select(
+                ChatTurnState.assistant_message_id,
+                ChatTurnState.status,
+                ChatTurnState.content,
+                ChatTurnState.error,
+                ChatTurnState.created_at,
+            )
+            .where(ChatTurnState.session_id == session_id, ChatTurnState.user_id == user_id)
+            .order_by(ChatTurnState.created_at.asc())
+        )
+        states_by_message = {
+            assistant_message_id: {
+                "status": status,
+                "content": content,
+                "error": error,
+                "created_at": created_at,
+            }
+            for assistant_message_id, status, content, error, created_at in turn_state_rows.all()
+        }
 
         agentscope_messages = await self._session.execute(
             select(
@@ -219,16 +255,41 @@ class SessionService:
                 text = str(content)
 
             timestamp = raw_msg.get("timestamp")
-            created_at = datetime.fromisoformat(str(timestamp)) if timestamp else session.created_at
+            created_at = _normalize_created_at(datetime.fromisoformat(str(timestamp))) if timestamp else session.created_at
+            state = states_by_message.get(message_id) if role == "assistant" else None
+            state_content = str(state["content"] or "") if isinstance(state, dict) else ""
+            resolved_content = state_content or text
+            resolved_status = str(state["status"] or "finished") if isinstance(state, dict) else str(raw_msg.get("status") or "finished")
+            resolved_error = (
+                state["error"] if isinstance(state, dict) and isinstance(state.get("error"), str) else raw_msg.get("error")
+            )
 
             messages.append(
                 ChatHistoryMessage(
                     id=message_id,
                     role=role,
-                    content=text,
+                    content=resolved_content,
                     created_at=created_at,
                     citations=citations_by_message.get(message_id, []) if role == "assistant" else [],
+                    status=resolved_status,
+                    error=resolved_error if isinstance(resolved_error, str) else None,
                 )
             )
 
-        return messages
+        known_ids = {message.id for message in messages}
+        for assistant_message_id, state in states_by_message.items():
+            if assistant_message_id in known_ids:
+                continue
+            messages.append(
+                ChatHistoryMessage(
+                    id=assistant_message_id,
+                    role="assistant",
+                    content=str(state["content"] or ""),
+                    created_at=_normalize_created_at(state["created_at"]),
+                    citations=citations_by_message.get(assistant_message_id, []),
+                    status=str(state["status"] or "finished"),
+                    error=state["error"] if isinstance(state["error"], str) else None,
+                )
+            )
+
+        return sorted(messages, key=lambda message: _normalize_created_at(message.created_at))

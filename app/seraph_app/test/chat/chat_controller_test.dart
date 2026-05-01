@@ -320,18 +320,83 @@ void main() {
     });
 
     test('stream failure exposes recoverable history error', () async {
-      chatService.replyStreams['session-1'] = Stream<Map<String, dynamic>>.error(StateError('stream failed'));
+      final streamController = StreamController<Map<String, dynamic>>();
+      chatService.replyStreams['session-1'] = streamController.stream;
 
       await controller.selectSession('session-1');
       controller.draftController.text = 'Hello there';
 
-      await controller.sendCurrentMessage();
+      final sendFuture = controller.sendCurrentMessage();
+      await Future<void>.microtask(() {});
+
+      streamController.add({'type': 'delta', 'content': 'Hello'});
+      await Future<void>.microtask(() {});
+      streamController.addError(StateError('stream failed'));
+      await Future<void>.microtask(() {});
+      await sendFuture;
+
+      expect(controller.messages, hasLength(2));
+      expect(controller.messages[0].role, 'user');
+      expect(controller.messages[0].content, 'Hello there');
+      expect(controller.messages[1].role, 'assistant');
+      expect(controller.messages[1].content, 'Hello');
+      expect(controller.historyError.value, 'Failed to stream assistant reply');
+      expect(controller.appError.value, isNull);
+      expect(controller.sending.value, isFalse);
+    });
+
+    test('backend error event marks a started reply as stream failure without rendering error text', () async {
+      final streamController = StreamController<Map<String, dynamic>>();
+      chatService.replyStreams['session-1'] = streamController.stream;
+
+      await controller.selectSession('session-1');
+      controller.draftController.text = 'Hello there';
+
+      final sendFuture = controller.sendCurrentMessage();
+      await Future<void>.microtask(() {});
+
+      streamController.add({'type': 'delta', 'content': 'Hello'});
+      await Future<void>.microtask(() {});
+      streamController.add({'type': 'error', 'content': 'stream failed'});
+      await Future<void>.microtask(() {});
+      await streamController.close();
+      await sendFuture;
+
+      expect(controller.messages, hasLength(2));
+      expect(controller.messages[0].role, 'user');
+      expect(controller.messages[0].content, 'Hello there');
+      expect(controller.messages[1].role, 'assistant');
+      expect(controller.messages[1].status, ChatMessageStatus.failed);
+      expect(controller.messages[1].error, 'stream failed');
+      expect(controller.messages[1].content, 'Hello');
+      expect(controller.historyError.value, 'Failed to stream assistant reply');
+      expect(controller.appError.value, isNull);
+      expect(controller.sending.value, isFalse);
+    });
+
+    test('backend error as first reply event keeps the persisted user turn and marks the assistant as failed', () async {
+      final streamController = StreamController<Map<String, dynamic>>();
+      chatService.replyStreams['session-1'] = streamController.stream;
+
+      await controller.selectSession('session-1');
+      controller.draftController.text = 'Hello there';
+
+      final sendFuture = controller.sendCurrentMessage();
+      await Future<void>.microtask(() {});
+
+      streamController.add({'type': 'error', 'content': 'stream failed'});
+      await Future<void>.microtask(() {});
+      await streamController.close();
+      await sendFuture;
 
       expect(controller.messages, hasLength(2));
       expect(controller.messages[0].role, 'user');
       expect(controller.messages[0].content, 'Hello there');
       expect(controller.messages[1].role, 'assistant');
       expect(controller.messages[1].content, '');
+      expect(controller.messages[1].status, ChatMessageStatus.failed);
+      expect(controller.messages[1].error, 'stream failed');
+      expect(controller.draftController.text, isEmpty);
       expect(controller.historyError.value, 'Failed to stream assistant reply');
       expect(controller.appError.value, isNull);
       expect(controller.sending.value, isFalse);
@@ -544,15 +609,11 @@ class _FakeChatService extends ChatService {
   }
 
   @override
-  Future<void> sendMessage(String sessionId, String message) async {
+  Stream<Map<String, dynamic>> sendMessageAndStreamReply(String sessionId, String message) {
     if (sendError != null) {
-      throw sendError!;
+      return Stream<Map<String, dynamic>>.error(sendError!);
     }
     sentMessages.add(_SentMessage(sessionId, message));
-  }
-
-  @override
-  Stream<Map<String, dynamic>> streamAssistantReply(String sessionId) {
     return replyStreams[sessionId] ?? const Stream<Map<String, dynamic>>.empty();
   }
 }

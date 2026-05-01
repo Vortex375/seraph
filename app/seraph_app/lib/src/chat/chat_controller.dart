@@ -125,34 +125,58 @@ class ChatController extends GetxController {
     sending.value = true;
     appError.value = null;
     historyError.value = null;
+    var replyStarted = false;
 
     try {
-      await chatService.sendMessage(sessionId, draft);
       _cancelReplySubscription();
       final replyGeneration = ++_replyGeneration;
-      _replyCompleter = Completer<void>();
-      _replySubscription = chatService.streamAssistantReply(sessionId).listen(
-        (event) async {
-          if (replyGeneration != _replyGeneration || activeSessionId.value != sessionId || messages.isEmpty) {
-            return;
-          }
-          final content = _extractStreamContent(event['content']);
-          final type = event['type'];
-          if (content is String) {
-            final last = messages.removeLast();
-            messages.add(ChatMessage(
-              id: event['id'] as String? ?? last.id,
-              role: last.role,
-              content: type == 'delta' ? '${last.content}$content' : content,
-              createdAt: last.createdAt,
-              citations: _extractStreamCitations(event['citations'], last.citations),
-            ));
-            messages.refresh();
-            unawaited(_refreshSessionMetadata(sessionId));
-          }
-        },
+        _replyCompleter = Completer<void>();
+        _replySubscription = chatService.sendMessageAndStreamReply(sessionId, draft).listen(
+          (event) async {
+            if (replyGeneration != _replyGeneration || activeSessionId.value != sessionId || messages.isEmpty) {
+              return;
+            }
+            final type = event['type'];
+            if (type == 'error') {
+              if (!replyStarted) {
+                messages.remove(userMessage);
+                messages.remove(assistantMessage);
+                draftController.text = draft;
+                appError.value = 'Failed to send message';
+              } else {
+                historyError.value = 'Failed to stream assistant reply';
+              }
+              sending.value = false;
+              _completeReply();
+              return;
+            }
+
+            final content = _extractStreamContent(event['content']);
+            if (content is String) {
+              replyStarted = true;
+              final last = messages.removeLast();
+              messages.add(ChatMessage(
+                id: event['id'] as String? ?? last.id,
+                role: last.role,
+                content: type == 'delta' ? '${last.content}$content' : content,
+                createdAt: last.createdAt,
+                citations: _extractStreamCitations(event['citations'], last.citations),
+              ));
+              messages.refresh();
+              unawaited(_refreshSessionMetadata(sessionId));
+            }
+          },
         onError: (_) {
           if (replyGeneration != _replyGeneration || activeSessionId.value != sessionId) {
+            return;
+          }
+          if (!replyStarted) {
+            messages.remove(userMessage);
+            messages.remove(assistantMessage);
+            draftController.text = draft;
+            appError.value = 'Failed to send message';
+            sending.value = false;
+            _completeReply();
             return;
           }
           historyError.value = 'Failed to stream assistant reply';

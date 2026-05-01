@@ -289,6 +289,31 @@ void main() {
       expect(find.text('Initial draft'), findsNothing);
     });
 
+    testWidgets('reloaded failed assistant turns show failure state and backend error details', (tester) async {
+      controller.sessions.assignAll([
+        _session(id: 'session-1', title: 'Design review'),
+      ]);
+      controller.messages.assignAll([
+        ChatMessage(
+          id: 'message-1',
+          role: 'assistant',
+          content: 'Partial reply',
+          createdAt: DateTime.parse('2026-04-12T00:00:03Z'),
+          citations: const [],
+          status: ChatMessageStatus.failed,
+          error: 'provider failed',
+        ),
+      ]);
+      controller.activeSessionId.value = 'session-1';
+
+      await tester.pumpWidget(_wrapApp(const ChatView(), size: const Size(1200, 900)));
+      await tester.pump();
+
+      expect(find.text('Assistant failed'), findsOneWidget);
+      expect(find.text('Partial reply'), findsOneWidget);
+      expect(find.text('provider failed'), findsOneWidget);
+    });
+
     testWidgets('pressing Enter in the composer sends the current draft', (tester) async {
       controller.sessions.assignAll([
         _session(id: 'session-1', title: 'Design review'),

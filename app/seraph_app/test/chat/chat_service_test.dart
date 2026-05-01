@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:get/get.dart' hide Response;
+import 'package:http/http.dart' as http;
 import 'package:oidc/oidc.dart';
 import 'package:seraph_app/src/chat/chat_models.dart';
 import 'package:seraph_app/src/chat/chat_service.dart';
@@ -33,6 +34,8 @@ void main() {
       'role': 'assistant',
       'content': 'I found these documents.',
       'created_at': '2026-04-12T00:00:03Z',
+      'status': 'failed',
+      'error': 'upstream provider error',
       'citations': [
         {
           'provider_id': 'space-a',
@@ -56,6 +59,8 @@ void main() {
     expect(message.citations[1].label, '/legacy/path.txt');
     expect(message.citations[1].viewerPath, '/legacy/path.txt');
     expect(message.citations[1].isNavigable, isFalse);
+    expect(message.status, ChatMessageStatus.failed);
+    expect(message.error, 'upstream provider error');
   });
 
   test('chat session decode rejects unknown backend status', () {
@@ -79,6 +84,7 @@ void main() {
     late SettingsController settingsController;
     late LoginController loginController;
     late Dio dio;
+    late _FakeStreamHttpClient httpClient;
     late ChatService service;
 
     setUp(() {
@@ -86,7 +92,8 @@ void main() {
       settingsController = _FakeSettingsController('https://seraph.test');
       loginController = _FakeLoginController.initialized('access-token');
       dio = Dio(BaseOptions(baseUrl: settingsController.serverUrl.value));
-      service = ChatService(settingsController, loginController, dio: dio);
+      httpClient = _FakeStreamHttpClient();
+      service = ChatService(settingsController, loginController, dio: dio, httpClient: httpClient);
     });
 
     test('listSessions decodes backend session metadata', () async {
@@ -127,54 +134,30 @@ void main() {
       expect(sessions.single.lastMessageAt.toUtc(), DateTime.parse('2026-04-12T00:00:20Z'));
     });
 
-    test('sendMessage posts approved backend payload', () async {
-      dio.interceptors.add(
-        InterceptorsWrapper(
-          onRequest: (options, handler) {
-            expect(options.path, '/api/v1/chat/sessions/session-1/messages');
-            expect(options.data, {'message': 'Hello there'});
-            expect(options.data, isNot({'content': 'Hello there'}));
-            expect(options.headers['Authorization'], 'Bearer access-token');
+    test('sendMessageAndStreamReply posts a streamed backend request', () async {
+      httpClient.handler = (request) async {
+        expect(request.method, 'POST');
+        expect(request.url.toString(), 'https://seraph.test/api/v1/chat/sessions/session-1/messages/stream');
+        expect(request.headers['Accept'], 'text/event-stream');
+        expect(request.headers['Content-Type'], startsWith('application/json'));
+        expect(request.headers['Authorization'], 'Bearer access-token');
+        expect(await request.finalize().bytesToString(), '{"message":"Hello there"}');
 
-            handler.resolve(Response<void>(requestOptions: options));
+        return http.StreamedResponse(
+          Stream<List<int>>.fromIterable([
+            utf8.encode('event: reply\n'),
+            utf8.encode('data: {"type":"delta",'),
+            utf8.encode('"content":"Hello"}\n\n'),
+            utf8.encode('data: {"type":"done"}\n\n'),
+          ]),
+          200,
+          headers: const {
+            'content-type': 'text/event-stream',
           },
-        ),
-      );
+        );
+      };
 
-      await service.sendMessage('session-1', 'Hello there');
-    });
-
-    test('streamAssistantReply parses text event stream payloads', () async {
-      dio.interceptors.add(
-        InterceptorsWrapper(
-          onRequest: (options, handler) {
-            expect(options.path, '/api/v1/chat/sessions/session-1/stream');
-            expect(options.responseType, ResponseType.stream);
-            expect(options.headers['Accept'], 'text/event-stream');
-            expect(options.headers['Authorization'], 'Bearer access-token');
-
-            handler.resolve(
-              Response<ResponseBody>(
-                requestOptions: options,
-                data: ResponseBody(
-                  Stream<Uint8List>.fromIterable([
-                    Uint8List.fromList(utf8.encode('event: reply\n')),
-                    Uint8List.fromList(utf8.encode('data: {"type":"delta",')),
-                    Uint8List.fromList(utf8.encode('"content":"Hello"}\n\n')),
-                    Uint8List.fromList(utf8.encode('data: {"type":"done"}\n\n')),
-                  ]),
-                  200,
-                  headers: {
-                    Headers.contentTypeHeader: ['text/event-stream'],
-                  },
-                ),
-              ),
-            );
-          },
-        ),
-      );
-
-      final events = await service.streamAssistantReply('session-1').toList();
+      final events = await service.sendMessageAndStreamReply('session-1', 'Hello there').toList();
 
       expect(events, [
         {'type': 'delta', 'content': 'Hello'},
@@ -182,6 +165,22 @@ void main() {
       ]);
     });
   });
+}
+
+typedef _StreamedHandler = Future<http.StreamedResponse> Function(http.BaseRequest request);
+
+class _FakeStreamHttpClient extends http.BaseClient {
+  _StreamedHandler? handler;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    final handler = this.handler;
+    if (handler == null) {
+      throw StateError('No HTTP stream handler configured');
+    }
+
+    return handler(request);
+  }
 }
 
 class _FakeSettingsController extends GetxController implements SettingsController {
