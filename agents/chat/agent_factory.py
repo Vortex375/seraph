@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from agentscope.agent import ReActAgent
-from agentscope.formatter import OpenAIChatFormatter
+from agentscope.formatter import DeepSeekChatFormatter
 from agentscope.memory import AsyncSQLAlchemyMemory
 from agentscope.message import TextBlock
 from agentscope.model import OpenAIChatModel
@@ -165,7 +165,7 @@ class AgentFactory:
                 client_kwargs=client_kwargs,
                 stream=True,
             ),
-            formatter=OpenAIChatFormatter(),
+            formatter=DeepSeekChatFormatter(),
             toolkit=toolkit,
             memory=AsyncSQLAlchemyMemory(self._engine, session_id=session_id, user_id=user_id),
             knowledge=SeraphKnowledgeBase(
