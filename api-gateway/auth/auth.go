@@ -93,9 +93,12 @@ type oidcAuth struct {
 	introspectionCache jetstream.KeyValue
 
 	tokenStore TokenStore
+
+	spaceAdminClaimKey string
 }
 
 type userIdKey struct{}
+type introspectionClaimsKey struct{}
 
 func New(p Params) (Result, error) {
 	log := p.Log.GetLogger("auth")
@@ -175,6 +178,9 @@ func New(p Params) (Result, error) {
 		return Result{}, err
 	}
 
+	p.Viper.SetDefault("auth.spaceAdminClaimKey", "roles")
+	spaceAdminClaimKey := p.Viper.GetString("auth.spaceAdminClaimKey")
+
 	auth := &oidcAuth{
 		log:                log,
 		configUrl:          configURL,
@@ -187,6 +193,7 @@ func New(p Params) (Result, error) {
 		introspectionCache: introspectionCache,
 		tokenStore:         NewTokenStore(p.Db),
 		appClientId:        appClientId,
+		spaceAdminClaimKey: spaceAdminClaimKey,
 	}
 
 	return Result{Auth: auth, Handler: auth}, nil
@@ -521,6 +528,13 @@ func (a *oidcAuth) AuthMiddleware(passwordAuth bool, realm string) func(*gin.Con
 		// user authenticated
 		setUserId(ctx, introspection.Subject)
 
+		// store introspection claims for role checks
+		if introspection.Claims != nil {
+			ctx.Request = ctx.Request.WithContext(
+				context.WithValue(ctx.Request.Context(), introspectionClaimsKey{}, introspection.Claims),
+			)
+		}
+
 		if sess != nil {
 			// if no Authorization header was used, token is stored to session
 			storeTokenToSession(sess, token)
@@ -776,6 +790,26 @@ func (a *oidcAuth) verifyToken(introspection *zoidc.IntrospectionResponse) bool 
 }
 
 func (a *oidcAuth) IsSpaceAdmin(ctx context.Context) bool {
-	//TODO: role check
+	claims, ok := ctx.Value(introspectionClaimsKey{}).(map[string]any)
+	if !ok || claims == nil {
+		return false
+	}
+
+	raw := claims[a.spaceAdminClaimKey]
+	if raw == nil {
+		return false
+	}
+
+	roles, ok := raw.([]any)
+	if !ok {
+		return false
+	}
+
+	for _, r := range roles {
+		if s, ok := r.(string); ok && s == "space-admin" {
+			return true
+		}
+	}
+
 	return false
 }
