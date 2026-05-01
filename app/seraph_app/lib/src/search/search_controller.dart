@@ -3,6 +3,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:seraph_app/src/file_browser/file_browser_view.dart';
+import 'package:seraph_app/src/file_viewer/file_viewer_view.dart';
 import 'package:seraph_app/src/search/search_service.dart';
 import 'package:webdav_client/webdav_client.dart';
 
@@ -65,5 +67,19 @@ class MySearchController extends GetxController {
   clearSearch() {
     queryTextController.clear();
     queryText.value = '';
+  }
+
+  void openResultFile(File file) {
+    if (file.path == null || file.path!.isEmpty) {
+      return;
+    }
+    Get.toNamed('${FileViewerView.routeName}?path=${file.path}');
+  }
+
+  void openResultFolder(String folderPath) {
+    if (folderPath.isEmpty) {
+      return;
+    }
+    Get.toNamed('${FileBrowserView.routeName}?path=$folderPath');
   }
 }

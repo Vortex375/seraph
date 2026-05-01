@@ -1,6 +1,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:path/path.dart' as p;
 import 'package:seraph_app/src/search/search_controller.dart';
 
 class SearchView extends StatelessWidget {
@@ -32,15 +33,50 @@ class SearchView extends StatelessWidget {
             ),
         ],
       ),
-      body: controller.empty.value ? const Center(child: Column(spacing: 8, children: [Icon(Icons.not_interested, size: 48), Text("no results")])) : ListView.builder(
-        itemCount: controller.fileResults.length,
-        itemBuilder: (BuildContext context, int index) {
-          final item = controller.fileResults[index];
+      body: controller.empty.value
+          ? const Center(
+              child: Column(
+                spacing: 8,
+                children: [
+                  Icon(Icons.not_interested, size: 48),
+                  Text('no results'),
+                ],
+              ),
+            )
+          : ListView.builder(
+              itemCount: controller.fileResults.length,
+              itemBuilder: (BuildContext context, int index) {
+                final item = controller.fileResults[index];
+                final filePath = item.path;
+                final folderPath =
+                    filePath != null ? p.dirname(filePath) : '';
+                final folderName =
+                    folderPath.isNotEmpty ? p.basename(folderPath) : '';
+                final hasPath = filePath != null && filePath.isNotEmpty;
 
-          return ListTile(
-            title: Text(item.name ?? '')
-          );
-        }),
+                return ListTile(
+                  title: Text(
+                    item.name ?? '',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: folderName.isNotEmpty
+                      ? Text(
+                          folderName,
+                          overflow: TextOverflow.ellipsis,
+                        )
+                      : null,
+                  onTap: hasPath ? () => controller.openResultFile(item) : null,
+                  trailing: hasPath && folderPath.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.folder_open),
+                          tooltip: 'Open folder',
+                          onPressed: () =>
+                              controller.openResultFolder(folderPath),
+                        )
+                      : null,
+                );
+              },
+            ),
     ));
   }
 
