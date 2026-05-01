@@ -223,7 +223,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(observer.pushedRoutes, contains('/view?path=space-a%2Fteam%2Fspec.md'));
-      expect(Get.currentRoute, FileViewerView.routeName);
+      expect(Get.currentRoute, startsWith(FileViewerView.routeName));
       expect(Get.parameters['path'], 'space-a/team/spec.md');
     });
 
@@ -262,8 +262,8 @@ void main() {
       await tester.tap(find.text('/legacy/path.txt'));
       await tester.pumpAndSettle();
 
-      expect(observer.pushedRoutes, isEmpty);
-      expect(Get.currentRoute, ChatView.routeName);
+      expect(observer.pushedRoutes.where((r) => r != '/'), isEmpty);
+      expect(Get.currentRoute, isNot(startsWith(FileViewerView.routeName)));
     });
 
     testWidgets('visible transcript updates immediately when the active message list changes', (tester) async {

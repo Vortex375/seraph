@@ -23,6 +23,26 @@ def _normalize_openai_base_url(base_url: str | None) -> str | None:
     return normalized or None
 
 
+def _extract_tool_citations(payload: Any) -> list[dict[str, str]]:
+    if isinstance(payload, list):
+        return [citation for item in payload for citation in _extract_tool_citations(item)]
+
+    if not isinstance(payload, dict):
+        return []
+
+    reference = payload.get("reference")
+    if isinstance(reference, dict):
+        return _extract_tool_citations(reference)
+
+    provider_id = payload.get("provider_id")
+    path = payload.get("path")
+    if isinstance(provider_id, str) and provider_id and isinstance(path, str) and path:
+        label = payload.get("label")
+        return [{"provider_id": provider_id, "path": path, "label": label if isinstance(label, str) and label else path}]
+
+    return []
+
+
 class AgentFactory:
     def __init__(
         self,
@@ -51,10 +71,35 @@ class AgentFactory:
             "base_url": _normalize_openai_base_url(self._base_url) or DEFAULT_OPENAI_BASE_URL
         }
         toolkit = Toolkit()
+        agent: ReActAgent | None = None
         if self._file_access_service_factory is not None:
             file_access = self._file_access_service_factory(user_id)
 
+            def _remember_tool_citations(payload: Any) -> None:
+                if agent is None:
+                    return
+                citations = getattr(agent, "_seraph_tool_citations", None)
+                if not isinstance(citations, list):
+                    return
+
+                seen = {
+                    (provider_id, path)
+                    for provider_id, path in (
+                        (citation.get("provider_id"), citation.get("path"))
+                        for citation in citations
+                        if isinstance(citation, dict)
+                    )
+                    if isinstance(provider_id, str) and provider_id and isinstance(path, str) and path
+                }
+                for citation in _extract_tool_citations(payload):
+                    key = (citation["provider_id"], citation["path"])
+                    if key in seen:
+                        continue
+                    citations.append(citation)
+                    seen.add(key)
+
             def _tool_response(payload: Any) -> ToolResponse:
+                _remember_tool_citations(payload)
                 return ToolResponse(
                     content=[TextBlock(type="text", text=str(payload))],
                     metadata={"result": payload},
@@ -111,7 +156,7 @@ class AgentFactory:
                 func_description="Read bounded lines from an accessible text file",
                 async_execution=False,
             )
-        return ReActAgent(
+        agent = ReActAgent(
             name="seraph-documents",
             sys_prompt=DOCUMENT_CHAT_PROMPT,
             model=OpenAIChatModel(
@@ -132,3 +177,4 @@ class AgentFactory:
             ),
             enable_rewrite_query=False,
         )
+        return agent

@@ -182,6 +182,12 @@ class ChatController extends GetxController {
       return rawContent;
     }
 
+    if (rawContent is Map<dynamic, dynamic>) {
+      final type = rawContent['type'];
+      final text = rawContent['text'];
+      return type == 'text' && text is String ? text : null;
+    }
+
     if (rawContent is List<dynamic>) {
       final text = rawContent
           .whereType<Map<dynamic, dynamic>>()

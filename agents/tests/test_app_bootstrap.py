@@ -584,6 +584,103 @@ async def test_agent_factory_file_tools_return_tool_responses(monkeypatch: pytes
     ]
 
 
+@pytest.mark.asyncio
+async def test_agent_factory_file_tools_capture_tool_citations(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = importlib.import_module("chat.agent_factory")
+    recorded: dict[str, object] = {}
+
+    class StubOpenAIChatModel:
+        def __init__(self, **kwargs: object) -> None:
+            recorded["model_kwargs"] = kwargs
+
+    class StubToolkit:
+        def __init__(self) -> None:
+            self.tools = []
+
+        def register_tool_function(self, tool_func, **kwargs):
+            self.tools.append({"tool_func": tool_func, **kwargs})
+
+    class StubAgent:
+        def __init__(self, **kwargs: object) -> None:
+            recorded.update(kwargs)
+            recorded["agent"] = self
+
+    monkeypatch.setattr(module, "OpenAIChatModel", StubOpenAIChatModel)
+    monkeypatch.setattr(module, "Toolkit", StubToolkit)
+    monkeypatch.setattr(module, "ReActAgent", StubAgent)
+    monkeypatch.setattr(module, "AsyncSQLAlchemyMemory", lambda *args, **kwargs: object())
+    monkeypatch.setattr(module, "OpenAIChatFormatter", lambda: object())
+    monkeypatch.setattr(module, "SeraphKnowledgeBase", lambda **kwargs: object())
+
+    class StubFileAccessService:
+        async def search_files(self, *, user_id: str, query: str):
+            del user_id, query
+            return [{"provider_id": "space-a", "path": "/search.md", "label": "/search.md"}]
+
+        async def list_directory(self, *, user_id: str, provider_id: str, path: str):
+            del user_id, provider_id, path
+            return [{"provider_id": "space-a", "path": "/listed.md", "is_dir": False}]
+
+        async def stat_file(self, *, user_id: str, provider_id: str, path: str):
+            del user_id, provider_id, path
+            return {"provider_id": "space-a", "path": "/stat.md", "size": 12, "is_dir": False}
+
+        async def read_file_excerpt(
+            self,
+            *,
+            user_id: str,
+            provider_id: str,
+            path: str,
+            start_line: int = 1,
+            max_lines: int = 80,
+            max_chars: int = 12000,
+        ):
+            del user_id, provider_id, path, start_line, max_lines, max_chars
+            return {
+                "reference": {"provider_id": "space-a", "path": "/excerpt.md", "label": "/excerpt.md"},
+                "content": "hello",
+                "start_line": 1,
+                "end_line": 1,
+                "truncated": False,
+            }
+
+    factory = module.AgentFactory(
+        engine=object(),
+        chat_model_name="gpt-test",
+        api_key=None,
+        base_url=None,
+        embedding_model=object(),
+        retrieval_service=object(),
+        spaces_client=object(),
+        search_client=object(),
+        file_access_service_factory=lambda user_id: StubFileAccessService(),
+    )
+
+    factory.create("alice", "session-1")
+
+    toolkit = recorded["toolkit"]
+    agent = recorded["agent"]
+    agent._seraph_tool_citations = []
+
+    for tool in toolkit.tools:
+        func = tool["tool_func"]
+        if tool["func_name"] == "search_files":
+            await func("spec")
+        elif tool["func_name"] == "list_directory":
+            await func("space-a", "/team")
+        elif tool["func_name"] == "stat_file":
+            await func("space-a", "/stat.md")
+        else:
+            await func("space-a", "/excerpt.md")
+
+    assert agent._seraph_tool_citations == [
+        {"provider_id": "space-a", "path": "/search.md", "label": "/search.md"},
+        {"provider_id": "space-a", "path": "/listed.md", "label": "/listed.md"},
+        {"provider_id": "space-a", "path": "/stat.md", "label": "/stat.md"},
+        {"provider_id": "space-a", "path": "/excerpt.md", "label": "/excerpt.md"},
+    ]
+
+
 def test_ingestion_service_embedder_normalizes_blank_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
     consumer_module = importlib.import_module("ingestion.file_changed_consumer")
     recorded: dict[str, object] = {}

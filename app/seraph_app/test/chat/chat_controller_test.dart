@@ -188,6 +188,34 @@ void main() {
       await sendFuture;
     });
 
+    test('sendCurrentMessage updates assistant content from a single typed content block payload', () async {
+      final streamController = StreamController<Map<String, dynamic>>();
+      chatService.replyStreams['session-1'] = streamController.stream;
+
+      await controller.selectSession('session-1');
+      controller.draftController.text = 'Hello there';
+
+      final sendFuture = controller.sendCurrentMessage();
+      await Future<void>.microtask(() {});
+
+      streamController.add({
+        'id': 'assistant-remote-1',
+        'content': {'type': 'text', 'text': 'Hello'},
+      });
+      await Future<void>.microtask(() {});
+      expect(controller.messages[1].content, 'Hello');
+
+      streamController.add({
+        'id': 'assistant-remote-1',
+        'content': {'type': 'text', 'text': 'Hello world'},
+      });
+      await Future<void>.microtask(() {});
+      expect(controller.messages[1].content, 'Hello world');
+
+      await streamController.close();
+      await sendFuture;
+    });
+
     test('snapshot stream payloads replace assistant content and refresh session metadata', () async {
       final streamController = StreamController<Map<String, dynamic>>();
       chatService.replyStreams['session-1'] = streamController.stream;
