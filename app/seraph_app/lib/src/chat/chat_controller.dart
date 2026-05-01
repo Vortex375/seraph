@@ -130,42 +130,48 @@ class ChatController extends GetxController {
     try {
       _cancelReplySubscription();
       final replyGeneration = ++_replyGeneration;
-        _replyCompleter = Completer<void>();
-        _replySubscription = chatService.sendMessageAndStreamReply(sessionId, draft).listen(
-          (event) async {
-            if (replyGeneration != _replyGeneration || activeSessionId.value != sessionId || messages.isEmpty) {
-              return;
-            }
-            final type = event['type'];
-            if (type == 'error') {
-              if (!replyStarted) {
-                messages.remove(userMessage);
-                messages.remove(assistantMessage);
-                draftController.text = draft;
-                appError.value = 'Failed to send message';
-              } else {
-                historyError.value = 'Failed to stream assistant reply';
-              }
-              sending.value = false;
-              _completeReply();
-              return;
-            }
-
-            final content = _extractStreamContent(event['content']);
-            if (content is String) {
-              replyStarted = true;
-              final last = messages.removeLast();
-              messages.add(ChatMessage(
-                id: event['id'] as String? ?? last.id,
+      _replyCompleter = Completer<void>();
+      _replySubscription = chatService.sendMessageAndStreamReply(sessionId, draft).listen(
+        (event) async {
+          if (replyGeneration != _replyGeneration || activeSessionId.value != sessionId || messages.isEmpty) {
+            return;
+          }
+          final type = event['type'];
+          if (type == 'error') {
+            historyError.value = 'Failed to stream assistant reply';
+            final last = messages.removeLast();
+            messages.add(
+              ChatMessage(
+                id: last.id,
                 role: last.role,
-                content: type == 'delta' ? '${last.content}$content' : content,
+                content: last.content,
                 createdAt: last.createdAt,
-                citations: _extractStreamCitations(event['citations'], last.citations),
-              ));
-              messages.refresh();
-              unawaited(_refreshSessionMetadata(sessionId));
-            }
-          },
+                citations: last.citations,
+                status: ChatMessageStatus.failed,
+                error: event['content'] as String?,
+              ),
+            );
+            messages.refresh();
+            sending.value = false;
+            _completeReply();
+            return;
+          }
+
+          final content = _extractStreamContent(event['content']);
+          if (content is String) {
+            replyStarted = true;
+            final last = messages.removeLast();
+            messages.add(ChatMessage(
+              id: event['id'] as String? ?? last.id,
+              role: last.role,
+              content: type == 'delta' ? '${last.content}$content' : content,
+              createdAt: last.createdAt,
+              citations: _extractStreamCitations(event['citations'], last.citations),
+            ));
+            messages.refresh();
+            unawaited(_refreshSessionMetadata(sessionId));
+          }
+        },
         onError: (_) {
           if (replyGeneration != _replyGeneration || activeSessionId.value != sessionId) {
             return;
@@ -180,6 +186,18 @@ class ChatController extends GetxController {
             return;
           }
           historyError.value = 'Failed to stream assistant reply';
+          final last = messages.removeLast();
+          messages.add(
+            ChatMessage(
+              id: last.id,
+              role: last.role,
+              content: last.content,
+              createdAt: last.createdAt,
+              citations: last.citations,
+              status: ChatMessageStatus.failed,
+            ),
+          );
+          messages.refresh();
           sending.value = false;
           _completeReply();
         },
