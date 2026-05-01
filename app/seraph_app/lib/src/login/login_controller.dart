@@ -277,7 +277,6 @@ class LoginController extends GetxController with WidgetsBindingObserver {
           }
         }
       }
-    }
 
     _isSpaceAdmin.value = false;
   }

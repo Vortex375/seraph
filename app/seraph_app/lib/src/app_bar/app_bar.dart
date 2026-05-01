@@ -45,7 +45,7 @@ AppBar seraphAppBar(BuildContext context, {
                     : routeName;
                 if (effectiveRoute != routeName) {
                   WidgetsBinding.instance.addPostFrameCallback((_) {
-                    Get.offAllNamed(effectiveRoute!);
+                    Get.offAllNamed(effectiveRoute);
                   });
                 }
                 return DropdownButton<String>(
@@ -70,6 +70,7 @@ AppBar seraphAppBar(BuildContext context, {
               }),
             ),
           ),
+        ),
         if (shareController.shareMode.value)
           Expanded(
             child: Text(
@@ -77,7 +78,7 @@ AppBar seraphAppBar(BuildContext context, {
               style: const TextStyle(fontSize: 18),
               overflow: TextOverflow.ellipsis,
             ),
-          )
+          ),
       ],
     ),
     actions: actions,
