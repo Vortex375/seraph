@@ -488,6 +488,8 @@ async def _wait_for_no_document(
 async def test_ingestion_create_update_delete(nats_client, testserver_info: Dict[str, str], monkeypatch):
     if not _can_connect_db():
         pytest.skip("Postgres not available for pgvector integration test")
+    if not os.getenv("OPENAI_API_KEY"):
+        pytest.skip("OPENAI_API_KEY not set")
 
     monkeypatch.setenv("NATS_URL", testserver_info["nats_url"])
 
@@ -619,6 +621,8 @@ async def test_ingestion_create_update_delete(nats_client, testserver_info: Dict
 async def test_ingestion_retries_after_failure(nats_client, testserver_info: Dict[str, str], monkeypatch):
     if not _can_connect_db():
         pytest.skip("Postgres not available for pgvector integration test")
+    if not os.getenv("OPENAI_API_KEY"):
+        pytest.skip("OPENAI_API_KEY not set")
 
     monkeypatch.setenv("NATS_URL", testserver_info["nats_url"])
 

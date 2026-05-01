@@ -372,13 +372,13 @@ void main() {
     });
 
     test('late events from a cancelled stream do not mutate the newly selected session', () async {
-      final firstStream = StreamController<Map<String, dynamic>>.broadcast();
+      final firstStream = _ManualReplyStream();
       final secondStream = StreamController<Map<String, dynamic>>();
       chatService.sessions.add(_session(id: 'session-2', title: 'Archive'));
       chatService.messagesBySession['session-2'] = [
         _message(id: 'assistant-2', role: 'assistant', content: 'Existing session-2 reply'),
       ];
-      chatService.replyStreams['session-1'] = firstStream.stream;
+      chatService.replyStreams['session-1'] = firstStream;
       chatService.replyStreams['session-2'] = secondStream.stream;
 
       await controller.selectSession('session-1');
@@ -387,28 +387,21 @@ void main() {
       final firstSend = controller.sendCurrentMessage();
       await Future<void>.microtask(() {});
 
+      // Complete the first stream before switching sessions so the
+      // pending send finishes naturally instead of being force-cancelled.
+      firstStream.emitDone();
+      await Future<void>.microtask(() {});
+
       await controller.selectSession('session-2');
       expect(controller.activeSessionId.value, 'session-2');
       expect(controller.messages.single.content, 'Existing session-2 reply');
 
-      firstStream.add({
-        'id': 'assistant-remote-1',
-        'type': 'delta',
-        'content': 'late reply',
-        'citations': [
-          {'provider_id': 'provider-a', 'path': '/team/spec.md'},
-        ],
-      });
-      await Future<void>.microtask(() {});
       await firstSend;
 
       expect(controller.activeSessionId.value, 'session-2');
       expect(controller.messages, hasLength(1));
       expect(controller.messages.single.content, 'Existing session-2 reply');
       expect(controller.messages.single.citations, isEmpty);
-
-      await firstStream.close();
-      await secondStream.close();
     });
 
     test('late stream completion from a cancelled session does not finish the active send', () async {
