@@ -4,7 +4,9 @@ import 'package:seraph_app/src/chat/chat_view.dart';
 import 'package:seraph_app/src/file_browser/file_browser_view.dart';
 
 import 'package:seraph_app/src/gallery/gallery_view.dart';
+import 'package:seraph_app/src/login/login_controller.dart';
 import 'package:seraph_app/src/share/share_controller.dart';
+import 'package:seraph_app/src/spaces_admin/spaces_list_view.dart';
 
 import '../settings/settings_view.dart';
 
@@ -16,6 +18,7 @@ AppBar seraphAppBar(BuildContext context, {
   }) {
 
   final ShareController shareController = Get.find();
+  final LoginController loginController = Get.find();
 
   return AppBar(
     title: Row(
@@ -34,23 +37,37 @@ AppBar seraphAppBar(BuildContext context, {
             child: Align(
               alignment: Alignment.centerLeft,
               child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
+                child: Obx(() {
+                final isAdmin = loginController.isSpaceAdmin.value;
+                // If not admin but on the spaces admin route, redirect
+                final effectiveRoute = (!isAdmin && routeName == SpacesListView.routeName)
+                    ? FileBrowserView.routeName
+                    : routeName;
+                if (effectiveRoute != routeName) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    Get.offAllNamed(effectiveRoute!);
+                  });
+                }
+                return DropdownButton<String>(
                   isExpanded: true,
-                  value: routeName,
-                  items: const [
-                    DropdownMenuItem(
+                  value: effectiveRoute,
+                  items: [
+                    const DropdownMenuItem(
                         value: FileBrowserView.routeName, child: Text('Cloud Files', overflow: TextOverflow.ellipsis)),
-                    DropdownMenuItem(
+                    const DropdownMenuItem(
                         value: GalleryView.routeName, child: Text('Gallery', overflow: TextOverflow.ellipsis)),
-                    DropdownMenuItem(
+                    const DropdownMenuItem(
                         value: ChatView.routeName, child: Text('Chat', overflow: TextOverflow.ellipsis)),
-                    DropdownMenuItem(enabled: false, child: Divider()),
-                    DropdownMenuItem(
+                    if (isAdmin)
+                      const DropdownMenuItem(
+                          value: SpacesListView.routeName, child: Text('Spaces Admin', overflow: TextOverflow.ellipsis)),
+                    const DropdownMenuItem(enabled: false, child: Divider()),
+                    const DropdownMenuItem(
                         value: SettingsView.routeName, child: Text('App Settings', overflow: TextOverflow.ellipsis))
                   ],
                   onChanged: (value) => Get.offAllNamed(value!),
-                ),
-              ),
+                );
+              }),
             ),
           ),
         if (shareController.shareMode.value)
