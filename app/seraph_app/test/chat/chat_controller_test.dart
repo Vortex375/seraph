@@ -289,6 +289,36 @@ void main() {
       expect(controller.messages.single.content, 'Latest session');
     });
 
+    test('stream chunk triggers reactive refresh so listeners see update', () async {
+      final streamController = StreamController<Map<String, dynamic>>();
+      chatService.replyStreams['session-1'] = streamController.stream;
+
+      var refreshCount = 0;
+      final disposer = ever(controller.messages, (_) {
+        refreshCount++;
+      });
+
+      await controller.selectSession('session-1');
+      controller.draftController.text = 'Hello there';
+
+      final sendFuture = controller.sendCurrentMessage();
+      await Future<void>.microtask(() {});
+
+      // Initial add of user + assistant messages triggers ever once
+      final countBeforeChunk = refreshCount;
+
+      streamController.add({'type': 'delta', 'content': 'World'});
+      await Future<void>.microtask(() {});
+
+      // The stream chunk handler should have refreshed reactive listeners
+      expect(refreshCount, greaterThan(countBeforeChunk));
+      expect(controller.messages[1].content, 'World');
+
+      await streamController.close();
+      await sendFuture;
+      disposer();
+    });
+
     test('stream failure exposes recoverable history error', () async {
       chatService.replyStreams['session-1'] = Stream<Map<String, dynamic>>.error(StateError('stream failed'));
 
@@ -625,11 +655,9 @@ class _ManualReplySubscription implements StreamSubscription<Map<String, dynamic
     void Function(Map<String, dynamic> event)? onData,
     Function? onError,
     void Function()? onDone,
-  })  : _onData = onData,
-        _onError = onError,
+  })  : _onError = onError,
         _onDone = onDone;
 
-  void Function(Map<String, dynamic> event)? _onData;
   Function? _onError;
   void Function()? _onDone;
   bool _isPaused = false;
@@ -664,7 +692,7 @@ class _ManualReplySubscription implements StreamSubscription<Map<String, dynamic
 
   @override
   void onData(void Function(Map<String, dynamic> data)? handleData) {
-    _onData = handleData;
+    // No-op: data events are not emitted by _ManualReplyStream.
   }
 
   @override

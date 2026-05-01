@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:seraph_app/src/chat/chat_navigation.dart';
 import 'package:seraph_app/src/chat/chat_models.dart';
 
@@ -226,14 +227,16 @@ class _ChatConversationPaneState extends State<ChatConversationPane> {
               ? const Center(child: CircularProgressIndicator())
               : widget.messages.isEmpty
                   ? const Center(child: Text('No messages yet'))
-                  : ListView.builder(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                      itemCount: widget.messages.length,
-                      itemBuilder: (context, index) {
-                        final message = widget.messages[index];
-                        return ChatMessageCard(message: message);
-                      },
+                  : SelectionArea(
+                      child: ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                        itemCount: widget.messages.length,
+                        itemBuilder: (context, index) {
+                          final message = widget.messages[index];
+                          return ChatMessageCard(message: message);
+                        },
+                      ),
                     ),
         ),
         SafeArea(
@@ -297,7 +300,23 @@ class ChatMessageCard extends StatelessWidget {
                   style: Theme.of(context).textTheme.labelLarge,
                 ),
                 const SizedBox(height: 8),
-                Text(message.content),
+                if (isAssistant)
+                  MarkdownBody(
+                    data: message.content,
+                    styleSheet: MarkdownStyleSheet(
+                      p: Theme.of(context).textTheme.bodyMedium,
+                      code: TextStyle(
+                        fontFamily: 'monospace',
+                        backgroundColor: colorScheme.surfaceContainerHighest,
+                      ),
+                      codeblockDecoration: BoxDecoration(
+                        color: colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  )
+                else
+                  Text(message.content),
                 if (message.citations.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   ExpansionTile(

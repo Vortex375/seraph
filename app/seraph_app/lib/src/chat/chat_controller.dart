@@ -147,7 +147,8 @@ class ChatController extends GetxController {
               createdAt: last.createdAt,
               citations: _extractStreamCitations(event['citations'], last.citations),
             ));
-            await _refreshSessionMetadata(sessionId);
+            messages.refresh();
+            unawaited(_refreshSessionMetadata(sessionId));
           }
         },
         onError: (_) {

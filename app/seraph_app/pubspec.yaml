@@ -16,6 +16,7 @@ dependencies:
   flutter_breadcrumb: ^1.0.1
   flutter_localizations:
     sdk: flutter
+  flutter_markdown: ^0.7.6+2
   flutter_secure_storage: ^9.2.4
   get: ^4.7.2
   get_storage: ^2.1.1
