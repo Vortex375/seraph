@@ -12,8 +12,9 @@ class SpacesDetailController extends GetxController {
   final titleController = TextEditingController();
   final descriptionController = TextEditingController();
   final userInputController = TextEditingController();
-  final providerPathController = TextEditingController();
-  final providerNameController = TextEditingController();
+
+  final List<TextEditingController> providerNameControllers = [];
+  final List<TextEditingController> providerPathControllers = [];
 
   final RxList<String> users = RxList<String>([]);
   final RxList<SpaceFileProvider> fileProviders = RxList<SpaceFileProvider>([]);
@@ -36,8 +37,12 @@ class SpacesDetailController extends GetxController {
     titleController.dispose();
     descriptionController.dispose();
     userInputController.dispose();
-    providerPathController.dispose();
-    providerNameController.dispose();
+    for (final c in providerNameControllers) {
+      c.dispose();
+    }
+    for (final c in providerPathControllers) {
+      c.dispose();
+    }
     super.onClose();
   }
 
@@ -50,6 +55,12 @@ class SpacesDetailController extends GetxController {
       descriptionController.text = space.description;
       users.assignAll(space.users);
       fileProviders.assignAll(space.fileProviders);
+      providerNameControllers.clear();
+      providerPathControllers.clear();
+      for (final fp in space.fileProviders) {
+        providerNameControllers.add(TextEditingController(text: fp.spaceProviderId));
+        providerPathControllers.add(TextEditingController(text: fp.path));
+      }
     } catch (e) {
       error.value = 'Failed to load space: $e';
     } finally {
@@ -71,6 +82,8 @@ class SpacesDetailController extends GetxController {
 
   void addFileProvider(SpaceFileProvider fp) {
     fileProviders.add(fp);
+    providerNameControllers.add(TextEditingController(text: fp.spaceProviderId));
+    providerPathControllers.add(TextEditingController(text: fp.path));
   }
 
   void updateFileProvider(int index, SpaceFileProvider fp) {
@@ -78,6 +91,14 @@ class SpacesDetailController extends GetxController {
   }
 
   void removeFileProvider(int index) {
+    if (index < providerNameControllers.length) {
+      providerNameControllers[index].dispose();
+      providerNameControllers.removeAt(index);
+    }
+    if (index < providerPathControllers.length) {
+      providerPathControllers[index].dispose();
+      providerPathControllers.removeAt(index);
+    }
     fileProviders.removeAt(index);
   }
 

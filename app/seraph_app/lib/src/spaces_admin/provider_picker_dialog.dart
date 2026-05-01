@@ -49,7 +49,7 @@ class _ProviderPickerDialogState extends State<ProviderPickerDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Get.back(),
+          onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancel'),
         ),
       ],
@@ -77,24 +77,26 @@ class _ProviderPickerDialogState extends State<ProviderPickerDialog> {
       );
     }
 
-    final services = _services;
+    final services = _services?.where((s) => s.serviceType == 'file-provider').toList();
     if (services == null || services.isEmpty) {
-      return const Center(child: Text('No services available'));
+      return const Center(child: Text('No file providers available'));
     }
 
     return ListView.builder(
       itemCount: services.length,
       itemBuilder: (context, index) {
         final service = services[index];
+        final providerId = service.properties['id'] ?? service.instanceId;
+        final kind = service.properties['kind'] ?? '';
         return ListTile(
-          title: Text(service.instanceId),
-          subtitle: Text('Type: ${service.serviceType}'),
+          title: Text(providerId),
+          subtitle: kind.isNotEmpty ? Text('Kind: $kind') : null,
           onTap: () {
-            Get.back(
-              result: SpaceFileProvider(
-                spaceProviderId: '',
-                providerId: service.instanceId,
-                path: '',
+            Navigator.of(context).pop(
+              SpaceFileProvider(
+                spaceProviderId: providerId,
+                providerId: providerId,
+                path: '/',
                 readOnly: false,
               ),
             );

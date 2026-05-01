@@ -8,7 +8,8 @@ import 'package:seraph_app/src/share/share_controller.dart';
 import 'package:seraph_app/src/spaces_admin/spaces_list_view.dart';
 import '../settings/settings_view.dart';
 
-AppBar seraphAppBar(BuildContext context, {
+AppBar seraphAppBar(
+  BuildContext context, {
   String name = '',
   String routeName = '',
   List<Widget> actions = const [],
@@ -61,22 +62,27 @@ Widget _buildNavDropdown(bool hasLoginController, String routeName) {
 Widget _buildDropdown(bool isAdmin, String currentRoute) {
   final items = <DropdownMenuItem<String>>[
     const DropdownMenuItem(
-        value: FileBrowserView.routeName,
-        child: Text('Cloud Files', overflow: TextOverflow.ellipsis)),
+      value: FileBrowserView.routeName,
+      child: Text('Cloud Files', overflow: TextOverflow.ellipsis),
+    ),
     const DropdownMenuItem(
-        value: GalleryView.routeName,
-        child: Text('Gallery', overflow: TextOverflow.ellipsis)),
+      value: GalleryView.routeName,
+      child: Text('Gallery', overflow: TextOverflow.ellipsis),
+    ),
     const DropdownMenuItem(
-        value: ChatView.routeName,
-        child: Text('Chat', overflow: TextOverflow.ellipsis)),
+      value: ChatView.routeName,
+      child: Text('Chat', overflow: TextOverflow.ellipsis),
+    ),
+    const DropdownMenuItem(enabled: false, child: Divider()),
     if (isAdmin)
       const DropdownMenuItem(
-          value: SpacesListView.routeName,
-          child: Text('Spaces Admin', overflow: TextOverflow.ellipsis)),
-    const DropdownMenuItem(enabled: false, child: Divider()),
+        value: SpacesListView.routeName,
+        child: Text('Spaces Admin', overflow: TextOverflow.ellipsis),
+      ),
     const DropdownMenuItem(
-        value: SettingsView.routeName,
-        child: Text('App Settings', overflow: TextOverflow.ellipsis)),
+      value: SettingsView.routeName,
+      child: Text('App Settings', overflow: TextOverflow.ellipsis),
+    ),
   ];
 
   return DropdownButtonHideUnderline(

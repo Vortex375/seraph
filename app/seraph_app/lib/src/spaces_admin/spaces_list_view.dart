@@ -48,7 +48,7 @@ class SpacesListView extends StatelessWidget {
             itemBuilder: (context, index) {
               final space = controller.spaces[index];
               return Dismissible(
-                key: Key(space.id ?? '${index}'),
+                key: Key(space.id ?? '$index'),
                 direction: DismissDirection.endToStart,
                 confirmDismiss: (direction) async {
                   return await Get.dialog<bool>(

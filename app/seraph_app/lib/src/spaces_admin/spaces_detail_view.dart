@@ -194,9 +194,8 @@ class _SpacesDetailViewState extends State<SpacesDetailView> {
     int index,
     SpaceFileProvider fp,
   ) {
-    final nameCtrl =
-        TextEditingController(text: fp.spaceProviderId);
-    final pathCtrl = TextEditingController(text: fp.path);
+    final nameCtrl = controller.providerNameControllers[index];
+    final pathCtrl = controller.providerPathControllers[index];
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
