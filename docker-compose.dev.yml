@@ -103,6 +103,9 @@ services:
   
   api-gateway:
     image: seraph
+    build:
+      context: .
+      dockerfile: Dockerfile
     restart: always
     command: 
       - api-gateway
