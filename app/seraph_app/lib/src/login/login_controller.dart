@@ -17,6 +17,7 @@ class LoginController extends GetxController with WidgetsBindingObserver {
     _initialized = false.obs;
     _noAuth = false.obs;
     _currentUser = Rx<OidcUser?>(null);
+    _isSpaceAdmin = false.obs;
     
     if (settingsController.serverUrlConfirmed.value || kIsWeb) {
       init(settingsController.oidcIssuer.value, settingsController.oidcClientId.value);
@@ -37,10 +38,12 @@ class LoginController extends GetxController with WidgetsBindingObserver {
   late Rx<bool> _initialized;
   late Rx<bool> _noAuth;
   late Rx<OidcUser?> _currentUser;
+  late Rx<bool> _isSpaceAdmin;
 
   Rx<bool> get isInitialized => _initialized;
   Rx<bool> get isNoAuth => _noAuth;
   Rx<OidcUser?> get currentUser => _currentUser;
+  Rx<bool> get isSpaceAdmin => _isSpaceAdmin;
 
   Future<void> init(String? oidcIssuer, String? clientId) async {
     if (kIsWeb) {
@@ -60,6 +63,7 @@ class LoginController extends GetxController with WidgetsBindingObserver {
     if (oidcIssuer == '') {
       _noAuth.value = true;
       _initialized.value = true;
+      _isSpaceAdmin.value = true;
       return;
     }
 
@@ -112,6 +116,7 @@ class LoginController extends GetxController with WidgetsBindingObserver {
       print("oidc: refresh successful");
       _currentUser.value = user;
       _initialized.value = true;
+      _updateSpaceAdmin(user);
     }
     
     _manager?.userChanges().listen((user) async {
@@ -119,6 +124,7 @@ class LoginController extends GetxController with WidgetsBindingObserver {
       _currentUser.value = user;
       _initialized.value = true;
       shareController.loadShares();
+      _updateSpaceAdmin(user);
     });
   }
 
@@ -142,6 +148,7 @@ class LoginController extends GetxController with WidgetsBindingObserver {
       if (response.statusCode == 200) {
         _noAuth.value = true;
         _initialized.value = true;
+        _isSpaceAdmin.value = true;
         shareController.loadShares();
       } else {
         await launchUrl(Uri.parse('${settingsController.serverUrl.value}/auth/login?' 
@@ -198,6 +205,7 @@ class LoginController extends GetxController with WidgetsBindingObserver {
     print("oidc: logout");
     await _manager?.logout();
     _currentUser.value = null;
+    _isSpaceAdmin.value = false;
     print("oidc: logout complete");
   }
 
@@ -230,5 +238,46 @@ class LoginController extends GetxController with WidgetsBindingObserver {
     super.onClose();
 
     WidgetsBinding.instance.removeObserver(this);
+  }
+
+  void _updateSpaceAdmin(OidcUser? user) {
+    if (user == null) {
+      _isSpaceAdmin.value = false;
+      return;
+    }
+
+    // Check userInfo for roles claim
+    final userInfo = user.userInfo;
+    final roles = userInfo['roles'];
+    if (roles is List && roles.any((r) => r.toString() == 'space-admin')) {
+      _isSpaceAdmin.value = true;
+      return;
+    }
+    // Also check common Zitadel claim patterns
+    for (final key in userInfo.keys) {
+      if (key.toString().contains('roles')) {
+        final value = userInfo[key];
+        if (value is List &&
+            value.any((r) => r.toString() == 'space-admin')) {
+          _isSpaceAdmin.value = true;
+          return;
+        }
+      }
+    }
+
+    // Check parsed ID token claims
+    final claims = user.parsedIdToken.claims.toJson();
+    for (final key in claims.keys) {
+        if (key.toString().contains('roles')) {
+          final value = claims[key];
+          if (value is List &&
+              value.any((r) => r.toString() == 'space-admin')) {
+            _isSpaceAdmin.value = true;
+            return;
+          }
+        }
+      }
+
+    _isSpaceAdmin.value = false;
   }
 }
