@@ -1,18 +1,21 @@
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
+import 'package:http/http.dart' as http;
 import 'package:seraph_app/src/chat/chat_models.dart';
 import 'package:seraph_app/src/login/login_controller.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
 import 'package:seraph_app/src/util.dart';
 
 class ChatService {
-  ChatService(this.settingsController, this.loginController, {Dio? dio})
-      : dio = dio ?? Dio(BaseOptions(baseUrl: settingsController.serverUrl.value));
+  ChatService(this.settingsController, this.loginController, {Dio? dio, http.Client? httpClient})
+      : dio = dio ?? Dio(BaseOptions(baseUrl: settingsController.serverUrl.value)),
+        httpClient = httpClient ?? http.Client();
 
   final SettingsController settingsController;
   final LoginController loginController;
   final Dio dio;
+  final http.Client httpClient;
 
   Future<Map<String, String>> _getRequestHeaders() async {
     await until(loginController.isInitialized, identity);
@@ -65,28 +68,24 @@ class ChatService {
         .toList();
   }
 
-  Future<void> sendMessage(String sessionId, String message) async {
-    await dio.post<void>(
-      '/api/v1/chat/sessions/$sessionId/messages',
-      data: {'message': message},
-      options: Options(headers: await _getRequestHeaders()),
+  Stream<Map<String, dynamic>> sendMessageAndStreamReply(String sessionId, String message) async* {
+    final request = http.Request(
+      'POST',
+      Uri.parse('${settingsController.serverUrl.value}/api/v1/chat/sessions/$sessionId/messages/stream'),
     );
-  }
+    request.headers.addAll({
+      'Content-Type': 'application/json',
+      'Accept': 'text/event-stream',
+      ...await _getRequestHeaders(),
+    });
+    request.body = jsonEncode({'message': message});
 
-  Stream<Map<String, dynamic>> streamAssistantReply(String sessionId) async* {
-    final response = await dio.get<ResponseBody>(
-      '/api/v1/chat/sessions/$sessionId/stream',
-      options: Options(
-        responseType: ResponseType.stream,
-        headers: {
-          'Accept': 'text/event-stream',
-          ...await _getRequestHeaders(),
-        },
-      ),
-    );
+    final response = await httpClient.send(request);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError('Failed to open assistant reply stream (${response.statusCode})');
+    }
 
-    final stream = response.data!.stream
-        .cast<List<int>>()
+    final stream = response.stream
         .transform(utf8.decoder)
         .transform(const LineSplitter());
 

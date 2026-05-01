@@ -296,7 +296,11 @@ class ChatMessageCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  isAssistant ? 'Assistant' : 'You',
+                  isAssistant
+                      ? (message.status == ChatMessageStatus.failed
+                          ? 'Assistant failed'
+                          : 'Assistant')
+                      : 'You',
                   style: Theme.of(context).textTheme.labelLarge,
                 ),
                 const SizedBox(height: 8),
@@ -317,6 +321,16 @@ class ChatMessageCard extends StatelessWidget {
                   )
                 else
                   Text(message.content),
+                if (isAssistant && message.status == ChatMessageStatus.failed && message.error != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    message.error!,
+                    style: TextStyle(
+                      color: colorScheme.error,
+                      fontSize: Theme.of(context).textTheme.bodySmall?.fontSize,
+                    ),
+                  ),
+                ],
                 if (message.citations.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   ExpansionTile(

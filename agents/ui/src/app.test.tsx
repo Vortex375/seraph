@@ -11,25 +11,31 @@ vi.mock('./api', async () => {
     listSessions: vi.fn(),
     createSession: vi.fn(),
     listMessages: vi.fn(),
-    sendMessage: vi.fn(),
+    sendMessageAndStreamReply: vi.fn(),
     deleteSession: vi.fn(),
-    openStream: vi.fn(),
   }
 })
 
-type MockStream = {
-  close: ReturnType<typeof vi.fn>
-  onerror: ((event: Event) => void) | null
-  onmessage: ((event: MessageEvent<string>) => void) | null
-}
-
 const mockedApi = vi.mocked(api)
 
+function streamFrom(events: Array<Promise<unknown> | unknown>, signal?: AbortSignal): AsyncIterable<unknown> {
+  return {
+    async *[Symbol.asyncIterator]() {
+      for (const event of events) {
+        if (signal?.aborted) {
+          return
+        }
+        yield await event
+      }
+    },
+  }
+}
+
 describe('App', () => {
-  const streams: MockStream[] = []
+  const streamSignals: AbortSignal[] = []
 
   beforeEach(() => {
-    streams.length = 0
+    streamSignals.length = 0
     mockedApi.listSessions.mockResolvedValue([])
     mockedApi.createSession.mockResolvedValue({
       id: 'new-session',
@@ -43,17 +49,13 @@ describe('App', () => {
       last_message_at: '2026-04-12T00:00:00Z',
     })
     mockedApi.listMessages.mockResolvedValue([])
-    mockedApi.sendMessage.mockResolvedValue({ accepted: true })
-    mockedApi.deleteSession.mockResolvedValue()
-    mockedApi.openStream.mockImplementation(() => {
-      const stream: MockStream = {
-        close: vi.fn(),
-        onerror: null,
-        onmessage: null,
+    mockedApi.sendMessageAndStreamReply.mockImplementation((_sessionId, _message, signal) => {
+      if (signal) {
+        streamSignals.push(signal)
       }
-      streams.push(stream)
-      return stream as unknown as EventSource
+      return streamFrom([], signal)
     })
+    mockedApi.deleteSession.mockResolvedValue()
     vi.stubGlobal('confirm', vi.fn(() => true))
   })
 
@@ -168,7 +170,7 @@ describe('App', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: /send/i }))
 
-    await waitFor(() => expect(mockedApi.sendMessage).toHaveBeenCalledWith('new-session', 'Draft roadmap for distributed search rollout'))
+    await waitFor(() => expect(mockedApi.sendMessageAndStreamReply).toHaveBeenCalledWith('new-session', 'Draft roadmap for distributed search rollout', expect.any(AbortSignal)))
     const row = await screen.findByTestId('session-row-new-session')
     expect(within(row).getByText('Running')).toBeInTheDocument()
     expect(within(row).getByText('Draft roadmap for distributed search rollout')).toBeInTheDocument()
@@ -209,10 +211,10 @@ describe('App', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: /send/i }))
 
-    await waitFor(() => expect(mockedApi.openStream).toHaveBeenCalledWith('session-1'))
+    await waitFor(() => expect(mockedApi.sendMessageAndStreamReply).toHaveBeenCalledWith('session-1', 'hello world', expect.any(AbortSignal)))
     fireEvent.click(screen.getByRole('button', { name: /finished roadmap status update/i }))
 
-    expect(streams[0].close).toHaveBeenCalledTimes(1)
+    expect(streamSignals[0].aborted).toBe(true)
   })
 
   it('keeps the active stream open when deleting a different session', async () => {
@@ -250,10 +252,10 @@ describe('App', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: /send/i }))
 
-    await waitFor(() => expect(mockedApi.openStream).toHaveBeenCalledWith('session-1'))
+    await waitFor(() => expect(mockedApi.sendMessageAndStreamReply).toHaveBeenCalledWith('session-1', 'hello world', expect.any(AbortSignal)))
     fireEvent.click(screen.getByRole('button', { name: /delete roadmap/i }))
 
-    expect(streams[0].close).toHaveBeenCalledTimes(0)
+    expect(streamSignals[0].aborted).toBe(false)
   })
 
   it('ignores stale history results after switching sessions', async () => {
@@ -327,6 +329,14 @@ describe('App', () => {
   })
 
   it('sends a message, opens a stream, and refreshes history when the stream finishes', async () => {
+    mockedApi.sendMessageAndStreamReply.mockImplementation((_sessionId, _message, signal) => {
+      if (signal) {
+        streamSignals.push(signal)
+      }
+      return streamFrom([
+        { content: [{ type: 'text', text: 'I found these documents related to music.' }] },
+      ], signal)
+    })
     mockedApi.listMessages
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
@@ -355,14 +365,9 @@ describe('App', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: /send/i }))
 
-    await waitFor(() => expect(mockedApi.sendMessage).toHaveBeenCalledWith('new-session', 'Find documents related to music'))
-    expect(mockedApi.openStream).toHaveBeenCalledWith('new-session')
-
-    streams[0].onmessage?.({ data: JSON.stringify({ content: [{ type: 'text', text: 'I found these documents related to music.' }] }) } as MessageEvent<string>)
+    await waitFor(() => expect(mockedApi.sendMessageAndStreamReply).toHaveBeenCalledWith('new-session', 'Find documents related to music', expect.any(AbortSignal)))
     const messageList = document.querySelector('.message-list') as HTMLElement
     expect(await within(messageList).findByText('I found these documents related to music.')).toBeInTheDocument()
-
-    streams[0].onerror?.(new Event('error'))
 
     await waitFor(() => expect(mockedApi.listMessages).toHaveBeenCalledTimes(2))
     expect(mockedApi.listMessages).toHaveBeenLastCalledWith('new-session')

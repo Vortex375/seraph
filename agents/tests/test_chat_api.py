@@ -4,7 +4,7 @@ import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from fastapi.testclient import TestClient
 import pytest
@@ -113,9 +113,65 @@ def test_chat_message_response_supports_structured_citations() -> None:
         content="See spec",
         created_at="2026-04-19T00:00:00Z",
         citations=[{"provider_id": "space-a", "path": "/team/spec.md", "label": "/team/spec.md"}],
+        status="failed",
+        error="upstream provider error",
     )
 
     assert response.citations[0].provider_id == "space-a"
+    assert response.status == "failed"
+    assert response.error == "upstream provider error"
+
+
+def test_create_message_and_stream_returns_sse_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = create_app()
+    recorded: dict[str, object] = {}
+
+    class StubSession:
+        def __init__(self, session_id: str, user_id: str, title: str) -> None:
+            self.id = session_id
+            self.user_id = user_id
+            self.title = title
+            self.created_at = "2026-04-11T00:00:00Z"
+            self.updated_at = "2026-04-11T00:00:00Z"
+            self.last_message_at = "2026-04-11T00:00:00Z"
+
+    class StubSessionService:
+        def __init__(self, session: object) -> None:
+            del session
+
+        async def get_session(self, user_id: str, session_id: str) -> StubSession | None:
+            if user_id == "alice" and session_id == "session-1":
+                return StubSession(session_id, user_id, "Inbox")
+            return None
+
+    async def fake_stream_message_create(*, db: object, session_id: str, user_id: str, message: str, request: object):
+        del request
+        recorded["db"] = db
+        recorded["session_id"] = session_id
+        recorded["user_id"] = user_id
+        recorded["message"] = message
+        yield 'data: {"id":"assistant-1","type":"delta","content":"hello"}\n\n'
+        yield 'data: {"id":"assistant-1","type":"done"}\n\n'
+
+    monkeypatch.setattr("api.chat.SessionService", StubSessionService)
+    monkeypatch.setattr("api.chat._stream_message_create", fake_stream_message_create)
+
+    with TestClient(app) as client:
+        with client.stream(
+            "POST",
+            "/api/v1/chat/sessions/session-1/messages/stream",
+            headers={"X-Seraph-User": "alice"},
+            json={"message": "hello"},
+        ) as response:
+            assert response.status_code == 200
+            assert response.headers["content-type"].startswith("text/event-stream")
+            payload = "".join(response.iter_text())
+
+    assert recorded["session_id"] == "session-1"
+    assert recorded["user_id"] == "alice"
+    assert recorded["message"] == "hello"
+    assert 'data: {"id":"assistant-1","type":"delta","content":"hello"}' in payload
+    assert 'data: {"id":"assistant-1","type":"done"}' in payload
 
 
 @pytest.mark.asyncio
@@ -190,6 +246,8 @@ async def test_list_session_messages_returns_visible_history_with_citations(monk
             "content": "Find documents related to music",
             "created_at": "2026-04-12T00:00:00Z",
             "citations": [],
+            "status": "finished",
+            "error": None,
         },
         {
             "id": "assistant-1",
@@ -208,6 +266,8 @@ async def test_list_session_messages_returns_visible_history_with_citations(monk
                     "label": "/Music/Maki Otsuki - Destiny/visit aziophrenia.com - Japan and Korea - music, video, idols.url",
                 },
             ],
+            "status": "finished",
+            "error": None,
         },
     ]
 
@@ -350,10 +410,8 @@ async def test_create_and_list_sessions_for_authenticated_user(monkeypatch: pyte
 
 
 @pytest.mark.asyncio
-async def test_create_message_accepts_owned_session(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_create_message_route_is_removed(monkeypatch: pytest.MonkeyPatch) -> None:
     app = create_app()
-    sessions = {"session-1": "alice"}
-    recorded: dict[str, object] = {}
 
     class StubSession:
         def __init__(self, session_id: str, user_id: str, title: str) -> None:
@@ -368,237 +426,21 @@ async def test_create_message_accepts_owned_session(monkeypatch: pytest.MonkeyPa
         def __init__(self, session: object) -> None:
             del session
 
-        async def create_session(self, user_id: str, title: str) -> StubSession:
-            return StubSession("session-1", user_id, title)
-
         async def get_session(self, user_id: str, session_id: str) -> StubSession | None:
-            owner = sessions.get(session_id)
-            if owner != user_id:
-                return None
-            return StubSession(session_id, user_id, "Inbox")
-
-    async def fake_accept_pending_turn(
-        *, db: object, session_id: str, user_id: str, message: str, title_summarizer=None
-    ):
-        recorded["db"] = db
-        recorded["session_id"] = session_id
-        recorded["user_id"] = user_id
-        recorded["message"] = message
-        recorded["title_summarizer"] = title_summarizer
+            if user_id == "alice" and session_id == "session-1":
+                return StubSession(session_id, user_id, "Inbox")
+            return None
 
     monkeypatch.setattr("api.chat.SessionService", StubSessionService)
-    monkeypatch.setattr("api.chat._accept_pending_turn", fake_accept_pending_turn)
 
-    with TestClient(app) as client:
-        create_response = client.post(
-            "/api/v1/chat/sessions",
-            headers={"X-Seraph-User": "alice"},
-            json={"title": "Inbox"},
-        )
-        assert create_response.status_code == 201
-        session_id = create_response.json()["id"]
-
+    with TestClient(app, raise_server_exceptions=False) as client:
         message_response = client.post(
-            f"/api/v1/chat/sessions/{session_id}/messages",
+            "/api/v1/chat/sessions/session-1/messages",
             headers={"X-Seraph-User": "alice"},
             json={"message": "What changed?"},
         )
 
-        assert message_response.status_code == 202
-        assert message_response.json() == {"accepted": True}
-        assert recorded["session_id"] == session_id
-        assert recorded["user_id"] == "alice"
-        assert recorded["message"] == "What changed?"
-
-
-@pytest.mark.asyncio
-async def test_accept_pending_turn_keeps_multiple_records() -> None:
-    chat_module = importlib.import_module("api.chat")
-    added: list[Any] = []
-    statements: list[object] = []
-    commits = 0
-
-    class StubDb:
-        def add(self, obj: object) -> None:
-            added.append(obj)
-
-        async def execute(self, statement: object) -> None:
-            statements.append(statement)
-
-        async def commit(self) -> None:
-            nonlocal commits
-            commits += 1
-
-        async def refresh(self, obj: object) -> None:
-            del obj
-
-    db = StubDb()
-
-    first = await chat_module._accept_pending_turn(db=db, session_id="session-1", user_id="alice", message="first")
-    second = await chat_module._accept_pending_turn(db=db, session_id="session-1", user_id="alice", message="second")
-
-    assert [cast(Any, turn).message for turn in added] == ["first", "second"]
-    assert first.id != second.id
-    assert len(statements) == 2
-    assert commits == 2
-
-
-@pytest.mark.asyncio
-async def test_accept_pending_turn_updates_last_message_time() -> None:
-    chat_module = importlib.import_module("api.chat")
-    recorded: dict[str, object] = {}
-
-    class StubDb:
-        def add(self, obj: object) -> None:
-            recorded["added"] = obj
-
-        async def execute(self, statement: object) -> None:
-            recorded["statement"] = statement
-
-        async def commit(self) -> None:
-            recorded["committed"] = True
-
-        async def refresh(self, obj: object) -> None:
-            recorded["refreshed"] = obj
-
-    pending_turn = await chat_module._accept_pending_turn(
-        db=StubDb(), session_id="session-1", user_id="alice", message="hello"
-    )
-
-    assert pending_turn.message == "hello"
-    assert recorded["statement"] is not None
-    assert recorded["committed"] is True
-
-
-@pytest.mark.asyncio
-async def test_accept_pending_turn_promotes_default_title_to_llm_summary() -> None:
-    from documents.models import Base, ChatSession
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-
-    chat_module = importlib.import_module("api.chat")
-
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
-    async with session_factory() as db:
-        db.add(ChatSession(id="session-1", user_id="alice", title="New conversation"))
-        await db.commit()
-
-        class StubSummarizer:
-            async def summarize(self, message: str) -> str:
-                assert message == "   Draft roadmap for distributed search rollout with milestones and risks   "
-                return "Search rollout roadmap"
-
-        await chat_module._accept_pending_turn(
-            db=db,
-            session_id="session-1",
-            user_id="alice",
-            message="   Draft roadmap for distributed search rollout with milestones and risks   ",
-            title_summarizer=StubSummarizer(),
-        )
-
-        persisted_session = await db.get(ChatSession, "session-1")
-
-    assert persisted_session is not None
-    assert persisted_session.title == "Search rollout roadmap"
-
-    await engine.dispose()
-
-
-@pytest.mark.asyncio
-async def test_accept_pending_turn_falls_back_to_local_summary_when_llm_title_generation_fails() -> None:
-    from documents.models import Base, ChatSession
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-
-    chat_module = importlib.import_module("api.chat")
-
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
-    async with session_factory() as db:
-        db.add(ChatSession(id="session-1", user_id="alice", title="New conversation"))
-        await db.commit()
-
-        class FailingSummarizer:
-            async def summarize(self, message: str) -> str:
-                raise RuntimeError(f"cannot summarize {message}")
-
-        await chat_module._accept_pending_turn(
-            db=db,
-            session_id="session-1",
-            user_id="alice",
-            message="   Draft roadmap for distributed search rollout with milestones and risks   ",
-            title_summarizer=FailingSummarizer(),
-        )
-
-        persisted_session = await db.get(ChatSession, "session-1")
-
-    assert persisted_session is not None
-    assert persisted_session.title == "Draft roadmap for distributed search rollout with milestones and risks"
-
-    await engine.dispose()
-
-
-@pytest.mark.asyncio
-async def test_accept_pending_turn_rolls_back_when_commit_fails() -> None:
-    chat_module = importlib.import_module("api.chat")
-    recorded: dict[str, object] = {}
-
-    class StubDb:
-        def add(self, obj: object) -> None:
-            recorded["added"] = obj
-
-        async def execute(self, statement: object) -> None:
-            recorded["statement"] = statement
-
-        async def commit(self) -> None:
-            raise RuntimeError("commit failed")
-
-        async def rollback(self) -> None:
-            recorded["rolled_back"] = True
-
-        async def refresh(self, obj: object) -> None:
-            recorded["refreshed"] = obj
-
-    with pytest.raises(RuntimeError, match="commit failed"):
-        await chat_module._accept_pending_turn(db=StubDb(), session_id="session-1", user_id="alice", message="hello")
-
-    assert recorded["statement"] is not None
-    assert recorded["rolled_back"] is True
-    assert "refreshed" not in recorded
-
-
-@pytest.mark.asyncio
-async def test_accept_pending_turn_rolls_back_when_commit_is_cancelled() -> None:
-    chat_module = importlib.import_module("api.chat")
-    recorded: dict[str, object] = {}
-
-    class StubDb:
-        def add(self, obj: object) -> None:
-            recorded["added"] = obj
-
-        async def execute(self, statement: object) -> None:
-            recorded["statement"] = statement
-
-        async def commit(self) -> None:
-            raise asyncio.CancelledError()
-
-        async def rollback(self) -> None:
-            recorded["rolled_back"] = True
-
-        async def refresh(self, obj: object) -> None:
-            recorded["refreshed"] = obj
-
-    with pytest.raises(asyncio.CancelledError):
-        await chat_module._accept_pending_turn(db=StubDb(), session_id="session-1", user_id="alice", message="hello")
-
-    assert recorded["statement"] is not None
-    assert recorded["rolled_back"] is True
-    assert "refreshed" not in recorded
+        assert message_response.status_code == 405
 
 
 def test_create_app_wires_runtime_agent_factory() -> None:

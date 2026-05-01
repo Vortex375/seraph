@@ -1,17 +1,20 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 import json
+import contextlib
 from typing import Any
 from uuid import uuid4
 
+from agentscope.memory import AsyncSQLAlchemyMemory
+from agentscope.message import Msg
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import Select, delete, select, update
+from sqlalchemy import select
 
 from api.models import (
-    AcceptedMessageResponse,
     ChatMessageResponse,
     MessageCreateRequest,
     SessionCreateRequest,
@@ -20,10 +23,10 @@ from api.models import (
 from auth.current_user import AuthenticatedUser, get_current_user
 from chat.citations import record_failure, record_sources, sources_from_knowledge_documents
 from chat.file_models import FileCitation
-from chat.session_service import DEFAULT_SESSION_TITLE, SessionService, SessionTitleSummarizer, summarize_session_title
+from chat.session_service import SessionService
 from chat.streaming import stream_agent_reply
 from db.session import SessionLocal, get_db_session
-from documents.models import ChatSession, PendingChatTurn
+from documents.models import ChatSession, ChatTurnState
 
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 
@@ -83,7 +86,13 @@ def _assistant_message_id_from_error(error: str) -> str | None:
 
 def _looks_like_missing_model_credentials(error: str) -> bool:
     normalized = error.lower()
-    return "api key" in normalized or "authenticationerror" in normalized or "401" in normalized
+    return (
+        "api key" in normalized
+        or "authenticationerror" in normalized
+        or "401" in normalized
+        or "openai_api_key" in normalized
+        or "chat streaming is unavailable until" in normalized
+    )
 
 
 def _stream_setup_error_chunk(*, assistant_message_id: str) -> str:
@@ -173,178 +182,6 @@ async def _retrieve_turn_sources(agent: Any, user_input: str) -> list[dict[str, 
     return sources_from_knowledge_documents(knowledge_docs)
 
 
-async def _accept_pending_turn(
-    *,
-    db: Any,
-    session_id: str,
-    user_id: str,
-    message: str,
-    title_summarizer: SessionTitleSummarizer | None = None,
-) -> PendingChatTurn:
-    pending_turn = PendingChatTurn(id=str(uuid4()), session_id=session_id, user_id=user_id, message=message)
-    now = datetime.now(timezone.utc)
-    db.add(pending_turn)
-    get_session = getattr(db, "get", None)
-    rollback = getattr(db, "rollback", None)
-    try:
-        session = await get_session(ChatSession, session_id) if callable(get_session) else None
-        title = None
-        if session is not None and session.title == DEFAULT_SESSION_TITLE:
-            try:
-                title = await title_summarizer.summarize(message) if title_summarizer is not None else None
-            except Exception:
-                title = None
-            title = title or summarize_session_title(message)
-        update_values: dict[str, Any] = {"last_message_at": now, "updated_at": now}
-        if title is not None:
-            update_values["title"] = title
-        await db.execute(update(ChatSession).where(ChatSession.id == session_id).values(**update_values))
-        await db.commit()
-    except BaseException:
-        if callable(rollback):
-            await rollback()
-        raise
-    await db.refresh(pending_turn)
-    return pending_turn
-
-
-async def _lock_chat_session(*, db: Any, session_id: str, user_id: str, skip_locked: bool) -> bool:
-    session_lock_query: Select[tuple[str]] = (
-        select(ChatSession.id)
-        .where(ChatSession.id == session_id, ChatSession.user_id == user_id)
-        .with_for_update(skip_locked=skip_locked)
-    )
-    locked_session = await db.execute(session_lock_query)
-    return locked_session.first() is not None
-
-
-async def _claim_pending_turn(*, db: Any, session_id: str, user_id: str) -> PendingChatTurn:
-    claimed_at = datetime.now(timezone.utc)
-    try:
-        if not await _lock_chat_session(db=db, session_id=session_id, user_id=user_id, skip_locked=True):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="no pending chat turn")
-
-        existing_claim_query: Select[tuple[str]] = (
-            select(PendingChatTurn.id)
-            .where(
-                PendingChatTurn.session_id == session_id,
-                PendingChatTurn.user_id == user_id,
-                PendingChatTurn.claimed.is_(True),
-            )
-            .limit(1)
-            .with_for_update(skip_locked=True)
-        )
-        existing_claim = await db.execute(existing_claim_query)
-        if existing_claim.first() is not None:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="no pending chat turn")
-
-        claim_query: Select[tuple[str, str]] = (
-            select(PendingChatTurn.id, PendingChatTurn.message)
-            .where(
-                PendingChatTurn.session_id == session_id,
-                PendingChatTurn.user_id == user_id,
-                PendingChatTurn.claimed.is_(False),
-            )
-            .order_by(PendingChatTurn.created_at.asc())
-            .limit(1)
-            .with_for_update(skip_locked=True)
-        )
-        selected = await db.execute(claim_query)
-        row = selected.first()
-        if row is None:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="no pending chat turn")
-
-        result = await db.execute(
-            update(PendingChatTurn)
-            .where(PendingChatTurn.id == row[0], PendingChatTurn.claimed.is_(False))
-            .values(claimed=True, claimed_at=claimed_at)
-            .returning(PendingChatTurn.id, PendingChatTurn.message)
-        )
-        claimed_row = result.first()
-        if claimed_row is None:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="no pending chat turn")
-
-        await db.commit()
-    except BaseException:
-        await db.rollback()
-        raise
-
-    pending_turn = PendingChatTurn(
-        id=claimed_row[0], session_id=session_id, user_id=user_id, message=claimed_row[1], claimed=True
-    )
-    pending_turn.claimed_at = claimed_at
-    return pending_turn
-
-
-async def _stream_pending_turn(
-    *, db: Any, session_id: str, agent: Any, pending_turn: PendingChatTurn
-) -> AsyncIterator[str]:
-    started_stream = False
-    try:
-        async for chunk in _stream_chat_events(
-            db=db,
-            session_id=session_id,
-            agent=agent,
-            user_input=pending_turn.message,
-        ):
-            started_stream = True
-            yield chunk
-    except BaseException:
-        if not started_stream:
-            await _unclaim_pending_turn(db=db, pending_turn=pending_turn)
-        else:
-            await _consume_pending_turn(db=db, pending_turn=pending_turn)
-        raise
-    else:
-        if not started_stream:
-            await _unclaim_pending_turn(db=db, pending_turn=pending_turn)
-            return
-        await _consume_pending_turn(db=db, pending_turn=pending_turn)
-
-
-async def _stream_with_prefetched_chunk(*, first_chunk: str, event_stream: Any) -> AsyncIterator[str]:
-    try:
-        yield first_chunk
-        async for chunk in event_stream:
-            yield chunk
-    finally:
-        close_stream = getattr(event_stream, "aclose", None)
-        if callable(close_stream):
-            await close_stream()
-
-
-async def _consume_pending_turn(*, db: Any, pending_turn: PendingChatTurn) -> None:
-    try:
-        await _lock_chat_session(
-            db=db,
-            session_id=pending_turn.session_id,
-            user_id=pending_turn.user_id,
-            skip_locked=False,
-        )
-        await db.execute(delete(PendingChatTurn).where(PendingChatTurn.id == pending_turn.id))
-        await db.commit()
-    except BaseException:
-        await db.rollback()
-        raise
-
-
-async def _unclaim_pending_turn(*, db: Any, pending_turn: PendingChatTurn) -> None:
-    try:
-        await _lock_chat_session(
-            db=db,
-            session_id=pending_turn.session_id,
-            user_id=pending_turn.user_id,
-            skip_locked=False,
-        )
-        await db.execute(
-            update(PendingChatTurn).where(PendingChatTurn.id == pending_turn.id).values(claimed=False, claimed_at=None)
-        )
-        await db.commit()
-    except BaseException:
-        await db.rollback()
-        raise
-
-
 async def _record_sources_with_isolated_session(
     *, session_id: str, assistant_message_id: str, sources: list[dict[str, str]]
 ) -> None:
@@ -365,6 +202,184 @@ async def _record_failure_with_isolated_session(*, session_id: str, assistant_me
             assistant_message_id=assistant_message_id,
             error=error,
         )
+
+
+async def _upsert_turn_state_with_isolated_session(
+    *,
+    session_id: str,
+    user_id: str,
+    assistant_message_id: str,
+    status: str,
+    content: str,
+    error: str | None = None,
+) -> None:
+    async with SessionLocal() as session:
+        result = await session.execute(
+            select(ChatTurnState).where(ChatTurnState.assistant_message_id == assistant_message_id)
+        )
+        state = result.scalar_one_or_none()
+        if state is None:
+            state = ChatTurnState(
+                session_id=session_id,
+                user_id=user_id,
+                assistant_message_id=assistant_message_id,
+                status=status,
+                content=content,
+                error=error,
+            )
+            session.add(state)
+        else:
+            state.status = status
+            state.content = content
+            state.error = error
+        await session.commit()
+
+
+async def _touch_session_activity(*, session_id: str) -> None:
+    async with SessionLocal() as session:
+        result = await session.execute(select(ChatSession).where(ChatSession.id == session_id))
+        chat_session = result.scalar_one_or_none()
+        if chat_session is None:
+            return
+        now = datetime.now(timezone.utc)
+        chat_session.updated_at = now
+        chat_session.last_message_at = now
+        await session.commit()
+
+
+async def _persist_user_message(*, db: Any, session_id: str, user_id: str, message: str) -> str:
+    msg = Msg("user", message, "user")
+    memory = AsyncSQLAlchemyMemory(db, session_id=session_id, user_id=user_id)
+    await memory.add(msg, skip_duplicated=False)
+    return msg.id
+
+
+def _extract_text_content(raw_content: object) -> str:
+    if isinstance(raw_content, str):
+        return raw_content
+    if isinstance(raw_content, list):
+        return "".join(
+            block.get("text", "") for block in raw_content if isinstance(block, dict) and block.get("type") == "text"
+        )
+    return ""
+
+
+def _merge_stream_content(*, prior_content: str, payload: dict[str, Any]) -> str:
+    next_content = _extract_text_content(payload.get("content"))
+    if not next_content:
+        return prior_content
+    if payload.get("type") == "delta":
+        return f"{prior_content}{next_content}"
+    return next_content
+
+
+def _is_error_payload(payload: dict[str, Any]) -> bool:
+    return payload.get("type") == "error"
+
+
+def _payload_message_id(payload: dict[str, Any]) -> str | None:
+    payload_message_id = payload.get("id")
+    return payload_message_id if isinstance(payload_message_id, str) and payload_message_id else None
+
+
+async def _run_turn_and_publish(
+    *,
+    session_id: str,
+    user_id: str,
+    message: str,
+    request: Request,
+    queue: asyncio.Queue[str | None],
+) -> None:
+    agent_factory = request.app.state.agent_factory if hasattr(request, "app") else None
+    if agent_factory is None:
+        await queue.put(None)
+        return
+
+    assistant_message_id: str | None = None
+    accumulated_content = ""
+
+    try:
+        agent = agent_factory.create(user_id, session_id)
+        async for chunk in _stream_chat_events(db=None, session_id=session_id, agent=agent, user_input=message):
+            payload = _parse_sse_payload(chunk)
+            if payload is not None:
+                assistant_message_id = _payload_message_id(payload) or assistant_message_id
+                accumulated_content = _merge_stream_content(prior_content=accumulated_content, payload=payload)
+                if assistant_message_id is not None:
+                    await _upsert_turn_state_with_isolated_session(
+                        session_id=session_id,
+                        user_id=user_id,
+                        assistant_message_id=assistant_message_id,
+                        status="running",
+                        content=accumulated_content,
+                    )
+                if _is_error_payload(payload):
+                    raise RuntimeError(accumulated_content or "chat streaming failed")
+            await queue.put(chunk)
+
+        if assistant_message_id is None:
+            assistant_message_id = str(uuid4())
+        await _upsert_turn_state_with_isolated_session(
+            session_id=session_id,
+            user_id=user_id,
+            assistant_message_id=assistant_message_id,
+            status="finished",
+            content=accumulated_content,
+            error=None,
+        )
+        await _touch_session_activity(session_id=session_id)
+        await queue.put(f'data: {{"id":"{assistant_message_id}","type":"done"}}\n\n')
+    except BaseException as exc:
+        if assistant_message_id is None:
+            assistant_message_id = str(uuid4())
+        await _upsert_turn_state_with_isolated_session(
+            session_id=session_id,
+            user_id=user_id,
+            assistant_message_id=assistant_message_id,
+            status="failed",
+            content=accumulated_content,
+            error=str(exc),
+        )
+        if not _looks_like_missing_model_credentials(str(exc)) and not getattr(exc, "_seraph_failure_recorded", False):
+            await _record_failure_with_isolated_session(
+                session_id=session_id,
+                assistant_message_id=assistant_message_id,
+                error=str(exc),
+            )
+        with contextlib.suppress(Exception):
+            await queue.put(
+                f'data: {{"id":"{assistant_message_id}","type":"error","content":{json.dumps(str(exc))}}}\n\n'
+            )
+    finally:
+        await queue.put(None)
+
+
+async def _stream_message_create(
+    *,
+    db: Any,
+    session_id: str,
+    user_id: str,
+    message: str,
+    request: Request,
+) -> AsyncIterator[str]:
+    await _persist_user_message(db=db, session_id=session_id, user_id=user_id, message=message)
+    await _touch_session_activity(session_id=session_id)
+    queue: asyncio.Queue[str | None] = asyncio.Queue()
+    asyncio.create_task(
+        _run_turn_and_publish(
+            session_id=session_id,
+            user_id=user_id,
+            message=message,
+            request=request,
+            queue=queue,
+        )
+    )
+
+    while True:
+        chunk = await queue.get()
+        if chunk is None:
+            break
+        yield chunk
 
 
 async def _stream_chat_events(db: Any, session_id: str, agent: Any, user_input: str) -> AsyncIterator[str]:
@@ -422,12 +437,13 @@ async def _stream_chat_events(db: Any, session_id: str, agent: Any, user_input: 
             assistant_message_id = parsed_assistant_message_id
         await _record_failure_with_isolated_session(
             session_id=session_id,
-                assistant_message_id=assistant_message_id,
-                error=str(exc),
-            )
+            assistant_message_id=assistant_message_id,
+            error=str(exc),
+        )
         if _looks_like_missing_model_credentials(str(exc)):
             yield _stream_setup_error_chunk(assistant_message_id=assistant_message_id)
             return
+        setattr(exc, "_seraph_failure_recorded", True)
         raise
     finally:
         _restore_turn_tool_citations(agent, tool_citation_state)
@@ -467,26 +483,25 @@ async def delete_session(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.post(
-    "/sessions/{session_id}/messages", response_model=AcceptedMessageResponse, status_code=status.HTTP_202_ACCEPTED
-)
-async def create_message(
+@router.post("/sessions/{session_id}/messages/stream")
+async def create_message_and_stream(
     session_id: str,
     payload: MessageCreateRequest,
     request: Request,
     user: AuthenticatedUser = Depends(get_current_user),
     db: Any = Depends(get_db_session),
-) -> AcceptedMessageResponse:
+) -> Response:
     await _get_owned_session(db, user.user_id, session_id)
-    title_summarizer = getattr(request.app.state, "session_title_summarizer", None)
-    await _accept_pending_turn(
-        db=db,
-        session_id=session_id,
-        user_id=user.user_id,
-        message=payload.message,
-        title_summarizer=title_summarizer,
+    return StreamingResponse(
+        _stream_message_create(
+            db=db,
+            session_id=session_id,
+            user_id=user.user_id,
+            message=payload.message,
+            request=request,
+        ),
+        media_type="text/event-stream",
     )
-    return AcceptedMessageResponse(accepted=True)
 
 
 @router.get("/sessions/{session_id}/messages", response_model=list[ChatMessageResponse])
@@ -500,35 +515,3 @@ async def list_messages(
     if not messages and await service.get_session(user.user_id, session_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="chat session not found")
     return [ChatMessageResponse.model_validate(message) for message in messages]
-
-
-@router.get("/sessions/{session_id}/stream")
-async def stream_message(
-    request: Request,
-    session_id: str,
-    user: AuthenticatedUser = Depends(get_current_user),
-    db: Any = Depends(get_db_session),
-) -> Response:
-    await _get_owned_session(db, user.user_id, session_id)
-
-    agent_factory = request.app.state.agent_factory
-    pending_turn = await _claim_pending_turn(db=db, session_id=session_id, user_id=user.user_id)
-    try:
-        agent = agent_factory.create(user.user_id, session_id)
-    except BaseException:
-        await _unclaim_pending_turn(db=db, pending_turn=pending_turn)
-        raise
-
-    event_stream = _stream_pending_turn(db=db, session_id=session_id, agent=agent, pending_turn=pending_turn)
-    try:
-        first_chunk = await event_stream.__anext__()
-    except StopAsyncIteration as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="chat stream produced no events",
-        ) from exc
-
-    return StreamingResponse(
-        _stream_with_prefetched_chunk(first_chunk=first_chunk, event_stream=event_stream),
-        media_type="text/event-stream",
-    )

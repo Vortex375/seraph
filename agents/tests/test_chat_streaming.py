@@ -71,8 +71,18 @@ async def test_stream_agent_reply_emits_each_chunk_during_generation(
     ]
 
 
+def test_legacy_message_stream_route_is_removed() -> None:
+    with TestClient(create_app()) as client:
+        response = client.get(
+            "/api/v1/chat/sessions/session-1/stream",
+            headers={"X-Seraph-User": "alice"},
+        )
+
+    assert response.status_code == 404
+
+
 @pytest.mark.asyncio
-async def test_message_stream_returns_sse_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_create_message_and_stream_persists_user_turn_and_streams_reply(monkeypatch: pytest.MonkeyPatch) -> None:
     app = create_app()
     recorded: dict[str, Any] = {}
 
@@ -89,1202 +99,1182 @@ async def test_message_stream_returns_sse_payload(monkeypatch: pytest.MonkeyPatc
         def __init__(self, session: object) -> None:
             del session
 
-        async def create_session(self, user_id: str, title: str) -> StubSession:
-            return StubSession("session-1", user_id, title)
-
         async def get_session(self, user_id: str, session_id: str) -> StubSession | None:
             if user_id != "alice" or session_id != "session-1":
                 return None
             return StubSession(session_id, user_id, "Inbox")
 
-    async def fake_stream_agent_reply(*, agent: object, user_input: str):
-        del agent
-        yield f'data: {{"content": "{user_input}"}}\n\n'
-
-    class StubAgentFactory:
-        def create(self, user_id: str, session_id: str) -> object:
-            assert user_id == "alice"
-            assert session_id == "session-1"
-            return object()
-
-    class StubPendingTurn:
-        id = "turn-1"
-        message = "hello"
-
-    async def fake_claim_pending_turn(*, db: object, session_id: str, user_id: str):
+    async def fake_stream_message_create(*, db: object, session_id: str, user_id: str, message: str, request: object):
         recorded["db"] = db
         recorded["session_id"] = session_id
         recorded["user_id"] = user_id
-        return StubPendingTurn()
+        recorded["message"] = message
+        recorded["request_type"] = type(request).__name__
+        yield 'data: {"id":"assistant-1","type":"delta","content":"hello"}\n\n'
+        yield 'data: {"id":"assistant-1","type":"done"}\n\n'
 
-    async def fake_consume_pending_turn(*, db: object, pending_turn: StubPendingTurn) -> None:
-        recorded["consumed_db"] = db
-        recorded["consumed_turn"] = pending_turn
-
-    async def fake_stream_pending_turn(*, db: object, session_id: str, agent: object, pending_turn: StubPendingTurn):
-        recorded["stream_db"] = db
-        recorded["stream_session_id"] = session_id
-        recorded["stream_pending_turn"] = pending_turn
-        recorded["stream_user_input"] = pending_turn.message
-        assert "consumed_turn" not in recorded
-        yield f'data: {{"content": "{pending_turn.message}"}}\n\n'
-        await fake_consume_pending_turn(db=db, pending_turn=pending_turn)
-
-    app.state.agent_factory = StubAgentFactory()
     monkeypatch.setattr("api.chat.SessionService", StubSessionService)
-    monkeypatch.setattr("api.chat._claim_pending_turn", fake_claim_pending_turn)
-    monkeypatch.setattr("api.chat._stream_pending_turn", fake_stream_pending_turn)
+    monkeypatch.setattr("api.chat._stream_message_create", fake_stream_message_create)
 
     with TestClient(app) as client:
         with client.stream(
-            "GET",
-            "/api/v1/chat/sessions/session-1/stream",
+            "POST",
+            "/api/v1/chat/sessions/session-1/messages/stream",
             headers={"X-Seraph-User": "alice"},
+            json={"message": "hello"},
         ) as response:
             assert response.status_code == 200
-            first_chunk = next(response.iter_text())
+            assert response.headers["content-type"].startswith("text/event-stream")
+            payload = "".join(response.iter_text())
 
-        assert "data:" in first_chunk
-        assert "hello" in first_chunk
-        assert recorded["session_id"] == "session-1"
-        assert recorded["user_id"] == "alice"
-        assert recorded["stream_pending_turn"].id == "turn-1"
-        assert recorded["consumed_turn"].id == "turn-1"
-
-
-@pytest.mark.asyncio
-async def test_message_stream_returns_409_when_no_pending_turn_is_claimable(monkeypatch: pytest.MonkeyPatch) -> None:
-    app = create_app()
-    recorded: dict[str, Any] = {}
-
-    class StubSession:
-        def __init__(self, session_id: str, user_id: str, title: str) -> None:
-            self.id = session_id
-            self.user_id = user_id
-            self.title = title
-            self.created_at = "2026-04-11T00:00:00Z"
-            self.updated_at = "2026-04-11T00:00:00Z"
-            self.last_message_at = "2026-04-11T00:00:00Z"
-
-    class StubSessionService:
-        def __init__(self, session: object) -> None:
-            del session
-
-        async def get_session(self, user_id: str, session_id: str) -> StubSession | None:
-            if user_id != "alice" or session_id != "session-1":
-                return None
-            return StubSession(session_id, user_id, "Inbox")
-
-    async def fake_claim_pending_turn(*, db: object, session_id: str, user_id: str) -> None:
-        recorded["claim_db"] = db
-        recorded["claim_session_id"] = session_id
-        recorded["claim_user_id"] = user_id
-        raise importlib.import_module("fastapi").HTTPException(status_code=409, detail="no pending chat turn")
-
-    class StubAgentFactory:
-        def create(self, user_id: str, session_id: str) -> object:
-            recorded["create_user_id"] = user_id
-            recorded["create_session_id"] = session_id
-            return object()
-
-    app.state.agent_factory = StubAgentFactory()
-    monkeypatch.setattr("api.chat.SessionService", StubSessionService)
-    monkeypatch.setattr("api.chat._claim_pending_turn", fake_claim_pending_turn)
-
-    with TestClient(app, raise_server_exceptions=False) as client:
-        response = client.get(
-            "/api/v1/chat/sessions/session-1/stream",
-            headers={"X-Seraph-User": "alice"},
-        )
-
-    assert response.status_code == 409
-    assert response.json() == {"detail": "no pending chat turn"}
-    assert recorded["claim_session_id"] == "session-1"
-    assert recorded["claim_user_id"] == "alice"
-    assert "create_session_id" not in recorded
+    assert recorded["session_id"] == "session-1"
+    assert recorded["user_id"] == "alice"
+    assert recorded["message"] == "hello"
+    assert recorded["request_type"] == "Request"
+    assert 'data: {"id":"assistant-1","type":"delta","content":"hello"}' in payload
+    assert 'data: {"id":"assistant-1","type":"done"}' in payload
 
 
 @pytest.mark.asyncio
-async def test_message_stream_returns_500_and_unclaims_when_agent_setup_fails(
+async def test_stream_message_create_persists_user_message_before_emitting_chunks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    app = create_app()
+    chat_module = importlib.import_module("api.chat")
+    lifecycle: list[str] = []
     recorded: dict[str, Any] = {}
 
-    class StubSession:
-        def __init__(self, session_id: str, user_id: str, title: str) -> None:
-            self.id = session_id
-            self.user_id = user_id
-            self.title = title
-            self.created_at = "2026-04-11T00:00:00Z"
-            self.updated_at = "2026-04-11T00:00:00Z"
-            self.last_message_at = "2026-04-11T00:00:00Z"
+    async def fake_persist_user_message(*, db: object, session_id: str, user_id: str, message: str) -> str:
+        lifecycle.append("persist-user")
+        recorded["persist_db"] = db
+        recorded["persist_session_id"] = session_id
+        recorded["persist_user_id"] = user_id
+        recorded["persist_message"] = message
+        return "user-1"
 
-    class StubSessionService:
-        def __init__(self, session: object) -> None:
-            del session
+    async def fake_run_turn_and_publish(
+        *, session_id: str, user_id: str, message: str, request: object, queue: Any
+    ) -> None:
+        lifecycle.append("run-turn")
+        recorded["run_session_id"] = session_id
+        recorded["run_user_id"] = user_id
+        recorded["run_message"] = message
+        recorded["run_request"] = request
+        await queue.put('data: {"id":"assistant-1","type":"delta","content":"hello"}\n\n')
+        await queue.put('data: {"id":"assistant-1","type":"done"}\n\n')
+        await queue.put(None)
 
-        async def get_session(self, user_id: str, session_id: str) -> StubSession | None:
-            if user_id != "alice" or session_id != "session-1":
-                return None
-            return StubSession(session_id, user_id, "Inbox")
+    monkeypatch.setattr(chat_module, "_persist_user_message", fake_persist_user_message)
+    monkeypatch.setattr(chat_module, "_run_turn_and_publish", fake_run_turn_and_publish)
 
-    class StubPendingTurn:
-        id = "turn-1"
-        message = "hello"
+    db = object()
+    request = object()
+    chunks: list[str] = []
+    async for chunk in chat_module._stream_message_create(
+        db=db,
+        session_id="session-1",
+        user_id="alice",
+        message="hello",
+        request=request,
+    ):
+        chunks.append(chunk)
 
-    async def fake_claim_pending_turn(*, db: object, session_id: str, user_id: str) -> StubPendingTurn:
-        recorded["claim_db"] = db
-        recorded["claim_session_id"] = session_id
-        recorded["claim_user_id"] = user_id
-        pending_turn = StubPendingTurn()
-        recorded["claimed_turn"] = pending_turn
-        return pending_turn
-
-    async def fake_unclaim_pending_turn(*, db: object, pending_turn: StubPendingTurn) -> None:
-        recorded["unclaim_db"] = db
-        recorded["unclaimed_turn"] = pending_turn
-
-    class StubAgentFactory:
-        def create(self, user_id: str, session_id: str) -> object:
-            recorded["create_user_id"] = user_id
-            recorded["create_session_id"] = session_id
-            raise RuntimeError("agent setup failed")
-
-    app.state.agent_factory = StubAgentFactory()
-    monkeypatch.setattr("api.chat.SessionService", StubSessionService)
-    monkeypatch.setattr("api.chat._claim_pending_turn", fake_claim_pending_turn)
-    monkeypatch.setattr("api.chat._unclaim_pending_turn", fake_unclaim_pending_turn)
-
-    with TestClient(app, raise_server_exceptions=False) as client:
-        response = client.get(
-            "/api/v1/chat/sessions/session-1/stream",
-            headers={"X-Seraph-User": "alice"},
-        )
-
-    assert response.status_code == 500
-    assert recorded["claim_session_id"] == "session-1"
-    assert recorded["claim_user_id"] == "alice"
-    assert recorded["create_session_id"] == "session-1"
-    assert recorded["create_user_id"] == "alice"
-    assert recorded["unclaimed_turn"].id == "turn-1"
-    assert recorded["unclaimed_turn"] is recorded["claimed_turn"]
+    assert chunks == [
+        'data: {"id":"assistant-1","type":"delta","content":"hello"}\n\n',
+        'data: {"id":"assistant-1","type":"done"}\n\n',
+    ]
+    assert lifecycle == ["persist-user", "run-turn"]
+    assert recorded["persist_db"] is db
+    assert recorded["persist_session_id"] == "session-1"
+    assert recorded["persist_user_id"] == "alice"
+    assert recorded["persist_message"] == "hello"
+    assert recorded["run_request"] is request
 
 
 @pytest.mark.asyncio
-async def test_message_stream_requeues_turn_when_agent_setup_fails_across_requests(
+async def test_stream_message_create_updates_session_timestamps_after_persisting_user_message(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    app = create_app()
-    recorded: dict[str, Any] = {"claim_calls": 0, "unclaim_calls": 0}
+    chat_module = importlib.import_module("api.chat")
+    lifecycle: list[str] = []
 
-    class StubSession:
-        def __init__(self, session_id: str, user_id: str, title: str) -> None:
-            self.id = session_id
-            self.user_id = user_id
-            self.title = title
-            self.created_at = "2026-04-11T00:00:00Z"
-            self.updated_at = "2026-04-11T00:00:00Z"
-            self.last_message_at = "2026-04-11T00:00:00Z"
+    async def fake_persist_user_message(*, db: object, session_id: str, user_id: str, message: str) -> str:
+        del db, session_id, user_id, message
+        lifecycle.append("persist-user")
+        return "user-1"
 
-    class StubSessionService:
-        def __init__(self, session: object) -> None:
-            del session
+    async def fake_touch_session_activity(*, session_id: str) -> None:
+        lifecycle.append(f"touch:{session_id}")
 
-        async def get_session(self, user_id: str, session_id: str) -> StubSession | None:
-            if user_id != "alice" or session_id != "session-1":
-                return None
-            return StubSession(session_id, user_id, "Inbox")
+    async def fake_run_turn_and_publish(
+        *, session_id: str, user_id: str, message: str, request: object, queue: Any
+    ) -> None:
+        del session_id, user_id, message, request
+        lifecycle.append("run-turn")
+        await queue.put(None)
 
-    class StubPendingTurn:
-        id = "turn-1"
-        session_id = "session-1"
-        user_id = "alice"
-        message = "hello"
+    monkeypatch.setattr(chat_module, "_persist_user_message", fake_persist_user_message)
+    monkeypatch.setattr(chat_module, "_touch_session_activity", fake_touch_session_activity, raising=False)
+    monkeypatch.setattr(chat_module, "_run_turn_and_publish", fake_run_turn_and_publish)
 
-    async def fake_claim_pending_turn(*, db: object, session_id: str, user_id: str) -> StubPendingTurn:
-        recorded["claim_calls"] = cast(int, recorded["claim_calls"]) + 1
-        attempt = cast(int, recorded["claim_calls"])
-        recorded["claim_db"] = db
-        recorded["claim_session_id"] = session_id
-        recorded["claim_user_id"] = user_id
-        pending_turn = StubPendingTurn()
-        recorded[f"claimed_turn_{attempt}"] = pending_turn
-        return pending_turn
+    async for _chunk in chat_module._stream_message_create(
+        db=object(),
+        session_id="session-1",
+        user_id="alice",
+        message="hello",
+        request=object(),
+    ):
+        pass
 
-    class StubAgentFactory:
-        def create(self, user_id: str, session_id: str) -> object:
-            attempt = cast(int, recorded["claim_calls"])
-            recorded["create_user_id"] = user_id
-            recorded["create_session_id"] = session_id
-            if attempt == 1:
-                raise RuntimeError("agent setup failed")
-            return object()
-
-    async def fake_stream_pending_turn(*, db: object, session_id: str, agent: object, pending_turn: StubPendingTurn):
-        recorded["stream_db"] = db
-        recorded["stream_session_id"] = session_id
-        recorded["stream_agent"] = agent
-        recorded["stream_user_input"] = pending_turn.message
-        yield 'data: {"content": "hello"}\n\n'
-
-    async def fake_unclaim_pending_turn(*, db: object, pending_turn: StubPendingTurn) -> None:
-        recorded["unclaim_calls"] = cast(int, recorded["unclaim_calls"]) + 1
-        recorded["unclaim_db"] = db
-        recorded["unclaimed_turn"] = pending_turn
-
-    app.state.agent_factory = StubAgentFactory()
-    monkeypatch.setattr("api.chat.SessionService", StubSessionService)
-    monkeypatch.setattr("api.chat._claim_pending_turn", fake_claim_pending_turn)
-    monkeypatch.setattr("api.chat._stream_pending_turn", fake_stream_pending_turn)
-    monkeypatch.setattr("api.chat._unclaim_pending_turn", fake_unclaim_pending_turn)
-
-    with TestClient(app, raise_server_exceptions=False) as client:
-        failed_response = client.get(
-            "/api/v1/chat/sessions/session-1/stream",
-            headers={"X-Seraph-User": "alice"},
-        )
-        assert failed_response.status_code == 500
-
-        with client.stream(
-            "GET",
-            "/api/v1/chat/sessions/session-1/stream",
-            headers={"X-Seraph-User": "alice"},
-        ) as response:
-            assert response.status_code == 200
-            first_chunk = next(response.iter_text())
-
-    assert first_chunk == 'data: {"content": "hello"}\n\n'
-    assert recorded["claim_calls"] == 2
-    assert recorded["unclaim_calls"] == 1
-    assert recorded["claim_session_id"] == "session-1"
-    assert recorded["claim_user_id"] == "alice"
-    assert recorded["create_session_id"] == "session-1"
-    assert recorded["create_user_id"] == "alice"
-    assert recorded["stream_session_id"] == "session-1"
-    assert recorded["stream_user_input"] == "hello"
-    assert recorded["unclaimed_turn"] is recorded["claimed_turn_1"]
+    assert lifecycle == ["persist-user", "touch:session-1", "run-turn"]
 
 
 @pytest.mark.asyncio
-async def test_message_stream_returns_500_and_unclaims_when_stream_fails_before_first_chunk(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    app = create_app()
-    recorded: dict[str, Any] = {}
-
-    class StubSession:
-        def __init__(self, session_id: str, user_id: str, title: str) -> None:
-            self.id = session_id
-            self.user_id = user_id
-            self.title = title
-            self.created_at = "2026-04-11T00:00:00Z"
-            self.updated_at = "2026-04-11T00:00:00Z"
-            self.last_message_at = "2026-04-11T00:00:00Z"
-
-    class StubSessionService:
-        def __init__(self, session: object) -> None:
-            del session
-
-        async def get_session(self, user_id: str, session_id: str) -> StubSession | None:
-            if user_id != "alice" or session_id != "session-1":
-                return None
-            return StubSession(session_id, user_id, "Inbox")
-
-    class StubPendingTurn:
-        id = "turn-1"
-        message = "hello"
-
-    async def fake_claim_pending_turn(*, db: object, session_id: str, user_id: str) -> StubPendingTurn:
-        recorded["claim_db"] = db
-        recorded["claim_session_id"] = session_id
-        recorded["claim_user_id"] = user_id
-        pending_turn = StubPendingTurn()
-        recorded["claimed_turn"] = pending_turn
-        return pending_turn
+async def test_run_turn_and_publish_tracks_finished_turn_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    chat_module = importlib.import_module("api.chat")
+    recorded: dict[str, Any] = {"upserts": [], "state_by_id": {}}
 
     class StubAgentFactory:
         def create(self, user_id: str, session_id: str) -> object:
-            recorded["create_user_id"] = user_id
-            recorded["create_session_id"] = session_id
+            recorded["factory_user_id"] = user_id
+            recorded["factory_session_id"] = session_id
             return object()
+
+    class StubState:
+        agent_factory = StubAgentFactory()
+
+    class StubApp:
+        state = StubState()
+
+    class StubRequest:
+        app = StubApp()
 
     async def fake_stream_chat_events(*, db: object, session_id: str, agent: object, user_input: str):
         recorded["stream_db"] = db
         recorded["stream_session_id"] = session_id
         recorded["stream_agent"] = agent
         recorded["stream_user_input"] = user_input
-        raise RuntimeError("stream setup failed")
-        yield ""
+        yield 'data: {"id":"assistant-1","content":"hel"}\n\n'
+        yield 'data: {"id":"assistant-1","content":"hello"}\n\n'
 
-    async def fake_unclaim_pending_turn(*, db: object, pending_turn: StubPendingTurn) -> None:
-        recorded["unclaim_db"] = db
-        recorded["unclaimed_turn"] = pending_turn
-
-    app.state.agent_factory = StubAgentFactory()
-    monkeypatch.setattr("api.chat.SessionService", StubSessionService)
-    monkeypatch.setattr("api.chat._claim_pending_turn", fake_claim_pending_turn)
-    monkeypatch.setattr("api.chat._stream_chat_events", fake_stream_chat_events)
-    monkeypatch.setattr("api.chat._unclaim_pending_turn", fake_unclaim_pending_turn)
-
-    with TestClient(app, raise_server_exceptions=False) as client:
-        response = client.get(
-            "/api/v1/chat/sessions/session-1/stream",
-            headers={"X-Seraph-User": "alice"},
+    async def fake_upsert_turn_state_with_isolated_session(
+        *,
+        session_id: str,
+        user_id: str,
+        assistant_message_id: str,
+        status: str,
+        content: str,
+        error: str | None = None,
+    ) -> None:
+        recorded["state_by_id"][assistant_message_id] = {
+            "session_id": session_id,
+            "user_id": user_id,
+            "assistant_message_id": assistant_message_id,
+            "status": status,
+            "content": content,
+            "error": error,
+        }
+        recorded["upserts"].append(
+            {
+                "session_id": session_id,
+                "user_id": user_id,
+                "assistant_message_id": assistant_message_id,
+                "status": status,
+                "content": content,
+                "error": error,
+            }
         )
 
-    assert response.status_code == 500
-    assert recorded["claim_session_id"] == "session-1"
-    assert recorded["claim_user_id"] == "alice"
-    assert recorded["create_session_id"] == "session-1"
-    assert recorded["create_user_id"] == "alice"
+    async def fake_record_failure_with_isolated_session(*, session_id: str, assistant_message_id: str, error: str) -> None:
+        recorded["failure"] = {
+            "session_id": session_id,
+            "assistant_message_id": assistant_message_id,
+            "error": error,
+        }
+
+    monkeypatch.setattr(chat_module, "_stream_chat_events", fake_stream_chat_events)
+    monkeypatch.setattr(chat_module, "_upsert_turn_state_with_isolated_session", fake_upsert_turn_state_with_isolated_session)
+    monkeypatch.setattr(chat_module, "_record_failure_with_isolated_session", fake_record_failure_with_isolated_session)
+
+    queue: asyncio.Queue[str | None] = asyncio.Queue()
+    await chat_module._run_turn_and_publish(
+        session_id="session-1",
+        user_id="alice",
+        message="hello",
+        request=StubRequest(),
+        queue=queue,
+    )
+
+    chunks: list[str] = []
+    while True:
+        chunk = await queue.get()
+        if chunk is None:
+            break
+        chunks.append(chunk)
+
+    assert recorded["factory_user_id"] == "alice"
+    assert recorded["factory_session_id"] == "session-1"
+    assert recorded["stream_db"] is None
     assert recorded["stream_session_id"] == "session-1"
     assert recorded["stream_user_input"] == "hello"
-    assert recorded["unclaimed_turn"] is recorded["claimed_turn"]
+    assert recorded["upserts"] == [
+        {
+            "session_id": "session-1",
+            "user_id": "alice",
+            "assistant_message_id": "assistant-1",
+            "status": "running",
+            "content": "hel",
+            "error": None,
+        },
+        {
+            "session_id": "session-1",
+            "user_id": "alice",
+            "assistant_message_id": "assistant-1",
+            "status": "running",
+            "content": "hello",
+            "error": None,
+        },
+        {
+            "session_id": "session-1",
+            "user_id": "alice",
+            "assistant_message_id": "assistant-1",
+            "status": "finished",
+            "content": "hello",
+            "error": None,
+        },
+    ]
+    assert recorded["state_by_id"] == {
+        "assistant-1": {
+            "session_id": "session-1",
+            "user_id": "alice",
+            "assistant_message_id": "assistant-1",
+            "status": "finished",
+            "content": "hello",
+            "error": None,
+        }
+    }
+    assert "failure" not in recorded
+    assert chunks == [
+        'data: {"id":"assistant-1","content":"hel"}\n\n',
+        'data: {"id":"assistant-1","content":"hello"}\n\n',
+        'data: {"id":"assistant-1","type":"done"}\n\n',
+    ]
 
 
 @pytest.mark.asyncio
-async def test_message_stream_returns_500_and_unclaims_when_stream_ends_before_first_chunk(
+async def test_run_turn_and_publish_accumulates_true_delta_chunks_in_turn_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    app = create_app()
-    recorded: dict[str, Any] = {}
-
-    class StubSession:
-        def __init__(self, session_id: str, user_id: str, title: str) -> None:
-            self.id = session_id
-            self.user_id = user_id
-            self.title = title
-            self.created_at = "2026-04-11T00:00:00Z"
-            self.updated_at = "2026-04-11T00:00:00Z"
-            self.last_message_at = "2026-04-11T00:00:00Z"
-
-    class StubSessionService:
-        def __init__(self, session: object) -> None:
-            del session
-
-        async def get_session(self, user_id: str, session_id: str) -> StubSession | None:
-            if user_id != "alice" or session_id != "session-1":
-                return None
-            return StubSession(session_id, user_id, "Inbox")
-
-    class StubPendingTurn:
-        id = "turn-1"
-        message = "hello"
-
-    async def fake_claim_pending_turn(*, db: object, session_id: str, user_id: str) -> StubPendingTurn:
-        recorded["claim_db"] = db
-        recorded["claim_session_id"] = session_id
-        recorded["claim_user_id"] = user_id
-        pending_turn = StubPendingTurn()
-        recorded["claimed_turn"] = pending_turn
-        return pending_turn
+    chat_module = importlib.import_module("api.chat")
+    recorded: dict[str, Any] = {"upserts": [], "state_by_id": {}}
 
     class StubAgentFactory:
         def create(self, user_id: str, session_id: str) -> object:
-            recorded["create_user_id"] = user_id
-            recorded["create_session_id"] = session_id
+            recorded["factory_user_id"] = user_id
+            recorded["factory_session_id"] = session_id
             return object()
+
+    class StubState:
+        agent_factory = StubAgentFactory()
+
+    class StubApp:
+        state = StubState()
+
+    class StubRequest:
+        app = StubApp()
 
     async def fake_stream_chat_events(*, db: object, session_id: str, agent: object, user_input: str):
         recorded["stream_db"] = db
         recorded["stream_session_id"] = session_id
         recorded["stream_agent"] = agent
         recorded["stream_user_input"] = user_input
-        if False:
-            yield ""
+        yield 'data: {"id":"assistant-1","type":"delta","content":"Hel"}\n\n'
+        yield 'data: {"id":"assistant-1","type":"delta","content":"lo"}\n\n'
 
-    async def fake_consume_pending_turn(*, db: object, pending_turn: StubPendingTurn) -> None:
-        recorded["consumed_db"] = db
-        recorded["consumed_turn"] = pending_turn
-
-    async def fake_unclaim_pending_turn(*, db: object, pending_turn: StubPendingTurn) -> None:
-        recorded["unclaim_db"] = db
-        recorded["unclaimed_turn"] = pending_turn
-
-    app.state.agent_factory = StubAgentFactory()
-    monkeypatch.setattr("api.chat.SessionService", StubSessionService)
-    monkeypatch.setattr("api.chat._claim_pending_turn", fake_claim_pending_turn)
-    monkeypatch.setattr("api.chat._stream_chat_events", fake_stream_chat_events)
-    monkeypatch.setattr("api.chat._consume_pending_turn", fake_consume_pending_turn)
-    monkeypatch.setattr("api.chat._unclaim_pending_turn", fake_unclaim_pending_turn)
-
-    with TestClient(app, raise_server_exceptions=False) as client:
-        response = client.get(
-            "/api/v1/chat/sessions/session-1/stream",
-            headers={"X-Seraph-User": "alice"},
+    async def fake_upsert_turn_state_with_isolated_session(
+        *,
+        session_id: str,
+        user_id: str,
+        assistant_message_id: str,
+        status: str,
+        content: str,
+        error: str | None = None,
+    ) -> None:
+        recorded["state_by_id"][assistant_message_id] = {
+            "session_id": session_id,
+            "user_id": user_id,
+            "assistant_message_id": assistant_message_id,
+            "status": status,
+            "content": content,
+            "error": error,
+        }
+        recorded["upserts"].append(
+            {
+                "session_id": session_id,
+                "user_id": user_id,
+                "assistant_message_id": assistant_message_id,
+                "status": status,
+                "content": content,
+                "error": error,
+            }
         )
 
-    assert response.status_code == 500
-    assert response.json() == {"detail": "chat stream produced no events"}
-    assert recorded["claim_session_id"] == "session-1"
-    assert recorded["claim_user_id"] == "alice"
-    assert recorded["create_session_id"] == "session-1"
-    assert recorded["create_user_id"] == "alice"
+    async def fake_record_failure_with_isolated_session(*, session_id: str, assistant_message_id: str, error: str) -> None:
+        recorded.setdefault("failures", []).append(
+            {
+                "session_id": session_id,
+                "assistant_message_id": assistant_message_id,
+                "error": error,
+            }
+        )
+
+    monkeypatch.setattr(chat_module, "_stream_chat_events", fake_stream_chat_events)
+    monkeypatch.setattr(chat_module, "_upsert_turn_state_with_isolated_session", fake_upsert_turn_state_with_isolated_session)
+    monkeypatch.setattr(chat_module, "_record_failure_with_isolated_session", fake_record_failure_with_isolated_session)
+
+    queue: asyncio.Queue[str | None] = asyncio.Queue()
+    await chat_module._run_turn_and_publish(
+        session_id="session-1",
+        user_id="alice",
+        message="hello",
+        request=StubRequest(),
+        queue=queue,
+    )
+
+    chunks: list[str] = []
+    while True:
+        chunk = await queue.get()
+        if chunk is None:
+            break
+        chunks.append(chunk)
+
+    assert recorded["factory_user_id"] == "alice"
+    assert recorded["factory_session_id"] == "session-1"
+    assert recorded["stream_db"] is None
     assert recorded["stream_session_id"] == "session-1"
     assert recorded["stream_user_input"] == "hello"
-    assert recorded["unclaimed_turn"] is recorded["claimed_turn"]
-    assert "consumed_turn" not in recorded
+    assert recorded["upserts"] == [
+        {
+            "session_id": "session-1",
+            "user_id": "alice",
+            "assistant_message_id": "assistant-1",
+            "status": "running",
+            "content": "Hel",
+            "error": None,
+        },
+        {
+            "session_id": "session-1",
+            "user_id": "alice",
+            "assistant_message_id": "assistant-1",
+            "status": "running",
+            "content": "Hello",
+            "error": None,
+        },
+        {
+            "session_id": "session-1",
+            "user_id": "alice",
+            "assistant_message_id": "assistant-1",
+            "status": "finished",
+            "content": "Hello",
+            "error": None,
+        },
+    ]
+    assert recorded["state_by_id"] == {
+        "assistant-1": {
+            "session_id": "session-1",
+            "user_id": "alice",
+            "assistant_message_id": "assistant-1",
+            "status": "finished",
+            "content": "Hello",
+            "error": None,
+        }
+    }
+    assert "failures" not in recorded
+    assert chunks == [
+        'data: {"id":"assistant-1","type":"delta","content":"Hel"}\n\n',
+        'data: {"id":"assistant-1","type":"delta","content":"lo"}\n\n',
+        'data: {"id":"assistant-1","type":"done"}\n\n',
+    ]
 
 
 @pytest.mark.asyncio
-async def test_claim_pending_turn_returns_oldest_unclaimed_turn() -> None:
+async def test_run_turn_and_publish_updates_session_timestamps_when_turn_finishes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     chat_module = importlib.import_module("api.chat")
+    recorded: dict[str, Any] = {"touches": []}
 
-    class StubSessionLockResult:
-        def __init__(self, row: tuple[str] | None) -> None:
-            self._row = row
+    class StubAgentFactory:
+        def create(self, user_id: str, session_id: str) -> object:
+            del user_id, session_id
+            return object()
 
-        def first(self) -> tuple[str] | None:
-            return self._row
+    class StubState:
+        agent_factory = StubAgentFactory()
 
-    class StubSelectResult:
-        def __init__(self, row: tuple[str, str] | None) -> None:
-            self._row = row
+    class StubApp:
+        state = StubState()
 
-        def first(self) -> tuple[str, str] | None:
-            return self._row
-
-    class StubUpdateResult:
-        def __init__(self, row: tuple[str, str] | None) -> None:
-            self._row = row
-
-        def first(self) -> tuple[str, str] | None:
-            return self._row
-
-    class StubDb:
-        def __init__(self) -> None:
-            self.executed: list[object] = []
-            self.session_lock_rows = [("session-1",), ("session-1",)]
-            self.existing_claim_rows = [None, None]
-            self.select_rows = [("turn-1", "first"), None]
-            self.update_rows = [("turn-1", "first")]
-            self.commits = 0
-            self.rollbacks = 0
-
-        async def execute(self, statement: object) -> StubSessionLockResult | StubSelectResult | StubUpdateResult:
-            self.executed.append(statement)
-            statement_text = str(statement)
-            if "FROM chat_sessions" in statement_text:
-                return StubSessionLockResult(self.session_lock_rows.pop(0))
-            if "pending_chat_turns.claimed IS true" in statement_text:
-                return StubSelectResult(self.existing_claim_rows.pop(0))
-            if "SELECT pending_chat_turns.id" in statement_text:
-                return StubSelectResult(self.select_rows.pop(0))
-            return StubUpdateResult(self.update_rows.pop(0) if self.update_rows else None)
-
-        async def commit(self) -> None:
-            self.commits += 1
-
-        async def rollback(self) -> None:
-            self.rollbacks += 1
-
-    db = StubDb()
-    claimed = await chat_module._claim_pending_turn(db=db, session_id="session-1", user_id="alice")
-
-    assert claimed.id == "turn-1"
-    assert claimed.message == "first"
-    assert claimed.claimed_at is not None
-    assert db.commits == 1
-    assert db.rollbacks == 0
-    session_lock_statement = db.executed[0]
-    assert "FROM chat_sessions" in str(session_lock_statement)
-    assert getattr(session_lock_statement, "_for_update_arg").skip_locked is True
-    select_statement = db.executed[2]
-    assert getattr(select_statement, "_for_update_arg").skip_locked is True
-
-    with pytest.raises(Exception):
-        await chat_module._claim_pending_turn(db=db, session_id="session-1", user_id="alice")
-
-    assert db.rollbacks == 1
-
-
-@pytest.mark.asyncio
-async def test_claim_pending_turn_rejects_session_with_existing_claimed_turn() -> None:
-    chat_module = importlib.import_module("api.chat")
-
-    class StubSessionLockResult:
-        def __init__(self, row: tuple[str] | None) -> None:
-            self._row = row
-
-        def first(self) -> tuple[str] | None:
-            return self._row
-
-    class StubSelectResult:
-        def __init__(self, row: tuple[str, str] | None) -> None:
-            self._row = row
-
-        def first(self) -> tuple[str, str] | None:
-            return self._row
-
-    class StubUpdateResult:
-        def first(self) -> tuple[str, str] | None:
-            return None
-
-    class StubDb:
-        def __init__(self) -> None:
-            self.executed: list[object] = []
-            self.commits = 0
-            self.rollbacks = 0
-
-        async def execute(self, statement: object) -> StubSessionLockResult | StubSelectResult | StubUpdateResult:
-            self.executed.append(statement)
-            statement_text = str(statement).lower()
-            if "from chat_sessions" in statement_text:
-                return StubSessionLockResult(("session-1",))
-            if "pending_chat_turns.claimed is true" in statement_text:
-                return StubSelectResult(("turn-claimed", "claimed"))
-            if "select pending_chat_turns.id" in statement_text:
-                return StubSelectResult(("turn-2", "second"))
-            return StubUpdateResult()
-
-        async def commit(self) -> None:
-            self.commits += 1
-
-        async def rollback(self) -> None:
-            self.rollbacks += 1
-
-    db = StubDb()
-
-    with pytest.raises(Exception):
-        await chat_module._claim_pending_turn(db=db, session_id="session-1", user_id="alice")
-
-    assert db.commits == 0
-    assert len(db.executed) == 2
-    assert "from chat_sessions" in str(db.executed[0]).lower()
-    assert "pending_chat_turns.claimed is true" in str(db.executed[1]).lower()
-    assert db.rollbacks == 1
-
-
-@pytest.mark.asyncio
-async def test_stream_pending_turn_unclaims_when_stream_fails_before_first_chunk() -> None:
-    chat_module = importlib.import_module("api.chat")
-    recorded: dict[str, Any] = {"consume_calls": 0, "unclaim_calls": 0}
-
-    class StubPendingTurn:
-        id = "turn-1"
-        message = "hello"
+    class StubRequest:
+        app = StubApp()
 
     async def fake_stream_chat_events(*, db: object, session_id: str, agent: object, user_input: str):
-        recorded["stream_db"] = db
-        recorded["session_id"] = session_id
-        recorded["agent"] = agent
-        recorded["user_input"] = user_input
-        if False:
-            yield ""
-        raise RuntimeError("stream setup failed")
+        del db, session_id, agent, user_input
+        yield 'data: {"id":"assistant-1","content":"hello"}\n\n'
 
-    async def fake_consume_pending_turn(*, db: object, pending_turn: StubPendingTurn) -> None:
-        recorded["consume_calls"] = cast(int, recorded["consume_calls"]) + 1
-        recorded["consumed_db"] = db
-        recorded["consumed_turn"] = pending_turn
+    async def fake_upsert_turn_state_with_isolated_session(
+        *,
+        session_id: str,
+        user_id: str,
+        assistant_message_id: str,
+        status: str,
+        content: str,
+        error: str | None = None,
+    ) -> None:
+        del session_id, user_id, assistant_message_id, status, content, error
 
-    async def fake_unclaim_pending_turn(*, db: object, pending_turn: StubPendingTurn) -> None:
-        recorded["unclaim_calls"] = cast(int, recorded["unclaim_calls"]) + 1
-        recorded["unclaimed_db"] = db
-        recorded["unclaimed_turn"] = pending_turn
+    async def fake_record_failure_with_isolated_session(*, session_id: str, assistant_message_id: str, error: str) -> None:
+        del session_id, assistant_message_id, error
 
-    db = object()
-    pending_turn = StubPendingTurn()
-    monkeypatch = pytest.MonkeyPatch()
+    async def fake_touch_session_activity(*, session_id: str) -> None:
+        recorded["touches"].append(session_id)
+
     monkeypatch.setattr(chat_module, "_stream_chat_events", fake_stream_chat_events)
-    monkeypatch.setattr(chat_module, "_consume_pending_turn", fake_consume_pending_turn)
-    monkeypatch.setattr(chat_module, "_unclaim_pending_turn", fake_unclaim_pending_turn)
+    monkeypatch.setattr(chat_module, "_upsert_turn_state_with_isolated_session", fake_upsert_turn_state_with_isolated_session)
+    monkeypatch.setattr(chat_module, "_record_failure_with_isolated_session", fake_record_failure_with_isolated_session)
+    monkeypatch.setattr(chat_module, "_touch_session_activity", fake_touch_session_activity, raising=False)
 
-    try:
-        with pytest.raises(RuntimeError, match="stream setup failed"):
-            async for _chunk in chat_module._stream_pending_turn(
-                db=db,
-                session_id="session-1",
-                agent=object(),
-                pending_turn=pending_turn,
-            ):
-                pass
-    finally:
-        monkeypatch.undo()
+    queue: asyncio.Queue[str | None] = asyncio.Queue()
+    await chat_module._run_turn_and_publish(
+        session_id="session-1",
+        user_id="alice",
+        message="hello",
+        request=StubRequest(),
+        queue=queue,
+    )
 
-    assert recorded["user_input"] == "hello"
-    assert recorded["consume_calls"] == 0
-    assert recorded["unclaim_calls"] == 1
-    assert recorded["unclaimed_db"] is db
-    assert recorded["unclaimed_turn"] is pending_turn
+    assert recorded["touches"] == ["session-1"]
 
 
 @pytest.mark.asyncio
-async def test_stream_pending_turn_unclaims_when_cancelled_before_first_chunk() -> None:
+async def test_run_turn_and_publish_does_not_reinsert_completed_assistant_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     chat_module = importlib.import_module("api.chat")
-    recorded: dict[str, Any] = {"consume_calls": 0, "unclaim_calls": 0}
+    sqlalchemy_memory = importlib.import_module("agentscope.memory._working_memory._sqlalchemy_memory")
+    from agentscope.memory import AsyncSQLAlchemyMemory
+    from agentscope.message import Msg
+    from documents.models import Base, ChatSession
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-    class StubPendingTurn:
-        id = "turn-1"
-        message = "hello"
+    recorded: dict[str, Any] = {"upserts": [], "failures": []}
+
+    class StubAgentFactory:
+        def create(self, user_id: str, session_id: str) -> object:
+            recorded["factory_user_id"] = user_id
+            recorded["factory_session_id"] = session_id
+            return object()
+
+    class StubState:
+        agent_factory = StubAgentFactory()
+
+    class StubApp:
+        state = StubState()
+
+    class StubRequest:
+        app = StubApp()
 
     async def fake_stream_chat_events(*, db: object, session_id: str, agent: object, user_input: str):
         recorded["stream_db"] = db
-        recorded["session_id"] = session_id
-        recorded["agent"] = agent
-        recorded["user_input"] = user_input
-        if False:
-            yield ""
-        raise asyncio.CancelledError()
+        recorded["stream_session_id"] = session_id
+        recorded["stream_agent"] = agent
+        recorded["stream_user_input"] = user_input
+        yield 'data: {"id":"assistant-1","content":"hello"}\n\n'
 
-    async def fake_consume_pending_turn(*, db: object, pending_turn: StubPendingTurn) -> None:
-        recorded["consume_calls"] = cast(int, recorded["consume_calls"]) + 1
-        recorded["consumed_db"] = db
-        recorded["consumed_turn"] = pending_turn
+    async def fake_upsert_turn_state_with_isolated_session(
+        *,
+        session_id: str,
+        user_id: str,
+        assistant_message_id: str,
+        status: str,
+        content: str,
+        error: str | None = None,
+    ) -> None:
+        recorded["upserts"].append(
+            {
+                "session_id": session_id,
+                "user_id": user_id,
+                "assistant_message_id": assistant_message_id,
+                "status": status,
+                "content": content,
+                "error": error,
+            }
+        )
 
-    async def fake_unclaim_pending_turn(*, db: object, pending_turn: StubPendingTurn) -> None:
-        recorded["unclaim_calls"] = cast(int, recorded["unclaim_calls"]) + 1
-        recorded["unclaimed_db"] = db
-        recorded["unclaimed_turn"] = pending_turn
+    async def fake_record_failure_with_isolated_session(*, session_id: str, assistant_message_id: str, error: str) -> None:
+        recorded["failures"].append(
+            {
+                "session_id": session_id,
+                "assistant_message_id": assistant_message_id,
+                "error": error,
+            }
+        )
 
-    db = object()
-    pending_turn = StubPendingTurn()
-    monkeypatch = pytest.MonkeyPatch()
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(sqlalchemy_memory.Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as db_session:
+        db_session.add(ChatSession(id="session-1", user_id="alice", title="Inbox"))
+        memory = AsyncSQLAlchemyMemory(db_session, session_id="session-1", user_id="alice")
+        persisted_message = Msg("seraph-documents", "hello", "assistant")
+        persisted_message.id = "assistant-1"
+        await memory.add(persisted_message, skip_duplicated=False)
+        await db_session.commit()
+
     monkeypatch.setattr(chat_module, "_stream_chat_events", fake_stream_chat_events)
-    monkeypatch.setattr(chat_module, "_consume_pending_turn", fake_consume_pending_turn)
-    monkeypatch.setattr(chat_module, "_unclaim_pending_turn", fake_unclaim_pending_turn)
+    monkeypatch.setattr(chat_module, "_upsert_turn_state_with_isolated_session", fake_upsert_turn_state_with_isolated_session)
+    monkeypatch.setattr(chat_module, "_record_failure_with_isolated_session", fake_record_failure_with_isolated_session)
+    monkeypatch.setattr(chat_module, "SessionLocal", session_factory)
 
-    try:
-        with pytest.raises(asyncio.CancelledError):
-            async for _chunk in chat_module._stream_pending_turn(
-                db=db,
-                session_id="session-1",
-                agent=object(),
-                pending_turn=pending_turn,
-            ):
-                pass
-    finally:
-        monkeypatch.undo()
+    queue: asyncio.Queue[str | None] = asyncio.Queue()
+    await chat_module._run_turn_and_publish(
+        session_id="session-1",
+        user_id="alice",
+        message="hello",
+        request=StubRequest(),
+        queue=queue,
+    )
 
-    assert recorded["user_input"] == "hello"
-    assert recorded["consume_calls"] == 0
-    assert recorded["unclaim_calls"] == 1
-    assert recorded["unclaimed_db"] is db
-    assert recorded["unclaimed_turn"] is pending_turn
+    chunks: list[str] = []
+    while True:
+        chunk = await queue.get()
+        if chunk is None:
+            break
+        chunks.append(chunk)
+
+    assert recorded["factory_user_id"] == "alice"
+    assert recorded["factory_session_id"] == "session-1"
+    assert recorded["stream_db"] is None
+    assert recorded["stream_session_id"] == "session-1"
+    assert recorded["stream_user_input"] == "hello"
+    assert recorded["upserts"] == [
+        {
+            "session_id": "session-1",
+            "user_id": "alice",
+            "assistant_message_id": "assistant-1",
+            "status": "running",
+            "content": "hello",
+            "error": None,
+        },
+        {
+            "session_id": "session-1",
+            "user_id": "alice",
+            "assistant_message_id": "assistant-1",
+            "status": "finished",
+            "content": "hello",
+            "error": None,
+        },
+    ]
+    assert recorded["failures"] == []
+    assert chunks == [
+        'data: {"id":"assistant-1","content":"hello"}\n\n',
+        'data: {"id":"assistant-1","type":"done"}\n\n',
+    ]
+
+    await engine.dispose()
 
 
 @pytest.mark.asyncio
-async def test_stream_pending_turn_consumes_when_closed_at_first_yield_boundary() -> None:
+async def test_run_turn_and_publish_waits_for_real_assistant_id_before_persisting_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     chat_module = importlib.import_module("api.chat")
-    recorded: dict[str, Any] = {"consume_calls": 0, "unclaim_calls": 0}
+    recorded: dict[str, Any] = {"upserts": [], "state_by_id": {}}
 
-    class StubPendingTurn:
-        id = "turn-1"
-        session_id = "session-1"
-        user_id = "alice"
-        message = "hello"
+    class StubAgentFactory:
+        def create(self, user_id: str, session_id: str) -> object:
+            recorded["factory_user_id"] = user_id
+            recorded["factory_session_id"] = session_id
+            return object()
+
+    class StubState:
+        agent_factory = StubAgentFactory()
+
+    class StubApp:
+        state = StubState()
+
+    class StubRequest:
+        app = StubApp()
 
     async def fake_stream_chat_events(*, db: object, session_id: str, agent: object, user_input: str):
         recorded["stream_db"] = db
-        recorded["session_id"] = session_id
-        recorded["agent"] = agent
-        recorded["user_input"] = user_input
-        yield 'data: {"content": "hello"}\n\n'
+        recorded["stream_session_id"] = session_id
+        recorded["stream_agent"] = agent
+        recorded["stream_user_input"] = user_input
+        yield 'data: {"content":"hel"}\n\n'
+        yield 'data: {"id":"assistant-1","content":"hello"}\n\n'
 
-    async def fake_consume_pending_turn(*, db: object, pending_turn: StubPendingTurn) -> None:
-        recorded["consume_calls"] = cast(int, recorded["consume_calls"]) + 1
-        recorded["consumed_db"] = db
-        recorded["consumed_turn"] = pending_turn
+    async def fake_upsert_turn_state_with_isolated_session(
+        *,
+        session_id: str,
+        user_id: str,
+        assistant_message_id: str,
+        status: str,
+        content: str,
+        error: str | None = None,
+    ) -> None:
+        recorded["state_by_id"][assistant_message_id] = {
+            "session_id": session_id,
+            "user_id": user_id,
+            "assistant_message_id": assistant_message_id,
+            "status": status,
+            "content": content,
+            "error": error,
+        }
+        recorded["upserts"].append(
+            {
+                "session_id": session_id,
+                "user_id": user_id,
+                "assistant_message_id": assistant_message_id,
+                "status": status,
+                "content": content,
+                "error": error,
+            }
+        )
 
-    async def fake_unclaim_pending_turn(*, db: object, pending_turn: StubPendingTurn) -> None:
-        recorded["unclaim_calls"] = cast(int, recorded["unclaim_calls"]) + 1
-        recorded["unclaimed_db"] = db
-        recorded["unclaimed_turn"] = pending_turn
+    async def fake_record_failure_with_isolated_session(*, session_id: str, assistant_message_id: str, error: str) -> None:
+        recorded.setdefault("failures", []).append(
+            {
+                "session_id": session_id,
+                "assistant_message_id": assistant_message_id,
+                "error": error,
+            }
+        )
 
-    db = object()
-    pending_turn = StubPendingTurn()
-    stream = chat_module._stream_pending_turn(db=db, session_id="session-1", agent=object(), pending_turn=pending_turn)
-    monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setattr(chat_module, "_stream_chat_events", fake_stream_chat_events)
-    monkeypatch.setattr(chat_module, "_consume_pending_turn", fake_consume_pending_turn)
-    monkeypatch.setattr(chat_module, "_unclaim_pending_turn", fake_unclaim_pending_turn)
+    monkeypatch.setattr(chat_module, "_upsert_turn_state_with_isolated_session", fake_upsert_turn_state_with_isolated_session)
+    monkeypatch.setattr(chat_module, "_record_failure_with_isolated_session", fake_record_failure_with_isolated_session)
 
-    try:
-        first_chunk = await stream.__anext__()
-        assert first_chunk == 'data: {"content": "hello"}\n\n'
-        await stream.aclose()
-    finally:
-        monkeypatch.undo()
+    queue: asyncio.Queue[str | None] = asyncio.Queue()
+    await chat_module._run_turn_and_publish(
+        session_id="session-1",
+        user_id="alice",
+        message="hello",
+        request=StubRequest(),
+        queue=queue,
+    )
 
-    assert recorded["user_input"] == "hello"
-    assert recorded["consume_calls"] == 1
-    assert recorded["consumed_db"] is db
-    assert recorded["consumed_turn"] is pending_turn
-    assert recorded["unclaim_calls"] == 0
+    chunks: list[str] = []
+    while True:
+        chunk = await queue.get()
+        if chunk is None:
+            break
+        chunks.append(chunk)
+
+    assert recorded["factory_user_id"] == "alice"
+    assert recorded["factory_session_id"] == "session-1"
+    assert recorded["stream_db"] is None
+    assert recorded["stream_session_id"] == "session-1"
+    assert recorded["stream_user_input"] == "hello"
+    assert recorded["upserts"] == [
+        {
+            "session_id": "session-1",
+            "user_id": "alice",
+            "assistant_message_id": "assistant-1",
+            "status": "running",
+            "content": "hello",
+            "error": None,
+        },
+        {
+            "session_id": "session-1",
+            "user_id": "alice",
+            "assistant_message_id": "assistant-1",
+            "status": "finished",
+            "content": "hello",
+            "error": None,
+        },
+    ]
+    assert recorded["state_by_id"] == {
+        "assistant-1": {
+            "session_id": "session-1",
+            "user_id": "alice",
+            "assistant_message_id": "assistant-1",
+            "status": "finished",
+            "content": "hello",
+            "error": None,
+        }
+    }
+    assert "failures" not in recorded
+    assert chunks == [
+        'data: {"content":"hel"}\n\n',
+        'data: {"id":"assistant-1","content":"hello"}\n\n',
+        'data: {"id":"assistant-1","type":"done"}\n\n',
+    ]
 
 
 @pytest.mark.asyncio
-async def test_stream_pending_turn_consumes_after_stream_starts_then_fails() -> None:
+async def test_run_turn_and_publish_tracks_failed_turn_state(monkeypatch: pytest.MonkeyPatch) -> None:
     chat_module = importlib.import_module("api.chat")
-    recorded: dict[str, Any] = {"consume_calls": 0, "unclaim_calls": 0}
+    recorded: dict[str, Any] = {"upserts": [], "state_by_id": {}}
 
-    class StubPendingTurn:
-        id = "turn-1"
-        message = "hello"
+    class StubAgentFactory:
+        def create(self, user_id: str, session_id: str) -> object:
+            recorded["factory_user_id"] = user_id
+            recorded["factory_session_id"] = session_id
+            return object()
+
+    class StubState:
+        agent_factory = StubAgentFactory()
+
+    class StubApp:
+        state = StubState()
+
+    class StubRequest:
+        app = StubApp()
 
     async def fake_stream_chat_events(*, db: object, session_id: str, agent: object, user_input: str):
-        recorded["stream_db"] = db
-        recorded["session_id"] = session_id
-        recorded["agent"] = agent
-        recorded["user_input"] = user_input
-        yield 'data: {"content": "hello"}\n\n'
+        del db, session_id, agent, user_input
+        yield 'data: {"id":"assistant-1","content":"partial"}\n\n'
         raise RuntimeError("stream failed")
 
-    async def fake_consume_pending_turn(*, db: object, pending_turn: StubPendingTurn) -> None:
-        recorded["consume_calls"] = cast(int, recorded["consume_calls"]) + 1
-        recorded["consumed_db"] = db
-        recorded["consumed_turn"] = pending_turn
+    async def fake_upsert_turn_state_with_isolated_session(
+        *,
+        session_id: str,
+        user_id: str,
+        assistant_message_id: str,
+        status: str,
+        content: str,
+        error: str | None = None,
+    ) -> None:
+        recorded["state_by_id"][assistant_message_id] = {
+            "session_id": session_id,
+            "user_id": user_id,
+            "assistant_message_id": assistant_message_id,
+            "status": status,
+            "content": content,
+            "error": error,
+        }
+        recorded["upserts"].append(
+            {
+                "session_id": session_id,
+                "user_id": user_id,
+                "assistant_message_id": assistant_message_id,
+                "status": status,
+                "content": content,
+                "error": error,
+            }
+        )
 
-    async def fake_unclaim_pending_turn(*, db: object, pending_turn: StubPendingTurn) -> None:
-        recorded["unclaim_calls"] = cast(int, recorded["unclaim_calls"]) + 1
-        recorded["unclaimed_db"] = db
-        recorded["unclaimed_turn"] = pending_turn
+    async def fake_record_failure_with_isolated_session(*, session_id: str, assistant_message_id: str, error: str) -> None:
+        recorded["failure"] = {
+            "session_id": session_id,
+            "assistant_message_id": assistant_message_id,
+            "error": error,
+        }
 
-    db = object()
-    pending_turn = StubPendingTurn()
-    monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setattr(chat_module, "_stream_chat_events", fake_stream_chat_events)
-    monkeypatch.setattr(chat_module, "_consume_pending_turn", fake_consume_pending_turn)
-    monkeypatch.setattr(chat_module, "_unclaim_pending_turn", fake_unclaim_pending_turn)
+    monkeypatch.setattr(chat_module, "_upsert_turn_state_with_isolated_session", fake_upsert_turn_state_with_isolated_session)
+    monkeypatch.setattr(chat_module, "_record_failure_with_isolated_session", fake_record_failure_with_isolated_session)
 
-    try:
-        chunks: list[str] = []
-        with pytest.raises(RuntimeError, match="stream failed"):
-            async for chunk in chat_module._stream_pending_turn(
-                db=db,
-                session_id="session-1",
-                agent=object(),
-                pending_turn=pending_turn,
-            ):
-                chunks.append(chunk)
-    finally:
-        monkeypatch.undo()
+    queue: asyncio.Queue[str | None] = asyncio.Queue()
+    await chat_module._run_turn_and_publish(
+        session_id="session-1",
+        user_id="alice",
+        message="hello",
+        request=StubRequest(),
+        queue=queue,
+    )
 
-    assert chunks == ['data: {"content": "hello"}\n\n']
-    assert recorded["consume_calls"] == 1
-    assert recorded["consumed_db"] is db
-    assert recorded["consumed_turn"] is pending_turn
-    assert recorded["unclaim_calls"] == 0
+    chunks: list[str] = []
+    while True:
+        chunk = await queue.get()
+        if chunk is None:
+            break
+        chunks.append(chunk)
 
-
-@pytest.mark.asyncio
-async def test_stream_pending_turn_consumes_when_cancelled_after_stream_starts() -> None:
-    chat_module = importlib.import_module("api.chat")
-    recorded: dict[str, Any] = {"consume_calls": 0, "unclaim_calls": 0}
-
-    class StubPendingTurn:
-        id = "turn-1"
-        message = "hello"
-
-    async def fake_stream_chat_events(*, db: object, session_id: str, agent: object, user_input: str):
-        recorded["stream_db"] = db
-        recorded["session_id"] = session_id
-        recorded["agent"] = agent
-        recorded["user_input"] = user_input
-        yield 'data: {"content": "hello"}\n\n'
-        raise asyncio.CancelledError()
-
-    async def fake_consume_pending_turn(*, db: object, pending_turn: StubPendingTurn) -> None:
-        recorded["consume_calls"] = cast(int, recorded["consume_calls"]) + 1
-        recorded["consumed_db"] = db
-        recorded["consumed_turn"] = pending_turn
-
-    async def fake_unclaim_pending_turn(*, db: object, pending_turn: StubPendingTurn) -> None:
-        recorded["unclaim_calls"] = cast(int, recorded["unclaim_calls"]) + 1
-        recorded["unclaimed_db"] = db
-        recorded["unclaimed_turn"] = pending_turn
-
-    db = object()
-    pending_turn = StubPendingTurn()
-    monkeypatch = pytest.MonkeyPatch()
-    monkeypatch.setattr(chat_module, "_stream_chat_events", fake_stream_chat_events)
-    monkeypatch.setattr(chat_module, "_consume_pending_turn", fake_consume_pending_turn)
-    monkeypatch.setattr(chat_module, "_unclaim_pending_turn", fake_unclaim_pending_turn)
-
-    try:
-        chunks: list[str] = []
-        with pytest.raises(asyncio.CancelledError):
-            async for chunk in chat_module._stream_pending_turn(
-                db=db,
-                session_id="session-1",
-                agent=object(),
-                pending_turn=pending_turn,
-            ):
-                chunks.append(chunk)
-    finally:
-        monkeypatch.undo()
-
-    assert chunks == ['data: {"content": "hello"}\n\n']
-    assert recorded["consume_calls"] == 1
-    assert recorded["consumed_db"] is db
-    assert recorded["consumed_turn"] is pending_turn
-    assert recorded["unclaim_calls"] == 0
+    assert recorded["factory_user_id"] == "alice"
+    assert recorded["factory_session_id"] == "session-1"
+    assert recorded["upserts"] == [
+        {
+            "session_id": "session-1",
+            "user_id": "alice",
+            "assistant_message_id": "assistant-1",
+            "status": "running",
+            "content": "partial",
+            "error": None,
+        },
+        {
+            "session_id": "session-1",
+            "user_id": "alice",
+            "assistant_message_id": "assistant-1",
+            "status": "failed",
+            "content": "partial",
+            "error": "stream failed",
+        },
+    ]
+    assert recorded["state_by_id"] == {
+        "assistant-1": {
+            "session_id": "session-1",
+            "user_id": "alice",
+            "assistant_message_id": "assistant-1",
+            "status": "failed",
+            "content": "partial",
+            "error": "stream failed",
+        }
+    }
+    assert recorded["failure"] == {
+        "session_id": "session-1",
+        "assistant_message_id": "assistant-1",
+        "error": "stream failed",
+    }
+    assert chunks == [
+        'data: {"id":"assistant-1","content":"partial"}\n\n',
+        'data: {"id":"assistant-1","type":"error","content":"stream failed"}\n\n',
+    ]
 
 
 @pytest.mark.asyncio
-async def test_claim_pending_turn_rolls_back_when_commit_fails() -> None:
+async def test_run_turn_and_publish_marks_missing_credentials_setup_failure_as_failed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     chat_module = importlib.import_module("api.chat")
+    recorded: dict[str, Any] = {"upserts": [], "state_by_id": {}, "failures": []}
 
-    class StubResult:
-        def __init__(self, row: tuple[str] | tuple[str, str] | None) -> None:
-            self._row = row
+    class AuthenticationError(Exception):
+        pass
 
-        def first(self) -> tuple[str] | tuple[str, str] | None:
-            return self._row
+    class StubAgentFactory:
+        def create(self, user_id: str, session_id: str) -> object:
+            recorded["factory_user_id"] = user_id
+            recorded["factory_session_id"] = session_id
 
-    class StubDb:
-        def __init__(self) -> None:
-            self.rollbacks = 0
-            self.execute_calls = 0
+            class StubKnowledge:
+                async def retrieve(self, query: str, limit: int = 5):
+                    recorded["knowledge_query"] = query
+                    recorded["knowledge_limit"] = limit
+                    raise AuthenticationError("You didn't provide an API key")
 
-        async def execute(self, statement: object) -> StubResult:
-            del statement
-            self.execute_calls += 1
-            if self.execute_calls == 1:
-                return StubResult(("session-1",))
-            if self.execute_calls == 2:
-                return StubResult(None)
-            return StubResult(("turn-1", "first"))
+            class StubAgent:
+                def __init__(self) -> None:
+                    self.knowledge = [StubKnowledge()]
 
-        async def commit(self) -> None:
-            raise RuntimeError("commit failed")
+            return StubAgent()
 
-        async def rollback(self) -> None:
-            self.rollbacks += 1
+    class StubState:
+        agent_factory = StubAgentFactory()
 
-    db = StubDb()
+    class StubApp:
+        state = StubState()
 
-    with pytest.raises(RuntimeError, match="commit failed"):
-        await chat_module._claim_pending_turn(db=db, session_id="session-1", user_id="alice")
+    class StubRequest:
+        app = StubApp()
 
-    assert db.rollbacks == 1
+    async def fake_upsert_turn_state_with_isolated_session(
+        *,
+        session_id: str,
+        user_id: str,
+        assistant_message_id: str,
+        status: str,
+        content: str,
+        error: str | None = None,
+    ) -> None:
+        recorded["state_by_id"][assistant_message_id] = {
+            "session_id": session_id,
+            "user_id": user_id,
+            "assistant_message_id": assistant_message_id,
+            "status": status,
+            "content": content,
+            "error": error,
+        }
+        recorded["upserts"].append(
+            {
+                "session_id": session_id,
+                "user_id": user_id,
+                "assistant_message_id": assistant_message_id,
+                "status": status,
+                "content": content,
+                "error": error,
+            }
+        )
+
+    async def fake_record_failure_with_isolated_session(*, session_id: str, assistant_message_id: str, error: str) -> None:
+        recorded["last_failure_assistant_message_id"] = assistant_message_id
+        recorded["failures"].append(
+            {
+                "session_id": session_id,
+                "assistant_message_id": assistant_message_id,
+                "error": error,
+            }
+        )
+
+    monkeypatch.setattr(chat_module, "_upsert_turn_state_with_isolated_session", fake_upsert_turn_state_with_isolated_session)
+    monkeypatch.setattr(chat_module, "_record_failure_with_isolated_session", fake_record_failure_with_isolated_session)
+
+    queue: asyncio.Queue[str | None] = asyncio.Queue()
+    await chat_module._run_turn_and_publish(
+        session_id="session-1",
+        user_id="alice",
+        message="hello",
+        request=StubRequest(),
+        queue=queue,
+    )
+
+    chunks: list[str] = []
+    while True:
+        chunk = await queue.get()
+        if chunk is None:
+            break
+        chunks.append(chunk)
+
+    assert recorded["factory_user_id"] == "alice"
+    assert recorded["factory_session_id"] == "session-1"
+    assert recorded["knowledge_query"] == "hello"
+    assert recorded["knowledge_limit"] == 5
+    assert recorded["upserts"] == [
+        {
+            "session_id": "session-1",
+            "user_id": "alice",
+            "assistant_message_id": recorded["last_failure_assistant_message_id"],
+            "status": "running",
+            "content": "Chat streaming is unavailable until OPENAI_API_KEY is configured for agents-api.",
+            "error": None,
+        },
+        {
+            "session_id": "session-1",
+            "user_id": "alice",
+            "assistant_message_id": recorded["last_failure_assistant_message_id"],
+            "status": "failed",
+            "content": "Chat streaming is unavailable until OPENAI_API_KEY is configured for agents-api.",
+            "error": "Chat streaming is unavailable until OPENAI_API_KEY is configured for agents-api.",
+        },
+    ]
+    assert recorded["state_by_id"] == {
+        recorded["last_failure_assistant_message_id"]: {
+            "session_id": "session-1",
+            "user_id": "alice",
+            "assistant_message_id": recorded["last_failure_assistant_message_id"],
+            "status": "failed",
+            "content": "Chat streaming is unavailable until OPENAI_API_KEY is configured for agents-api.",
+            "error": "Chat streaming is unavailable until OPENAI_API_KEY is configured for agents-api.",
+        }
+    }
+    assert recorded["failures"] == [
+        {
+            "session_id": "session-1",
+            "assistant_message_id": recorded["last_failure_assistant_message_id"],
+            "error": recorded["failures"][0]["error"],
+        }
+    ]
+    assert "api key" in recorded["failures"][0]["error"].lower()
+    assert len(chunks) == 1
+    assert '"type":"error"' in chunks[0]
+    assert "OPENAI_API_KEY" in chunks[0]
+    assert '"type":"done"' not in chunks[0]
 
 
 @pytest.mark.asyncio
-async def test_claim_pending_turn_rolls_back_when_commit_is_cancelled() -> None:
+async def test_run_turn_and_publish_records_non_credential_stream_failure_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     chat_module = importlib.import_module("api.chat")
+    recorded: dict[str, Any] = {"upserts": [], "failures": []}
 
-    class StubResult:
-        def __init__(self, row: tuple[str] | tuple[str, str] | None) -> None:
-            self._row = row
+    class StubAgentFactory:
+        def create(self, user_id: str, session_id: str) -> object:
+            recorded["factory_user_id"] = user_id
+            recorded["factory_session_id"] = session_id
+            return object()
 
-        def first(self) -> tuple[str] | tuple[str, str] | None:
-            return self._row
+    class StubState:
+        agent_factory = StubAgentFactory()
 
-    class StubDb:
-        def __init__(self) -> None:
-            self.rollbacks = 0
-            self.execute_calls = 0
+    class StubApp:
+        state = StubState()
 
-        async def execute(self, statement: object) -> StubResult:
-            del statement
-            self.execute_calls += 1
-            if self.execute_calls == 1:
-                return StubResult(("session-1",))
-            if self.execute_calls == 2:
-                return StubResult(None)
-            return StubResult(("turn-1", "first"))
+    class StubRequest:
+        app = StubApp()
 
-        async def commit(self) -> None:
-            raise asyncio.CancelledError()
+    async def fake_stream_agent_reply(*, agent: object, user_input: str):
+        del agent, user_input
+        yield 'data: {"id":"assistant-1","content":"partial"}\n\n'
+        raise RuntimeError("stream failed")
 
-        async def rollback(self) -> None:
-            self.rollbacks += 1
+    async def fake_upsert_turn_state_with_isolated_session(
+        *,
+        session_id: str,
+        user_id: str,
+        assistant_message_id: str,
+        status: str,
+        content: str,
+        error: str | None = None,
+    ) -> None:
+        recorded["upserts"].append(
+            {
+                "session_id": session_id,
+                "user_id": user_id,
+                "assistant_message_id": assistant_message_id,
+                "status": status,
+                "content": content,
+                "error": error,
+            }
+        )
 
-    db = StubDb()
+    async def fake_record_failure_with_isolated_session(*, session_id: str, assistant_message_id: str, error: str) -> None:
+        recorded["failures"].append(
+            {
+                "session_id": session_id,
+                "assistant_message_id": assistant_message_id,
+                "error": error,
+            }
+        )
 
-    with pytest.raises(asyncio.CancelledError):
-        await chat_module._claim_pending_turn(db=db, session_id="session-1", user_id="alice")
+    monkeypatch.setattr(chat_module, "stream_agent_reply", fake_stream_agent_reply)
+    monkeypatch.setattr(chat_module, "_upsert_turn_state_with_isolated_session", fake_upsert_turn_state_with_isolated_session)
+    monkeypatch.setattr(chat_module, "_record_failure_with_isolated_session", fake_record_failure_with_isolated_session)
 
-    assert db.rollbacks == 1
+    queue: asyncio.Queue[str | None] = asyncio.Queue()
+    await chat_module._run_turn_and_publish(
+        session_id="session-1",
+        user_id="alice",
+        message="hello",
+        request=StubRequest(),
+        queue=queue,
+    )
+
+    chunks: list[str] = []
+    while True:
+        chunk = await queue.get()
+        if chunk is None:
+            break
+        chunks.append(chunk)
+
+    assert recorded["factory_user_id"] == "alice"
+    assert recorded["factory_session_id"] == "session-1"
+    assert recorded["upserts"] == [
+        {
+            "session_id": "session-1",
+            "user_id": "alice",
+            "assistant_message_id": "assistant-1",
+            "status": "running",
+            "content": "partial",
+            "error": None,
+        },
+        {
+            "session_id": "session-1",
+            "user_id": "alice",
+            "assistant_message_id": "assistant-1",
+            "status": "failed",
+            "content": "partial",
+            "error": "stream failed",
+        },
+    ]
+    assert recorded["failures"] == [
+        {
+            "session_id": "session-1",
+            "assistant_message_id": "assistant-1",
+            "error": "stream failed",
+        }
+    ]
+    assert len(chunks) == 2
+    assert '"id": "assistant-1"' in chunks[0]
+    assert '"content": "partial"' in chunks[0]
+    assert '"type":"error"' in chunks[1]
+    assert '"content":"stream failed"' in chunks[1]
 
 
 @pytest.mark.asyncio
-async def test_consume_pending_turn_rolls_back_when_commit_fails() -> None:
+async def test_run_turn_and_publish_finishes_queue_when_agent_creation_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     chat_module = importlib.import_module("api.chat")
-
-    class StubPendingTurn:
-        id = "turn-1"
-        session_id = "session-1"
-        user_id = "alice"
-
-    class StubResult:
-        def first(self) -> tuple[str] | None:
-            return ("session-1",)
-
-    class StubDb:
-        def __init__(self) -> None:
-            self.rollbacks = 0
-            self.executed: list[object] = []
-
-        async def execute(self, statement: object) -> StubResult:
-            self.executed.append(statement)
-            return StubResult()
-
-        async def commit(self) -> None:
-            raise RuntimeError("commit failed")
-
-        async def rollback(self) -> None:
-            self.rollbacks += 1
-
-    db = StubDb()
-
-    with pytest.raises(RuntimeError, match="commit failed"):
-        await chat_module._consume_pending_turn(db=db, pending_turn=StubPendingTurn())
-
-    assert db.executed
-    assert db.rollbacks == 1
-
-
-@pytest.mark.asyncio
-async def test_unclaim_pending_turn_rolls_back_when_commit_fails() -> None:
-    chat_module = importlib.import_module("api.chat")
-
-    class StubPendingTurn:
-        id = "turn-1"
-        session_id = "session-1"
-        user_id = "alice"
-
-    class StubResult:
-        def first(self) -> tuple[str] | None:
-            return ("session-1",)
-
-    class StubDb:
-        def __init__(self) -> None:
-            self.rollbacks = 0
-            self.executed: list[object] = []
-
-        async def execute(self, statement: object) -> StubResult:
-            self.executed.append(statement)
-            return StubResult()
-
-        async def commit(self) -> None:
-            raise RuntimeError("commit failed")
-
-        async def rollback(self) -> None:
-            self.rollbacks += 1
-
-    db = StubDb()
-
-    with pytest.raises(RuntimeError, match="commit failed"):
-        await chat_module._unclaim_pending_turn(db=db, pending_turn=StubPendingTurn())
-
-    assert db.executed
-    assert db.rollbacks == 1
-
-
-@pytest.mark.asyncio
-async def test_consume_pending_turn_rolls_back_when_commit_is_cancelled() -> None:
-    chat_module = importlib.import_module("api.chat")
-
-    class StubPendingTurn:
-        id = "turn-1"
-        session_id = "session-1"
-        user_id = "alice"
-
-    class StubResult:
-        def first(self) -> tuple[str] | None:
-            return ("session-1",)
-
-    class StubDb:
-        def __init__(self) -> None:
-            self.rollbacks = 0
-            self.executed: list[object] = []
-
-        async def execute(self, statement: object) -> StubResult:
-            self.executed.append(statement)
-            return StubResult()
-
-        async def commit(self) -> None:
-            raise asyncio.CancelledError()
-
-        async def rollback(self) -> None:
-            self.rollbacks += 1
-
-    db = StubDb()
-
-    with pytest.raises(asyncio.CancelledError):
-        await chat_module._consume_pending_turn(db=db, pending_turn=StubPendingTurn())
-
-    assert db.executed
-    assert db.rollbacks == 1
-
-
-@pytest.mark.asyncio
-async def test_unclaim_pending_turn_rolls_back_when_commit_is_cancelled() -> None:
-    chat_module = importlib.import_module("api.chat")
-
-    class StubPendingTurn:
-        id = "turn-1"
-        session_id = "session-1"
-        user_id = "alice"
-
-    class StubResult:
-        def first(self) -> tuple[str] | None:
-            return ("session-1",)
-
-    class StubDb:
-        def __init__(self) -> None:
-            self.rollbacks = 0
-            self.executed: list[object] = []
-
-        async def execute(self, statement: object) -> StubResult:
-            self.executed.append(statement)
-            return StubResult()
-
-        async def commit(self) -> None:
-            raise asyncio.CancelledError()
-
-        async def rollback(self) -> None:
-            self.rollbacks += 1
-
-    db = StubDb()
-
-    with pytest.raises(asyncio.CancelledError):
-        await chat_module._unclaim_pending_turn(db=db, pending_turn=StubPendingTurn())
-
-    assert db.executed
-    assert db.rollbacks == 1
-
-
-@pytest.mark.asyncio
-async def test_consume_pending_turn_locks_session_before_delete() -> None:
-    chat_module = importlib.import_module("api.chat")
-
-    class StubPendingTurn:
-        id = "turn-1"
-        session_id = "session-1"
-        user_id = "alice"
-
-    class StubResult:
-        def first(self) -> tuple[str] | None:
-            return ("session-1",)
-
-    class StubDb:
-        def __init__(self) -> None:
-            self.executed: list[object] = []
-            self.commits = 0
-
-        async def execute(self, statement: object) -> StubResult:
-            self.executed.append(statement)
-            return StubResult()
-
-        async def commit(self) -> None:
-            self.commits += 1
-
-        async def rollback(self) -> None:
-            raise AssertionError("rollback should not be called")
-
-    db = StubDb()
-
-    await chat_module._consume_pending_turn(db=db, pending_turn=StubPendingTurn())
-
-    assert db.commits == 1
-    assert len(db.executed) == 2
-    session_lock_statement = db.executed[0]
-    delete_statement = db.executed[1]
-    assert "FROM chat_sessions" in str(session_lock_statement)
-    assert getattr(session_lock_statement, "_for_update_arg") is not None
-    assert getattr(session_lock_statement, "_for_update_arg").skip_locked is False
-    assert "DELETE FROM pending_chat_turns" in str(delete_statement)
-
-
-@pytest.mark.asyncio
-async def test_unclaim_pending_turn_locks_session_before_update() -> None:
-    chat_module = importlib.import_module("api.chat")
-
-    class StubPendingTurn:
-        id = "turn-1"
-        session_id = "session-1"
-        user_id = "alice"
-
-    class StubResult:
-        def first(self) -> tuple[str] | None:
-            return ("session-1",)
-
-    class StubDb:
-        def __init__(self) -> None:
-            self.executed: list[object] = []
-            self.commits = 0
-
-        async def execute(self, statement: object) -> StubResult:
-            self.executed.append(statement)
-            return StubResult()
-
-        async def commit(self) -> None:
-            self.commits += 1
-
-        async def rollback(self) -> None:
-            raise AssertionError("rollback should not be called")
-
-    db = StubDb()
-
-    await chat_module._unclaim_pending_turn(db=db, pending_turn=StubPendingTurn())
-
-    assert db.commits == 1
-    assert len(db.executed) == 2
-    session_lock_statement = db.executed[0]
-    update_statement = db.executed[1]
-    assert "FROM chat_sessions" in str(session_lock_statement)
-    assert getattr(session_lock_statement, "_for_update_arg") is not None
-    assert getattr(session_lock_statement, "_for_update_arg").skip_locked is False
-    assert "UPDATE pending_chat_turns" in str(update_statement)
-
-
-@pytest.mark.asyncio
-async def test_stream_pending_turn_cleans_up_by_id_after_stream() -> None:
-    chat_module = importlib.import_module("api.chat")
-    recorded: dict[str, Any] = {}
-
-    class StubPendingTurn:
-        id = "turn-1"
-        session_id = "session-1"
-        user_id = "alice"
-        message = "hello"
-
-    class StubResult:
-        def first(self) -> tuple[str] | None:
-            return ("session-1",)
-
-    class StubDb:
-        async def execute(self, statement: object) -> StubResult:
-            recorded["statement"] = statement
-            return StubResult()
-
-        async def commit(self) -> None:
-            recorded["committed"] = True
-
-        async def rollback(self) -> None:
-            recorded["rolled_back"] = True
-
-    async def fake_stream_chat_events(*, db: object, session_id: str, agent: object, user_input: str):
-        recorded["stream_db"] = db
-        recorded["session_id"] = session_id
-        recorded["agent"] = agent
-        recorded["user_input"] = user_input
-        yield 'data: {"content": "hello"}\n\n'
-
-    db = StubDb()
-    monkeypatch = pytest.MonkeyPatch()
-    monkeypatch.setattr(chat_module, "_stream_chat_events", fake_stream_chat_events)
-
-    try:
-        chunks: list[str] = []
-        async for chunk in chat_module._stream_pending_turn(
-            db=db,
-            session_id="session-1",
-            agent=object(),
-            pending_turn=StubPendingTurn(),
-        ):
-            chunks.append(chunk)
-    finally:
-        monkeypatch.undo()
-
-    assert chunks == ['data: {"content": "hello"}\n\n']
-    assert recorded["user_input"] == "hello"
-    assert recorded["committed"] is True
-    assert recorded["statement"] is not None
+    recorded: dict[str, Any] = {"upserts": [], "failures": []}
+
+    class StubAgentFactory:
+        def create(self, user_id: str, session_id: str) -> object:
+            recorded["factory_user_id"] = user_id
+            recorded["factory_session_id"] = session_id
+            raise RuntimeError("factory failed")
+
+    class StubState:
+        agent_factory = StubAgentFactory()
+
+    class StubApp:
+        state = StubState()
+
+    class StubRequest:
+        app = StubApp()
+
+    async def fake_upsert_turn_state_with_isolated_session(
+        *,
+        session_id: str,
+        user_id: str,
+        assistant_message_id: str,
+        status: str,
+        content: str,
+        error: str | None = None,
+    ) -> None:
+        recorded["upserts"].append(
+            {
+                "session_id": session_id,
+                "user_id": user_id,
+                "assistant_message_id": assistant_message_id,
+                "status": status,
+                "content": content,
+                "error": error,
+            }
+        )
+
+    async def fake_record_failure_with_isolated_session(*, session_id: str, assistant_message_id: str, error: str) -> None:
+        recorded["failures"].append(
+            {
+                "session_id": session_id,
+                "assistant_message_id": assistant_message_id,
+                "error": error,
+            }
+        )
+
+    monkeypatch.setattr(chat_module, "_upsert_turn_state_with_isolated_session", fake_upsert_turn_state_with_isolated_session)
+    monkeypatch.setattr(chat_module, "_record_failure_with_isolated_session", fake_record_failure_with_isolated_session)
+
+    queue: asyncio.Queue[str | None] = asyncio.Queue()
+    await chat_module._run_turn_and_publish(
+        session_id="session-1",
+        user_id="alice",
+        message="hello",
+        request=StubRequest(),
+        queue=queue,
+    )
+
+    chunks: list[str] = []
+    while True:
+        chunk = await queue.get()
+        if chunk is None:
+            break
+        chunks.append(chunk)
+
+    assert recorded["factory_user_id"] == "alice"
+    assert recorded["factory_session_id"] == "session-1"
+    assert len(recorded["upserts"]) == 1
+    assert recorded["upserts"][0]["session_id"] == "session-1"
+    assert recorded["upserts"][0]["user_id"] == "alice"
+    assert recorded["upserts"][0]["status"] == "failed"
+    assert recorded["upserts"][0]["content"] == ""
+    assert recorded["upserts"][0]["error"] == "factory failed"
+    assert recorded["failures"] == [
+        {
+            "session_id": "session-1",
+            "assistant_message_id": recorded["upserts"][0]["assistant_message_id"],
+            "error": "factory failed",
+        }
+    ]
+    assert chunks == [
+        (
+            f'data: {{"id":"{recorded["upserts"][0]["assistant_message_id"]}",' 
+            '"type":"error","content":"factory failed"}\n\n'
+        )
+    ]
 
 
 @pytest.mark.asyncio

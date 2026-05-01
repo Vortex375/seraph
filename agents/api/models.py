@@ -25,10 +25,6 @@ class SessionResponse(BaseModel):
     last_message_at: datetime
 
 
-class AcceptedMessageResponse(BaseModel):
-    accepted: bool
-
-
 class FileCitationResponse(BaseModel):
     provider_id: str
     path: str
@@ -43,6 +39,8 @@ class ChatMessageResponse(BaseModel):
     content: str
     created_at: datetime
     citations: list[FileCitationResponse]
+    status: str = 'finished'
+    error: str | None = None
 
 
 class DocumentStatusResponse(BaseModel):
