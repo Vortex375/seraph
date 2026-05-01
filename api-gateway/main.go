@@ -31,6 +31,7 @@ import (
 	"umbasa.net/seraph/api-gateway/search"
 	"umbasa.net/seraph/api-gateway/services"
 	"umbasa.net/seraph/api-gateway/shares"
+	"umbasa.net/seraph/api-gateway/spaces"
 	"umbasa.net/seraph/api-gateway/webdav"
 	"umbasa.net/seraph/config"
 	"umbasa.net/seraph/logging"
@@ -57,6 +58,7 @@ func main() {
 		jobs.Module,
 		preview.Module,
 		search.Module,
+		spaces.Module,
 		services.Module,
 		shares.Module,
 		webdav.Module,
