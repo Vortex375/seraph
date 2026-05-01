@@ -17,30 +17,30 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   flutter_markdown: ^0.7.6+2
-  flutter_secure_storage: ^9.2.4
+  flutter_secure_storage: ^10.0.0
   get: ^4.7.2
   get_storage: ^2.1.1
   media_kit: ^1.1.11 # Primary package.
-  media_kit_video: ^1.2.5 # For video rendering.
+  media_kit_video: ^2.0.1 # For video rendering.
   media_kit_libs_video: ^1.0.5 # Native video dependencies.
-  oidc: ^0.9.0+1
-  oidc_core: ^0.9.1
-  oidc_default_store: ^0.2.0+12
+  oidc: ^0.14.0+2
+  oidc_core: ^0.16.1+1
+  oidc_default_store: ^0.6.0+2
   path_provider: ^2.1.5
   provider: ^6.1.2
   shared_preferences: ^2.3.2
   webdav_client: ^1.2.2
-  audio_session: ^0.1.25
+  audio_session: ^0.2.3
   audio_service: ^0.18.17
   audio_service_mpris: ^0.2.0
-  google_fonts: ^6.2.1
+  google_fonts: ^8.1.0
   url_launcher: ^6.3.1
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
 
-  flutter_lints: ^3.0.0
+  flutter_lints: ^6.0.0
 
 flutter:
   uses-material-design: true
