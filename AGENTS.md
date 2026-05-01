@@ -89,6 +89,37 @@ Agents structure:
 - `agents/app/config.yaml`: agent prompt/config file.
 - `agents/db/`: database session and URL helpers.
 
+### Test infrastructure (agents)
+
+Most agents tests need PostgreSQL, NATS, and MongoDB. Start the minimal services:
+```bash
+docker compose -f docker-compose.dev.yml up -d nats mongodb agents-db
+```
+
+Then run tests with the required environment variables:
+```bash
+RUNTIME_ENV=dev \
+DB_HOST=localhost DB_PORT=5432 DB_USER=ai DB_PASS=ai DB_DATABASE=ai \
+NATS_URL=nats://localhost:4222 \
+uv run pytest tests/ -v
+```
+
+Run a single test file:
+```bash
+uv run pytest tests/test_chat_api.py -v
+```
+
+Run a test by name:
+```bash
+uv run pytest tests/test_chat_api.py -k test_create_message -v
+```
+
+Notes:
+- The ingestion integration tests (`test_ingestion_integration.py`) additionally
+  require `OPENAI_API_KEY` to be set; they are skipped otherwise.
+- The DB credentials above match the defaults defined in
+  `docker-compose.dev.yml` under the `agents-db` service.
+
 # Code Generation
 
 These are file-specific Makefile rules for generating Go sources from Avro schemas.
