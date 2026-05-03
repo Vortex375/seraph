@@ -11,7 +11,11 @@ class SearchService {
   final Dio dio;
 
   SearchService(this.settingsController, this.loginController)
-      : dio = Dio(BaseOptions(baseUrl: settingsController.serverUrl.value));
+      : dio = Dio(BaseOptions(baseUrl: settingsController.serverUrl.value)) {
+    settingsController.serverUrl.listen((url) {
+      dio.options.baseUrl = url;
+    });
+  }
 
   Stream<Map<String, dynamic>> search(String query) async* {
     await until(loginController.isInitialized, identity);

@@ -7,7 +7,11 @@ import 'package:seraph_app/src/util.dart';
 class SpacesService {
   SpacesService(this.settingsController, this.loginController, {Dio? dio})
       : dio = dio ??
-            Dio(BaseOptions(baseUrl: settingsController.serverUrl.value));
+            Dio(BaseOptions(baseUrl: settingsController.serverUrl.value)) {
+    settingsController.serverUrl.listen((url) {
+      this.dio.options.baseUrl = url;
+    });
+  }
 
   final SettingsController settingsController;
   final LoginController loginController;

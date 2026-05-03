@@ -10,7 +10,11 @@ import 'package:seraph_app/src/util.dart';
 class ChatService {
   ChatService(this.settingsController, this.loginController, {Dio? dio, http.Client? httpClient})
       : dio = dio ?? Dio(BaseOptions(baseUrl: settingsController.serverUrl.value)),
-        httpClient = httpClient ?? http.Client();
+        httpClient = httpClient ?? http.Client() {
+    settingsController.serverUrl.listen((url) {
+      this.dio.options.baseUrl = url;
+    });
+  }
 
   final SettingsController settingsController;
   final LoginController loginController;
