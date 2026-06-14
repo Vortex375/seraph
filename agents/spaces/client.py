@@ -35,7 +35,9 @@ class SpacesClient:
 
     @classmethod
     def _scope_from_provider(cls, provider: dict[str, Any]) -> SpaceScope | None:
-        provider_id_value = provider.get("providerId")
+        provider_id_value = provider.get("spaceProviderId")
+        if provider_id_value is None:
+            provider_id_value = provider.get("providerId")
         path_value = provider.get("path") if "path" in provider else None
         if provider_id_value is None or path_value is None:
             return None

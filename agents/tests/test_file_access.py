@@ -307,3 +307,222 @@ async def test_read_file_excerpt_treats_eof_as_normal_completion() -> None:
 
     assert result["content"] == "line1"
     assert result["truncated"] is False
+
+
+@pytest.mark.asyncio
+async def test_stat_file_allows_nested_path_in_space_scope() -> None:
+    """Reproduce the reported failure: space provider id differs from backing provider id."""
+
+    class StubFileProvider:
+        async def stat(self, path: str):
+            assert path == "/wallpaper/round_moons_nasa.jpg"
+            return type("Info", (), {"name": "round_moons_nasa.jpg", "size": 754426, "mod_time": 1, "is_dir": False})()
+
+    class StubSpacesClient:
+        async def get_scopes_for_user(self, user_id: str):
+            del user_id
+            # spaceProviderId is the alias exposed to agent tools; providerId is the backing file provider.
+            return [SpaceScope(provider_id="test", path_prefix="/wallpaper")]
+
+    service = AgentFileAccessService(
+        spaces_client=StubSpacesClient(),
+        file_provider_factory=lambda provider_id: StubFileProvider(),
+        search_client=None,
+    )
+
+    result = await service.stat_file(
+        user_id="alice", provider_id="test", path="/wallpaper/round_moons_nasa.jpg"
+    )
+
+    assert result["provider_id"] == "test"
+    assert result["path"] == "/wallpaper/round_moons_nasa.jpg"
+    assert result["is_dir"] is False
+
+
+@pytest.mark.asyncio
+async def test_list_directory_allows_nested_scope() -> None:
+    class StubDirHandle:
+        async def readdir(self, count: int):
+            del count
+            return [
+                type("Info", (), {"name": "round_moons_nasa.jpg", "size": 754426, "mod_time": 1, "is_dir": False})(),
+            ]
+
+        async def close(self) -> None:
+            return None
+
+    class StubFileProvider:
+        async def stat(self, path: str):
+            assert path == "/wallpaper"
+            return type("Info", (), {"name": "wallpaper", "size": 0, "mod_time": 1, "is_dir": True})()
+
+        async def open_file(self, path: str, flag: int, perm: int):
+            del flag, perm
+            assert path == "/wallpaper"
+            return StubDirHandle()
+
+    class StubSpacesClient:
+        async def get_scopes_for_user(self, user_id: str):
+            del user_id
+            return [SpaceScope(provider_id="test", path_prefix="/wallpaper")]
+
+    service = AgentFileAccessService(
+        spaces_client=StubSpacesClient(),
+        file_provider_factory=lambda provider_id: StubFileProvider(),
+        search_client=None,
+    )
+
+    result = await service.list_directory(user_id="alice", provider_id="test", path="/wallpaper")
+
+    assert [entry["path"] for entry in result] == ["/wallpaper/round_moons_nasa.jpg"]
+
+
+@pytest.mark.asyncio
+async def test_read_file_excerpt_allows_nested_scope() -> None:
+    class StubFile:
+        _payload = b"This is a wallpaper image caption.\n"
+
+        def __init__(self) -> None:
+            self._done = False
+
+        async def read(self, size: int) -> bytes:
+            del size
+            if self._done:
+                return b""
+            self._done = True
+            return self._payload
+
+        async def close(self) -> None:
+            return None
+
+    class StubFileProvider:
+        async def stat(self, path: str):
+            assert path == "/wallpaper/round_moons_nasa.jpg"
+            return type("Info", (), {"name": "round_moons_nasa.jpg", "size": 36, "mod_time": 1, "is_dir": False})()
+
+        async def open_file(self, path: str, flag: int, perm: int):
+            del path, flag, perm
+            return StubFile()
+
+    class StubSpacesClient:
+        async def get_scopes_for_user(self, user_id: str):
+            del user_id
+            return [SpaceScope(provider_id="test", path_prefix="/wallpaper")]
+
+    service = AgentFileAccessService(
+        spaces_client=StubSpacesClient(),
+        file_provider_factory=lambda provider_id: StubFileProvider(),
+        search_client=None,
+    )
+
+    result = await service.read_file_excerpt(
+        user_id="alice", provider_id="test", path="/wallpaper/round_moons_nasa.jpg"
+    )
+
+    assert result["content"] == "This is a wallpaper image caption."
+
+
+@pytest.mark.asyncio
+async def test_exact_prefix_match_is_allowed() -> None:
+    class StubFileProvider:
+        async def stat(self, path: str):
+            assert path == "/wallpaper"
+            return type("Info", (), {"name": "wallpaper", "size": 0, "mod_time": 1, "is_dir": True})()
+
+    class StubSpacesClient:
+        async def get_scopes_for_user(self, user_id: str):
+            del user_id
+            return [SpaceScope(provider_id="test", path_prefix="/wallpaper")]
+
+    service = AgentFileAccessService(
+        spaces_client=StubSpacesClient(),
+        file_provider_factory=lambda provider_id: StubFileProvider(),
+        search_client=None,
+    )
+
+    result = await service.stat_file(user_id="alice", provider_id="test", path="/wallpaper")
+
+    assert result["path"] == "/wallpaper"
+    assert result["is_dir"] is True
+
+
+@pytest.mark.asyncio
+async def test_trailing_slash_does_not_affect_authorization() -> None:
+    class StubFileProvider:
+        async def stat(self, path: str):
+            assert path == "/wallpaper"
+            return type("Info", (), {"name": "wallpaper", "size": 0, "mod_time": 1, "is_dir": True})()
+
+    class StubSpacesClient:
+        async def get_scopes_for_user(self, user_id: str):
+            del user_id
+            return [SpaceScope(provider_id="test", path_prefix="/wallpaper")]
+
+    service = AgentFileAccessService(
+        spaces_client=StubSpacesClient(),
+        file_provider_factory=lambda provider_id: StubFileProvider(),
+        search_client=None,
+    )
+
+    result = await service.stat_file(user_id="alice", provider_id="test", path="/wallpaper/")
+
+    assert result["path"] == "/wallpaper"
+
+
+@pytest.mark.asyncio
+async def test_relative_path_is_normalized_before_authorization() -> None:
+    class StubFileProvider:
+        async def stat(self, path: str):
+            assert path == "/wallpaper/round_moons_nasa.jpg"
+            return type("Info", (), {"name": "round_moons_nasa.jpg", "size": 754426, "mod_time": 1, "is_dir": False})()
+
+    class StubSpacesClient:
+        async def get_scopes_for_user(self, user_id: str):
+            del user_id
+            return [SpaceScope(provider_id="test", path_prefix="/wallpaper")]
+
+    service = AgentFileAccessService(
+        spaces_client=StubSpacesClient(),
+        file_provider_factory=lambda provider_id: StubFileProvider(),
+        search_client=None,
+    )
+
+    result = await service.stat_file(
+        user_id="alice", provider_id="test", path="wallpaper/round_moons_nasa.jpg"
+    )
+
+    assert result["path"] == "/wallpaper/round_moons_nasa.jpg"
+
+
+@pytest.mark.asyncio
+async def test_prefix_boundary_escape_is_rejected() -> None:
+    class StubSpacesClient:
+        async def get_scopes_for_user(self, user_id: str):
+            del user_id
+            return [SpaceScope(provider_id="test", path_prefix="/wallpaper")]
+
+    service = AgentFileAccessService(
+        spaces_client=StubSpacesClient(),
+        file_provider_factory=lambda provider_id: None,
+        search_client=None,
+    )
+
+    with pytest.raises(PermissionError):
+        await service.stat_file(user_id="alice", provider_id="test", path="/wallpaper-private/file.txt")
+
+
+@pytest.mark.asyncio
+async def test_path_on_different_provider_is_rejected() -> None:
+    class StubSpacesClient:
+        async def get_scopes_for_user(self, user_id: str):
+            del user_id
+            return [SpaceScope(provider_id="test", path_prefix="/wallpaper")]
+
+    service = AgentFileAccessService(
+        spaces_client=StubSpacesClient(),
+        file_provider_factory=lambda provider_id: None,
+        search_client=None,
+    )
+
+    with pytest.raises(PermissionError):
+        await service.stat_file(user_id="alice", provider_id="other", path="/wallpaper/file.txt")

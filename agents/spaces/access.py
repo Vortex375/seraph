@@ -37,6 +37,9 @@ def _path_allowed(path_prefix: str, path: str) -> bool:
     except ValueError:
         return False
 
+    if normalized_prefix == "/":
+        return True
+
     return normalized_path == normalized_prefix or normalized_path.startswith(normalized_prefix + "/")
 
 

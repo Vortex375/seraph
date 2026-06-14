@@ -191,9 +191,9 @@ class AgentFileAccessService:
         normalized = _normalize_path(path)
         scopes = await self._spaces_client.get_scopes_for_user(user_id)
         for scope in scopes:
-            normalized_prefix = _normalize_path(scope.path_prefix)
-            allowed = normalized_prefix == "/" or _path_allowed(normalized_prefix, normalized)
-            if scope.provider_id == provider_id and allowed:
+            if scope.provider_id != provider_id:
+                continue
+            if _path_allowed(scope.path_prefix, normalized):
                 return normalized
         raise PermissionError("requested path is outside accessible scopes")
 
