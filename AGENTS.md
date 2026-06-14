@@ -120,6 +120,51 @@ Notes:
 - The DB credentials above match the defaults defined in
   `docker-compose.dev.yml` under the `agents-db` service.
 
+### Database migrations
+
+The agents service runs additive migrations automatically during startup
+(`app/main.py` -> `db/migrations.py`). These migrations run after
+`Base.metadata.create_all` and only add missing schema elements to existing
+tables (for example, the `agent_state` column on `chat_sessions`).
+
+If you change a model in a way that cannot be expressed as an additive
+column addition (rename, drop, type change), you must extend
+`db/migrations.py` or introduce a full migration framework such as Alembic.
+
+### Docker dev integration tests
+
+`tests/test_chat_docker_integration.py` exercises the real API deployed via
+`docker-compose.dev.yml`. It covers the full chat workflow:
+
+1. Health check
+2. Create a chat session
+3. List sessions
+4. Stream a message response
+5. List persisted messages
+6. Delete the session
+
+Start the dev services first:
+
+```bash
+docker compose -f docker-compose.dev.yml up -d --build
+```
+
+Run the integration tests:
+
+```bash
+uv run pytest tests/test_chat_docker_integration.py -v
+```
+
+To run the end-to-end agent response test, `OPENAI_API_KEY` must be available
+in the test process environment (the dev container already requires it):
+
+```bash
+OPENAI_API_KEY=<your-key> uv run pytest tests/test_chat_docker_integration.py -v
+```
+
+A custom API base URL can be targeted with `AGENTS_API_URL` (default is
+`http://localhost:8000`).
+
 # Code Generation
 
 These are file-specific Makefile rules for generating Go sources from Avro schemas.

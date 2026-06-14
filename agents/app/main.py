@@ -22,6 +22,7 @@ from app.settings import Settings, get_settings
 from chat.agent_factory import AgentFactory
 from chat.file_access import AgentFileAccessService
 from chat.search_client import AgentSearchClient
+from db.migrations import apply_migrations
 from db.session import SessionLocal, engine
 from documents.models import Base
 from fileprovider.client import FileProviderClient
@@ -278,6 +279,7 @@ def create_ingestion_service(settings: Settings) -> Any:
 async def initialize_database_schema() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await apply_migrations(conn)
 
 
 @asynccontextmanager
