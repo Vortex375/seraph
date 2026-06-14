@@ -21,8 +21,10 @@ from api.models import (
 from auth.current_user import AuthenticatedUser, get_current_user
 from chat.citations import record_failure, record_sources
 from chat.file_models import FileCitation
+from chat.prompts import render_system_prompt
 from chat.session_service import SessionService
 from chat.streaming import stream_agent_reply
+from chat.tools import format_current_datetime
 from db.session import SessionLocal, get_db_session
 from documents.models import ChatSession, ChatTurnState
 
@@ -231,6 +233,21 @@ async def _touch_session_activity(*, session_id: str) -> None:
         await session.commit()
 
 
+async def _get_or_create_system_prompt(*, session_id: str) -> str:
+    """Return the persisted system prompt for a session, creating it if absent."""
+    async with SessionLocal() as session:
+        result = await session.execute(select(ChatSession).where(ChatSession.id == session_id))
+        chat_session = result.scalar_one_or_none()
+        if chat_session is None:
+            return render_system_prompt(current_datetime=format_current_datetime())
+        if chat_session.system_prompt:
+            return chat_session.system_prompt
+        prompt = render_system_prompt(current_datetime=format_current_datetime())
+        chat_session.system_prompt = prompt
+        await session.commit()
+        return prompt
+
+
 def _extract_text_content(raw_content: object) -> str:
     if isinstance(raw_content, str):
         return raw_content
@@ -281,7 +298,14 @@ async def _run_turn_and_publish(
 
     try:
         state = await load_state(user_id, session_id) if load_state is not None else None
-        agent = agent_factory.create(user_id, session_id, state=state)
+        system_prompt = await _get_or_create_system_prompt(session_id=session_id)
+        agent = agent_factory.create(
+            user_id,
+            session_id,
+            state=state,
+            is_new_session=state is None,
+            system_prompt=system_prompt,
+        )
         async for chunk in _stream_chat_events(db=None, session_id=session_id, agent=agent, user_input=message):
             payload = _parse_sse_payload(chunk)
             if payload is not None:

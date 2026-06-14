@@ -9,8 +9,9 @@ from agentscope.tool import Toolkit
 from agentscope.state import AgentState
 
 from chat.agent_state_store import AgentStateStore
-from chat.prompts import DOCUMENT_CHAT_PROMPT
+from chat.prompts import render_system_prompt
 from chat.tools import (
+    GetCurrentDateTimeTool,
     ListDirectoryTool,
     ReadFileExcerptTool,
     SearchFilesTool,
@@ -51,7 +52,15 @@ class AgentFactory:
         self._file_access_service_factory = file_access_service_factory
         self._state_store = state_store or AgentStateStore()
 
-    def create(self, user_id: str, session_id: str, state: AgentState | None = None) -> Agent:
+    def create(
+        self,
+        user_id: str,
+        session_id: str,
+        state: AgentState | None = None,
+        *,
+        is_new_session: bool = False,
+        system_prompt: str | None = None,
+    ) -> Agent:
         credential = OpenAICredential(
             api_key=self._api_key or "",
             base_url=self._base_url or DEFAULT_OPENAI_BASE_URL,
@@ -72,9 +81,17 @@ class AgentFactory:
         if state is None:
             state = AgentState(session_id=session_id)
 
+        if system_prompt is None:
+            if is_new_session:
+                from chat.tools import format_current_datetime
+
+                system_prompt = render_system_prompt(current_datetime=format_current_datetime())
+            else:
+                system_prompt = render_system_prompt()
+
         return Agent(
             name="seraph-documents",
-            system_prompt=DOCUMENT_CHAT_PROMPT,
+            system_prompt=system_prompt,
             model=model,
             toolkit=toolkit,
             state=state,
@@ -92,7 +109,10 @@ class AgentFactory:
             spaces_client=self._spaces_client,
             user_id=user_id,
         )
-        tools: list[Any] = [SearchKnowledgeBaseTool(knowledge=knowledge)]
+        tools: list[Any] = [
+            SearchKnowledgeBaseTool(knowledge=knowledge),
+            GetCurrentDateTimeTool(),
+        ]
 
         if file_access is not None:
             tools.extend(

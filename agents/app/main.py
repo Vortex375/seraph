@@ -167,8 +167,8 @@ class RuntimeAgentFactory:
     async def save_state(self, user_id: str, session_id: str, state: Any) -> None:
         await self._factory.save_state(user_id, session_id, state)
 
-    def create(self, user_id: str, session_id: str, state: Any = None):
-        return self._factory.create(user_id, session_id, state=state)
+    def create(self, user_id: str, session_id: str, state: Any = None, **kwargs: Any):
+        return self._factory.create(user_id, session_id, state=state, **kwargs)
 
     def _create_file_access_service(self, user_id: str) -> AgentFileAccessService:
         del user_id

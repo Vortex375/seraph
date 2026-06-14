@@ -24,6 +24,13 @@ _MIGRATIONS: list[tuple[str, str]] = [
         ADD COLUMN IF NOT EXISTS agent_state JSON DEFAULT '{}'::json;
         """,
     ),
+    (
+        "0002_add_chat_session_system_prompt",
+        """
+        ALTER TABLE chat_sessions
+        ADD COLUMN IF NOT EXISTS system_prompt TEXT;
+        """,
+    ),
 ]
 
 

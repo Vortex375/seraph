@@ -249,7 +249,9 @@ async def test_run_turn_and_publish_tracks_finished_turn_state(monkeypatch: pyte
     recorded: dict[str, Any] = {"upserts": [], "state_by_id": {}}
 
     class StubAgentFactory:
-        def create(self, user_id: str, session_id: str, *, state: object = None) -> object:
+        def create(
+            self, user_id: str, session_id: str, *, state: object = None, **kwargs: Any
+        ) -> object:
             recorded["factory_user_id"] = user_id
             recorded["factory_session_id"] = session_id
             return object()
@@ -320,8 +322,10 @@ async def test_run_turn_and_publish_accumulates_delta_chunks_in_turn_state(
     recorded: dict[str, Any] = {"upserts": []}
 
     class StubAgentFactory:
-        def create(self, user_id: str, session_id: str, *, state: object = None) -> object:
-            del user_id, session_id, state
+        def create(
+            self, user_id: str, session_id: str, *, state: object = None, **kwargs: Any
+        ) -> object:
+            del user_id, session_id, state, kwargs
             return object()
 
     class StubState:
@@ -593,7 +597,9 @@ async def test_run_turn_and_publish_finishes_queue_when_agent_creation_fails(
     recorded: dict[str, Any] = {"upserts": [], "failures": []}
 
     class StubAgentFactory:
-        def create(self, user_id: str, session_id: str, *, state: object = None) -> object:
+        def create(
+            self, user_id: str, session_id: str, *, state: object = None, **kwargs: Any
+        ) -> object:
             recorded["factory_user_id"] = user_id
             recorded["factory_session_id"] = session_id
             raise RuntimeError("factory failed")
@@ -1155,3 +1161,80 @@ async def test_record_failure_rolls_back_when_commit_is_cancelled() -> None:
         await citations.record_failure(db, session_id="session-1", assistant_message_id="assistant-1", error="boom")
 
     assert operations == ["rollback", "add", "commit", "rollback"]
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_system_prompt_persists_rendered_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+    chat_module = importlib.import_module("api.chat")
+
+    class StubChatSession:
+        def __init__(self, system_prompt: str | None = None) -> None:
+            self.system_prompt = system_prompt
+            self.committed = False
+
+    fake_session = StubChatSession(system_prompt=None)
+
+    class StubResult:
+        def __init__(self, value: StubChatSession | None) -> None:
+            self._value = value
+
+        def scalar_one_or_none(self) -> StubChatSession | None:
+            return self._value
+
+    class StubDb:
+        def __init__(self) -> None:
+            self.session = fake_session
+
+        async def execute(self, statement: object) -> StubResult:
+            return StubResult(self.session)
+
+        async def commit(self) -> None:
+            self.session.committed = True
+
+        async def __aenter__(self) -> "StubDb":
+            return self
+
+        async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+            del exc_type, exc, tb
+            return None
+
+    monkeypatch.setattr(chat_module, "SessionLocal", StubDb)
+    monkeypatch.setattr(chat_module, "format_current_datetime", lambda: "2026-06-14T12:00:00+00:00")
+
+    prompt = await chat_module._get_or_create_system_prompt(session_id="session-1")
+
+    assert "Current date/time: 2026-06-14T12:00:00+00:00" in prompt
+    assert fake_session.system_prompt == prompt
+    assert fake_session.committed is True
+
+    second_prompt = await chat_module._get_or_create_system_prompt(session_id="session-1")
+    assert second_prompt == prompt
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_system_prompt_returns_existing_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+    chat_module = importlib.import_module("api.chat")
+
+    class StubChatSession:
+        def __init__(self, system_prompt: str) -> None:
+            self.system_prompt = system_prompt
+
+    class StubResult:
+        def scalar_one_or_none(self) -> StubChatSession:
+            return StubChatSession("Previously persisted prompt")
+
+    class StubDb:
+        async def execute(self, statement: object) -> StubResult:
+            return StubResult()
+
+        async def __aenter__(self) -> "StubDb":
+            return self
+
+        async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+            del exc_type, exc, tb
+            return None
+
+    monkeypatch.setattr(chat_module, "SessionLocal", StubDb)
+
+    prompt = await chat_module._get_or_create_system_prompt(session_id="session-1")
+    assert prompt == "Previously persisted prompt"

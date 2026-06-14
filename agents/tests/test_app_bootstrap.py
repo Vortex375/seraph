@@ -15,7 +15,12 @@ async def test_initialize_database_schema_creates_all_tables(monkeypatch: pytest
 
     class FakeConn:
         async def run_sync(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
-            return fn(None, *args, **kwargs)
+            class FakeSyncConn:
+                def execute(self, statement: object, *params: Any, **kw: Any) -> Any:
+                    del statement, params, kw
+                    return None
+
+            return fn(FakeSyncConn(), *args, **kwargs)
 
     class FakeEngine:
         def begin(self) -> Any:

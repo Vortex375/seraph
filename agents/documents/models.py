@@ -20,6 +20,7 @@ class ChatSession(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     user_id: Mapped[str] = mapped_column(String(255), index=True)
     title: Mapped[str] = mapped_column(String(255))
+    system_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
     agent_state: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)

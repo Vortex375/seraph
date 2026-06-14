@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from typing import Any
 
 from agentscope.message import TextBlock
@@ -10,6 +11,11 @@ from agentscope.tool._response import ToolChunk
 
 from chat.file_access import AgentFileAccessService
 from knowledge.seraph_knowledge import SeraphKnowledgeBase, SeraphKnowledgeDocument
+
+
+def format_current_datetime() -> str:
+    """Return the current system date and time as an ISO-8601 string with timezone offset."""
+    return datetime.now(timezone.utc).astimezone().isoformat()
 
 
 def _citation_from_hit(hit: dict[str, Any]) -> dict[str, str]:
@@ -304,3 +310,30 @@ def _document_to_hit(document: SeraphKnowledgeDocument) -> dict[str, Any]:
         "content": document.content,
         "score": document.score,
     }
+
+
+class GetCurrentDateTimeTool(ToolBase):
+    name = "get_current_datetime"
+    description = "Return the current date and time. Use this when the user's question depends on the current moment."
+    input_schema = {
+        "type": "object",
+        "properties": {},
+        "required": [],
+    }
+    is_concurrency_safe = True
+    is_read_only = True
+
+    async def check_permissions(
+        self, tool_input: dict[str, Any], context: PermissionContext
+    ) -> PermissionDecision:
+        del tool_input, context
+        return PermissionDecision(
+            behavior=PermissionBehavior.ALLOW,
+            message="Current date/time lookup is read-only.",
+        )
+
+    async def __call__(self) -> ToolChunk:
+        return ToolChunk(
+            content=[TextBlock(text=json.dumps({"current_datetime": format_current_datetime()}, ensure_ascii=False))],
+            metadata={"citations": []},
+        )
