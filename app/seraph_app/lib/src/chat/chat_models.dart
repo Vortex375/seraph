@@ -1,6 +1,6 @@
 enum ChatSessionStatus { running, finished }
 
-enum ChatMessageStatus { pending, failed, finished }
+enum ChatMessageStatus { pending, failed, finished, running }
 
 class ChatCitation {
   const ChatCitation({
@@ -124,6 +124,9 @@ class ChatMessage {
       case 'failed':
         return ChatMessageStatus.failed;
       case 'finished':
+        return ChatMessageStatus.finished;
+      case 'running':
+        return ChatMessageStatus.running;
       case null:
         return ChatMessageStatus.finished;
     }

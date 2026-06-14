@@ -63,6 +63,30 @@ void main() {
     expect(message.error, 'upstream provider error');
   });
 
+  test('chat message decode recognizes running status', () {
+    final runningMessage = ChatMessage.fromJson({
+      'id': 'assistant-2',
+      'role': 'assistant',
+      'content': 'Working...',
+      'created_at': '2026-04-12T00:00:04Z',
+      'status': 'running',
+      'citations': [],
+    });
+    expect(runningMessage.status, ChatMessageStatus.running);
+  });
+
+  test('chat message decode recognizes running status', () {
+    final runningMessage = ChatMessage.fromJson({
+      'id': 'assistant-2',
+      'role': 'assistant',
+      'content': 'Working...',
+      'created_at': '2026-04-12T00:00:04Z',
+      'status': 'running',
+      'citations': [],
+    });
+    expect(runningMessage.status, ChatMessageStatus.running);
+  });
+
   test('chat session decode rejects unknown backend status', () {
     expect(
       () => ChatSession.fromJson({
