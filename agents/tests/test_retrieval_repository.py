@@ -36,6 +36,7 @@ async def test_search_returns_ranked_chunks_with_chunk_counts_and_scope_filters(
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
 
         async with async_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
             await conn.run_sync(Base.metadata.create_all)
 
         session_factory = async_sessionmaker(async_engine, expire_on_commit=False)

@@ -102,7 +102,7 @@ class FileChangedIngestionService:
         self._task: asyncio.Task[None] | None = None
         self._stop_event = asyncio.Event()
         self._semaphore = asyncio.Semaphore(config.parallelism)
-        self._tasks: set[asyncio.Task[None]] = set()
+        self._tasks: set[asyncio.Task[Any]] = set()
         self._idle_backoff = config.idle_backoff_base
         self._document_locks: dict[tuple[str, str], asyncio.Lock] = {}
         self._embedding_model_name = os.getenv("EMBEDDING_MODEL_NAME", "text-embedding-3-small")
@@ -112,7 +112,7 @@ class FileChangedIngestionService:
 
     def _get_embedding_client(self) -> AsyncOpenAI:
         if self._embedding_client is None:
-            client_kwargs: dict[str, str | None] = {"api_key": self._openai_api_key}
+            client_kwargs: dict[str, Any] = {"api_key": self._openai_api_key}
             client_kwargs["base_url"] = self._openai_base_url or DEFAULT_OPENAI_BASE_URL
             self._embedding_client = AsyncOpenAI(**client_kwargs)
         return self._embedding_client
@@ -218,7 +218,7 @@ class FileChangedIngestionService:
         if self._tasks:
             await asyncio.gather(*self._tasks, return_exceptions=True)
 
-    def _task_done(self, task: asyncio.Task[None]) -> None:
+    def _task_done(self, task: asyncio.Task[Any]) -> None:
         self._tasks.discard(task)
         self._semaphore.release()
 

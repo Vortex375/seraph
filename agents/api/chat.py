@@ -8,8 +8,6 @@ import contextlib
 from typing import Any
 from uuid import uuid4
 
-from agentscope.memory import AsyncSQLAlchemyMemory
-from agentscope.message import Msg
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
@@ -21,7 +19,7 @@ from api.models import (
     SessionResponse,
 )
 from auth.current_user import AuthenticatedUser, get_current_user
-from chat.citations import record_failure, record_sources, sources_from_knowledge_documents
+from chat.citations import record_failure, record_sources
 from chat.file_models import FileCitation
 from chat.session_service import SessionService
 from chat.streaming import stream_agent_reply
@@ -168,20 +166,6 @@ def _restore_turn_tool_citations(agent: Any, state: tuple[bool, Any] | None) -> 
         return None
 
 
-async def _retrieve_turn_sources(agent: Any, user_input: str) -> list[dict[str, str]]:
-    knowledge_bases = getattr(agent, "knowledge", None)
-    if not isinstance(knowledge_bases, list) or not knowledge_bases:
-        return []
-
-    knowledge_docs: list[Any] = []
-    for knowledge_base in knowledge_bases:
-        retrieve = getattr(knowledge_base, "retrieve", None)
-        if not callable(retrieve):
-            continue
-        knowledge_docs.extend(await retrieve(query=user_input, limit=5))
-    return sources_from_knowledge_documents(knowledge_docs)
-
-
 async def _record_sources_with_isolated_session(
     *, session_id: str, assistant_message_id: str, sources: list[dict[str, str]]
 ) -> None:
@@ -247,13 +231,6 @@ async def _touch_session_activity(*, session_id: str) -> None:
         await session.commit()
 
 
-async def _persist_user_message(*, db: Any, session_id: str, user_id: str, message: str) -> str:
-    msg = Msg("user", message, "user")
-    memory = AsyncSQLAlchemyMemory(db, session_id=session_id, user_id=user_id)
-    await memory.add(msg, skip_duplicated=False)
-    return msg.id
-
-
 def _extract_text_content(raw_content: object) -> str:
     if isinstance(raw_content, str):
         return raw_content
@@ -297,9 +274,14 @@ async def _run_turn_and_publish(
 
     assistant_message_id: str | None = None
     accumulated_content = ""
+    agent: Any = None
+
+    load_state = getattr(agent_factory, "load_state", None)
+    save_state = getattr(agent_factory, "save_state", None)
 
     try:
-        agent = agent_factory.create(user_id, session_id)
+        state = await load_state(user_id, session_id) if load_state is not None else None
+        agent = agent_factory.create(user_id, session_id, state=state)
         async for chunk in _stream_chat_events(db=None, session_id=session_id, agent=agent, user_input=message):
             payload = _parse_sse_payload(chunk)
             if payload is not None:
@@ -329,6 +311,8 @@ async def _run_turn_and_publish(
         )
         await _touch_session_activity(session_id=session_id)
         await queue.put(f'data: {{"id":"{assistant_message_id}","type":"done"}}\n\n')
+        if save_state is not None and agent is not None:
+            await save_state(user_id, session_id, agent.state)
     except BaseException as exc:
         if assistant_message_id is None:
             assistant_message_id = str(uuid4())
@@ -362,7 +346,7 @@ async def _stream_message_create(
     message: str,
     request: Request,
 ) -> AsyncIterator[str]:
-    await _persist_user_message(db=db, session_id=session_id, user_id=user_id, message=message)
+    del db
     await _touch_session_activity(session_id=session_id)
     queue: asyncio.Queue[str | None] = asyncio.Queue()
     asyncio.create_task(
@@ -386,7 +370,7 @@ async def _stream_chat_events(db: Any, session_id: str, agent: Any, user_input: 
     assistant_message_id = str(uuid4())
     tool_citation_state = _install_turn_tool_citations(agent)
     try:
-        pending_sources = await _retrieve_turn_sources(agent, user_input)
+        pending_sources: list[dict[str, str]] = []
         persisted_sources_by_message: dict[str, set[tuple[str, str]]] = {}
         del db
         async for chunk in stream_agent_reply(agent=agent, user_input=user_input):

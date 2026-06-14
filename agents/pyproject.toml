@@ -12,7 +12,7 @@ dependencies = [
   "sse-starlette",
   "pydantic-settings",
   # Models
-  "agentscope",
+  "agentscope==2.0.1",
   "openai",
   # Database
   "alembic",

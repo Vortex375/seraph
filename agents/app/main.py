@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 from typing import Any, Protocol, cast
 
+from agentscope.credential import OpenAICredential
+from agentscope.message import Msg, TextBlock
 from agentscope.model import OpenAIChatModel
 from openai import AsyncOpenAI
 from pydantic import BaseModel
@@ -57,7 +59,7 @@ class _OpenAIEmbedder:
 
     def _get_client(self) -> AsyncOpenAI:
         if self._client is None:
-            client_kwargs: dict[str, str | None] = {"api_key": self._api_key}
+            client_kwargs: dict[str, Any] = {"api_key": self._api_key}
             client_kwargs["base_url"] = self._base_url or DEFAULT_OPENAI_BASE_URL
             self._client = AsyncOpenAI(**client_kwargs)
         return self._client
@@ -149,19 +151,23 @@ class RuntimeAgentFactory:
         self._spaces_client = _LazySpacesClient(settings.nats_url)
         self._nats = _LazyNatsConnection(settings.nats_url)
         self._factory = AgentFactory(
-            engine=engine,
             chat_model_name=settings.chat_model_name,
             api_key=settings.openai_api_key,
             base_url=openai_base_url,
-            embedding_model=embedder,
             retrieval_service=_LazyRetrievalService(embedder),
             spaces_client=self._spaces_client,
             search_client=None,
             file_access_service_factory=self._create_file_access_service,
         )
 
-    def create(self, user_id: str, session_id: str):
-        return self._factory.create(user_id, session_id)
+    async def load_state(self, user_id: str, session_id: str):
+        return await self._factory.load_state(user_id, session_id)
+
+    async def save_state(self, user_id: str, session_id: str, state: Any) -> None:
+        await self._factory.save_state(user_id, session_id, state)
+
+    def create(self, user_id: str, session_id: str, state: Any = None):
+        return self._factory.create(user_id, session_id, state=state)
 
     def _create_file_access_service(self, user_id: str) -> AgentFileAccessService:
         del user_id
@@ -206,13 +212,13 @@ class RuntimeSessionTitleSummarizer:
         self._model: OpenAIChatModel | None = None
         if not self._enabled:
             return
-        client_kwargs: dict[str, str] = {
-            "base_url": _normalize_openai_base_url(settings.openai_base_url) or DEFAULT_OPENAI_BASE_URL,
-        }
+        credential = OpenAICredential(
+            api_key=settings.openai_api_key or "",
+            base_url=_normalize_openai_base_url(settings.openai_base_url) or DEFAULT_OPENAI_BASE_URL,
+        )
         self._model = OpenAIChatModel(
-            model_name=settings.chat_model_name,
-            api_key=settings.openai_api_key,
-            client_kwargs=client_kwargs,
+            credential=credential,
+            model=settings.chat_model_name,
             stream=False,
         )
 
@@ -221,18 +227,23 @@ class RuntimeSessionTitleSummarizer:
             raise RuntimeError("session title summarizer is disabled")
         response = await self._model(
             [
-                {
-                    "role": "system",
-                    "content": (
-                        "Generate a concise conversation title for a chat sidebar. "
-                        "Return 3 to 7 words, plain text, no quotes, no punctuation unless required."
-                    ),
-                },
-                {"role": "user", "content": message},
+                Msg(
+                    name="system",
+                    role="system",
+                    content=[
+                        TextBlock(
+                            text=(
+                                "Generate a concise conversation title for a chat sidebar. "
+                                "Return 3 to 7 words, plain text, no quotes, no punctuation unless required."
+                            )
+                        )
+                    ],
+                ),
+                Msg(name="user", role="user", content=[TextBlock(text=message)]),
             ],
             structured_model=_SessionTitleSummary,
         )
-        metadata = response.metadata or {}
+        metadata = cast(Any, response).metadata or {}
         title = metadata.get("title")
         if not isinstance(title, str):
             raise ValueError("title summary missing")
@@ -265,10 +276,8 @@ def create_ingestion_service(settings: Settings) -> Any:
 
 
 async def initialize_database_schema() -> None:
-    sqlalchemy_memory = importlib.import_module("agentscope.memory._working_memory._sqlalchemy_memory")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        await conn.run_sync(sqlalchemy_memory.Base.metadata.create_all)
 
 
 @asynccontextmanager

@@ -1,7 +1,6 @@
 import sys
 from pathlib import Path
 
-from agentscope.rag._document import Document
 import pytest
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
@@ -37,30 +36,22 @@ class StubRetrievalService:
 
 
 @pytest.mark.asyncio
-async def test_seraph_knowledge_returns_agentscope_documents_with_provenance() -> None:
+async def test_seraph_knowledge_returns_documents_with_provenance() -> None:
     knowledge = SeraphKnowledgeBase(
-        embedding_store=None,
-        embedding_model=None,
         retrieval_service=StubRetrievalService(),
         spaces_client=StubSpacesClient(),
         user_id="alice",
     )
 
-    docs = await knowledge.retrieve("release notes", limit=3)
+    docs = await knowledge.search("release notes", limit=3)
 
     assert len(docs) == 1
     doc = docs[0]
-    assert isinstance(doc, Document)
     assert isinstance(doc, SeraphKnowledgeDocument)
-    typed_docs: list[SeraphKnowledgeDocument] = docs
-    assert typed_docs[0] is doc
-    text_content = doc.metadata.content
-    assert text_content["type"] == "text"
-    typed_content = text_content
-    assert typed_content["text"] == "Path: /team/docs/release.md\n\nrelease notes body"
-    assert doc.metadata.doc_id == "doc-1"
-    assert doc.metadata.chunk_id == 2
-    assert doc.metadata.total_chunks == 4
+    assert doc.content == "Path: /team/docs/release.md\n\nrelease notes body"
+    assert doc.document_id == "doc-1"
+    assert doc.chunk_index == 2
+    assert doc.total_chunks == 4
     assert doc.id == "chunk-1"
     assert doc.provenance.path == "/team/docs/release.md"
     assert doc.provenance.provider_id == "provider-a"
@@ -92,14 +83,12 @@ async def test_seraph_knowledge_preserves_root_scope_provenance() -> None:
             ]
 
     knowledge = SeraphKnowledgeBase(
-        embedding_store=None,
-        embedding_model=None,
         retrieval_service=RootRetrievalService(),
         spaces_client=RootSpacesClient(),
         user_id="alice",
     )
 
-    docs = await knowledge.retrieve("release notes", limit=3)
+    docs = await knowledge.search("release notes", limit=3)
 
     assert len(docs) == 1
     doc = docs[0]
@@ -111,13 +100,11 @@ async def test_seraph_knowledge_preserves_root_scope_provenance() -> None:
 @pytest.mark.asyncio
 async def test_seraph_knowledge_applies_score_threshold() -> None:
     knowledge = SeraphKnowledgeBase(
-        embedding_store=None,
-        embedding_model=None,
         retrieval_service=StubRetrievalService(),
         spaces_client=StubSpacesClient(),
         user_id="alice",
     )
 
-    docs = await knowledge.retrieve("release notes", limit=3, score_threshold=0.99)
+    docs = await knowledge.search("release notes", limit=3, min_score=0.99)
 
     assert docs == []

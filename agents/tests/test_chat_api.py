@@ -4,7 +4,6 @@ import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
 
 from fastapi.testclient import TestClient
 import pytest
@@ -274,37 +273,34 @@ async def test_list_session_messages_returns_visible_history_with_citations(monk
 
 @pytest.mark.asyncio
 async def test_session_service_uses_persisted_message_payload_id_for_citations() -> None:
+    from agentscope.message import Msg, TextBlock
+    from agentscope.state import AgentState
     from chat.session_service import SessionService
     from documents.models import Base, ChatSession, ChatTurnSource
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-    sqlalchemy_memory = importlib.import_module("agentscope.memory._working_memory._sqlalchemy_memory")
-    message_table = sqlalchemy_memory.AsyncSQLAlchemyMemory.MessageTable
-    session_table = sqlalchemy_memory.AsyncSQLAlchemyMemory.SessionTable
-    user_table = sqlalchemy_memory.AsyncSQLAlchemyMemory.UserTable
-
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        await conn.run_sync(sqlalchemy_memory.Base.metadata.create_all)
 
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     async with session_factory() as db:
-        db.add(ChatSession(id="session-1", user_id="alice", title="Inbox"))
-        db.add(user_table(id="alice"))
-        db.add(session_table(id="session-1", user_id="alice"))
+        agent_state = AgentState(
+            context=[
+                Msg(
+                    name="seraph-documents",
+                    role="assistant",
+                    id="assistant-1",
+                    content=[TextBlock(text="hello")],
+                ),
+            ]
+        )
         db.add(
-            message_table(
-                id="alice-session-1-row-id",
-                session_id="session-1",
-                index=1,
-                msg={
-                    "id": "assistant-1",
-                    "name": "seraph-documents",
-                    "role": "assistant",
-                    "content": [{"type": "text", "text": "hello"}],
-                    "timestamp": "2026-04-12T00:00:01",
-                },
+            ChatSession(
+                id="session-1",
+                user_id="alice",
+                title="Inbox",
+                agent_state=agent_state.model_dump(mode="json"),
             )
         )
         db.add(
