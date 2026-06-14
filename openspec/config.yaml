@@ -1,0 +1,41 @@
+schema: spec-driven
+
+context: |
+  Seraph is a WebDAV/CardDAV/CalDAV/Subsonic server built as a distributed microservice system.
+
+  Tech stack:
+  - Backend: Go 1.25.4 microservices using Uber fx, NATS (JetStream), MongoDB
+  - Agents: Python 3.12 with FastAPI, Agno/AgentOS, PostgreSQL + pgvector, DuckDB
+  - Web UI: Angular 18, TypeScript 5.5, RxJS
+  - Mobile: Flutter, Dart >=3.4.3 <4.0.0
+
+  Repository layout:
+  - Each backend folder (except agents/, app/ and webapp/) is a Go module and microservice (api-gateway, spaces, shares, file-indexer, jobs, etc.)
+  - Shared Go libraries: entities, messaging, logging, tracing, config, mongodb
+  - agents/ contains the Python agents API and services
+  - webapp/seraph-web-app/ is the Angular web application
+  - app/seraph_app/ is the Flutter mobile application
+
+  Build/test commands (agents):
+  - uv run ruff check .
+  - uv run mypy .
+  - uv run pytest
+  - Docker dev services via docker compose -f docker-compose.dev.yml up -d nats mongodb agents-db
+
+  Conventions:
+  - Go: gofmt; standard-library imports first, blank line, then third-party/internal; uber fx Params/Result structs; wrap errors with fmt.Errorf; use slog/tracing; tests with testify and containerized deps when appropriate.
+  - Python: ruff line length 120; mypy strict-ish; prefer type hints on public functions.
+  - TypeScript/Angular: 2-space indent, single quotes (per .editorconfig); Angular CLI for tests.
+  - Flutter/Dart: dart format, flutter_lints, flutter analyze.
+  - Prefer conventional commits.
+
+#rules:
+#  proposal:
+#    - Keep proposals focused on a single change
+#    - Include motivation, design overview, and success criteria
+#  design:
+#    - Prefer minimal intrusions to existing code
+#    - Note affected services and data stores
+#  tasks:
+#    - Break tasks into implementation steps that can be verified independently
+#    - Include test and lint verification steps
