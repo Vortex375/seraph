@@ -117,6 +117,26 @@ class ChatMessage {
   final ChatMessageStatus status;
   final String? error;
 
+  ChatMessage copyWith({
+    String? id,
+    String? role,
+    String? content,
+    DateTime? createdAt,
+    List<ChatCitation>? citations,
+    ChatMessageStatus? status,
+    String? error,
+  }) {
+    return ChatMessage(
+      id: id ?? this.id,
+      role: role ?? this.role,
+      content: content ?? this.content,
+      createdAt: createdAt ?? this.createdAt,
+      citations: citations ?? this.citations,
+      status: status ?? this.status,
+      error: error ?? this.error,
+    );
+  }
+
   static ChatMessageStatus _parseStatus(String? value) {
     switch (value) {
       case 'pending':

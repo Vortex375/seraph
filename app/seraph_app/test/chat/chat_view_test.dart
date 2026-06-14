@@ -351,6 +351,57 @@ void main() {
 
       expect(controller.sentDrafts, isEmpty);
     });
+
+    testWidgets('conversation list shows Running for the active session while generating and Finished when done', (tester) async {
+      controller.sessions.assignAll([
+        _session(
+          id: 'session-1',
+          title: 'Design review',
+          preview: 'Latest answer',
+          status: ChatSessionStatus.finished,
+        ),
+      ]);
+      controller.activeSessionId.value = 'session-1';
+
+      await tester.pumpWidget(_wrapApp(const ChatView(), size: const Size(1200, 900)));
+      await tester.pump();
+
+      expect(find.text('Finished'), findsOneWidget);
+
+      controller.sending.value = true;
+      await tester.pump();
+
+      expect(find.text('Running'), findsOneWidget);
+      expect(find.text('Finished'), findsNothing);
+
+      controller.sending.value = false;
+      await tester.pump();
+
+      expect(find.text('Finished'), findsOneWidget);
+      expect(find.text('Running'), findsNothing);
+    });
+
+    testWidgets('send button is disabled while generating', (tester) async {
+      controller.sessions.assignAll([
+        _session(id: 'session-1', title: 'Design review'),
+      ]);
+      controller.activeSessionId.value = 'session-1';
+
+      await tester.pumpWidget(_wrapApp(const ChatView(), size: const Size(1200, 900)));
+      await tester.pump();
+
+      controller.sending.value = true;
+      await tester.pump();
+
+      final sendButton = tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.send));
+      expect(sendButton.onPressed, isNull);
+
+      controller.sending.value = false;
+      await tester.pump();
+
+      final enabledButton = tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.send));
+      expect(enabledButton.onPressed, isNotNull);
+    });
   });
 }
 

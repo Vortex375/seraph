@@ -64,6 +64,7 @@ void main() {
             loading: false,
             errorText: null,
             hasActiveSession: true,
+            isGenerating: false,
             draftController: TextEditingController(),
             onSend: () {},
           ),
@@ -73,5 +74,48 @@ void main() {
 
     expect(find.byType(SelectionArea), findsOneWidget);
     expect(find.text('Selectable text'), findsOneWidget);
+  });
+
+  testWidgets('pending assistant message shows a loading indicator', (tester) async {
+    final message = ChatMessage(
+      id: 'msg-1',
+      role: 'assistant',
+      content: '',
+      status: ChatMessageStatus.running,
+      createdAt: DateTime.parse('2026-04-12T00:00:00Z'),
+      citations: const [],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ChatMessageCard(message: message),
+        ),
+      ),
+    );
+
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+  });
+
+  testWidgets('assistant message with content does not show a loading indicator', (tester) async {
+    final message = ChatMessage(
+      id: 'msg-2',
+      role: 'assistant',
+      content: 'Hello world',
+      status: ChatMessageStatus.running,
+      createdAt: DateTime.parse('2026-04-12T00:00:00Z'),
+      citations: const [],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ChatMessageCard(message: message),
+        ),
+      ),
+    );
+
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.text('Hello world'), findsOneWidget);
   });
 }

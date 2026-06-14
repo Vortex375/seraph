@@ -40,6 +40,7 @@ class _ChatViewState extends State<ChatView> {
       final sessionList = ChatSessionList(
         sessions: sessions,
         activeSessionId: activeSessionId,
+        isGenerating: controller.sending.value,
         onSelectSession: (sessionId) async {
           await controller.selectSession(sessionId);
           if (!isLargeLayout && mounted) {
@@ -91,6 +92,7 @@ class _ChatViewState extends State<ChatView> {
         loading: controller.messagesLoading.value,
         errorText: controller.historyError.value,
         hasActiveSession: activeSessionId != null,
+        isGenerating: controller.sending.value,
         draftController: controller.draftController,
         onSend: controller.sendCurrentMessage,
         onBack: isLargeLayout

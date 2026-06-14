@@ -9,6 +9,7 @@ class ChatSessionList extends StatelessWidget {
     super.key,
     required this.sessions,
     required this.activeSessionId,
+    required this.isGenerating,
     required this.onSelectSession,
     required this.onNewChat,
     required this.onDeleteSession,
@@ -18,6 +19,7 @@ class ChatSessionList extends StatelessWidget {
 
   final List<ChatSession> sessions;
   final String? activeSessionId;
+  final bool isGenerating;
   final ValueChanged<String> onSelectSession;
   final VoidCallback onNewChat;
   final ValueChanged<String> onDeleteSession;
@@ -55,7 +57,9 @@ class ChatSessionList extends StatelessWidget {
                       itemBuilder: (context, index) {
                         final session = sessions[index];
                         final selected = session.id == activeSessionId;
-                        final isRunning = session.status == ChatSessionStatus.running;
+                        final isRunning = selected
+                            ? isGenerating
+                            : session.status == ChatSessionStatus.running;
                         return ListTile(
                           selected: selected,
                           leading: Icon(
@@ -94,6 +98,7 @@ class ChatConversationPane extends StatefulWidget {
     required this.loading,
     required this.errorText,
     required this.hasActiveSession,
+    required this.isGenerating,
     required this.draftController,
     required this.onSend,
     this.onBack,
@@ -104,6 +109,7 @@ class ChatConversationPane extends StatefulWidget {
   final bool loading;
   final String? errorText;
   final bool hasActiveSession;
+  final bool isGenerating;
   final TextEditingController draftController;
   final VoidCallback onSend;
   final VoidCallback? onBack;
@@ -234,7 +240,13 @@ class _ChatConversationPaneState extends State<ChatConversationPane> {
                         itemCount: widget.messages.length,
                         itemBuilder: (context, index) {
                           final message = widget.messages[index];
-                          return ChatMessageCard(message: message);
+                          final showLoading = widget.isGenerating &&
+                              index == widget.messages.length - 1 &&
+                              message.role == 'assistant';
+                          return ChatMessageCard(
+                            message: message,
+                            showGeneratingIndicator: showLoading,
+                          );
                         },
                       ),
                     ),
@@ -261,7 +273,7 @@ class _ChatConversationPaneState extends State<ChatConversationPane> {
                 ),
                 const SizedBox(width: 12),
                 IconButton.filled(
-                  onPressed: widget.onSend,
+                  onPressed: widget.isGenerating ? null : widget.onSend,
                   tooltip: 'Send message',
                   icon: const Icon(Icons.send),
                 ),
@@ -275,9 +287,14 @@ class _ChatConversationPaneState extends State<ChatConversationPane> {
 }
 
 class ChatMessageCard extends StatelessWidget {
-  const ChatMessageCard({super.key, required this.message});
+  const ChatMessageCard({
+    super.key,
+    required this.message,
+    this.showGeneratingIndicator = false,
+  });
 
   final ChatMessage message;
+  final bool showGeneratingIndicator;
 
   @override
   Widget build(BuildContext context) {
@@ -304,7 +321,7 @@ class ChatMessageCard extends StatelessWidget {
                   style: Theme.of(context).textTheme.labelLarge,
                 ),
                 const SizedBox(height: 8),
-                if (isAssistant)
+                if (isAssistant && message.content.isNotEmpty)
                   MarkdownBody(
                     data: message.content,
                     styleSheet: MarkdownStyleSheet(
@@ -319,8 +336,18 @@ class ChatMessageCard extends StatelessWidget {
                       ),
                     ),
                   )
-                else
+                else if (!isAssistant)
                   Text(message.content),
+                if (isAssistant &&
+                    message.status != ChatMessageStatus.failed &&
+                    (showGeneratingIndicator || message.content.isEmpty)) ...[
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator.adaptive(strokeWidth: 2),
+                  ),
+                ],
                 if (isAssistant && message.status == ChatMessageStatus.failed && message.error != null) ...[
                   const SizedBox(height: 8),
                   Text(

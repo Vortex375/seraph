@@ -27,6 +27,7 @@ void main() {
         },
       );
       controller = ChatController(chatService);
+      chatService.controller = controller;
     });
 
     tearDown(() {
@@ -286,7 +287,8 @@ void main() {
       await firstSelect;
 
       expect(controller.activeSessionId.value, 'session-2');
-      expect(controller.messages.single.content, 'Latest session');
+      expect(controller.messages, hasLength(1));
+      expect(controller.messages.first.content, 'Latest session');
     });
 
     test('stream chunk triggers reactive refresh so listeners see update', () async {
@@ -488,10 +490,11 @@ void main() {
       await Future<void>.microtask(() {});
 
       await controller.selectSession('session-2');
-      expect(controller.activeSessionId.value, 'session-2');
-      expect(controller.messages.single.content, 'Existing session-2 reply');
-
       await firstSend;
+
+      expect(controller.activeSessionId.value, 'session-2');
+      expect(controller.messages, hasLength(1));
+      expect(controller.messages.single.content, 'Existing session-2 reply');
 
       expect(controller.activeSessionId.value, 'session-2');
       expect(controller.messages, hasLength(1));
@@ -562,6 +565,88 @@ void main() {
       await secondStream.close();
       await secondSend;
     });
+
+    test('generation state transitions from running to finished', () async {
+      final streamController = StreamController<Map<String, dynamic>>();
+      chatService.replyStreams['session-1'] = streamController.stream;
+
+      await controller.selectSession('session-1');
+      controller.draftController.text = 'Hello there';
+
+      final sendFuture = controller.sendCurrentMessage();
+      await Future<void>.microtask(() {});
+
+      expect(controller.isGenerating.value, isTrue);
+      expect(controller.messages[1].status, ChatMessageStatus.running);
+
+      streamController.add({'type': 'delta', 'content': 'Hello'});
+      await Future<void>.microtask(() {});
+      expect(controller.messages[1].status, ChatMessageStatus.running);
+
+      await streamController.close();
+      await sendFuture;
+
+      expect(controller.isGenerating.value, isFalse);
+      expect(controller.messages[1].status, ChatMessageStatus.finished);
+    });
+
+    test('stream finalization refreshes conversation messages from service', () async {
+      final streamController = StreamController<Map<String, dynamic>>();
+      chatService.replyStreams['session-1'] = streamController.stream;
+
+      await controller.selectSession('session-1');
+      controller.draftController.text = 'Hello there';
+
+      final sendFuture = controller.sendCurrentMessage();
+      await Future<void>.microtask(() {});
+
+      streamController.add({'type': 'delta', 'content': 'Hello'});
+      await Future<void>.microtask(() {});
+
+      chatService.refreshedMessagesBySession['session-1'] = [
+        _message(id: 'user-remote', role: 'user', content: 'Hello there'),
+        _message(id: 'assistant-remote', role: 'assistant', content: 'Hello from refreshed state'),
+      ];
+
+      await streamController.close();
+      await sendFuture;
+      await Future<void>.microtask(() {});
+
+      expect(controller.messages, hasLength(2));
+      expect(controller.messages[1].id, 'assistant-remote');
+      expect(controller.messages[1].content, 'Hello from refreshed state');
+      expect(controller.messages[1].status, ChatMessageStatus.finished);
+      expect(chatService.refreshedSessionIds, contains('session-1'));
+    });
+
+    test('stream finalization refreshes session metadata at the end', () async {
+      final streamController = StreamController<Map<String, dynamic>>();
+      chatService.replyStreams['session-1'] = streamController.stream;
+      chatService.sessions[0] = _session(
+        id: 'session-1',
+        title: 'Inbox',
+        headline: 'Updated headline',
+        preview: 'Updated preview',
+        status: ChatSessionStatus.finished,
+        updatedAt: DateTime.parse('2026-04-12T00:00:10Z'),
+        lastMessageAt: DateTime.parse('2026-04-12T00:00:11Z'),
+      );
+
+      await controller.loadSessions();
+      await controller.selectSession('session-1');
+      controller.draftController.text = 'Hello there';
+
+      final sendFuture = controller.sendCurrentMessage();
+      await Future<void>.microtask(() {});
+
+      await streamController.close();
+      await sendFuture;
+      await Future<void>.microtask(() {});
+
+      expect(controller.sessions.single.headline, 'Updated headline');
+      expect(controller.sessions.single.preview, 'Updated preview');
+      expect(controller.sessions.single.status, ChatSessionStatus.finished);
+    });
   });
 }
 
@@ -575,9 +660,12 @@ class _FakeChatService extends ChatService {
   final Map<String, List<ChatMessage>> messagesBySession;
   final Map<String, Future<List<ChatMessage>>> messageFutures = {};
   final Map<String, Stream<Map<String, dynamic>>> replyStreams = {};
+  final Map<String, List<ChatMessage>> refreshedMessagesBySession = {};
   final List<_SentMessage> sentMessages = [];
+  final List<String> refreshedSessionIds = [];
   Object? deleteError;
   Object? sendError;
+  ChatController? controller;
 
   @override
   Future<List<ChatSession>> listSessions() async => List<ChatSession>.from(sessions);
@@ -601,6 +689,11 @@ class _FakeChatService extends ChatService {
 
   @override
   Future<List<ChatMessage>> listMessages(String sessionId) async {
+    refreshedSessionIds.add(sessionId);
+    final refreshed = refreshedMessagesBySession[sessionId];
+    if (refreshed != null) {
+      return List<ChatMessage>.from(refreshed);
+    }
     final future = messageFutures[sessionId];
     if (future != null) {
       return List<ChatMessage>.from(await future);

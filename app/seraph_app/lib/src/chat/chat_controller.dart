@@ -20,6 +20,11 @@ class ChatController extends GetxController {
   final RxBool messagesLoading = false.obs;
   final RxBool sending = false.obs;
 
+  /// Reactive alias for whether the assistant is currently generating a reply.
+  /// This is the single source of truth used by both the conversation list
+  /// and the conversation view.
+  RxBool get isGenerating => sending;
+
   StreamSubscription<Map<String, dynamic>>? _replySubscription;
   Completer<void>? _replyCompleter;
   int _selectionRequestId = 0;
@@ -117,6 +122,7 @@ class ChatController extends GetxController {
       content: '',
       createdAt: DateTime.now().toUtc(),
       citations: const [],
+      status: ChatMessageStatus.running,
     );
 
     messages.add(userMessage);
@@ -141,19 +147,13 @@ class ChatController extends GetxController {
             historyError.value = 'Failed to stream assistant reply';
             final last = messages.removeLast();
             messages.add(
-              ChatMessage(
-                id: last.id,
-                role: last.role,
-                content: last.content,
-                createdAt: last.createdAt,
-                citations: last.citations,
+              last.copyWith(
                 status: ChatMessageStatus.failed,
                 error: event['content'] as String?,
               ),
             );
             messages.refresh();
-            sending.value = false;
-            _completeReply();
+            unawaited(_finalizeReply(replyGeneration, sessionId));
             return;
           }
 
@@ -167,6 +167,7 @@ class ChatController extends GetxController {
               content: type == 'delta' ? '${last.content}$content' : content,
               createdAt: last.createdAt,
               citations: _extractStreamCitations(event['citations'], last.citations),
+              status: ChatMessageStatus.running,
             ));
             messages.refresh();
             unawaited(_refreshSessionMetadata(sessionId));
@@ -188,29 +189,21 @@ class ChatController extends GetxController {
           historyError.value = 'Failed to stream assistant reply';
           final last = messages.removeLast();
           messages.add(
-            ChatMessage(
-              id: last.id,
-              role: last.role,
-              content: last.content,
-              createdAt: last.createdAt,
-              citations: last.citations,
+            last.copyWith(
               status: ChatMessageStatus.failed,
             ),
           );
           messages.refresh();
-          sending.value = false;
-          _completeReply();
+          unawaited(_finalizeReply(replyGeneration, sessionId));
         },
         onDone: () {
           if (replyGeneration != _replyGeneration || activeSessionId.value != sessionId) {
             return;
           }
-          sending.value = false;
-          _completeReply();
+          unawaited(_finalizeReply(replyGeneration, sessionId));
         },
       );
       await _replyCompleter?.future;
-      await _refreshSessionMetadata(sessionId);
     } catch (_) {
       messages.remove(userMessage);
       messages.remove(assistantMessage);
@@ -271,6 +264,43 @@ class ChatController extends GetxController {
     _replyCompleter = null;
     if (completer != null && !completer.isCompleted) {
       completer.complete();
+    }
+  }
+
+  Future<void> _finalizeReply(int replyGeneration, String sessionId) async {
+    if (replyGeneration != _replyGeneration || activeSessionId.value != sessionId) {
+      return;
+    }
+    _completeReply();
+    sending.value = false;
+
+    final last = messages.isEmpty ? null : messages.last;
+    if (last != null && last.role == 'assistant' && last.status != ChatMessageStatus.failed) {
+      messages.removeLast();
+      messages.add(last.copyWith(status: ChatMessageStatus.finished));
+      messages.refresh();
+    }
+
+    await _refreshCurrentSession(sessionId, replyGeneration);
+    await _refreshSessionMetadata(sessionId);
+  }
+
+  Future<void> _refreshCurrentSession(String sessionId, int replyGeneration) async {
+    if (replyGeneration != _replyGeneration || activeSessionId.value != sessionId) {
+      return;
+    }
+    try {
+      final latestMessages = await chatService.listMessages(sessionId);
+      if (replyGeneration != _replyGeneration || activeSessionId.value != sessionId) {
+        return;
+      }
+      // On the first message of a new session the server may not have persisted
+      // the turn yet. Keep the optimistic streamed copy in that case.
+      if (latestMessages.isNotEmpty) {
+        messages.assignAll(latestMessages);
+      }
+    } catch (_) {
+      // Keep the locally streamed copy if the server refresh fails.
     }
   }
 
