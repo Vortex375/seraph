@@ -1,11 +1,11 @@
 module umbasa.net/seraph/entities
 
-go 1.25.4
+go 1.26.5
 
 require (
 	github.com/iancoleman/strcase v0.3.0
 	github.com/stretchr/testify v1.10.0
-	go.mongodb.org/mongo-driver v1.17.1
+	go.mongodb.org/mongo-driver v1.17.9
 )
 
 require (

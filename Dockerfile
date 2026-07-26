@@ -1,5 +1,5 @@
 # Build the Go microservices
-FROM --platform=$BUILDPLATFORM golang:1.25.4 AS build
+FROM --platform=$BUILDPLATFORM golang:1.26.5 AS build
 WORKDIR /src
 COPY . .
 
