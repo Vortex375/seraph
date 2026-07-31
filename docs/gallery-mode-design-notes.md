@@ -12,9 +12,11 @@ The two architectural decisions distilled out of it:
 - [ADR 0002 — Photo upload is one-way, atomically published, and verified
   through the feed](adr/0002-photo-upload-safety-model.md)
 
-Status: **design agreed, not yet specified for implementation.**
+Status: **specified.** The spec and its implementation tickets live in
+`.scratch/gallery-mode/`. One decision below has since changed and one deferred
+item has been closed — see [Postscript](#postscript--2026-08-01).
 
-Started 2026-07-26.
+Started 2026-07-26. Design conversation closed 2026-07-31.
 
 ---
 
@@ -709,3 +711,45 @@ Mode.
 - **Video in Gallery Mode**, which changes metadata extraction, thumbnailing and
   upload sizes all at once.
 - **iOS device support**, kept cheap by the Local Source seam (D7).
+
+---
+
+## Postscript — 2026-08-01
+
+The decisions above are left as they were written. This section records what
+changed after the conversation closed, so that a reader can tell the record from
+the current position without either being rewritten.
+
+### D10 — client-side staging is dropped
+
+D10 has the app upload to a temp name in a staging folder and `MOVE` it into
+place, on the reasoning set out in its aside: `handlePut` streamed the request
+body straight into the destination with no rollback, so an interrupted PUT left
+a truncated file at the final path, the D2 collision rule would then mistake it
+for real content, and the result was a corrupt file *and* a duplicate.
+
+That failure has since been fixed at its source. The WebDAV layer now stages
+**every** PUT itself and moves it into place on completion, so the final path is
+either absent or complete for every client — rclone, Nextcloud clients, the web
+UI and the app alike. Client-side staging would now be a second implementation
+of a guarantee the server already makes, costing an extra round trip per photo
+and a staging folder to sweep.
+
+**The app therefore PUTs directly to the final path.** Everything else in D10
+stands: never overwrite, disambiguate on collision, and treat a photo as backed
+up only once the delta feed reports it back.
+
+[ADR 0002](adr/0002-photo-upload-safety-model.md) has been amended to match.
+
+### Deferred work — server-side atomic PUT is done
+
+The "Server-side atomic PUT" entry in the deferred list above was closed on
+2026-07-31, before Gallery Mode was specified. It is the change described
+immediately above, and it is what made the D10 revision possible. The remaining
+entries in that list are still open.
+
+### Open questions
+
+The open questions above were carried into the spec rather than resolved. The
+`Chtimes` aside in D5 and the format, video, HEIC and iOS items remain out of
+scope by the same reasoning recorded here.
