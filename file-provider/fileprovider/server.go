@@ -52,6 +52,7 @@ type FileProviderServer struct {
 	msgApi avro.API
 	fs     webdav.FileSystem
 
+	mu          sync.Mutex
 	requestSub  *nats.Subscription
 	requestChan chan *nats.Msg
 	wg          sync.WaitGroup
@@ -123,37 +124,51 @@ func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.
 
 func (s *FileProviderServer) Start() (err error) {
 	providerTopic := FileProviderTopicPrefix + s.providerId
-	s.requestChan = make(chan *nats.Msg, nats.DefaultSubPendingMsgsLimit)
-	s.requestSub, err = s.nc.ChanQueueSubscribe(providerTopic, providerTopic, s.requestChan)
-	s.ctx, s.cancel = context.WithCancel(context.Background())
+	requestChan := make(chan *nats.Msg, nats.DefaultSubPendingMsgsLimit)
+	requestSub, err := s.nc.ChanQueueSubscribe(providerTopic, providerTopic, requestChan)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	s.mu.Lock()
+	s.requestChan = requestChan
+	s.requestSub = requestSub
+	s.ctx = ctx
+	s.cancel = cancel
+	s.mu.Unlock()
+
 	s.wg.Add(1)
-	go s.messageLoop()
+	go s.messageLoop(ctx, requestChan)
 	return
 }
 
 func (s *FileProviderServer) Stop(force bool) (err error) {
-	cancel := func() {
-		if s.ctx != nil {
-			s.cancel()
-			s.cancel = nil
-			s.ctx = nil
+	s.mu.Lock()
+	cancel := s.cancel
+	requestSub := s.requestSub
+	requestChan := s.requestChan
+	s.cancel = nil
+	s.ctx = nil
+	s.requestSub = nil
+	s.requestChan = nil
+	s.mu.Unlock()
+
+	cancelFunc := func() {
+		if cancel != nil {
+			cancel()
 		}
 	}
 
 	// if force is true then cancel the context to force-close any open files
 	if force {
-		cancel()
+		cancelFunc()
 	} else {
-		defer cancel()
+		defer cancelFunc()
 	}
 
-	if s.requestSub != nil {
-		err = s.requestSub.Unsubscribe()
-		s.requestSub = nil
+	if requestSub != nil {
+		err = requestSub.Unsubscribe()
 	}
-	if s.requestChan != nil {
-		close(s.requestChan)
-		s.requestChan = nil
+	if requestChan != nil {
+		close(requestChan)
 	}
 
 	s.wg.Wait()
@@ -161,23 +176,23 @@ func (s *FileProviderServer) Stop(force bool) (err error) {
 	return
 }
 
-func (s *FileProviderServer) messageLoop() {
+func (s *FileProviderServer) messageLoop(ctx context.Context, requestChan chan *nats.Msg) {
 	defer s.wg.Done()
 
 	for {
-		msg, ok := <-s.requestChan
+		msg, ok := <-requestChan
 		if !ok {
 			return
 		}
 		s.wg.Add(1)
-		go s.handleMessage(msg)
+		go s.handleMessage(ctx, msg)
 	}
 }
 
-func (s *FileProviderServer) handleMessage(msg *nats.Msg) {
+func (s *FileProviderServer) handleMessage(ctx context.Context, msg *nats.Msg) {
 	defer s.wg.Done()
 
-	ctx := messaging.ExtractTraceContext(s.ctx, msg)
+	ctx = messaging.ExtractTraceContext(ctx, msg)
 	request := FileProviderRequest{}
 	s.msgApi.Unmarshal(FileProviderRequestSchema, msg.Data, &request)
 
