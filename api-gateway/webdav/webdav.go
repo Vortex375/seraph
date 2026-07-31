@@ -87,20 +87,24 @@ func New(p Params) Result {
 		clients:    &sync.Map{},
 		lockSystem: webdav.NewMemLS(),
 	}
-	fs := &delegatingFs{server, *server.logger.GetLogger("webdav.fs")}
-	server.fs = fs
+	log := server.logger.GetLogger("webdav.fs")
+	server.fs = &delegatingFs{
+		server:  server,
+		log:     *log,
+		sweeper: newStagingSweeper(log),
+	}
 	return Result{Server: server, Handler: server}
 }
 
 func (server *webDavServer) Setup(app *gin.Engine, apiGroup *gin.RouterGroup, publicApiGroup *gin.RouterGroup) {
 	// Gin's router doesn't handle WebDAV methods like PROPFIND, so we must register a global middleware here
 	passwordAuth := server.auth.AuthMiddleware(true, "Access to WebDAV")
-	handler := &webdav.Handler{
+	handler := withAtomicPut(&webdav.Handler{
 		Prefix:     PathPrefix,
-		FileSystem: &delegatingFs{server, *server.logger.GetLogger("webdav.fs")},
+		FileSystem: server.fs,
 		LockSystem: server.lockSystem,
 		Logger:     makeLogger(server.logger),
-	}
+	})
 	app.Use(scoped(PathPrefix, false, func(ctx *gin.Context) {
 		// redirect requests to "dav/" to "dav/p/"
 		//TODO: doesn't seem to be understood by clients

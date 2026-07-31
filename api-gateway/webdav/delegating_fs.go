@@ -18,8 +18,9 @@ import (
 )
 
 type delegatingFs struct {
-	server *webDavServer
-	log    slog.Logger
+	server  *webDavServer
+	log     slog.Logger
+	sweeper *stagingSweeper
 }
 
 var _ webdav.FileSystem = &delegatingFs{}
@@ -93,11 +94,7 @@ func (f *delegatingFs) getFsAndPath(ctx context.Context, op string, name string)
 
 		f.log.Debug(fmt.Sprintf("resolved %s:%s to %s:%s", providerId, path, resolvedProviderId, resolvedPath), "providerId", providerId, "path", path, "resolvedProviderId", resolvedProviderId, "resolvedPath", resolvedPath)
 
-		fs := &fileprovider.LimitedFs{
-			FileSystem: f.server.getClient(resolvedProviderId),
-			ReadOnly:   readOnly,
-		}
-		return fs, resolvedPath, nil
+		return f.providerFs(resolvedProviderId, readOnly), resolvedPath, nil
 
 	// "share mode"
 	case "s":
@@ -112,17 +109,32 @@ func (f *delegatingFs) getFsAndPath(ctx context.Context, op string, name string)
 
 		f.log.Debug(fmt.Sprintf("resolved %s:%s to %s:%s", providerId, path, resolvedProviderId, resolvedPath), "providerId", providerId, "path", path, "resolvedProviderId", resolvedProviderId, "resolvedPath", resolvedPath)
 
-		fs := &fileprovider.LimitedFs{
-			FileSystem: f.server.getClient(resolvedProviderId),
-			ReadOnly:   readOnly,
-		}
-		return fs, resolvedPath, nil
+		return f.providerFs(resolvedProviderId, readOnly), resolvedPath, nil
 
 	// invalid mode
 	default:
 		return nil, "", fs.ErrNotExist
 	}
 
+}
+
+// providerFs stacks the file provider client with staged PUT handling and the
+// access restrictions of the space or share it was resolved from.
+//
+// [atomicPutFs] sits below [fileprovider.LimitedFs] on purpose: on a read-only
+// mount the open flags are reduced to O_RDONLY before they reach the decorator,
+// so a write is refused by the mount instead of failing on an attempt to create
+// a staging file.
+func (f *delegatingFs) providerFs(providerId string, readOnly bool) webdav.FileSystem {
+	staged := &atomicPutFs{
+		FileSystem: f.server.getClient(providerId),
+		log:        &f.log,
+		sweeper:    f.sweeper,
+	}
+	return &fileprovider.LimitedFs{
+		FileSystem: staged,
+		ReadOnly:   readOnly,
+	}
 }
 
 func getModeAndProviderAndPath(p string) (string, string, string) {
