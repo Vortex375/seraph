@@ -298,10 +298,8 @@ func (t *Thumbnailer) handleRequest(ctx context.Context, limiter util.Limiter, r
 	if req.Height == 0 {
 		req.Height = DefaultThumbnailSize
 	}
-	if !req.Exact {
-		req.Width = fitSize(req.Width)
-		req.Height = fitSize(req.Height)
-	}
+	req.Width = fitSize(req.Width)
+	req.Height = fitSize(req.Height)
 
 	thumbName := fmt.Sprintf("%s_%dx%d.jpg", ThumbnailHash(path.Join(req.ProviderID, req.Path)), req.Width, req.Height)
 

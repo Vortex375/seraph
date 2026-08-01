@@ -174,10 +174,11 @@ func (ic *invalidationConsumer) handleMessage(ctx context.Context, msg jetstream
 //
 // Thumbnail storage is a flat folder keyed by a hash of (providerId, path)
 // plus the requested width/height, with no way to enumerate "all thumbnails
-// for this file" other than trying each size combination a non-exact
-// request could have produced (see fitSize/ThumbnailSizes). Most attempts
-// return not-found, which is expected and not an error: a file that never
-// had Thumbnails at a given size must not produce any log noise.
+// for this file" other than trying each size combination a request could
+// have produced (see fitSize/ThumbnailSizes; every request snaps to one of
+// these, so the combinations are exhaustive). Most attempts return
+// not-found, which is expected and not an error: a file that never had
+// Thumbnails at a given size must not produce any log noise.
 func (t *Thumbnailer) invalidateThumbnails(ctx context.Context, providerId string, filePath string) error {
 	hash := ThumbnailHash(path.Join(providerId, filePath))
 

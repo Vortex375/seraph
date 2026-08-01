@@ -178,14 +178,11 @@ func (h *previewHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup, publi
 				return
 			}
 		}
-		exact := ctx.Query("exact") != ""
-
 		req := thumbnailer.ThumbnailRequest{
 			ProviderID: providerId,
 			Path:       filePath,
 			Width:      width,
 			Height:     height,
-			Exact:      exact,
 		}
 		resp := thumbnailer.ThumbnailResponse{}
 		err = messaging.Request(ctx.Request.Context(), h.nc, thumbnailer.ThumbnailRequestTopic, &req, &resp)

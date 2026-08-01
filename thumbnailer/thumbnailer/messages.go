@@ -12,10 +12,9 @@ type ThumbnailRequest struct {
 	Path       string `avro:"path"`
 	Width      int    `avro:"width"`
 	Height     int    `avro:"height"`
-	Exact      bool   `avro:"exact"`
 }
 
-var schemaThumbnailRequest = avro.MustParse(`{"name":"seraph.thumbnailer.ThumbnailRequest","type":"record","fields":[{"name":"providerId","type":"string"},{"name":"path","type":"string"},{"name":"width","type":"int"},{"name":"height","type":"int"},{"name":"exact","type":"boolean"}]}`)
+var schemaThumbnailRequest = avro.MustParse(`{"name":"seraph.thumbnailer.ThumbnailRequest","type":"record","fields":[{"name":"providerId","type":"string"},{"name":"path","type":"string"},{"name":"width","type":"int"},{"name":"height","type":"int"}]}`)
 
 // Schema returns the schema for ThumbnailRequest.
 func (o *ThumbnailRequest) Schema() avro.Schema {

@@ -89,3 +89,15 @@ combinations*, not an entirely separate dimension space — but the same paragra
 scopes flat-storage/no-enumeration limitations out of this ticket pending storage
 sharding, and this is a symptom of exactly that. Resolved on that basis, with a
 follow-up raised: it is a real staleness and leak path, not a theoretical one.
+
+### Follow-up resolved — `Exact` sizing removed
+
+No caller in `webapp/` or `app/` ever passed `exact=1` — it was unused surface
+area, not a load-bearing feature. Rather than folding this into the deferred
+storage-sharding work, `Exact` was removed outright: `ThumbnailRequest` no
+longer carries the field (`thumbnailer/thumbnailer/messages_schema.avsc`,
+regenerated via `avrogen`), `handleRequest` always snaps `width`/`height` to
+the nearest `ThumbnailSizes` preset, and `preview.go` no longer accepts the
+`exact` query parameter. Every Thumbnail a request can produce is now one of
+the 16 known size combinations, so `invalidateThumbnails`'s enumeration is
+exhaustive again with no gap and no dependency on sharding.

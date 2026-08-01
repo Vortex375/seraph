@@ -7,8 +7,7 @@
       { "name": "providerId", "type": "string" },
       { "name": "path", "type": "string" },
       { "name": "width", "type": "int" },
-      { "name": "height", "type": "int" },
-      { "name": "exact", "type": "boolean" }
+      { "name": "height", "type": "int" }
     ]
   },
   {
