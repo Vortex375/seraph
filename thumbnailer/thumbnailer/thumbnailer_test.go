@@ -33,8 +33,10 @@ import (
 	"github.com/disintegration/imaging"
 	"github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/net/webdav"
+	"umbasa.net/seraph/events"
 	"umbasa.net/seraph/file-provider/fileprovider"
 	"umbasa.net/seraph/logging"
 	"umbasa.net/seraph/messaging"
@@ -64,7 +66,10 @@ func TestMain(m *testing.M) {
 }
 
 func setup() {
-	opts := &server.Options{}
+	opts := &server.Options{
+		JetStream: true,
+		StoreDir:  os.TempDir(),
+	}
 	var err error
 	natsServer, err = server.NewServer(opts)
 
@@ -123,10 +128,24 @@ func getThumbnailer(t *testing.T) (*Thumbnailer, *nats.Conn) {
 }
 
 func getThumbnailerWithOptions(t *testing.T, options *Options) (*Thumbnailer, *nats.Conn) {
+	thumb, nc, _ := getThumbnailerWithJetStream(t, options)
+	return thumb, nc
+}
+
+// getThumbnailerWithJetStream is like getThumbnailerWithOptions but also
+// returns the jetstream.JetStream handle backing the Thumbnailer, for tests
+// that need to publish FileChangedEvents or inspect/manipulate the durable
+// consumer directly.
+func getThumbnailerWithJetStream(t *testing.T, options *Options) (*Thumbnailer, *nats.Conn, jetstream.JetStream) {
 	nc, err := nats.Connect(natsServer.ClientURL())
 	if err != nil {
 		t.Error(err)
 		t.FailNow()
+	}
+
+	js, err := jetstream.New(nc)
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	logger := logging.New(logging.Params{})
@@ -134,6 +153,7 @@ func getThumbnailerWithOptions(t *testing.T, options *Options) (*Thumbnailer, *n
 
 	res, _ := NewThumbnailer(Params{
 		Nc:      nc,
+		Js:      js,
 		Tracing: tracing.NewNoopTracing(),
 		Logger:  logger,
 		Options: options,
@@ -144,7 +164,44 @@ func getThumbnailerWithOptions(t *testing.T, options *Options) (*Thumbnailer, *n
 		t.Fatal(err)
 	}
 
-	return res.Thumbnailer, nc
+	return res.Thumbnailer, nc, js
+}
+
+// resetInvalidationStream removes the durable file-change stream (if any)
+// so each invalidation test starts from a clean slate: the durable consumer
+// name is fixed (invalidationConsumerName), so stream state would otherwise
+// leak between tests in this package.
+func resetInvalidationStream(t *testing.T, js jetstream.JetStream) {
+	t.Helper()
+	t.Cleanup(func() {
+		_ = js.DeleteStream(context.Background(), events.FileChangedStream)
+	})
+}
+
+// publishFileChanged publishes a FileChangedEvent on the durable file-change
+// stream/topic, creating the stream first if it does not exist yet - mirroring
+// how file-indexer (the real producer) does it.
+func publishFileChanged(t *testing.T, js jetstream.JetStream, ev events.FileChangedEvent) {
+	t.Helper()
+
+	_, err := js.CreateOrUpdateStream(context.Background(), jetstream.StreamConfig{
+		Name:     events.FileChangedStream,
+		Subjects: []string{events.FileChangedTopic},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := ev.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	topic := fmt.Sprintf(events.FileChangedTopicPattern, ev.FileID)
+	_, err = js.Publish(context.Background(), topic, data)
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 // writeFixtureJpeg writes a solid-color JPEG of the given dimensions into the

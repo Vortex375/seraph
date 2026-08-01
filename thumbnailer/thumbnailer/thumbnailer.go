@@ -36,6 +36,7 @@ import (
 
 	"github.com/disintegration/imaging"
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/fx"
 	"umbasa.net/seraph/file-provider/fileprovider"
@@ -92,6 +93,7 @@ type Params struct {
 	fx.In
 
 	Nc      *nats.Conn
+	Js      jetstream.JetStream `optional:"true"`
 	Logger  *logging.Logger
 	Tracing *tracing.Tracing
 	Options *Options `optional:"true"`
@@ -119,17 +121,19 @@ type Thumbnailer struct {
 	log              *slog.Logger
 	tracer           trace.Tracer
 	nc               *nats.Conn
+	js               jetstream.JetStream
 	fileProviderId   string
 	path             string
 	thumbnailStorage fileprovider.Client
 
-	mu          sync.Mutex
-	sub         *nats.Subscription
-	requestChan chan *nats.Msg
-	limiter     util.Limiter
-	ctx         context.Context
-	cancel      context.CancelFunc
-	wg          sync.WaitGroup
+	mu           sync.Mutex
+	sub          *nats.Subscription
+	requestChan  chan *nats.Msg
+	limiter      util.Limiter
+	invalidation *invalidationConsumer
+	ctx          context.Context
+	cancel       context.CancelFunc
+	wg           sync.WaitGroup
 }
 
 func NewThumbnailer(p Params, fileProviderId string, path string, thumbnailStorage fileprovider.Client) (Result, error) {
@@ -158,6 +162,7 @@ func NewThumbnailer(p Params, fileProviderId string, path string, thumbnailStora
 			log:              p.Logger.GetLogger("thumbnailer"),
 			tracer:           tracer,
 			nc:               p.Nc,
+			js:               p.Js,
 			fileProviderId:   fileProviderId,
 			path:             path,
 			thumbnailStorage: thumbnailStorage,
@@ -195,6 +200,17 @@ func (t *Thumbnailer) Start() error {
 	t.wg.Add(1)
 	go t.messageLoop(ctx, requestChan, limiter)
 
+	// the durable file-change consumer runs alongside the preview request
+	// loop, sharing the same ctx/wg shutdown so Stop() joins both.
+	invalidation, err := t.startInvalidationConsumer(ctx)
+	if err != nil {
+		t.log.Error("failed to start file-change invalidation consumer; thumbnails will not be cleaned up on file changes", "error", err)
+	} else {
+		t.mu.Lock()
+		t.invalidation = invalidation
+		t.mu.Unlock()
+	}
+
 	return nil
 }
 
@@ -203,9 +219,11 @@ func (t *Thumbnailer) Stop() error {
 	sub := t.sub
 	requestChan := t.requestChan
 	cancel := t.cancel
+	invalidation := t.invalidation
 	t.sub = nil
 	t.requestChan = nil
 	t.limiter = nil
+	t.invalidation = nil
 	t.ctx = nil
 	t.cancel = nil
 	t.mu.Unlock()
@@ -217,12 +235,16 @@ func (t *Thumbnailer) Stop() error {
 	if requestChan != nil {
 		close(requestChan)
 	}
+	if invalidation != nil {
+		invalidation.stop()
+	}
 	if cancel != nil {
 		cancel()
 	}
 
-	// waits for messageLoop and any in-flight handleMessage goroutines,
-	// which subsumes the limiter's own accounting of running conversions
+	// waits for messageLoop, any in-flight handleMessage goroutines, and the
+	// invalidation consumer's loop/handlers, which subsumes the limiters'
+	// own accounting of running work
 	t.wg.Wait()
 
 	return err
