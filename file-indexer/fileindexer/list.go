@@ -21,6 +21,7 @@ package fileindexer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"path"
@@ -184,49 +185,60 @@ func (l *list) replyError(requestId string, replyId string, err error) {
 	l.nc.Publish(replyTopic, data)
 }
 
-// listPage executes a single bounded range scan over the compound
-// (providerId, path) index, returning at most pageSize entries beneath
-// prefix, ordered by path so that paging is stable.
+// listPage returns at most pageSize entries at or beneath prefix, ordered
+// by path so that paging is stable.
 //
-// The range bounds are computed so that this is a plain range scan on the
-// existing unique compound index -- no regex, no collection scan. Prefix
-// matching respects directory boundaries: a prefix of "/Photos" matches
-// "/Photos" itself and anything under "/Photos/...", but never a sibling
-// like "/Photos2".
+// The prefix selects two disjoint pieces of the key space: the prefix path
+// itself, and the half-open range [prefix+"/", prefix+"0") of descendants.
+// They are queried separately, as one point lookup plus one range scan,
+// rather than combined with an $or: MongoDB answers such an $or by scanning
+// the whole provider's key space with the $or as a residual filter (an
+// IXSCAN with [MinKey, MaxKey] path bounds), which defeats the point of the
+// bound. Issued separately, each query keeps tight index bounds.
+//
+// Either way no regex is involved, so prefix matching cannot silently
+// degrade to a collection scan, and directory boundaries hold in both
+// directions: a prefix of "/Photos" matches "/Photos" and anything under
+// "/Photos/...", but never "/Photos2", "/Photos.txt" or "/Photos-old".
 func (l *list) listPage(ctx context.Context, providerId string, prefix string, cursor string, pageSize int) (entries []events.FileIndexListEntry, nextCursor string, hasMore bool, err error) {
 	entries = []events.FileIndexListEntry{}
 
 	if providerId == "" {
 		return
 	}
-
-	lower, upper, ok := prefixRange(prefix)
+	exact, _, _, ok := prefixRange(prefix)
 	if !ok {
-		// empty or malformed prefix -> empty page, not an error
+		// empty/unknown prefix -> empty page, not an error
 		return
 	}
 
-	// lower bound of the range: the prefix itself, unless a cursor from a
-	// previous page moves it further along -- either way this stays a
-	// single bounded range on the (providerId, path) index.
-	lowerOp := "$gte"
-	lowerBound := lower
-	if cursor != "" && cursor > lower {
-		lowerOp = "$gt"
-		lowerBound = cursor
+	remaining := pageSize
+
+	// The prefix path itself only ever belongs on the first page: it sorts
+	// before all of its descendants, so any cursor is already past it.
+	if cursor == "" && exact != "" {
+		selfFilter, _ := buildPrefixSelfFilter(providerId, prefix)
+		var self File
+		decodeErr := l.files.FindOne(ctx, selfFilter).Decode(&self)
+		if decodeErr == nil {
+			entries = append(entries, toListEntry(self))
+			remaining--
+		} else if !errors.Is(decodeErr, mongo.ErrNoDocuments) {
+			err = decodeErr
+			return
+		}
 	}
 
-	pathFilter := bson.M{lowerOp: lowerBound, "$lt": upper}
-
-	filter := bson.M{
-		"providerId": providerId,
-		"path":       pathFilter,
+	filter, ok := buildDescendantsFilter(providerId, prefix, cursor)
+	if !ok {
+		// cursor is past the end of the prefix range
+		return
 	}
 
 	// fetch one extra document to determine whether another page follows
 	findOpts := options.Find().
-		SetSort(bson.D{{Key: "providerId", Value: 1}, {Key: "path", Value: 1}}).
-		SetLimit(int64(pageSize) + 1)
+		SetSort(listSort).
+		SetLimit(int64(remaining) + 1)
 
 	cur, findErr := l.files.Find(ctx, filter, findOpts)
 	if findErr != nil {
@@ -241,60 +253,123 @@ func (l *list) listPage(ctx context.Context, providerId string, prefix string, c
 		return
 	}
 
-	if len(files) > pageSize {
+	if len(files) > remaining {
 		hasMore = true
-		files = files[:pageSize]
+		files = files[:remaining]
 	}
 
 	for _, f := range files {
-		entries = append(entries, events.FileIndexListEntry{
-			ProviderId: f.ProviderId,
-			Path:       f.Path,
-			Size:       f.Size,
-			ModTime:    f.ModTime,
-			IsDir:      f.IsDir,
-			Mime:       f.Mime,
-		})
+		entries = append(entries, toListEntry(f))
 	}
 
-	if hasMore && len(files) > 0 {
-		nextCursor = files[len(files)-1].Path
+	// the cursor is the last path of the page as a whole, which may be the
+	// prefix entry itself when the page had no room left for descendants
+	if hasMore && len(entries) > 0 {
+		nextCursor = entries[len(entries)-1].Path
 	}
 
 	return
 }
 
-// prefixRange computes the [lower, upper) bounds on the path field that
-// select exactly the prefix path itself plus every descendant beneath it,
-// while excluding any sibling whose name merely starts with the same
-// characters (e.g. prefix "/Photos" must not match "/Photos2").
+func toListEntry(f File) events.FileIndexListEntry {
+	return events.FileIndexListEntry{
+		ProviderId: f.ProviderId,
+		Path:       f.Path,
+		Size:       f.Size,
+		ModTime:    f.ModTime,
+		IsDir:      f.IsDir,
+		Mime:       f.Mime,
+	}
+}
+
+// buildPrefixSelfFilter matches the prefix path itself: an equality match
+// on both index fields, i.e. a point lookup on (providerId, path).
+func buildPrefixSelfFilter(providerId string, prefix string) (bson.M, bool) {
+	if providerId == "" {
+		return nil, false
+	}
+	exact, _, _, ok := prefixRange(prefix)
+	if !ok || exact == "" {
+		return nil, false
+	}
+	return bson.M{"providerId": providerId, "path": exact}, true
+}
+
+// buildDescendantsFilter matches everything strictly beneath the prefix as
+// the half-open path range [prefix+"/", prefix+"0"), narrowed by the paging
+// cursor. Equality on providerId plus a range on path is exactly the shape
+// the (providerId, path) index is ordered by, so this stays a bounded range
+// scan.
+//
+// ok is false when the request can only ever match nothing: no provider, no
+// prefix, or a cursor already past the end of the range.
+func buildDescendantsFilter(providerId string, prefix string, cursor string) (bson.M, bool) {
+	if providerId == "" {
+		return nil, false
+	}
+
+	_, lower, upper, ok := prefixRange(prefix)
+	if !ok {
+		return nil, false
+	}
+
+	lowerOp := "$gte"
+	lowerBound := lower
+	if cursor != "" && cursor > lower {
+		// continue strictly after the last path of the previous page
+		lowerOp = "$gt"
+		lowerBound = cursor
+	}
+	if lowerBound >= upper {
+		return nil, false
+	}
+
+	return bson.M{
+		"providerId": providerId,
+		"path":       bson.M{lowerOp: lowerBound, "$lt": upper},
+	}, true
+}
+
+// listSort is the page ordering: the (providerId, path) index order, which
+// is what makes the path cursor stable across pages.
+var listSort = bson.D{{Key: "providerId", Value: 1}, {Key: "path", Value: 1}}
+
+// prefixRange decomposes a prefix into the pieces of the path key space
+// that belong to it: the exact prefix path, plus the half-open range
+// [lower, upper) holding every descendant beneath it.
+//
+// Directory boundaries are respected in both directions. Descendants are
+// delimited by "/", so lower is clean+"/". The exclusive upper bound is
+// clean+"0": '/' (0x2F) is immediately followed by '0' (0x30) in byte
+// order, so the range covers every path starting with clean+"/" and
+// nothing else. Siblings are therefore excluded whether they sort above
+// the boundary (e.g. "/Photos2", '2' = 0x32) or below it (e.g.
+// "/Photos.txt", '.' = 0x2E, or "/Photos-old", '-' = 0x2D) -- the latter
+// fall outside [lower, upper) because they are below lower, which is why
+// the exact prefix must be matched separately rather than by opening the
+// bottom of the range.
 //
 // The bounds rely only on lexicographic ordering (no regex), so a query
-// built from them is a plain range scan on the (providerId, path) index.
-func prefixRange(prefix string) (lower string, upper string, ok bool) {
+// built from them is a bounded range scan on the (providerId, path) index.
+//
+// An empty exact result means the prefix path needs no separate branch
+// because the range already covers it (the root case).
+func prefixRange(prefix string) (exact string, lower string, upper string, ok bool) {
 	if prefix == "" {
-		return "", "", false
+		return "", "", "", false
 	}
 
 	clean := path.Clean(prefix)
 	if clean == "." || clean == "" {
-		return "", "", false
+		return "", "", "", false
 	}
 
 	if clean == "/" {
-		// everything is beneath the root
-		return "/", "0", true
+		// Everything is beneath the root, and the root path "/" itself
+		// already sorts at the bottom of that range, so no separate
+		// exact branch is needed.
+		return "", "/", "0", true
 	}
 
-	// lower bound includes the prefix path itself...
-	lower = clean
-	// ...and everything nested beneath it, delimited by "/".
-	// upper bound is exclusive: it is the smallest string greater than
-	// every path starting with clean+"/", but not greater than any
-	// sibling such as clean+"2". Since '/' (0x2F) is immediately followed
-	// by '0' (0x30) in ASCII/UTF-8 byte ordering, and no path segment can
-	// contain a NUL or "/" itself, clean+"0" is exactly that bound.
-	upper = clean + "0"
-
-	return lower, upper, true
+	return clean, clean + "/", clean + "0", true
 }

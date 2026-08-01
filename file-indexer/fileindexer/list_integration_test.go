@@ -346,17 +346,25 @@ func isSorted(s []string) bool {
 func TestListPrefixDirectoryBoundary(t *testing.T) {
 	env := setupList(t)
 
-	env.seed(t, []seedFile{
+	// Siblings sharing "/Photos" as a string prefix but NOT beneath the
+	// "/Photos" directory. These must never be returned, whether they sort
+	// ABOVE the "/" boundary ('2' = 0x32 > '/' = 0x2F) or BELOW it -- every
+	// byte under '0' (0x30) qualifies for the latter, so the bottom of the
+	// range has to be closed just as carefully as the top.
+	aboveBoundary := []string{"/Photos2", "/Photos2/c.jpg"}
+	belowBoundary := []string{"/Photos.txt", "/Photos-old", "/Photos-old/e.jpg", "/Photos backup", "/Photos+1", "/Photos,list"}
+
+	seeds := []seedFile{
 		{providerId: "prov1", path: "/Photos", isDir: true},
 		{providerId: "prov1", path: "/Photos/a.jpg", isDir: false, mime: "image/jpeg"},
 		{providerId: "prov1", path: "/Photos/sub/b.jpg", isDir: false, mime: "image/jpeg"},
-		// sibling that shares the "/Photos" prefix as a string but is NOT
-		// beneath the "/Photos" directory -- must never be returned.
-		{providerId: "prov1", path: "/Photos2", isDir: true},
-		{providerId: "prov1", path: "/Photos2/c.jpg", isDir: false, mime: "image/jpeg"},
 		// unrelated sibling directory
 		{providerId: "prov1", path: "/Videos/d.mp4", isDir: false, mime: "video/mp4"},
-	})
+	}
+	for _, p := range append(append([]string{}, aboveBoundary...), belowBoundary...) {
+		seeds = append(seeds, seedFile{providerId: "prov1", path: p, mime: "text/plain"})
+	}
+	env.seed(t, seeds)
 
 	reply := doList(t, env.nc, events.FileIndexListRequest{
 		ProviderId: "prov1",
@@ -373,9 +381,52 @@ func TestListPrefixDirectoryBoundary(t *testing.T) {
 	}
 
 	assert.ElementsMatch(t, []string{"/Photos", "/Photos/a.jpg", "/Photos/sub/b.jpg"}, paths)
-	assert.NotContains(t, paths, "/Photos2")
-	assert.NotContains(t, paths, "/Photos2/c.jpg")
+	for _, p := range aboveBoundary {
+		assert.NotContains(t, paths, p, "sibling sorting above the / boundary must not match the prefix")
+	}
+	for _, p := range belowBoundary {
+		assert.NotContains(t, paths, p, "sibling sorting below the / boundary must not match the prefix")
+	}
 	assert.NotContains(t, paths, "/Videos/d.mp4")
+}
+
+// TestListPrefixDirectoryBoundaryWhilePaging pins the boundary against the
+// paged path too: the cursor rewrites the range bounds, so an off-by-one
+// there could readmit a sibling on a later page.
+func TestListPrefixDirectoryBoundaryWhilePaging(t *testing.T) {
+	env := setupList(t)
+
+	env.seed(t, []seedFile{
+		{providerId: "prov1", path: "/Photos", isDir: true},
+		{providerId: "prov1", path: "/Photos/a.jpg", mime: "image/jpeg"},
+		{providerId: "prov1", path: "/Photos/b.jpg", mime: "image/jpeg"},
+		{providerId: "prov1", path: "/Photos/c.jpg", mime: "image/jpeg"},
+		{providerId: "prov1", path: "/Photos.txt", mime: "text/plain"},
+		{providerId: "prov1", path: "/Photos-old", isDir: true},
+		{providerId: "prov1", path: "/Photos2/c.jpg", mime: "image/jpeg"},
+	})
+
+	var paths []string
+	cursor := ""
+	for {
+		reply := doList(t, env.nc, events.FileIndexListRequest{
+			ProviderId: "prov1",
+			Path:       "/Photos",
+			PageSize:   1,
+			Cursor:     cursor,
+		})
+		require.Equal(t, "", reply.Error)
+		for _, e := range reply.Entries {
+			paths = append(paths, e.Path)
+		}
+		if !reply.HasMore {
+			break
+		}
+		cursor = reply.NextCursor
+		require.Less(t, len(paths), 10, "paging is not terminating")
+	}
+
+	assert.Equal(t, []string{"/Photos", "/Photos/a.jpg", "/Photos/b.jpg", "/Photos/c.jpg"}, paths)
 }
 
 func TestListPrefixEmptyOrUnknownReturnsEmptyPage(t *testing.T) {
@@ -455,7 +506,7 @@ func TestListPrefixEntryFields(t *testing.T) {
 func TestListPrefixUsesIndexRangeScan(t *testing.T) {
 	env := setupList(t)
 
-	var files []seedFile
+	files := []seedFile{{providerId: "prov1", path: "/Photos", isDir: true}}
 	for i := 0; i < 50; i++ {
 		files = append(files, seedFile{
 			providerId: "prov1",
@@ -465,43 +516,86 @@ func TestListPrefixUsesIndexRangeScan(t *testing.T) {
 		})
 	}
 	for i := 0; i < 50; i++ {
-		// noise that shares a prefix as a string but must be excluded
-		// from the range and would otherwise tempt a collection scan
-		files = append(files, seedFile{
-			providerId: "prov1",
-			path:       fmt.Sprintf("/Photos2/img%03d.jpg", i),
-			isDir:      false,
-			mime:       "image/jpeg",
-		})
+		// Noise sharing "/Photos" as a string prefix but outside the
+		// range, on both sides of the "/" boundary. A plan that threw its
+		// index bounds away would examine these too.
+		files = append(files,
+			seedFile{providerId: "prov1", path: fmt.Sprintf("/Photos2/img%03d.jpg", i), mime: "image/jpeg"},
+			seedFile{providerId: "prov1", path: fmt.Sprintf("/Photos-old/img%03d.jpg", i), mime: "image/jpeg"},
+		)
 	}
 	env.seed(t, files)
 
-	coll := env.db.Collection("files")
+	// Explain the exact filters/sort the production query path builds: the
+	// point lookup for the prefix itself, the descendant range scan, and
+	// the cursor-narrowed continuation of that range. Every data-access
+	// leaf of every plan must be a bounded index scan.
+	selfFilter, ok := fileindexer.BuildPrefixSelfFilter("prov1", "/Photos")
+	require.True(t, ok)
 
-	filter := bson.M{
-		"providerId": "prov1",
-		"path":       bson.M{"$gte": "/Photos", "$lt": "/Photos0"},
+	descendants, ok := fileindexer.BuildDescendantsFilter("prov1", "/Photos", "")
+	require.True(t, ok)
+
+	continuation, ok := fileindexer.BuildDescendantsFilter("prov1", "/Photos", "/Photos/img010.jpg")
+	require.True(t, ok)
+
+	// none of the production filters may use $or: MongoDB answers such an
+	// $or by scanning the provider's whole key space with the $or as a
+	// residual filter, which silently throws the index bounds away
+	for _, f := range []bson.M{selfFilter, descendants, continuation} {
+		require.NotContains(t, f, "$or", "filters must stay single bounded index ranges")
 	}
 
-	var explainResult bson.M
-	cmd := bson.D{
-		{Key: "explain", Value: bson.D{
-			{Key: "find", Value: "files"},
-			{Key: "filter", Value: filter},
-			{Key: "sort", Value: bson.D{{Key: "providerId", Value: 1}, {Key: "path", Value: 1}}},
-		}},
-		{Key: "verbosity", Value: "executionStats"},
+	for name, filter := range map[string]bson.M{
+		"prefix point lookup": selfFilter,
+		"descendant range":    descendants,
+		"continuation page":   continuation,
+	} {
+		t.Run(name, func(t *testing.T) {
+			var explainResult bson.M
+			cmd := bson.D{
+				{Key: "explain", Value: bson.D{
+					{Key: "find", Value: "files"},
+					{Key: "filter", Value: filter},
+					{Key: "sort", Value: fileindexer.ListSort},
+				}},
+				{Key: "verbosity", Value: "executionStats"},
+			}
+			require.NoError(t, env.db.RunCommand(context.Background(), cmd).Decode(&explainResult))
+
+			winningPlan := extractWinningPlan(t, explainResult)
+			stages := findLeafStages(winningPlan)
+
+			require.NotEmpty(t, stages, "no data-access stage found in plan: %v", winningPlan)
+			for _, s := range stages {
+				assert.Equal(t, "IXSCAN", s, "expected every data-access stage to be an index scan, got %s; full plan: %v", s, winningPlan)
+				assert.NotEqual(t, "COLLSCAN", s, "query degraded to a collection scan; full plan: %v", winningPlan)
+			}
+
+			for _, n := range findIndexNames(winningPlan) {
+				assert.Equal(t, "files_providerId_path_idx", n)
+			}
+
+			// the scan must actually be bounded: it may not touch the
+			// /Photos2 noise documents
+			execStats, ok := explainResult["executionStats"].(bson.M)
+			require.True(t, ok, "missing executionStats: %v", explainResult)
+			examined := toInt(execStats["totalKeysExamined"])
+			assert.Less(t, examined, 60, "expected a bounded range scan, but %d index keys were examined", examined)
+		})
 	}
-	require.NoError(t, coll.Database().RunCommand(context.Background(), cmd).Decode(&explainResult))
+}
 
-	winningPlan := extractWinningPlan(t, explainResult)
-	stage := findStageType(winningPlan)
-
-	assert.Equal(t, "IXSCAN", stage, "expected the winning plan to be an index range scan (IXSCAN), got %s; full plan: %v", stage, winningPlan)
-	assert.NotEqual(t, "COLLSCAN", stage)
-
-	indexName, _ := findIndexName(winningPlan)
-	assert.Equal(t, "files_providerId_path_idx", indexName)
+func toInt(v any) int {
+	switch n := v.(type) {
+	case int32:
+		return int(n)
+	case int64:
+		return int(n)
+	case float64:
+		return int(n)
+	}
+	return -1
 }
 
 func extractWinningPlan(t *testing.T, explainResult bson.M) bson.M {
@@ -513,26 +607,45 @@ func extractWinningPlan(t *testing.T, explainResult bson.M) bson.M {
 	return winningPlan
 }
 
-// findStageType walks down the plan tree (through stages like SORT that
-// wrap the actual data-access stage) and returns the stage name of the
-// leaf/data-access node.
-func findStageType(plan bson.M) string {
+// findLeafStages walks the whole plan tree -- through wrapper stages like
+// SORT and FETCH and through branching stages like OR/SORT_MERGE, which
+// carry several children under "inputStages" -- and returns the stage name
+// of every data-access leaf. An $or plan has one leaf per branch, so this
+// catches a single branch silently degrading to a collection scan.
+func findLeafStages(plan bson.M) []string {
 	stage, _ := plan["stage"].(string)
 	if stage == "IXSCAN" || stage == "COLLSCAN" {
-		return stage
+		return []string{stage}
 	}
+
+	var stages []string
 	if inputStage, ok := plan["inputStage"].(bson.M); ok {
-		return findStageType(inputStage)
+		stages = append(stages, findLeafStages(inputStage)...)
 	}
-	return stage
+	if inputStages, ok := plan["inputStages"].(bson.A); ok {
+		for _, s := range inputStages {
+			if sub, ok := s.(bson.M); ok {
+				stages = append(stages, findLeafStages(sub)...)
+			}
+		}
+	}
+	return stages
 }
 
-func findIndexName(plan bson.M) (string, bool) {
+func findIndexNames(plan bson.M) []string {
+	var names []string
 	if name, ok := plan["indexName"].(string); ok {
-		return name, true
+		names = append(names, name)
 	}
 	if inputStage, ok := plan["inputStage"].(bson.M); ok {
-		return findIndexName(inputStage)
+		names = append(names, findIndexNames(inputStage)...)
 	}
-	return "", false
+	if inputStages, ok := plan["inputStages"].(bson.A); ok {
+		for _, s := range inputStages {
+			if sub, ok := s.(bson.M); ok {
+				names = append(names, findIndexNames(sub)...)
+			}
+		}
+	}
+	return names
 }
