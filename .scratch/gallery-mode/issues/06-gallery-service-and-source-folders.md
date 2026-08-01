@@ -100,3 +100,36 @@ this machine, so the Dart changes are unverified by a compiler.
 - *Placeholder replaced.* `GalleryView` already existed as a "coming soon"
   placeholder at `/gallery`; the folder configuration went there rather than into
   a new settings screen.
+
+### Verifier verdict — APPROVED
+
+Independent review against the diff from `299d583`, by an agent that had not seen
+the implementer's reasoning. Every criterion checked against the code rather than
+the implementer's checked boxes.
+
+- Per-user scoping enforced on LIST, ADD and REMOVE; `REMOVE` filters on `_id`
+  **and** `userId`, so one user cannot remove another's folder by guessing its id.
+- The access check on `ADD` is a genuine server-side resolve against `spaces`
+  (`SpaceResolveRequest`), covering both space ownership and file-provider
+  membership — not a gateway- or app-only check.
+- Idempotency is a `FindOneAndUpdate` upsert with `$setOnInsert` against the
+  unique compound index, so there is no insert-then-catch race.
+- `REMOVE` performs a single `FindOneAndDelete` on the configuration collection;
+  no file-deletion or File Provider code path exists in the service at all.
+- Exactly one MongoDB collection is touched, confirming the service reads no
+  other service's collections.
+- Go build, vet and the full test suites for `gallery` and `api-gateway/gallery`
+  were run and genuinely pass, against a real MongoDB testcontainer and embedded
+  NATS.
+
+**Contamination check.** A stray agent from a first, mistaken implementation
+attempt had written into this worktree concurrently. The verifier was asked to
+look for artifacts and found none: a single clean commit, no `.orig`/`.rej`/`.bak`
+leftovers, and the file listing matches the ticket exactly.
+
+**Environmental limitation, not a defect.** No Flutter/Dart toolchain exists on
+this machine, so the five Dart files have never been seen by a compiler. They
+were read by hand and are structurally sound — balanced braces, no duplicate
+declarations, single route registration, response field names matching the Go
+JSON tags, and `readDir`/`File.isDir`/`File.name` matching `file_service.dart`'s
+actual signature. Worth a `flutter analyze` on a machine that has the toolchain.
