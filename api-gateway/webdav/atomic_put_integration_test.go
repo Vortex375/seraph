@@ -42,9 +42,11 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/hamba/avro/v2"
 	"github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
 	"github.com/stretchr/testify/assert"
@@ -80,12 +82,52 @@ func TestMain(m *testing.M) {
 // resulting webdav.FileSystem - staged exactly as delegatingFs.providerFs does
 // in production - with a real listening HTTP server.
 type integrationFixture struct {
-	t       *testing.T
-	dir     string
-	server  *fileprovider.FileProviderServer
-	nc      *nats.Conn
-	client  fileprovider.Client
-	handler *httptest.Server
+	t          *testing.T
+	dir        string
+	server     *fileprovider.FileProviderServer
+	nc         *nats.Conn
+	client     fileprovider.Client
+	handler    *httptest.Server
+	writeCount *writeCounter
+}
+
+// writeCounter counts FileWriteRequest messages actually reaching the file
+// provider over NATS - the observable protocol consequence of how the PUT
+// handler's destination is buffered upstream. It rides along as an extra
+// subscriber on the per-file request subject: NATS request/reply is ordinary
+// publish/subscribe underneath, so this receives its own copy of every
+// request without disturbing the provider's own reply.
+type writeCounter struct {
+	msgApi avro.API
+	count  atomic.Int64
+}
+
+func newWriteCounter(t *testing.T, nc *nats.Conn) *writeCounter {
+	t.Helper()
+
+	wc := &writeCounter{msgApi: fileprovider.NewMessageApi()}
+	// "*" matches the single fileId token that follows the fixed prefix
+	sub, err := nc.Subscribe(fileprovider.FileProviderFileTopicPrefix+"*", func(msg *nats.Msg) {
+		req := fileprovider.FileProviderFileRequest{}
+		if err := wc.msgApi.Unmarshal(fileprovider.FileProviderFileRequestSchema, msg.Data, &req); err != nil {
+			return
+		}
+		if _, ok := req.Request.(fileprovider.FileWriteRequest); ok {
+			wc.count.Add(1)
+		}
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { sub.Unsubscribe() })
+
+	return wc
+}
+
+func (w *writeCounter) reset() {
+	w.count.Store(0)
+}
+
+func (w *writeCounter) writes() int64 {
+	return w.count.Load()
 }
 
 func newIntegrationFixture(t *testing.T) *integrationFixture {
@@ -110,6 +152,7 @@ func newIntegrationFixture(t *testing.T) *integrationFixture {
 	require.NoError(t, fpServer.Start())
 
 	client := fileprovider.NewFileProviderClient(providerId, nc, logger)
+	writeCount := newWriteCounter(t, nc)
 
 	staged := &atomicPutFs{
 		FileSystem: client,
@@ -124,7 +167,7 @@ func newIntegrationFixture(t *testing.T) *integrationFixture {
 	})
 	httpServer := httptest.NewServer(handler)
 
-	f := &integrationFixture{t: t, dir: dir, server: fpServer, nc: nc, client: client, handler: httpServer}
+	f := &integrationFixture{t: t, dir: dir, server: fpServer, nc: nc, client: client, handler: httpServer, writeCount: writeCount}
 	t.Cleanup(f.close)
 	return f
 }
@@ -196,6 +239,7 @@ func TestAtomicPutIntegration(t *testing.T) {
 		_, err := rand.Read(payload)
 		require.NoError(t, err)
 
+		f.writeCount.reset()
 		res := f.put(t, "/big.bin", int64(len(payload)), bytes.NewReader(payload))
 		require.Equal(t, http.StatusCreated, res.StatusCode)
 		res.Body.Close()
@@ -204,6 +248,15 @@ func TestAtomicPutIntegration(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, bytes.Equal(content, payload), "stored content did not match what was uploaded")
 		assert.Empty(t, f.diskStagingFiles())
+
+		// the destination is buffered up to fileprovider.MaxPayload, so the
+		// number of FileWriteRequest messages that actually reach the provider
+		// tracks len(payload)/MaxPayload rather than the 32KB chunk size
+		// net/http's io.Copy uses internally - an unbuffered destination would
+		// have needed on the order of 3MiB/32KiB =~ 96 writes instead.
+		wantMaxWrites := (int64(len(payload)) + fileprovider.MaxPayload - 1) / fileprovider.MaxPayload
+		assert.LessOrEqual(t, f.writeCount.writes(), wantMaxWrites,
+			"expected at most %d writes (size/MaxPayload) to reach the file provider, got %d", wantMaxWrites, f.writeCount.writes())
 	})
 
 	t.Run("replaces an existing file only once the upload is complete", func(t *testing.T) {

@@ -145,8 +145,8 @@ func (f *serverFile) handleRead(ctx context.Context, uid string, fileId string, 
 	ctx, span = f.server.tracer.Start(ctx, "read")
 	defer span.End()
 
-	if req.Len > maxPayload {
-		err := fmt.Errorf("read exceeds max payload of %d", maxPayload)
+	if req.Len > MaxPayload {
+		err := fmt.Errorf("read exceeds max payload of %d", MaxPayload)
 		f.server.log.Error("fileRead failed", "uid", uid, "fileId", fileId, "error", err)
 		return &FileProviderFileResponse{
 			Uid: uid,

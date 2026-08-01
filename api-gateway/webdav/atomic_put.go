@@ -19,6 +19,7 @@
 package webdav
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -34,6 +35,7 @@ import (
 
 	"github.com/google/uuid"
 	"golang.org/x/net/webdav"
+	"umbasa.net/seraph/file-provider/fileprovider"
 )
 
 // Staging files are named so that they are recognizable as ours, sort out of
@@ -166,7 +168,7 @@ func (f *atomicPutFs) OpenFile(ctx context.Context, name string, flag int, perm 
 	}
 	f.log.Debug("staging upload", "target", name, "staging", staging)
 
-	return &stagedFile{
+	sf := &stagedFile{
 		File:    file,
 		ctx:     ctx,
 		fs:      f.FileSystem,
@@ -175,7 +177,17 @@ func (f *atomicPutFs) OpenFile(ctx context.Context, name string, flag int, perm 
 		target:  name,
 		staging: staging,
 		put:     put,
-	}, nil
+	}
+	// golang.org/x/net/webdav's PUT handler does io.Copy(f, r.Body), which -
+	// absent an io.ReaderFrom on f or an io.WriterTo on the body - reads and
+	// writes in 32KB chunks. Each Write against the file provider is one NATS
+	// request/reply capped at fileprovider.MaxPayload (768KB), so an unwrapped
+	// destination turns one upload into dozens of avoidable round trips.
+	// Buffering here batches writes up to MaxPayload before they ever reach the
+	// client, independent of how small a single io.Copy chunk is.
+	sf.buf = bufio.NewWriterSize(writerFunc(sf.writeThrough), fileprovider.MaxPayload)
+
+	return sf, nil
 }
 
 // stagedFile buffers a PUT into a staging file which is published - or thrown
@@ -190,14 +202,31 @@ type stagedFile struct {
 	target  string
 	staging string
 	put     *putRequest
+	buf     *bufio.Writer
 	written int64
 	closed  bool
 }
 
-func (f *stagedFile) Write(p []byte) (int, error) {
+// writerFunc adapts a plain write method to io.Writer so it can sit behind
+// bufio.Writer.
+type writerFunc func(p []byte) (int, error)
+
+func (w writerFunc) Write(p []byte) (int, error) {
+	return w(p)
+}
+
+// writeThrough is what the buffer flushes into: the staging file itself.
+func (f *stagedFile) writeThrough(p []byte) (int, error) {
 	n, err := f.File.Write(p)
 	f.written += int64(n)
 	return n, err
+}
+
+// Write buffers into an internal buffer sized to the file provider's maximum
+// payload, so bytes accumulate here rather than crossing to the provider at
+// whatever chunk size the caller's io.Copy happens to use.
+func (f *stagedFile) Write(p []byte) (int, error) {
+	return f.buf.Write(p)
 }
 
 func (f *stagedFile) Stat() (fs.FileInfo, error) {
@@ -217,7 +246,14 @@ func (f *stagedFile) Close() error {
 	}
 	f.closed = true
 
+	// flush whatever is still buffered before the staging file is closed, or a
+	// successful-looking upload could lose its last, incomplete buffer's worth
+	// of bytes
+	flushErr := f.buf.Flush()
 	closeErr := f.File.Close()
+	if flushErr != nil && closeErr == nil {
+		closeErr = flushErr
+	}
 
 	// the request context is already cancelled when the client went away, so
 	// finishing up needs a context of its own

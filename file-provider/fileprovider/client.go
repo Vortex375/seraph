@@ -59,7 +59,13 @@ type client struct {
 const defaultTimeout = 30 * time.Second
 const cacheTimeout = 5 * time.Second
 
-const maxPayload = 768 * 1024
+// MaxPayload is the largest byte slice that fits in a single NATS
+// request/reply exchanged with a file provider. Callers that stream large
+// amounts of data through a [Client] - such as a WebDAV PUT handler - should
+// size their buffers to this so that a write reaches the provider in as few
+// round trips as the wire protocol allows, rather than at whatever chunk size
+// their io.Copy happens to use.
+const MaxPayload = 768 * 1024
 
 func exchange(ctx context.Context, nc *nats.Conn, msgApi avro.API, providerId string, request *FileProviderRequest) (*FileProviderResponse, error) {
 	tracer := otel.Tracer("fileprovider")
@@ -372,14 +378,14 @@ func (f *file) Close() error {
 }
 
 func (f *file) Read(p []byte) (n int, err error) {
-	if len(p) <= maxPayload {
+	if len(p) <= MaxPayload {
 		return f.doRead(p)
 	}
 
 	offset := 0
 	read := 0
 	for read < len(p) {
-		w, err := f.doRead(p[offset:min(offset+maxPayload, len(p))])
+		w, err := f.doRead(p[offset:min(offset+MaxPayload, len(p))])
 		read += w
 		if err != nil {
 			return read, err
@@ -524,13 +530,13 @@ func (f *file) Stat() (fs.FileInfo, error) {
 }
 
 func (f *file) Write(p []byte) (n int, err error) {
-	if len(p) <= maxPayload {
+	if len(p) <= MaxPayload {
 		return f.doWrite(p)
 	}
 	offset := 0
 	written := 0
 	for written < len(p) {
-		w, err := f.doWrite(p[offset:min(offset+maxPayload, len(p))])
+		w, err := f.doWrite(p[offset:min(offset+MaxPayload, len(p))])
 		written += w
 		if err != nil {
 			return written, err
