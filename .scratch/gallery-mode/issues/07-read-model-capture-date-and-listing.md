@@ -44,7 +44,7 @@ files.
 
 **Blocked by:** 06
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] A photo appearing in a configured folder shows up in that user's listing, at the position its Capture Date implies
 - [ ] Capture Date comes from the photo's own metadata where present, falling back to modification time and then to when it was first seen, with the source of the value recorded
