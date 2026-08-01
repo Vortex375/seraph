@@ -32,6 +32,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"umbasa.net/seraph/api-gateway/auth"
 	"umbasa.net/seraph/gallery/gallery"
 	"umbasa.net/seraph/logging"
@@ -133,6 +134,129 @@ func stubGalleryService(t *testing.T, nc *nats.Conn, respond func(gallery.Galler
 	}
 
 	return &received
+}
+
+// stubGalleryListService answers the gallery listing topic, recording the
+// requests it received so the test can assert on what the gateway sent.
+func stubGalleryListService(t *testing.T, nc *nats.Conn, respond func(gallery.GalleryListRequest) gallery.GalleryListResponse) *[]gallery.GalleryListRequest {
+	t.Helper()
+
+	received := make([]gallery.GalleryListRequest, 0)
+
+	sub, err := nc.Subscribe(gallery.GalleryListTopic, func(msg *nats.Msg) {
+		req := gallery.GalleryListRequest{}
+		json.Unmarshal(msg.Data, &req)
+		received = append(received, req)
+
+		res := respond(req)
+		data, _ := json.Marshal(&res)
+		msg.Respond(data)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		sub.Unsubscribe()
+	})
+
+	if err := nc.Flush(); err != nil {
+		t.Fatal(err)
+	}
+
+	return &received
+}
+
+func TestListPhotosUsesAuthenticatedUser(t *testing.T) {
+	nc := connectNats(t)
+	app := newGalleryApp(t, nc)
+	srv := httptest.NewServer(app)
+	defer srv.Close()
+
+	received := stubGalleryListService(t, nc, func(req gallery.GalleryListRequest) gallery.GalleryListResponse {
+		return gallery.GalleryListResponse{
+			Items: []gallery.GalleryListItem{
+				{ProviderId: "photos", Path: "/holidays/beach.jpg", CapturedAt: 1000},
+			},
+		}
+	})
+
+	resp, err := http.Get(srv.URL + "/api/gallery/photos")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, 1, len(*received))
+	// the user id comes from the authenticated session, never from the client
+	assert.Equal(t, "anonymous", (*received)[0].UserId)
+
+	var body gallery.GalleryListResponse
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	require.Len(t, body.Items, 1)
+	assert.Equal(t, "photos", body.Items[0].ProviderId)
+	assert.Equal(t, "/holidays/beach.jpg", body.Items[0].Path)
+}
+
+func TestListPhotosPassesPageSizeAndCursor(t *testing.T) {
+	nc := connectNats(t)
+	app := newGalleryApp(t, nc)
+	srv := httptest.NewServer(app)
+	defer srv.Close()
+
+	received := stubGalleryListService(t, nc, func(req gallery.GalleryListRequest) gallery.GalleryListResponse {
+		return gallery.GalleryListResponse{}
+	})
+
+	resp, err := http.Get(srv.URL + "/api/gallery/photos?pageSize=50&cursor=abc123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, 1, len(*received))
+	assert.Equal(t, 50, (*received)[0].PageSize)
+	assert.Equal(t, "abc123", (*received)[0].Cursor)
+}
+
+func TestListPhotosRejectsInvalidPageSize(t *testing.T) {
+	nc := connectNats(t)
+	app := newGalleryApp(t, nc)
+	srv := httptest.NewServer(app)
+	defer srv.Close()
+
+	received := stubGalleryListService(t, nc, func(req gallery.GalleryListRequest) gallery.GalleryListResponse {
+		return gallery.GalleryListResponse{}
+	})
+
+	resp, err := http.Get(srv.URL + "/api/gallery/photos?pageSize=notanumber")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	assert.Equal(t, 0, len(*received))
+}
+
+func TestListPhotosPropagatesServiceError(t *testing.T) {
+	nc := connectNats(t)
+	app := newGalleryApp(t, nc)
+	srv := httptest.NewServer(app)
+	defer srv.Close()
+
+	stubGalleryListService(t, nc, func(req gallery.GalleryListRequest) gallery.GalleryListResponse {
+		return gallery.GalleryListResponse{Error: "something went wrong"}
+	})
+
+	resp, err := http.Get(srv.URL + "/api/gallery/photos")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 }
 
 func TestListSourceFoldersUsesAuthenticatedUser(t *testing.T) {

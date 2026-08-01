@@ -72,6 +72,7 @@ type GalleryProvider struct {
 	photos        *mongo.Collection
 
 	crudSub *nats.Subscription
+	listSub *nats.Subscription
 
 	// prefixCache and the durable file-change consumer implement event
 	// ingestion; see ingest.go.
@@ -115,6 +116,24 @@ func (g *GalleryProvider) Start() error {
 	}
 	g.crudSub = sub
 
+	listSub, err := g.nc.QueueSubscribe(GalleryListTopic, GalleryListTopic, func(msg *nats.Msg) {
+		ctx := messaging.ExtractTraceContext(context.Background(), msg)
+		ctx, span := g.tracer.Start(ctx, "handleGalleryList")
+		defer span.End()
+
+		req := GalleryListRequest{}
+		json.Unmarshal(msg.Data, &req)
+
+		resp := g.listPhotos(ctx, &req)
+
+		data, _ := json.Marshal(resp)
+		msg.Respond(data)
+	})
+	if err != nil {
+		return fmt.Errorf("while starting GalleryProvider: %w", err)
+	}
+	g.listSub = listSub
+
 	// build the prefix cache once at startup so ingestion can match events
 	// cheaply from the first message; ADD/REMOVE keep it current afterwards
 	// (see handleSourceFolderCrud). Re-resolving on spaces.changed - so a
@@ -140,6 +159,13 @@ func (g *GalleryProvider) Stop() error {
 	if g.crudSub != nil {
 		err := g.crudSub.Unsubscribe()
 		g.crudSub = nil
+		if err != nil {
+			return fmt.Errorf("while stopping GalleryProvider: %w", err)
+		}
+	}
+	if g.listSub != nil {
+		err := g.listSub.Unsubscribe()
+		g.listSub = nil
 		if err != nil {
 			return fmt.Errorf("while stopping GalleryProvider: %w", err)
 		}

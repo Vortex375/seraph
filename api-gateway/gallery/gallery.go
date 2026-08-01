@@ -22,6 +22,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -138,6 +139,37 @@ func (h *galleryHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup, publi
 		}
 
 		ctx.JSON(http.StatusCreated, res)
+	})
+
+	apiGroup.GET("gallery/photos", func(ctx *gin.Context) {
+		pageSize := 0
+		if ps := ctx.Query("pageSize"); ps != "" {
+			parsed, err := strconv.Atoi(ps)
+			if err != nil {
+				ctx.AbortWithError(http.StatusBadRequest, errors.New("invalid pageSize"))
+				return
+			}
+			pageSize = parsed
+		}
+
+		req := gallery.GalleryListRequest{
+			UserId:   h.auth.GetUserId(ctx.Request.Context()),
+			PageSize: pageSize,
+			Cursor:   ctx.Query("cursor"),
+		}
+
+		res := gallery.GalleryListResponse{}
+		if err := messaging.Request(ctx.Request.Context(), h.nc, gallery.GalleryListTopic, messaging.Json(&req), messaging.Json(&res)); err != nil {
+			ctx.AbortWithError(http.StatusInternalServerError, err)
+			return
+		}
+
+		if res.Error != "" {
+			ctx.AbortWithError(http.StatusInternalServerError, errors.New(res.Error))
+			return
+		}
+
+		ctx.JSON(http.StatusOK, res)
 	})
 
 	apiGroup.DELETE("gallery/source-folders/:sourceFolderId", func(ctx *gin.Context) {
