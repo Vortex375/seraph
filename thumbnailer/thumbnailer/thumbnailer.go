@@ -31,6 +31,7 @@ import (
 	"path"
 	"runtime"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/disintegration/imaging"
@@ -96,11 +97,14 @@ type Thumbnailer struct {
 	fileProviderId   string
 	path             string
 	thumbnailStorage fileprovider.Client
-	sub              *nats.Subscription
-	requestChan      chan *nats.Msg
-	limiter          util.Limiter
-	ctx              context.Context
-	cancel           context.CancelFunc
+
+	mu          sync.Mutex
+	sub         *nats.Subscription
+	requestChan chan *nats.Msg
+	limiter     util.Limiter
+	ctx         context.Context
+	cancel      context.CancelFunc
+	wg          sync.WaitGroup
 }
 
 func NewThumbnailer(p Params, fileProviderId string, path string, thumbnailStorage fileprovider.Client) (Result, error) {
@@ -114,8 +118,6 @@ func NewThumbnailer(p Params, fileProviderId string, path string, thumbnailStora
 		options = p.Options
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-
 	tracer := p.Tracing.TracerProvider.Tracer("thumbnailer")
 
 	return Result{
@@ -128,8 +130,6 @@ func NewThumbnailer(p Params, fileProviderId string, path string, thumbnailStora
 			fileProviderId:   fileProviderId,
 			path:             path,
 			thumbnailStorage: thumbnailStorage,
-			ctx:              ctx,
-			cancel:           cancel,
 		},
 	}, nil
 }
@@ -144,63 +144,89 @@ func (t *Thumbnailer) Start() error {
 	}
 	t.thumbnailStorage.Mkdir(context.TODO(), path.Join(t.path, tmpFolderName), 0777)
 
-	t.limiter = util.NewLimiter(t.options.Parallel)
-	t.requestChan = make(chan *nats.Msg, nats.DefaultSubPendingMsgsLimit)
+	limiter := util.NewLimiter(t.options.Parallel)
+	requestChan := make(chan *nats.Msg, nats.DefaultSubPendingMsgsLimit)
 
-	sub, err := t.nc.ChanQueueSubscribe(ThumbnailRequestTopic, ThumbnailRequestTopic, t.requestChan)
+	sub, err := t.nc.ChanQueueSubscribe(ThumbnailRequestTopic, ThumbnailRequestTopic, requestChan)
 	if err != nil {
 		return err
 	}
-	t.sub = sub
+	ctx, cancel := context.WithCancel(context.Background())
 
-	go t.messageLoop()
+	t.mu.Lock()
+	t.limiter = limiter
+	t.requestChan = requestChan
+	t.sub = sub
+	t.ctx = ctx
+	t.cancel = cancel
+	t.mu.Unlock()
+
+	t.wg.Add(1)
+	go t.messageLoop(ctx, requestChan, limiter)
 
 	return nil
 }
 
 func (t *Thumbnailer) Stop() error {
+	t.mu.Lock()
+	sub := t.sub
+	requestChan := t.requestChan
+	cancel := t.cancel
+	t.sub = nil
+	t.requestChan = nil
+	t.limiter = nil
+	t.ctx = nil
+	t.cancel = nil
+	t.mu.Unlock()
+
 	var err error
-	if t.sub != nil {
-		err = t.sub.Unsubscribe()
-		t.sub = nil
+	if sub != nil {
+		err = sub.Unsubscribe()
 	}
-	if t.requestChan != nil {
-		close(t.requestChan)
-		t.requestChan = nil
+	if requestChan != nil {
+		close(requestChan)
 	}
-	if t.limiter != nil {
-		t.cancel()
-		t.limiter.Join()
-		t.limiter = nil
+	if cancel != nil {
+		cancel()
 	}
+
+	// waits for messageLoop and any in-flight handleMessage goroutines,
+	// which subsumes the limiter's own accounting of running conversions
+	t.wg.Wait()
+
 	return err
 }
 
-func (t *Thumbnailer) messageLoop() {
+func (t *Thumbnailer) messageLoop(ctx context.Context, requestChan chan *nats.Msg, limiter util.Limiter) {
+	defer t.wg.Done()
+
 	for {
-		msg, ok := <-t.requestChan
+		msg, ok := <-requestChan
 		if !ok {
 			return
 		}
 
-		go t.handleMessage(msg)
+		t.wg.Add(1)
+		go t.handleMessage(ctx, limiter, msg)
 	}
 }
 
-func (t *Thumbnailer) handleMessage(msg *nats.Msg) {
-	ctx := messaging.ExtractTraceContext(t.ctx, msg)
+func (t *Thumbnailer) handleMessage(ctx context.Context, limiter util.Limiter, msg *nats.Msg) {
+	defer t.wg.Done()
+
+	ctx = messaging.ExtractTraceContext(ctx, msg)
 
 	req := ThumbnailRequest{}
 	req.Unmarshal(msg.Data)
 
-	resp := t.handleRequest(ctx, req)
+	resp := t.handleRequest(ctx, limiter, req)
 
 	data, _ := resp.Marshal()
 
 	msg.Respond(data)
 }
 
-func (t *Thumbnailer) handleRequest(ctx context.Context, req ThumbnailRequest) (resp ThumbnailResponse) {
+func (t *Thumbnailer) handleRequest(ctx context.Context, limiter util.Limiter, req ThumbnailRequest) (resp ThumbnailResponse) {
 	ctx, span := t.tracer.Start(ctx, "handleRequest")
 	defer span.End()
 
@@ -241,11 +267,11 @@ func (t *Thumbnailer) handleRequest(ctx context.Context, req ThumbnailRequest) (
 
 	// thumbnail needs to be created
 	// limit concurrency to avoid excessive memory usage
-	if !t.limiter.Begin(t.ctx) {
+	if !limiter.Begin(ctx) {
 		resp.Error = "operation cancelled"
 		return
 	}
-	defer t.limiter.End()
+	defer limiter.End()
 
 	ctx, span = t.tracer.Start(ctx, "createThumbnail")
 	defer span.End()
