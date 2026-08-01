@@ -20,7 +20,7 @@ reads the index, never the File Provider.
 
 **Blocked by:** 04, 07
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] Adding a folder containing already-indexed photos makes them appear in the gallery
 - [ ] The add request returns promptly; backfill proceeds in the background
