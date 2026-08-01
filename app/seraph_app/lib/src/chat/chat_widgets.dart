@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:seraph_app/src/chat/chat_navigation.dart';
 import 'package:seraph_app/src/chat/chat_models.dart';
 
