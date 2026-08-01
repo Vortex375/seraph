@@ -10,6 +10,7 @@ RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go b
 RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go build -C thumbnailer -o /out/thumbnailer .
 RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go build -C shares -o /out/shares .
 RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go build -C spaces -o /out/spaces .
+RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go build -C gallery -o /out/gallery .
 RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go build -C jobs -o /out/jobs .
 RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go build -C file-provider-dir -o /out/file-provider-dir .
 RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go build -C file-provider-smb -o /out/file-provider-smb .
@@ -39,7 +40,7 @@ RUN apk add mailcap
 # Assemble everything
 FROM gcr.io/distroless/base-debian12
 COPY --from=mime /etc/mime.types /etc/mime.types
-COPY --from=build /out/api-gateway /out/file-indexer /out/thumbnailer /out/shares /out/spaces /out/jobs /out/file-provider-dir /out/file-provider-smb /out/log-viewer /bin
+COPY --from=build /out/api-gateway /out/file-indexer /out/thumbnailer /out/shares /out/spaces /out/gallery /out/jobs /out/file-provider-dir /out/file-provider-smb /out/log-viewer /bin
 COPY --from=flutter /app/build/web /srv/app
 COPY --from=webapp /src/dist/seraph-web-app/browser /srv/webapp
 CMD ["api-gateway"]

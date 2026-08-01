@@ -22,19 +22,8 @@ import (
 	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.uber.org/fx"
-	"umbasa.net/seraph/api-gateway/agents"
-	"umbasa.net/seraph/api-gateway/auth"
-	"umbasa.net/seraph/api-gateway/download"
-	"umbasa.net/seraph/api-gateway/gallery"
-	"umbasa.net/seraph/api-gateway/gateway"
-	"umbasa.net/seraph/api-gateway/jobs"
-	"umbasa.net/seraph/api-gateway/preview"
-	"umbasa.net/seraph/api-gateway/search"
-	"umbasa.net/seraph/api-gateway/services"
-	"umbasa.net/seraph/api-gateway/shares"
-	"umbasa.net/seraph/api-gateway/spaces"
-	"umbasa.net/seraph/api-gateway/webdav"
 	"umbasa.net/seraph/config"
+	"umbasa.net/seraph/gallery/gallery"
 	"umbasa.net/seraph/logging"
 	"umbasa.net/seraph/messaging"
 	"umbasa.net/seraph/mongodb"
@@ -50,32 +39,37 @@ func main() {
 		mongodb.Module,
 		tracing.Module,
 		servicediscovery.Module,
-		gateway.Module,
-		agents.Module,
-		auth.Module,
 		logging.FxLogger(),
-
-		download.Module,
-		gallery.Module,
-		jobs.Module,
-		preview.Module,
-		search.Module,
-		spaces.Module,
-		services.Module,
-		shares.Module,
-		webdav.Module,
-
-		fx.Provide(auth.NewMigrations),
+		fx.Provide(gallery.NewMigrations),
 		fx.Decorate(func(viper *viper.Viper) *viper.Viper {
-			viper.SetDefault("tracing.serviceName", "api-gateway")
+			viper.SetDefault("tracing.serviceName", "gallery")
 			return viper
 		}),
 		fx.Decorate(func(client *mongo.Client, viper *viper.Viper) *mongo.Client {
-			viper.SetDefault("mongo.db", "seraph-auth")
+			viper.SetDefault("mongo.db", "seraph-gallery")
 			return client
 		}),
-		fx.Invoke(func(g gateway.Gateway) {
-			// required to bootstrap the Gateway
+		fx.Invoke(func(params gallery.Params, discovery servicediscovery.ServiceDiscovery, lc fx.Lifecycle) error {
+
+			result, err := gallery.New(params)
+
+			if err != nil {
+				return err
+			}
+
+			provider := result.GalleryProvider
+
+			service := discovery.AnnounceService("gallery", map[string]string{})
+
+			lc.Append(fx.StartHook(func() error {
+				return provider.Start()
+			}))
+			lc.Append(fx.StopHook(func() error {
+				service.Remove()
+				return provider.Stop()
+			}))
+
+			return nil
 		}),
 	).Run()
 }

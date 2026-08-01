@@ -187,10 +187,25 @@ services:
       SERAPH_MONGO_URL: mongodb://mongodb:27017/
       SERAPH_LOG_LEVEL: debug
 
+  gallery:
+    image: seraph
+    restart: always
+    command:
+      - gallery
+    depends_on:
+      - nats
+      - mongodb
+    networks:
+      - internal
+    environment:
+      SERAPH_NATS_URL: nats://nats:4222
+      SERAPH_MONGO_URL: mongodb://mongodb:27017/
+      SERAPH_LOG_LEVEL: debug
+
   jobs:
     image: seraph
     restart: always
-    command: 
+    command:
       - jobs
     depends_on:
       - nats

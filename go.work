@@ -9,6 +9,7 @@ use (
 	./file-provider
 	./file-provider-dir
 	./file-provider-smb
+	./gallery
 	./jobs
 	./log-viewer
 	./logging
