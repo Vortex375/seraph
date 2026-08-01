@@ -13,7 +13,7 @@ hardware.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] The maximum thumbnailable width and height are read from configuration, with a documented default well above current flagship phone resolutions
 - [ ] An image within the new cap that the old cap rejected now produces a thumbnail
