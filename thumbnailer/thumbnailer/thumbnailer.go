@@ -51,9 +51,29 @@ import (
 
 const ThumbnailRequestTopic = "seraph.thumbnail.request"
 
-// maximum acceptable source image size for thumbnail creation
-const MaxImageWidth = 8120
-const MaxImageHeight = 8120
+// default maximum acceptable source image size for thumbnail creation, used
+// when not overridden via Options.MaxImageWidth / Options.MaxImageHeight.
+//
+// This bounds the memory used to decode the source image, so it is
+// configurable rather than unlimited. The default is set comfortably above
+// current flagship phone resolutions, including Samsung's 200 MP mode
+// (16320x12240), so recent high-resolution photos are not rejected.
+const DefaultMaxImageWidth = 20000
+const DefaultMaxImageHeight = 20000
+
+// error classes returned in ThumbnailResponse.ErrorClass, allowing callers to
+// distinguish the reason a thumbnail could not be created.
+const (
+	// ErrorClassTooLarge indicates the source image exceeds the configured
+	// maximum thumbnailable dimensions.
+	ErrorClassTooLarge = "TooLarge"
+	// ErrorClassUnsupportedFormat indicates the source file is not a
+	// recognized/decodable image format.
+	ErrorClassUnsupportedFormat = "UnsupportedFormat"
+	// ErrorClassCorrupt indicates the source file is a recognized image
+	// format but could not be decoded.
+	ErrorClassCorrupt = "Corrupt"
+)
 
 // common thumbnail sizes in pixels
 var ThumbnailSizes = []int{128, 256, 512, 1024}
@@ -80,6 +100,11 @@ type Params struct {
 type Options struct {
 	JpegQuality int
 	Parallel    int
+	// MaxImageWidth and MaxImageHeight bound the source image dimensions
+	// accepted for thumbnail creation. Zero means "use the default"
+	// (DefaultMaxImageWidth / DefaultMaxImageHeight).
+	MaxImageWidth  int
+	MaxImageHeight int
 }
 
 type Result struct {
@@ -116,6 +141,12 @@ func NewThumbnailer(p Params, fileProviderId string, path string, thumbnailStora
 		}
 	} else {
 		options = p.Options
+	}
+	if options.MaxImageWidth == 0 {
+		options.MaxImageWidth = DefaultMaxImageWidth
+	}
+	if options.MaxImageHeight == 0 {
+		options.MaxImageHeight = DefaultMaxImageHeight
 	}
 
 	tracer := p.Tracing.TracerProvider.Tracer("thumbnailer")
@@ -291,15 +322,24 @@ func (t *Thumbnailer) handleRequest(ctx context.Context, limiter util.Limiter, r
 	imageConfig, format, err := image.DecodeConfig(file)
 	if err != nil {
 		t.log.Error("error while reading image metadata", "provider", req.ProviderID, "path", req.Path, "error", err)
-		resp.Error = "error while reading image metadata" + err.Error()
+		if errors.Is(err, image.ErrFormat) {
+			resp.Error = "source file is not a supported image format: " + err.Error()
+			resp.ErrorClass = ErrorClassUnsupportedFormat
+		} else {
+			resp.Error = "source image is corrupt or unreadable: " + err.Error()
+			resp.ErrorClass = ErrorClassCorrupt
+		}
 		return
 	}
 	elapsed := time.Since(start)
 	t.log.Debug("decoded image metadata", "format", format, "width", imageConfig.Width, "height", imageConfig.Height, "time", elapsed)
 
-	if imageConfig.Width > MaxImageWidth || imageConfig.Height > MaxImageHeight {
-		t.log.Error("source image too large for thumbnail creation", "provider", req.ProviderID, "path", req.Path, "width", imageConfig.Width, "height", imageConfig.Height)
-		resp.Error = "source image too large for thumbnail creation"
+	maxWidth := t.options.MaxImageWidth
+	maxHeight := t.options.MaxImageHeight
+	if imageConfig.Width > maxWidth || imageConfig.Height > maxHeight {
+		t.log.Error("source image too large for thumbnail creation", "provider", req.ProviderID, "path", req.Path, "width", imageConfig.Width, "height", imageConfig.Height, "maxWidth", maxWidth, "maxHeight", maxHeight)
+		resp.Error = fmt.Sprintf("source image (%dx%d) exceeds the maximum thumbnailable size (%dx%d)", imageConfig.Width, imageConfig.Height, maxWidth, maxHeight)
+		resp.ErrorClass = ErrorClassTooLarge
 		return
 	}
 
@@ -316,7 +356,13 @@ func (t *Thumbnailer) handleRequest(ctx context.Context, limiter util.Limiter, r
 	sourceImage, err := imaging.Decode(reader, imaging.AutoOrientation(true))
 	if err != nil {
 		t.log.Error("error while decoding source image", "provider", req.ProviderID, "path", req.Path, "error", err)
-		resp.Error = "error while decoding source image" + err.Error()
+		if errors.Is(err, image.ErrFormat) {
+			resp.Error = "source file is not a supported image format: " + err.Error()
+			resp.ErrorClass = ErrorClassUnsupportedFormat
+		} else {
+			resp.Error = "source image is corrupt or unreadable: " + err.Error()
+			resp.ErrorClass = ErrorClassCorrupt
+		}
 		return
 	}
 	elapsed = time.Since(start)

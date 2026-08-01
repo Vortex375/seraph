@@ -17,6 +17,7 @@
     "namespace": "seraph.thumbnailer",
     "fields": [
       { "name": "error", "type": "string" },
+      { "name": "errorClass", "type": "string", "default": "" },
       { "name": "providerId", "type": "string" },
       { "name": "path", "type": "string" }
     ]

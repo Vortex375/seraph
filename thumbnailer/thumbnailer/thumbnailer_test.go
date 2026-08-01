@@ -22,12 +22,15 @@ import (
 	"context"
 	"fmt"
 	"image"
+	"image/color"
+	"image/jpeg"
 	"log/slog"
 	"os"
 	"path"
 	"path/filepath"
 	"testing"
 
+	"github.com/disintegration/imaging"
 	"github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
 	"github.com/stretchr/testify/assert"
@@ -116,6 +119,10 @@ func shutdown() {
 }
 
 func getThumbnailer(t *testing.T) (*Thumbnailer, *nats.Conn) {
+	return getThumbnailerWithOptions(t, nil)
+}
+
+func getThumbnailerWithOptions(t *testing.T, options *Options) (*Thumbnailer, *nats.Conn) {
 	nc, err := nats.Connect(natsServer.ClientURL())
 	if err != nil {
 		t.Error(err)
@@ -129,6 +136,7 @@ func getThumbnailer(t *testing.T) (*Thumbnailer, *nats.Conn) {
 		Nc:      nc,
 		Tracing: tracing.NewNoopTracing(),
 		Logger:  logger,
+		Options: options,
 	}, "test", "", tmpFs)
 
 	err = res.Thumbnailer.Start()
@@ -137,6 +145,32 @@ func getThumbnailer(t *testing.T) (*Thumbnailer, *nats.Conn) {
 	}
 
 	return res.Thumbnailer, nc
+}
+
+// writeFixtureJpeg writes a solid-color JPEG of the given dimensions into the
+// directory served as the "testinput" file provider, returning its file name.
+// The caller is responsible for removing the file once the test completes.
+func writeFixtureJpeg(t *testing.T, name string, width, height int) string {
+	t.Helper()
+
+	img := imaging.New(width, height, color.NRGBA{R: 200, G: 100, B: 50, A: 255})
+
+	f, err := os.Create(filepath.Join(".", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	err = jpeg.Encode(f, img, &jpeg.Options{Quality: jpeg.DefaultQuality})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		os.Remove(filepath.Join(".", name))
+	})
+
+	return name
 }
 
 func TestCreateThumbnail(t *testing.T) {
@@ -175,6 +209,163 @@ func TestCreateThumbnail(t *testing.T) {
 	assert.Equal(t, 771, resultImage.Bounds().Size().Y)
 
 	t.Log(tmpDir)
+}
+
+func TestCreateThumbnailWithinConfiguredCap(t *testing.T) {
+	// use a small configured cap so the fixture images stay cheap to generate
+	options := &Options{
+		JpegQuality:    jpeg.DefaultQuality,
+		Parallel:       1,
+		MaxImageWidth:  100,
+		MaxImageHeight: 100,
+	}
+	thumbnailer, nc := getThumbnailerWithOptions(t, options)
+	defer thumbnailer.Stop()
+
+	name := writeFixtureJpeg(t, "fixture_within_cap.jpg", 100, 100)
+
+	req := ThumbnailRequest{
+		ProviderID: "testinput",
+		Path:       name,
+		Width:      64,
+		Height:     64,
+	}
+	resp := ThumbnailResponse{}
+
+	err := messaging.Request(context.Background(), nc, ThumbnailRequestTopic, &req, &resp)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assert.Equal(t, "", resp.Error)
+	assert.Equal(t, "", resp.ErrorClass)
+	assert.NotEmpty(t, resp.Path)
+}
+
+func TestCreateThumbnailBeyondConfiguredCapIsRefused(t *testing.T) {
+	options := &Options{
+		JpegQuality:    jpeg.DefaultQuality,
+		Parallel:       1,
+		MaxImageWidth:  100,
+		MaxImageHeight: 100,
+	}
+	thumbnailer, nc := getThumbnailerWithOptions(t, options)
+	defer thumbnailer.Stop()
+
+	name := writeFixtureJpeg(t, "fixture_beyond_cap.jpg", 101, 101)
+
+	req := ThumbnailRequest{
+		ProviderID: "testinput",
+		Path:       name,
+		Width:      64,
+		Height:     64,
+	}
+	resp := ThumbnailResponse{}
+
+	err := messaging.Request(context.Background(), nc, ThumbnailRequestTopic, &req, &resp)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assert.NotEqual(t, "", resp.Error)
+	assert.Equal(t, ErrorClassTooLarge, resp.ErrorClass)
+	assert.Empty(t, resp.Path)
+}
+
+func TestDefaultCapCoversFlagshipPhoneResolutions(t *testing.T) {
+	// Samsung's 200 MP mode: 16320x12240. 108 MP mode: 12000x9000. The
+	// documented default must clear both without configuration.
+	assert.GreaterOrEqual(t, DefaultMaxImageWidth, 16320)
+	assert.GreaterOrEqual(t, DefaultMaxImageHeight, 12240)
+}
+
+func TestImageBeyondOldHardcodedCapNowProducesThumbnail(t *testing.T) {
+	// 8200x8200 exceeds the old hardcoded 8120x8120 cap that this ticket
+	// replaces. Under the (raised, configurable) default it must now
+	// succeed instead of being rejected outright.
+	thumbnailer, nc := getThumbnailer(t)
+	defer thumbnailer.Stop()
+
+	name := writeFixtureJpeg(t, "fixture_beyond_old_cap.jpg", 8200, 8200)
+
+	req := ThumbnailRequest{
+		ProviderID: "testinput",
+		Path:       name,
+		Width:      64,
+		Height:     64,
+	}
+	resp := ThumbnailResponse{}
+
+	err := messaging.Request(context.Background(), nc, ThumbnailRequestTopic, &req, &resp)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assert.Equal(t, "", resp.Error)
+	assert.Equal(t, "", resp.ErrorClass)
+	assert.NotEmpty(t, resp.Path)
+}
+
+func TestUnsupportedFormatIsDistinguishableFromCorruptOrTooLarge(t *testing.T) {
+	thumbnailer, nc := getThumbnailer(t)
+	defer thumbnailer.Stop()
+
+	name := "fixture_unsupported.txt"
+	err := os.WriteFile(filepath.Join(".", name), []byte("this is not an image"), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Remove(filepath.Join(".", name)) })
+
+	req := ThumbnailRequest{
+		ProviderID: "testinput",
+		Path:       name,
+		Width:      64,
+		Height:     64,
+	}
+	resp := ThumbnailResponse{}
+
+	reqErr := messaging.Request(context.Background(), nc, ThumbnailRequestTopic, &req, &resp)
+	if reqErr != nil {
+		t.Fatal(reqErr)
+	}
+
+	assert.NotEqual(t, "", resp.Error)
+	assert.Equal(t, ErrorClassUnsupportedFormat, resp.ErrorClass)
+	assert.NotEqual(t, ErrorClassTooLarge, resp.ErrorClass)
+}
+
+func TestCorruptImageIsDistinguishableFromUnsupportedOrTooLarge(t *testing.T) {
+	thumbnailer, nc := getThumbnailer(t)
+	defer thumbnailer.Stop()
+
+	// valid JPEG SOI marker followed by garbage: recognized as JPEG format,
+	// but not decodable.
+	name := "fixture_corrupt.jpg"
+	corrupt := append([]byte{0xFF, 0xD8, 0xFF, 0xE0}, []byte("not actually a jpeg body, just garbage bytes to fail mid-decode")...)
+	err := os.WriteFile(filepath.Join(".", name), corrupt, 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Remove(filepath.Join(".", name)) })
+
+	req := ThumbnailRequest{
+		ProviderID: "testinput",
+		Path:       name,
+		Width:      64,
+		Height:     64,
+	}
+	resp := ThumbnailResponse{}
+
+	reqErr := messaging.Request(context.Background(), nc, ThumbnailRequestTopic, &req, &resp)
+	if reqErr != nil {
+		t.Fatal(reqErr)
+	}
+
+	assert.NotEqual(t, "", resp.Error)
+	assert.Equal(t, ErrorClassCorrupt, resp.ErrorClass)
+	assert.NotEqual(t, ErrorClassTooLarge, resp.ErrorClass)
+	assert.NotEqual(t, ErrorClassUnsupportedFormat, resp.ErrorClass)
 }
 
 func TestFitSize(t *testing.T) {

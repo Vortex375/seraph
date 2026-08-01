@@ -35,11 +35,12 @@ func (o *ThumbnailRequest) Marshal() ([]byte, error) {
 // ThumbnailResponse is a generated struct.
 type ThumbnailResponse struct {
 	Error      string `avro:"error"`
+	ErrorClass string `avro:"errorClass"`
 	ProviderID string `avro:"providerId"`
 	Path       string `avro:"path"`
 }
 
-var schemaThumbnailResponse = avro.MustParse(`{"name":"seraph.thumbnailer.ThumbnailResponse","type":"record","fields":[{"name":"error","type":"string"},{"name":"providerId","type":"string"},{"name":"path","type":"string"}]}`)
+var schemaThumbnailResponse = avro.MustParse(`{"name":"seraph.thumbnailer.ThumbnailResponse","type":"record","fields":[{"name":"error","type":"string"},{"name":"errorClass","type":"string"},{"name":"providerId","type":"string"},{"name":"path","type":"string"}]}`)
 
 // Schema returns the schema for ThumbnailResponse.
 func (o *ThumbnailResponse) Schema() avro.Schema {

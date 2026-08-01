@@ -49,15 +49,21 @@ func main() {
 		fx.Invoke(func(params thumbnailer.Params, viper *viper.Viper, discovery servicediscovery.ServiceDiscovery, lc fx.Lifecycle) error {
 			viper.SetDefault("thumbnailer.jpegQuality", jpeg.DefaultQuality)
 			viper.SetDefault("thumbnailer.parallel", runtime.NumCPU())
+			viper.SetDefault("thumbnailer.maxImageWidth", thumbnailer.DefaultMaxImageWidth)
+			viper.SetDefault("thumbnailer.maxImageHeight", thumbnailer.DefaultMaxImageHeight)
 
 			providerId := viper.GetString("thumbnailer.providerId")
 			path := viper.GetString("thumbnailer.path")
 			jpegQuality := viper.GetInt("thumbnailer.jpegQuality")
 			parallel := viper.GetInt("thumbnailer.parallel")
+			maxImageWidth := viper.GetInt("thumbnailer.maxImageWidth")
+			maxImageHeight := viper.GetInt("thumbnailer.maxImageHeight")
 
 			params.Options = &thumbnailer.Options{
-				JpegQuality: jpegQuality,
-				Parallel:    parallel,
+				JpegQuality:    jpegQuality,
+				Parallel:       parallel,
+				MaxImageWidth:  maxImageWidth,
+				MaxImageHeight: maxImageHeight,
 			}
 
 			if providerId == "" {
