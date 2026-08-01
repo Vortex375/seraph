@@ -27,7 +27,7 @@ android {
     namespace = "net.umbasa.seraph.app"
     compileSdk = flutter.compileSdkVersion
     // ndkVersion = flutter.ndkVersion
-    ndkVersion = "27.0.12077973"
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -49,7 +49,7 @@ android {
         versionCode = flutterVersionCode.toInteger()
         versionName = flutterVersionName
         manifestPlaceholders += [
-            'appAuthRedirectScheme': 'net.umbasa.seraph.app'
+            'oidcRedirectScheme': 'net.umbasa.seraph.app'
         ]
     }
 
