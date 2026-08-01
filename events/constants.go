@@ -23,3 +23,9 @@ const (
 	FileChangedEventChanged = "changed"
 	FileChangedEventDeleted = "deleted"
 )
+
+const (
+	SpaceChangedEventCreated = "created"
+	SpaceChangedEventUpdated = "updated"
+	SpaceChangedEventDeleted = "deleted"
+)

@@ -61,5 +61,15 @@
       {"name": "statusMessage", "type": "string"},
       {"name": "properties", "type": {"type": "map", "values": "string"}}
     ]
+  },
+  {
+    "type": "record",
+    "name": "SpaceChangedEvent",
+    "namespace": "seraph.events",
+    "fields": [
+			{"name": "event", "type": "Event"},
+      {"name": "spaceId", "type": "string"},
+      {"name": "change", "type": "string"}
+    ]
   }
 ]

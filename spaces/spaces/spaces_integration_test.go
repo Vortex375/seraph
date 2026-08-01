@@ -24,15 +24,18 @@ import (
 	"log/slog"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/testcontainers/testcontainers-go"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.uber.org/fx/fxtest"
 	"umbasa.net/seraph/entities"
+	"umbasa.net/seraph/events"
 	"umbasa.net/seraph/logging"
 	"umbasa.net/seraph/messaging"
 	"umbasa.net/seraph/mongodb"
@@ -54,7 +57,10 @@ func TestMain(m *testing.M) {
 }
 
 func setup() {
-	opts := &server.Options{}
+	opts := &server.Options{
+		JetStream: true,
+		StoreDir:  os.TempDir(),
+	}
 	var err error
 	natsServer, err = server.NewServer(opts)
 	if err != nil {
@@ -62,6 +68,9 @@ func setup() {
 	}
 
 	natsServer.Start()
+	if !natsServer.ReadyForConnections(10 * time.Second) {
+		panic("embedded NATS server did not become ready")
+	}
 
 	req := testcontainers.ContainerRequest{
 		Image:        "mongo:8",
@@ -109,6 +118,11 @@ func getSpacesProvider(t *testing.T) (*spaces.SpacesProvider, *nats.Conn, *mongo
 		t.Fatal(err)
 	}
 
+	js, err := jetstream.New(nc)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	res, err := mongodb.NewClient(mongodb.ClientParams{
 		Viper:   v,
 		Tracing: tracing.NewNoopTracing(),
@@ -123,12 +137,16 @@ func getSpacesProvider(t *testing.T) (*spaces.SpacesProvider, *nats.Conn, *mongo
 	logger.SetLevel(slog.LevelDebug)
 	db := mongoClient.Database("spaces_test")
 
-	res2, _ := spaces.New(spaces.Params{
+	res2, err := spaces.New(spaces.Params{
 		Nc:      nc,
+		Js:      js,
 		Logger:  logger,
 		Tracing: tracing.NewNoopTracing(),
 		Db:      db,
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	return res2.SpacesProvider, nc, db
 }
@@ -511,4 +529,100 @@ func TestSpaceResolve(t *testing.T) {
 	assert.Equal(t, "", res.Error)
 	assert.Equal(t, "", res.ProviderId)
 	assert.Equal(t, "", res.Path)
+}
+
+func TestSpaceChangedEvent(t *testing.T) {
+	spacesProvider, nc, _ := getSpacesProvider(t)
+
+	spacesProvider.Start()
+	defer spacesProvider.Stop()
+
+	changedChan := make(chan *nats.Msg, 10)
+	sub, err := nc.ChanSubscribe(events.SpaceChangedTopic, changedChan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sub.Unsubscribe()
+
+	receiveEvent := func() events.SpaceChangedEvent {
+		select {
+		case msg := <-changedChan:
+			ev := events.SpaceChangedEvent{}
+			if err := ev.Unmarshal(msg.Data); err != nil {
+				t.Fatal(err)
+			}
+			return ev
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for spaces.changed event")
+			return events.SpaceChangedEvent{}
+		}
+	}
+
+	// CREATE
+
+	req := spaces.SpaceCrudRequest{
+		Operation: "CREATE",
+		Space:     entities.MakePrototype(&spaces.SpacePrototype{}),
+	}
+
+	req.Space.Title.Set("some title")
+	req.Space.Description.Set("some description")
+	req.Space.Users.Set([]string{"pino"})
+	req.Space.FileProviders.Set([]spaces.SpaceFileProvider{
+		{SpaceProviderId: "pippo-changed-event", ProviderId: "foo", Path: "/"},
+	})
+
+	res := spaces.SpaceCrudResponse{}
+	err = messaging.Request(context.Background(), nc, spaces.SpaceCrudTopic, messaging.Json(&req), messaging.Json(&res))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, "", res.Error)
+	createdId := res.Space[0].Id
+
+	createdEvent := receiveEvent()
+	assert.Equal(t, createdId.Hex(), createdEvent.SpaceID)
+	assert.Equal(t, events.SpaceChangedEventCreated, createdEvent.Change)
+	assert.NotEmpty(t, createdEvent.Event.ID)
+	assert.Equal(t, 1, createdEvent.Event.Version)
+
+	// UPDATE
+
+	req = spaces.SpaceCrudRequest{
+		Operation: "UPDATE",
+		Space:     entities.MakePrototype(&spaces.SpacePrototype{}),
+	}
+	req.Space.Id.Set(createdId)
+	req.Space.Title.Set("some other title")
+	req.Space.FileProviders.Set([]spaces.SpaceFileProvider{
+		{SpaceProviderId: "pippo-changed-event", ProviderId: "foo", Path: "/"},
+	})
+
+	err = messaging.Request(context.Background(), nc, spaces.SpaceCrudTopic, messaging.Json(&req), messaging.Json(&res))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, "", res.Error)
+
+	updatedEvent := receiveEvent()
+	assert.Equal(t, createdId.Hex(), updatedEvent.SpaceID)
+	assert.Equal(t, events.SpaceChangedEventUpdated, updatedEvent.Change)
+
+	// DELETE
+
+	req = spaces.SpaceCrudRequest{
+		Operation: "DELETE",
+		Space:     entities.MakePrototype(&spaces.SpacePrototype{}),
+	}
+	req.Space.Id.Set(createdId)
+
+	err = messaging.Request(context.Background(), nc, spaces.SpaceCrudTopic, messaging.Json(&req), messaging.Json(&res))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, "", res.Error)
+
+	deletedEvent := receiveEvent()
+	assert.Equal(t, createdId.Hex(), deletedEvent.SpaceID)
+	assert.Equal(t, events.SpaceChangedEventDeleted, deletedEvent.Change)
 }

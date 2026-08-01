@@ -30,6 +30,10 @@ const JobsStream = "SERAPH_JOBS"
 const JobsTopic = "seraph.jobs.>"
 const JobsTopicPattern = "seraph.jobs.%s"
 
+const SpaceChangedStream = "SERAPH_SPACES_CHANGED"
+const SpaceChangedTopic = "seraph.spaces.*.changed"
+const SpaceChangedTopicPattern = "seraph.spaces.%s.changed"
+
 const SearchRequestTopic = "seraph.search"
 const SearchAckTopicPattern = "seraph.search.%s.ack"
 const SearchReplyTopicPattern = "seraph.search.%s.reply"

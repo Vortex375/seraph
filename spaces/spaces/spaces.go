@@ -26,13 +26,17 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/fx"
 	"umbasa.net/seraph/entities"
+	"umbasa.net/seraph/events"
 	"umbasa.net/seraph/logging"
 	"umbasa.net/seraph/messaging"
 	"umbasa.net/seraph/tracing"
@@ -45,6 +49,7 @@ type Params struct {
 	fx.In
 
 	Nc      *nats.Conn
+	Js      jetstream.JetStream
 	Db      *mongo.Database
 	Logger  *logging.Logger
 	Tracing *tracing.Tracing
@@ -67,6 +72,15 @@ type SpacesProvider struct {
 }
 
 func New(p Params) (Result, error) {
+	// create stream for SpaceChangedEvent - we are producer for these
+	_, err := p.Js.CreateOrUpdateStream(context.Background(), jetstream.StreamConfig{
+		Name:     events.SpaceChangedStream,
+		Subjects: []string{events.SpaceChangedTopic},
+	})
+	if err != nil {
+		return Result{}, fmt.Errorf("while creating %s stream: %w", events.SpaceChangedStream, err)
+	}
+
 	return Result{
 		SpacesProvider: &SpacesProvider{
 			log:    p.Logger.GetLogger("spaces"),
@@ -229,6 +243,8 @@ func (s *SpacesProvider) handleCrud(ctx context.Context, req *SpaceCrudRequest) 
 		space := Space{}
 		findRes.Decode(&space)
 
+		s.publishSpaceChanged(ctx, space.Id, events.SpaceChangedEventCreated)
+
 		return &SpaceCrudResponse{
 			Space: []Space{space},
 		}
@@ -261,6 +277,8 @@ func (s *SpacesProvider) handleCrud(ctx context.Context, req *SpaceCrudRequest) 
 		space := Space{}
 		result.Decode(&space)
 
+		s.publishSpaceChanged(ctx, space.Id, events.SpaceChangedEventUpdated)
+
 		return &SpaceCrudResponse{
 			Space: []Space{space},
 		}
@@ -283,6 +301,8 @@ func (s *SpacesProvider) handleCrud(ctx context.Context, req *SpaceCrudRequest) 
 		space := Space{}
 		result.Decode(&space)
 
+		s.publishSpaceChanged(ctx, space.Id, events.SpaceChangedEventDeleted)
+
 		return &SpaceCrudResponse{
 			Space: []Space{space},
 		}
@@ -291,6 +311,37 @@ func (s *SpacesProvider) handleCrud(ctx context.Context, req *SpaceCrudRequest) 
 		return &SpaceCrudResponse{
 			Error: "invalid CRUD operation: " + req.Operation,
 		}
+	}
+}
+
+// publishSpaceChanged publishes a spaces.changed event for the given space.
+// Publishing failures are logged but must not fail the originating CRUD
+// operation, so errors are swallowed here.
+func (s *SpacesProvider) publishSpaceChanged(ctx context.Context, spaceId primitive.ObjectID, change string) {
+	ctx, span := s.tracer.Start(ctx, "publishSpaceChanged")
+	defer span.End()
+
+	spaceIdHex := spaceId.Hex()
+
+	ev := events.SpaceChangedEvent{
+		Event: events.Event{
+			ID:      uuid.NewString(),
+			Version: 1,
+		},
+		SpaceID: spaceIdHex,
+		Change:  change,
+	}
+
+	data, err := ev.Marshal()
+	if err != nil {
+		s.log.Error("error marshaling SpaceChangedEvent", "error", err, "spaceId", spaceIdHex, "change", change)
+		return
+	}
+
+	topic := fmt.Sprintf(events.SpaceChangedTopicPattern, spaceIdHex)
+
+	if err := s.nc.Publish(topic, data); err != nil {
+		s.log.Error("error publishing SpaceChangedEvent", "error", err, "spaceId", spaceIdHex, "change", change)
 	}
 }
 

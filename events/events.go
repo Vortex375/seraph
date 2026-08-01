@@ -138,3 +138,27 @@ func (o *JobEvent) Unmarshal(b []byte) error {
 func (o *JobEvent) Marshal() ([]byte, error) {
 	return avro.Marshal(o.Schema(), o)
 }
+
+// SpaceChangedEvent is a generated struct.
+type SpaceChangedEvent struct {
+	Event   Event  `avro:"event" json:"event"`
+	SpaceID string `avro:"spaceId" json:"spaceId"`
+	Change  string `avro:"change" json:"change"`
+}
+
+var schemaSpaceChangedEvent = avro.MustParse(`{"name":"seraph.events.SpaceChangedEvent","type":"record","fields":[{"name":"event","type":"seraph.events.Event"},{"name":"spaceId","type":"string"},{"name":"change","type":"string"}]}`)
+
+// Schema returns the schema for SpaceChangedEvent.
+func (o *SpaceChangedEvent) Schema() avro.Schema {
+	return schemaSpaceChangedEvent
+}
+
+// Unmarshal decodes b into the receiver.
+func (o *SpaceChangedEvent) Unmarshal(b []byte) error {
+	return avro.Unmarshal(o.Schema(), b, o)
+}
+
+// Marshal encodes the receiver.
+func (o *SpaceChangedEvent) Marshal() ([]byte, error) {
+	return avro.Marshal(o.Schema(), o)
+}
