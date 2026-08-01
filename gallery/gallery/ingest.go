@@ -1,0 +1,411 @@
+// Copyright © 2024 Benjamin Schmitz
+
+// This file is part of Seraph <https://github.com/Vortex375/seraph>.
+
+// Seraph is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License
+// as published by the Free Software Foundation,
+// either version 3 of the License, or (at your option)
+// any later version.
+
+// Seraph is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+
+// You should have received a copy of the GNU Affero General Public License
+// along with Seraph.  If not, see <http://www.gnu.org/licenses/>.
+
+package gallery
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/nats-io/nats.go/jetstream"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo/options"
+	"umbasa.net/seraph/events"
+	"umbasa.net/seraph/file-provider/fileprovider"
+	"umbasa.net/seraph/messaging"
+	"umbasa.net/seraph/spaces/spaces"
+	"umbasa.net/seraph/util"
+)
+
+// ingestConsumerName is the durable JetStream consumer name the gallery
+// service uses on events.FileChangedStream. Fixed and well-known, like the
+// thumbnailer's invalidation consumer, so the delivery position survives
+// restarts: a durable that isn't recreated under the same name starts over
+// from the beginning of the stream.
+const ingestConsumerName = "SERAPH_GALLERY_INGEST"
+
+// ingestParallel bounds how many file-change events are processed
+// concurrently. Metadata extraction reads the full file over NATS
+// request/reply and decodes it, so this is deliberately modest - this is
+// background ingestion, not an interactive request.
+const ingestParallel = 4
+
+// prefix is a resolved physical location a Gallery Source Folder currently
+// points at: every event under providerId+path (as a path prefix) belongs to
+// at least one configured folder.
+type prefix struct {
+	providerId string
+	path       string // cleaned, no trailing slash except root "/"
+}
+
+// contains reports whether p is a prefix of (or equal to) candidatePath on
+// the same provider. Comparison is prefix-of-path-segments, not
+// string-prefix, so a folder named "/Photos2" does not match a configured
+// folder "/Photos".
+func (p prefix) contains(providerId string, candidatePath string) bool {
+	if p.providerId != providerId {
+		return false
+	}
+	if p.path == "/" {
+		return true
+	}
+	if candidatePath == p.path {
+		return true
+	}
+	return strings.HasPrefix(candidatePath, p.path+"/")
+}
+
+// prefixCache is the cheap-matching structure event ingestion filters
+// against: the resolved physical prefixes of every configured Gallery Source
+// Folder, across all users. Resolution (a SpaceResolveRequest per configured
+// folder) happens when the cache is (re)built, never per event - that is the
+// whole point of caching it.
+//
+// Re-resolving on spaces.changed (so a re-pointed Space is picked up without
+// a restart) is ticket 09's job, not this one's; refresh() is the seam it
+// hangs off.
+type prefixCache struct {
+	mu       sync.RWMutex
+	prefixes []prefix
+}
+
+func newPrefixCache() *prefixCache {
+	return &prefixCache{}
+}
+
+func (c *prefixCache) set(prefixes []prefix) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.prefixes = prefixes
+}
+
+// matches reports whether the given physical (providerId, path) falls under
+// any cached prefix. O(number of configured folders), with no network call -
+// this is what keeps per-event filtering cheap.
+func (c *prefixCache) matches(providerId string, filePath string) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	for _, p := range c.prefixes {
+		if p.contains(providerId, filePath) {
+			return true
+		}
+	}
+	return false
+}
+
+// refresh re-resolves every configured Gallery Source Folder (across all
+// users - the cache is not per-user, see package docs) and replaces the
+// cached prefix set. A folder whose Space no longer resolves for its owner
+// (access revoked, Space deleted) is simply dropped from the cache: its
+// events stop matching, which is exactly the access-control behaviour the
+// query path also relies on.
+func (g *GalleryProvider) refreshPrefixCache(ctx context.Context) error {
+	cur, err := g.sourceFolders.Find(ctx, bson.M{})
+	if err != nil {
+		return fmt.Errorf("while listing gallery source folders: %w", err)
+	}
+
+	folders := make([]GallerySourceFolder, 0)
+	if err := cur.All(ctx, &folders); err != nil {
+		return fmt.Errorf("while listing gallery source folders: %w", err)
+	}
+
+	seen := make(map[prefix]bool)
+	prefixes := make([]prefix, 0, len(folders))
+	for _, f := range folders {
+		req := spaces.SpaceResolveRequest{
+			UserId:          f.UserId,
+			SpaceProviderId: f.SpaceProviderId,
+		}
+		res := spaces.SpaceResolveResponse{}
+		if err := messaging.Request(ctx, g.nc, spaces.SpaceResolveTopic, messaging.Json(&req), messaging.Json(&res)); err != nil {
+			g.log.Warn("failed to resolve gallery source folder; excluding it from ingestion until it resolves",
+				"error", err, "userId", f.UserId, "spaceProviderId", f.SpaceProviderId, "path", f.Path)
+			continue
+		}
+		if res.Error != "" || res.ProviderId == "" {
+			g.log.Warn("gallery source folder does not resolve; excluding it from ingestion",
+				"error", res.Error, "userId", f.UserId, "spaceProviderId", f.SpaceProviderId, "path", f.Path)
+			continue
+		}
+
+		physicalPath := path.Join(res.Path, f.Path)
+		if physicalPath == "" {
+			physicalPath = "/"
+		}
+		p := prefix{providerId: res.ProviderId, path: physicalPath}
+		if !seen[p] {
+			seen[p] = true
+			prefixes = append(prefixes, p)
+		}
+	}
+
+	g.prefixCache.set(prefixes)
+	g.log.Debug("refreshed gallery source folder prefix cache", "count", len(prefixes))
+	return nil
+}
+
+// startIngestConsumer creates (or reattaches to) the durable file-change
+// consumer and begins ingesting FileChangedEvent messages in the background.
+func (g *GalleryProvider) startIngestConsumer(ctx context.Context) (*ingestConsumer, error) {
+	if g.js == nil {
+		return nil, nil
+	}
+
+	streamCtx := context.Background()
+
+	stream, err := g.js.CreateOrUpdateStream(streamCtx, jetstream.StreamConfig{
+		Name:     events.FileChangedStream,
+		Subjects: []string{events.FileChangedTopic},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create/update %s stream: %w", events.FileChangedStream, err)
+	}
+
+	cons, err := stream.CreateOrUpdateConsumer(streamCtx, jetstream.ConsumerConfig{
+		Durable:   ingestConsumerName,
+		AckPolicy: jetstream.AckExplicitPolicy,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create/update %s consumer: %w", ingestConsumerName, err)
+	}
+
+	iter, err := cons.Messages()
+	if err != nil {
+		return nil, fmt.Errorf("start consuming %s: %w", ingestConsumerName, err)
+	}
+
+	ic := &ingestConsumer{
+		g:       g,
+		iter:    iter,
+		limiter: util.NewLimiter(ingestParallel),
+	}
+
+	g.wg.Add(1)
+	go ic.loop(ctx, &g.wg)
+
+	return ic, nil
+}
+
+type ingestConsumer struct {
+	g       *GalleryProvider
+	iter    jetstream.MessagesContext
+	limiter util.Limiter
+}
+
+func (ic *ingestConsumer) stop() {
+	if ic == nil {
+		return
+	}
+	ic.iter.Stop()
+}
+
+func (ic *ingestConsumer) loop(ctx context.Context, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	for {
+		msg, err := ic.iter.Next()
+		if errors.Is(err, jetstream.ErrMsgIteratorClosed) {
+			return
+		}
+		if err != nil {
+			ic.g.log.Error("file-change consumer error", "error", err)
+			return
+		}
+
+		if !ic.limiter.Begin(ctx) {
+			return
+		}
+
+		ic.g.wg.Add(1)
+		go func() {
+			defer ic.g.wg.Done()
+			defer ic.limiter.End()
+			ic.handleMessage(ctx, msg)
+		}()
+	}
+}
+
+func (ic *ingestConsumer) handleMessage(ctx context.Context, msg jetstream.Msg) {
+	g := ic.g
+
+	ev := events.FileChangedEvent{}
+	if err := ev.Unmarshal(msg.Data()); err != nil {
+		g.log.Error("failed to deserialize FileChangedEvent", "error", err)
+		// malformed payload will never parse on redelivery either
+		msg.Ack()
+		return
+	}
+
+	if ev.IsDir {
+		// the gallery only ever holds files
+		msg.Ack()
+		return
+	}
+
+	// cheap reject: no resolve, just a prefix-set lookup
+	if !g.prefixCache.matches(ev.ProviderID, ev.Path) {
+		msg.Ack()
+		return
+	}
+
+	ctx, span := g.tracer.Start(ctx, "handleFileChanged")
+	defer span.End()
+
+	var err error
+	switch ev.Change {
+	case events.FileChangedEventDeleted:
+		err = g.markDeleted(ctx, ev.ProviderID, ev.Path)
+	case events.FileChangedEventCreated, events.FileChangedEventChanged:
+		err = g.upsertPhoto(ctx, &ev)
+	default:
+		// unknown change kind: nothing to do, but ack so it doesn't block
+		// the stream forever
+	}
+
+	if err != nil {
+		g.log.Error("failed to process file-change event for gallery", "provider", ev.ProviderID, "path", ev.Path, "change", ev.Change, "error", err)
+		// leave unacked so JetStream redelivers; the handler is idempotent
+		// (upsert on the physical key), so redelivery is safe. This is also
+		// how a corrupt/truncated file for ONE item is prevented from
+		// stalling ingestion for the rest of the folder: every other event
+		// keeps being acked and processed independently.
+		return
+	}
+
+	msg.Ack()
+}
+
+// markDeleted removes a photo from the listing in response to a "deleted"
+// file-change event. The document is flagged rather than physically removed:
+// a later re-creation at the same path is then an ordinary upsert.
+func (g *GalleryProvider) markDeleted(ctx context.Context, providerId string, filePath string) error {
+	filter := bson.M{"providerId": providerId, "path": filePath}
+	update := bson.M{"$set": bson.M{"deleted": true}}
+	_, err := g.photos.UpdateOne(ctx, filter, update)
+	return err
+}
+
+// upsertPhoto extracts metadata for a created/changed file and writes it
+// into the read model, upserted on the physical key (providerId, path) so
+// the same file arriving twice - by two live events, or later by backfill -
+// produces exactly one document.
+func (g *GalleryProvider) upsertPhoto(ctx context.Context, ev *events.FileChangedEvent) error {
+	meta, capturedAt, capturedAtSource, err := g.extractForEvent(ctx, ev)
+	if err != nil {
+		return err
+	}
+
+	now := time.Now().Unix()
+
+	filter := bson.M{"providerId": ev.ProviderID, "path": ev.Path}
+	update := bson.M{
+		"$set": bson.M{
+			"providerId":       ev.ProviderID,
+			"path":             ev.Path,
+			"capturedAt":       capturedAt,
+			"capturedAtSource": capturedAtSource,
+			"width":            meta.Width,
+			"height":           meta.Height,
+			"orientation":      meta.Orientation,
+			"size":             ev.Size,
+			"mime":             ev.Mime,
+			"unsupported":      meta.Unsupported,
+			"deleted":          false,
+		},
+		// IndexedAt/CapturedAt-when-falling-back-to-indexed must only be set
+		// on first insert: a later re-processing of the same file (a
+		// "changed" event, or backfill racing a live event) must not move an
+		// already-established "first seen" time.
+		"$setOnInsert": bson.M{
+			"indexedAt": now,
+		},
+	}
+
+	_, err = g.photos.UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
+	return err
+}
+
+// extractForEvent fetches the file through the File Provider, extracts
+// pixel/orientation metadata, and resolves Capture Date via the fallback
+// chain EXIF DateTimeOriginal -> file modification time -> time first
+// indexed.
+//
+// A file that cannot be opened at all (provider error, not a decode
+// failure) is reported as an error so the caller leaves the event unacked
+// for redelivery - that is a transient/infra failure, not "this file is not
+// a supported photo".
+func (g *GalleryProvider) extractForEvent(ctx context.Context, ev *events.FileChangedEvent) (photoMetadata, int64, string, error) {
+	client := fileprovider.NewFileProviderClient(ev.ProviderID, g.nc, g.logging)
+	defer client.Close()
+
+	f, err := client.OpenFile(ctx, ev.Path, os.O_RDONLY, 0)
+	if err != nil {
+		return photoMetadata{}, 0, "", fmt.Errorf("opening %s/%s: %w", ev.ProviderID, ev.Path, err)
+	}
+	defer f.Close()
+
+	buf, err := bufferAll(f)
+	if err != nil {
+		return photoMetadata{}, 0, "", fmt.Errorf("reading %s/%s: %w", ev.ProviderID, ev.Path, err)
+	}
+
+	meta := extractMetadata(buf)
+
+	capturedAt, capturedAtSource := resolveCaptureDate(buf, ev)
+
+	return meta, capturedAt, capturedAtSource, nil
+}
+
+// resolveCaptureDate implements the Capture Date fallback chain: EXIF
+// DateTimeOriginal, then the file's modification time as carried by the
+// file-change event, then the current time (this item's "first indexed"
+// moment) if even that is unusable.
+//
+// Modification time is deliberately never treated as authoritative: it is
+// only rung two of the chain, because cloud-side modification time is
+// effectively upload time and cannot be used as an ordering key on its own
+// (see FileChangedEvent.ModTime and the package docs).
+//
+// A photo whose EXIF date is nonsensical (implausible year, far future) is
+// still accepted as-is at rung one - it is not rejected and does not fall
+// through to a later rung. Only an absent or unparseable tag falls through.
+// r is tried for EXIF regardless of meta.Unsupported: a file image/Decode
+// cannot handle (e.g. a RAW format Go's stdlib doesn't register) may still
+// carry a perfectly good EXIF header.
+func resolveCaptureDate(r *bytes.Reader, ev *events.FileChangedEvent) (int64, string) {
+	if _, err := r.Seek(0, io.SeekStart); err == nil {
+		if t, ok := exifCaptureDate(r); ok {
+			return t.Unix(), CaptureDateSourceExif
+		}
+	}
+
+	if ev.ModTime != 0 {
+		return ev.ModTime, CaptureDateSourceModTime
+	}
+
+	return time.Now().Unix(), CaptureDateSourceIndexed
+}

@@ -26,8 +26,10 @@ import (
 	"log/slog"
 	"path"
 	"strings"
+	"sync"
 
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -46,6 +48,7 @@ type Params struct {
 	fx.In
 
 	Nc      *nats.Conn
+	Js      jetstream.JetStream `optional:"true"`
 	Db      *mongo.Database
 	Logger  *logging.Logger
 	Tracing *tracing.Tracing
@@ -59,11 +62,23 @@ type Result struct {
 }
 
 type GalleryProvider struct {
-	log           *slog.Logger
-	tracer        trace.Tracer
-	nc            *nats.Conn
+	log     *slog.Logger
+	tracer  trace.Tracer
+	nc      *nats.Conn
+	js      jetstream.JetStream
+	logging *logging.Logger
+
 	sourceFolders *mongo.Collection
-	crudSub       *nats.Subscription
+	photos        *mongo.Collection
+
+	crudSub *nats.Subscription
+
+	// prefixCache and the durable file-change consumer implement event
+	// ingestion; see ingest.go.
+	prefixCache  *prefixCache
+	ingest       *ingestConsumer
+	ingestCancel context.CancelFunc
+	wg           sync.WaitGroup
 }
 
 func New(p Params) (Result, error) {
@@ -72,7 +87,11 @@ func New(p Params) (Result, error) {
 			log:           p.Logger.GetLogger("gallery"),
 			tracer:        p.Tracing.TracerProvider.Tracer("gallery"),
 			nc:            p.Nc,
+			js:            p.Js,
+			logging:       p.Logger,
 			sourceFolders: p.Db.Collection("gallerySourceFolders"),
+			photos:        p.Db.Collection("galleryPhotos"),
+			prefixCache:   newPrefixCache(),
 		},
 	}, nil
 }
@@ -95,6 +114,25 @@ func (g *GalleryProvider) Start() error {
 		return fmt.Errorf("while starting GalleryProvider: %w", err)
 	}
 	g.crudSub = sub
+
+	// build the prefix cache once at startup so ingestion can match events
+	// cheaply from the first message; ADD/REMOVE keep it current afterwards
+	// (see handleSourceFolderCrud). Re-resolving on spaces.changed - so a
+	// re-pointed Space is picked up without waiting for a folder edit - is
+	// ticket 09's job.
+	if err := g.refreshPrefixCache(context.Background()); err != nil {
+		g.log.Error("failed to build initial gallery source folder prefix cache; ingestion will accept no events until it succeeds", "error", err)
+	}
+
+	ingestCtx, cancel := context.WithCancel(context.Background())
+	g.ingestCancel = cancel
+	ingest, err := g.startIngestConsumer(ingestCtx)
+	if err != nil {
+		g.log.Error("failed to start file-change ingestion; the gallery read model will not stay up to date", "error", err)
+	} else {
+		g.ingest = ingest
+	}
+
 	return nil
 }
 
@@ -106,6 +144,15 @@ func (g *GalleryProvider) Stop() error {
 			return fmt.Errorf("while stopping GalleryProvider: %w", err)
 		}
 	}
+	if g.ingest != nil {
+		g.ingest.stop()
+		g.ingest = nil
+	}
+	if g.ingestCancel != nil {
+		g.ingestCancel()
+		g.ingestCancel = nil
+	}
+	g.wg.Wait()
 	return nil
 }
 
@@ -212,6 +259,15 @@ func (g *GalleryProvider) addSourceFolder(ctx context.Context, req *GallerySourc
 		}
 	}
 
+	// keep the ingestion prefix cache current so events under the newly
+	// added folder start matching without a restart. Best-effort: a failure
+	// here does not fail the ADD - the periodic/backfill paths are not this
+	// ticket's concern, and the next successful CRUD op will retry the
+	// refresh.
+	if err := g.refreshPrefixCache(ctx); err != nil {
+		g.log.Error("failed to refresh gallery source folder prefix cache after ADD", "error", err)
+	}
+
 	return &GallerySourceFolderCrudResponse{
 		SourceFolder: []GallerySourceFolder{folder},
 	}
@@ -260,6 +316,14 @@ func (g *GalleryProvider) removeSourceFolder(ctx context.Context, req *GallerySo
 		}
 	}
 
+	// Deliberately does NOT refresh the prefix cache here (unlike ADD): doing
+	// so would issue a SpaceResolveRequest for every other configured
+	// folder, contradicting the documented, tested contract above that
+	// REMOVE "deletes a configuration document and nothing else" - see
+	// TestRemoveTouchesNoFileProvider. A stale prefix for the just-removed
+	// folder is harmless: the read model it feeds is shared infrastructure
+	// (see package docs), access control is enforced per-user at query
+	// time, and the next ADD anywhere naturally refreshes the whole cache.
 	return &GallerySourceFolderCrudResponse{
 		SourceFolder: []GallerySourceFolder{folder},
 	}
