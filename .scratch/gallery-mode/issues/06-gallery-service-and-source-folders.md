@@ -20,7 +20,7 @@ whenever an administrator re-mounted a Space.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] A user can list, add and remove their Gallery Source Folders through the gateway
 - [ ] Folders are stored per user in Space terms, and one user's folders are never visible to another
