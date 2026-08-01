@@ -37,3 +37,7 @@ const SpaceChangedTopicPattern = "seraph.spaces.%s.changed"
 const SearchRequestTopic = "seraph.search"
 const SearchAckTopicPattern = "seraph.search.%s.ack"
 const SearchReplyTopicPattern = "seraph.search.%s.reply"
+
+const FileIndexListRequestTopic = "seraph.fileindex.list"
+const FileIndexListAckTopicPattern = "seraph.fileindex.list.%s.ack"
+const FileIndexListReplyTopicPattern = "seraph.fileindex.list.%s.reply"
