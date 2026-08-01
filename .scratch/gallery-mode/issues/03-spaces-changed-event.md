@@ -14,7 +14,7 @@ Gallery Mode.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] Creating, updating and deleting a Space each publish a `spaces.changed` event
 - [ ] The event identifies the affected Space and the kind of change, and carries enough that a consumer knows to re-resolve rather than having to guess
