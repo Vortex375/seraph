@@ -22,7 +22,7 @@ is tracked separately and is not part of this ticket.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] Deleting a file removes its Thumbnails at every size
 - [ ] Changing a file in place causes the next preview request to serve a Thumbnail of the new content, not the old one
