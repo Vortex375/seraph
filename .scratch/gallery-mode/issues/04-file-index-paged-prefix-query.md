@@ -12,7 +12,7 @@ the indexer's existing search request already uses.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] A request for a `(providerId, path)` prefix returns the indexed files beneath it, paged, with a cursor to continue from
 - [ ] Ordering is stable across pages, so a client paging through a large folder sees every entry exactly once
