@@ -378,6 +378,91 @@ func TestUnsupportedNoticeForUnknownPhotoIsHarmless(t *testing.T) {
 	}, "the consumer must keep processing notices after one for an unknown photo")
 }
 
+// TestUnsupportedNoticeReachesAMirrorThatAlreadyPolledPastThePhoto covers the
+// delta-feed half of recording the reason: a mirror that has ALREADY polled
+// past a photo's sequence must still learn that the photo later became
+// unsupported. Without recordUnsupported bumping Seq, that mirror would keep
+// showing it as an ordinary photo forever - the exact failure ticket 10's
+// feed exists to prevent.
+//
+// It also covers the redelivery half: a duplicate notice for an
+// already-recorded value must NOT produce a second delta delivery, since
+// that would churn the feed and re-deliver an unchanged document to every
+// mirror for nothing.
+func TestUnsupportedNoticeReachesAMirrorThatAlreadyPolledPastThePhoto(t *testing.T) {
+	nc, db := startGalleryProvider(t, map[string][]string{
+		"pino": {"photos"},
+	})
+	clearSourceFolders(t, db)
+	clearPhotos(t, db)
+	clearPendingTombstones(t, db)
+
+	dir := startFileProvider(t, "physical-photos")
+
+	crud(t, nc, &gallery.GallerySourceFolderCrudRequest{
+		Operation:       gallery.GallerySourceFolderOperationAdd,
+		UserId:          "pino",
+		SpaceProviderId: "photos",
+		Path:            "/holidays",
+	})
+
+	physicalPath := "/mounted/photos/holidays/flagged-later.jpg"
+	spacePath := "/holidays/flagged-later.jpg"
+	photo := createPhoto(t, nc, db, dir, "physical-photos", physicalPath)
+	require.Equal(t, "", photo.Unsupported)
+
+	// the mirror completes a full poll: it has now seen this photo and its
+	// cursor sits past that photo's sequence
+	items, since := deltaAll(t, nc, "pino", 0)
+	seen := false
+	for _, it := range items {
+		if it.Path == spacePath {
+			seen = true
+			assert.Equal(t, "", it.Unsupported)
+		}
+	}
+	require.True(t, seen, "sanity: the photo must be in the mirror's first poll")
+
+	// the thumbnailer now reports it cannot decode this photo for warming
+	publishWarmUnsupported(t, nc, events.ThumbnailWarmUnsupportedNotice{
+		ProviderID: "physical-photos",
+		Path:       physicalPath,
+		Reason:     gallery.UnsupportedReasonCorrupt,
+	})
+	waitForCondition(t, func() bool {
+		p := findPhoto(t, db, "physical-photos", physicalPath)
+		return p != nil && p.Unsupported == gallery.UnsupportedReasonCorrupt
+	}, "expected the reported reason to be recorded against the gallery item")
+
+	// polling from where the mirror left off must now deliver the photo
+	// again, carrying the newly recorded reason
+	items, since = deltaAll(t, nc, "pino", since)
+	redelivered := 0
+	for _, it := range items {
+		if it.Path == spacePath {
+			redelivered++
+			assert.Equal(t, gallery.UnsupportedReasonCorrupt, it.Unsupported)
+		}
+	}
+	assert.Equal(t, 1, redelivered, "a photo flagged unsupported after the mirror polled past it must arrive on the next poll")
+
+	// a DUPLICATE notice for the same, already-recorded value must not bump
+	// the sequence again - the next poll must be empty for this photo
+	publishWarmUnsupported(t, nc, events.ThumbnailWarmUnsupportedNotice{
+		ProviderID: "physical-photos",
+		Path:       physicalPath,
+		Reason:     gallery.UnsupportedReasonCorrupt,
+	})
+
+	// give the duplicate time to be consumed and (incorrectly) re-bump
+	time.Sleep(500 * time.Millisecond)
+
+	items, _ = deltaAll(t, nc, "pino", since)
+	for _, it := range items {
+		assert.NotEqual(t, spacePath, it.Path, "a duplicate unsupported notice must not re-deliver the document to mirrors")
+	}
+}
+
 // publishWarmUnsupported publishes a ThumbnailWarmUnsupportedNotice onto the
 // durable warm-unsupported queue, creating the stream first if needed -
 // mirroring how the real thumbnailer's warm consumer does it.

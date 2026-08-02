@@ -198,8 +198,10 @@ func (wc *warmUnsupportedConsumer) handleMessage(ctx context.Context, msg jetstr
 
 	if err := g.recordUnsupported(ctx, notice.ProviderID, notice.Path, notice.Reason); err != nil {
 		g.log.Error("failed to record unsupported reason from thumbnailer", "providerId", notice.ProviderID, "path", notice.Path, "error", err)
-		// leave unacked so JetStream redelivers; the write below is a plain
-		// idempotent $set, so redelivery is safe.
+		// leave unacked so JetStream redelivers; the write is conditional on
+		// the flag actually changing (see recordUnsupported), so a
+		// redelivered notice for an already-recorded value writes nothing
+		// and bumps no sequence.
 		return
 	}
 
@@ -219,15 +221,42 @@ func (wc *warmUnsupportedConsumer) handleMessage(ctx context.Context, msg jetstr
 // documents and is not an error: there is nothing to record the reason
 // against any more.
 //
-// This deliberately does NOT go through withSequence/bump Seq: Unsupported
-// here is a thumbnailer-observed corroboration of what ingestion's own
-// decode already determined (see extractForEvent/extractMetadata), not new
-// information that changes what a client viewing the delta feed needs to
-// re-fetch - the item's displayable state was already established at
-// ingest time.
+// This goes through withSequence and bumps Seq, exactly like markDeleted
+// (ingest.go) does for the other "flag an existing document" write. That
+// matters for mirrors: a client that has already polled the delta feed past
+// this document's sequence would otherwise NEVER learn the photo became
+// unsupported, and would keep showing it as an ordinary photo forever. A
+// document only reaches a mirror again by having its Seq advanced past the
+// mirror's cursor - that is the entire mechanism the delta feed is built on
+// (see delta.go and GalleryPhoto.Seq).
+//
+// THE WRITE IS CONDITIONAL ON THE FLAG ACTUALLY CHANGING - note the
+// "unsupported": {$ne: reason} clause in the filter. Warm requests are
+// redelivered on any unacked failure, and a redelivered notice for a value
+// that is already recorded must not bump Seq a second time: that would
+// churn the feed and re-deliver an unchanged document to every mirror for
+// nothing. With the $ne clause a duplicate notice matches zero documents
+// and writes nothing, so redelivery stays harmless in the feed exactly as
+// it is in the read model.
+//
+// The sequence is allocated before knowing whether the write will match
+// anything, and a call that matches nothing simply never stamps it -
+// the allocated number is quietly skipped rather than reused, which is
+// fine: the allocator's contract is monotonic and unique, never
+// contiguous, so a gap is invisible to the feed (the same reasoning
+// backfillUpsert documents). Going through withSequence still matters for
+// a skipped one, because the feed must not serve past this allocation
+// while the update that might use it is still in flight - and withSequence
+// releases it on every exit path, error included.
 func (g *GalleryProvider) recordUnsupported(ctx context.Context, providerId string, filePath string, reason string) error {
-	filter := bson.M{"providerId": providerId, "path": filePath}
-	update := bson.M{"$set": bson.M{"unsupported": reason}}
-	_, err := g.photos.UpdateOne(ctx, filter, update)
-	return err
+	return g.withSequence(ctx, func(seq int64) error {
+		filter := bson.M{
+			"providerId":  providerId,
+			"path":        filePath,
+			"unsupported": bson.M{"$ne": reason},
+		}
+		update := bson.M{"$set": bson.M{"unsupported": reason, "seq": seq}}
+		_, err := g.photos.UpdateOne(ctx, filter, update)
+		return err
+	})
 }
