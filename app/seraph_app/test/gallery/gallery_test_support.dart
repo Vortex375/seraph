@@ -5,11 +5,53 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart' hide Value;
 import 'package:oidc/oidc.dart';
+import 'package:seraph_app/src/gallery/local/local_source.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 import 'package:seraph_app/src/login/login_controller.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
 import 'package:seraph_app/src/share/share_controller.dart';
+
+/// A [LocalSource] driven entirely by the test - what ticket 15's mirror-seam
+/// coverage requirement ("a fake Local Source") asks for. [items] can be
+/// reassigned between scans, so a test can simulate a device photo appearing
+/// or disappearing across two calls to [LocalScanService.scan]
+/// (`local_scan_service.dart`).
+class FakeLocalSource implements LocalSource {
+  FakeLocalSource([List<LocalMediaItem> items = const []]) : _items = items;
+
+  List<LocalMediaItem> _items;
+  int scanCount = 0;
+
+  /// Replaces what the next [fullScan] returns.
+  void setItems(List<LocalMediaItem> items) => _items = items;
+
+  @override
+  Future<List<LocalMediaItem>> fullScan() async {
+    scanCount++;
+    return _items;
+  }
+}
+
+/// A [LocalMediaItem] with sensible defaults, for tests that only care about
+/// a couple of fields.
+LocalMediaItem localMediaItem({
+  String relativePath = 'DCIM/Camera/',
+  String displayName = 'IMG_0001.jpg',
+  int size = 1024,
+  int dateTakenMillis = 1000000,
+  int? dateModifiedMillis,
+  int? mediaStoreId,
+}) {
+  return LocalMediaItem(
+    relativePath: relativePath,
+    displayName: displayName,
+    size: size,
+    dateTakenMillis: dateTakenMillis,
+    dateModifiedMillis: dateModifiedMillis ?? dateTakenMillis,
+    mediaStoreId: mediaStoreId,
+  );
+}
 
 /// A 1x1 PNG - enough for a widget test to have real, decodable bytes coming
 /// back from the stubbed preview endpoint.

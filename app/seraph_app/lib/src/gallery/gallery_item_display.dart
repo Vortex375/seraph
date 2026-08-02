@@ -1,5 +1,11 @@
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 
+/// Where a Gallery Item's copies currently are - exactly one of *Device
+/// only*, *Synced*, or *Cloud only* (see `CONTEXT.md`). Computed straight off
+/// [GalleryItem.origin] rather than stored separately, so it can never
+/// disagree with the row it describes.
+enum GalleryAvailability { deviceOnly, synced, cloudOnly }
+
 /// Presentation-level reading of a mirrored [GalleryItem].
 ///
 /// This is deliberately plain logic over a mirror row rather than anything
@@ -9,6 +15,34 @@ import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 /// item explains itself - is computed here and unit-tested against a
 /// pre-populated mirror.
 extension GalleryItemDisplay on GalleryItem {
+  /// This item's Availability - Device only, Synced or Cloud only - read
+  /// directly off [origin] (`'device'`, `'both'`, or anything else, which in
+  /// practice is always `'cloud'`) with no join and no separate state to
+  /// fall out of sync with it.
+  GalleryAvailability get availability {
+    switch (origin) {
+      case 'device':
+        return GalleryAvailability.deviceOnly;
+      case 'both':
+        return GalleryAvailability.synced;
+      default:
+        return GalleryAvailability.cloudOnly;
+    }
+  }
+
+  /// [availability], spelled out - what a tile's tooltip and an item's
+  /// details show.
+  String get availabilityLabel {
+    switch (availability) {
+      case GalleryAvailability.deviceOnly:
+        return 'Device only';
+      case GalleryAvailability.synced:
+        return 'Synced';
+      case GalleryAvailability.cloudOnly:
+        return 'Cloud only';
+    }
+  }
+
   /// True when the gallery service recorded that this file cannot be
   /// rendered. Such items still appear in the grid - "the gallery is an
   /// honest inventory rather than a filtered one" - with a placeholder
@@ -90,8 +124,15 @@ extension GalleryItemDisplay on GalleryItem {
   }
 
   /// The file's own name, without any directory part.
+  ///
+  /// Falls back to [localDisplayName] for a Device only item, which has no
+  /// [path] at all - MediaStore's display name is exactly this value already,
+  /// so there is nothing to strip a directory off of.
   String get fileName {
-    final p = path ?? '';
+    final p = path;
+    if (p == null) {
+      return localDisplayName ?? '';
+    }
     final slash = p.lastIndexOf('/');
     return slash < 0 ? p : p.substring(slash + 1);
   }

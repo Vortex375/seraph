@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:get/get.dart' hide Response;
 import 'package:seraph_app/src/gallery/gallery_grid_controller.dart';
 import 'package:seraph_app/src/gallery/gallery_item_display.dart';
+import 'package:seraph_app/src/gallery/local/local_scan_service.dart';
+import 'package:seraph_app/src/gallery/local/local_source.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_sync_service.dart';
@@ -264,5 +266,115 @@ void main() {
       expect(controller.itemAt(0), isNull);
       expect(controller.isLoading.value, isFalse);
     });
+
+    test('open() also runs a Local Source scan alongside the cloud sync',
+        () async {
+      final source =
+          FakeLocalSource([localMediaItem(displayName: 'device.jpg')]);
+      final controller = GalleryGridController(
+        mirror: mirror,
+        localScanService: LocalScanService(mirror, localSource: source),
+      );
+
+      await controller.open();
+      await pumpEventQueue();
+
+      expect(source.scanCount, 1);
+      expect(controller.totalCount.value, 1);
+      expect(controller.itemAt(0)!.availability, GalleryAvailability.deviceOnly);
+    });
+
+    test('a failing local scan does not stop the gallery or the cloud sync',
+        () async {
+      await populateMirror(db, count: 2);
+
+      final failingSource = _ThrowingLocalSource();
+      final dio = Dio();
+      dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+        handler.resolve(Response(
+          requestOptions: options,
+          statusCode: 200,
+          data: {
+            'items': <Map<String, dynamic>>[],
+            'nextCursor': '',
+            'hasMore': false,
+            'nextSince': 0,
+          },
+        ));
+      }));
+      final sync = GallerySyncService(
+        FakeSettingsController(),
+        FakeLoginController(),
+        mirror,
+        dio: dio,
+      );
+
+      final controller = GalleryGridController(
+        mirror: mirror,
+        syncService: sync,
+        localScanService: LocalScanService(mirror, localSource: failingSource),
+      );
+
+      await controller.open();
+      await pumpEventQueue();
+
+      expect(controller.syncError.value, isNull,
+          reason: 'the cloud sync succeeded independently of the local scan');
+      expect(controller.totalCount.value, 2,
+          reason: 'the mirror still holds what it had before the failure');
+    });
+
+    test('the filter restricts totalCount and itemAt without reordering',
+        () async {
+      final source = FakeLocalSource([
+        localMediaItem(displayName: 'device-only.jpg', size: 1, dateTakenMillis: 10000),
+      ]);
+      final controller = GalleryGridController(
+        mirror: mirror,
+        localScanService: LocalScanService(mirror, localSource: source),
+      );
+      await insertMirrorItem(db, path: '/Photos/cloud.jpg', capturedAt: 500);
+
+      await controller.open();
+      await pumpEventQueue();
+      expect(controller.totalCount.value, 2);
+
+      await controller.setFilter(GalleryAvailabilityFilter.notBackedUp);
+      expect(controller.totalCount.value, 1);
+      expect(controller.itemAt(0)!.availability, GalleryAvailability.deviceOnly);
+
+      await controller.setFilter(GalleryAvailabilityFilter.cloudOnly);
+      expect(controller.totalCount.value, 1);
+      expect(controller.itemAt(0)!.path, '/Photos/cloud.jpg');
+
+      await controller.setFilter(GalleryAvailabilityFilter.all);
+      expect(controller.totalCount.value, 2);
+    });
+
+    test('the summary reports backed-up and not-backed-up counts', () async {
+      final source = FakeLocalSource([
+        localMediaItem(displayName: 'device-only.jpg', size: 1, dateTakenMillis: 10000),
+      ]);
+      final controller = GalleryGridController(
+        mirror: mirror,
+        localScanService: LocalScanService(mirror, localSource: source),
+      );
+      await insertMirrorItem(db, path: '/Photos/cloud.jpg', capturedAt: 500);
+
+      await controller.open();
+      await pumpEventQueue();
+
+      expect(controller.summary.value.deviceOnly, 1);
+      expect(controller.summary.value.cloudOnly, 1);
+      expect(controller.summary.value.backedUp, 1);
+      expect(controller.summary.value.notBackedUp, 1);
+    });
   });
+}
+
+class _ThrowingLocalSource implements LocalSource {
+  @override
+  Future<List<LocalMediaItem>> fullScan() {
+    throw StateError('scan failed');
+  }
 }

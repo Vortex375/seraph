@@ -7,6 +7,7 @@ import 'package:seraph_app/src/gallery/gallery_item_display.dart';
 import 'package:seraph_app/src/gallery/gallery_photo_viewer.dart';
 import 'package:seraph_app/src/gallery/gallery_source_folders_view.dart';
 import 'package:seraph_app/src/gallery/gallery_tile.dart';
+import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 
 /// Gallery Mode: the user's photos in Seraph, as a grid of thumbnails ordered
 /// by Capture Date, newest first, scrolling back through the whole
@@ -86,6 +87,30 @@ class _GalleryViewState extends State<GalleryView> {
         name: 'Gallery',
         routeName: GalleryView.routeName,
         actions: [
+          Obx(() => PopupMenuButton<GalleryAvailabilityFilter>(
+                tooltip: 'Filter',
+                icon: Icon(
+                  controller.filter.value == GalleryAvailabilityFilter.all
+                      ? Icons.filter_list
+                      : Icons.filter_alt,
+                ),
+                initialValue: controller.filter.value,
+                onSelected: controller.setFilter,
+                itemBuilder: (context) => const [
+                  PopupMenuItem(
+                    value: GalleryAvailabilityFilter.all,
+                    child: Text('All photos'),
+                  ),
+                  PopupMenuItem(
+                    value: GalleryAvailabilityFilter.notBackedUp,
+                    child: Text('Not backed up'),
+                  ),
+                  PopupMenuItem(
+                    value: GalleryAvailabilityFilter.cloudOnly,
+                    child: Text('Cloud only'),
+                  ),
+                ],
+              )),
           Obx(() => IconButton(
                 icon: controller.isSyncing.value
                     ? const SizedBox(
@@ -105,19 +130,32 @@ class _GalleryViewState extends State<GalleryView> {
           ),
         ]
       ),
-      body: Obx(() {
-        if (controller.isLoading.value) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (controller.totalCount.value == 0) {
-          return _EmptyGallery(
-            isSyncing: controller.isSyncing.value,
-            syncError: controller.syncError.value,
-            onChooseFolders: _openFolders,
-          );
-        }
-        return _buildGrid(context);
-      }),
+      body: Column(
+        children: [
+          _SummaryBar(controller: controller),
+          Expanded(
+            child: Obx(() {
+              if (controller.isLoading.value) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (controller.totalCount.value == 0) {
+                if (controller.filter.value != GalleryAvailabilityFilter.all) {
+                  return _EmptyFilterResult(
+                    onClearFilter: () =>
+                        controller.setFilter(GalleryAvailabilityFilter.all),
+                  );
+                }
+                return _EmptyGallery(
+                  isSyncing: controller.isSyncing.value,
+                  syncError: controller.syncError.value,
+                  onChooseFolders: _openFolders,
+                );
+              }
+              return _buildGrid(context);
+            }),
+          ),
+        ],
+      ),
     );
   }
 
@@ -455,6 +493,69 @@ class _EmptyGallery extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// "1,234 backed up · 12 not backed up" - the one number to trust, per
+/// ticket 15's summary criterion. Always over the whole gallery, independent
+/// of any Availability filter currently narrowing what the grid shows below
+/// it - hidden entirely once there is nothing in the gallery at all.
+class _SummaryBar extends StatelessWidget {
+  const _SummaryBar({required this.controller});
+
+  final GalleryGridController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Obx(() {
+      final summary = controller.summary.value;
+      if (summary.total == 0) {
+        return const SizedBox.shrink();
+      }
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        color: theme.colorScheme.surfaceContainerHighest,
+        child: Text(
+          '${summary.backedUp} backed up · ${summary.notBackedUp} not backed up',
+          style: theme.textTheme.bodySmall,
+        ),
+      );
+    });
+  }
+}
+
+/// Shown when an Availability filter narrows the gallery to nothing - distinct
+/// from [_EmptyGallery], which is about an empty gallery altogether, so the
+/// user is not told to go choose folders when the real fix is to clear a
+/// filter.
+class _EmptyFilterResult extends StatelessWidget {
+  const _EmptyFilterResult({required this.onClearFilter});
+
+  final VoidCallback onClearFilter;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'No photos match this filter.',
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            OutlinedButton(
+              onPressed: onClearFilter,
+              child: const Text('Show all photos'),
+            ),
           ],
         ),
       ),

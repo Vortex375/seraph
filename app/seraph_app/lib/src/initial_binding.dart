@@ -7,6 +7,7 @@ import 'package:seraph_app/src/file_browser/selection_controller.dart';
 import 'package:seraph_app/src/gallery/gallery_grid_controller.dart';
 import 'package:seraph_app/src/gallery/gallery_image_loader.dart';
 import 'package:seraph_app/src/gallery/gallery_service.dart';
+import 'package:seraph_app/src/gallery/local/local_scan_service.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_sync_service.dart';
@@ -32,6 +33,11 @@ class InitialBinding extends Bindings {
     final galleryMirror = Get.put(GalleryMirror(galleryMirrorDatabase));
     final gallerySyncService =
         Get.put(GallerySyncService(Get.find(), Get.find(), galleryMirror));
+    // Local Source defaults to the platform's own (Android only, in this
+    // iteration - see `local_source.dart`) - null everywhere else, which
+    // makes scanning a no-op and leaves the gallery exactly as it was before
+    // ticket 15 on iOS, desktop and web.
+    final localScanService = Get.put(LocalScanService(galleryMirror));
     Get.put(GalleryImageLoader(Get.find(), Get.find(), galleryMirrorDatabase));
     // Lazily, because it reads the mirror on creation and nothing outside
     // Gallery Mode needs it - but registered here rather than in the gallery
@@ -41,6 +47,7 @@ class InitialBinding extends Bindings {
       () => GalleryGridController(
         mirror: galleryMirror,
         syncService: gallerySyncService,
+        localScanService: localScanService,
       ),
       fenix: true,
     );

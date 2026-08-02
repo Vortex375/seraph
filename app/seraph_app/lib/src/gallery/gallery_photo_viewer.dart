@@ -136,7 +136,11 @@ class GalleryPhotoPage extends StatelessWidget {
     final providerId = item.providerId;
     final path = item.path;
     if (providerId == null || path == null) {
-      return _UnsupportedPhoto(item: item);
+      // Device only: nothing to fetch from Seraph. Full-resolution rendering
+      // of a device photo is left to a later ticket - see the ticket 15
+      // implementer report - so this is an honest "on this device" state
+      // rather than an unsupported-format message, which would be wrong.
+      return _DeviceOnlyPhoto(item: item);
     }
 
     return InteractiveViewer(
@@ -176,6 +180,41 @@ class GalleryPhotoPage extends StatelessWidget {
                   child: child,
                 );
               },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A photo that only exists on the device, full screen.
+class _DeviceOnlyPhoto extends StatelessWidget {
+  const _DeviceOnlyPhoto({required this.item});
+
+  final GalleryItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.smartphone_outlined,
+                size: 64, color: Colors.white54),
+            const SizedBox(height: 16),
+            Text(
+              item.fileName,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'This photo is only on this device',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white70),
             ),
           ],
         ),
@@ -230,7 +269,11 @@ class GalleryPhotoDetails extends StatelessWidget {
   Widget build(BuildContext context) {
     final rows = <_DetailRow>[
       _DetailRow(Icons.image_outlined, 'File', item.fileName),
-      _DetailRow(Icons.folder_outlined, 'Seraph folder', item.folderDisplayPath),
+      // A Device only item has no Seraph folder to name at all - showing one
+      // would be a folder that does not exist.
+      if (item.providerId != null)
+        _DetailRow(
+            Icons.folder_outlined, 'Seraph folder', item.folderDisplayPath),
       _DetailRow(
         Icons.event_outlined,
         item.captureDateSourceLabel,
@@ -244,7 +287,7 @@ class GalleryPhotoDetails extends StatelessWidget {
             _formatBytes(item.size)),
       if (item.mime.isNotEmpty)
         _DetailRow(Icons.description_outlined, 'Type', item.mime),
-      const _DetailRow(Icons.cloud_outlined, 'Availability', 'Cloud only'),
+      _DetailRow(Icons.info_outline, 'Availability', item.availabilityLabel),
     ];
 
     return SafeArea(

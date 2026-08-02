@@ -34,12 +34,31 @@ class GalleryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final current = item;
-
     if (current == null) {
-      return ColoredBox(color: theme.colorScheme.surfaceContainerHighest);
+      return ColoredBox(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      );
     }
+
+    // Availability shown discreetly on every tile - ticket 15 - as a small
+    // corner badge over whatever content the tile would otherwise show,
+    // never affecting the tile's size or the grid's layout.
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        _content(context, current),
+        Positioned(
+          left: 3,
+          bottom: 3,
+          child: _AvailabilityBadge(availability: current.availability),
+        ),
+      ],
+    );
+  }
+
+  Widget _content(BuildContext context, GalleryItem current) {
+    final theme = Theme.of(context);
 
     if (current.isUnsupported) {
       return _UnsupportedTile(item: current);
@@ -48,7 +67,12 @@ class GalleryTile extends StatelessWidget {
     final providerId = current.providerId;
     final path = current.path;
     if (providerId == null || path == null) {
-      return ColoredBox(color: theme.colorScheme.surfaceContainerHighest);
+      // Device only: nothing has been fetched from Seraph for this item -
+      // there is nothing to fetch. Rendering the actual device thumbnail is
+      // left to a later ticket (see the ticket 15 implementer report); this
+      // placeholder still carries the file name and its Availability badge,
+      // so the item is honestly present in the grid rather than missing.
+      return _DeviceOnlyTile(item: current);
     }
 
     ImageProvider provider = GalleryImage(
@@ -81,6 +105,65 @@ class GalleryTile extends StatelessWidget {
         }
         return ColoredBox(color: theme.colorScheme.surfaceContainerHighest);
       },
+    );
+  }
+}
+
+/// A photo that only exists on the device - nothing to fetch from Seraph.
+class _DeviceOnlyTile extends StatelessWidget {
+  const _DeviceOnlyTile({required this.item});
+
+  final GalleryItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Tooltip(
+      message: item.fileName,
+      child: ColoredBox(
+        color: theme.colorScheme.surfaceContainerHighest,
+        child: Icon(
+          Icons.smartphone_outlined,
+          size: 20,
+          color: theme.colorScheme.outline,
+        ),
+      ),
+    );
+  }
+}
+
+/// The small, deliberately unobtrusive Availability marker every tile shows
+/// (ticket 15: "shown discreetly on the tile") - present but never
+/// competing with the photo for attention.
+class _AvailabilityBadge extends StatelessWidget {
+  const _AvailabilityBadge({required this.availability});
+
+  final GalleryAvailability availability;
+
+  @override
+  Widget build(BuildContext context) {
+    final IconData icon;
+    switch (availability) {
+      case GalleryAvailability.deviceOnly:
+        icon = Icons.smartphone_outlined;
+        break;
+      case GalleryAvailability.synced:
+        icon = Icons.cloud_done_outlined;
+        break;
+      case GalleryAvailability.cloudOnly:
+        icon = Icons.cloud_outlined;
+        break;
+    }
+    return ExcludeSemantics(
+      child: Container(
+        key: ValueKey('gallery-availability-badge-${availability.name}'),
+        padding: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.45),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Icon(icon, size: 11, color: Colors.white),
+      ),
     );
   }
 }

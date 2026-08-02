@@ -4,6 +4,16 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
 
+    <!-- Gallery Mode's Local Source seam (ticket 15,
+         .scratch/gallery-mode/issues/15-local-source-scan-and-merged-gallery.md):
+         lets the app's MediaStore scan see the device's photos. minSdk is 34,
+         so READ_MEDIA_IMAGES alone covers it - no legacy
+         READ_EXTERNAL_STORAGE fallback is needed. Declaring the permission
+         here does not itself prompt the user; the runtime request, with the
+         explanation the user is owed, is ticket 16's job. Until the user
+         grants it, MainActivity's MediaStore query simply reports no photos. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+
     <application
         android:label="seraph_app"
         android:name="${applicationName}"
