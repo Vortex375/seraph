@@ -67,6 +67,7 @@ func TestMain(m *testing.M) {
 
 func setup() {
 	opts := &server.Options{
+		Port:      server.RANDOM_PORT,
 		JetStream: true,
 		StoreDir:  os.TempDir(),
 	}

@@ -148,7 +148,7 @@ func TestMain(m *testing.M) {
 }
 
 func setup() {
-	opts := &server.Options{}
+	opts := &server.Options{Port: server.RANDOM_PORT}
 	var err error
 	natsServer, err = server.NewServer(opts)
 	if err != nil {

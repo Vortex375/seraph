@@ -60,7 +60,7 @@ import (
 var integrationNatsServer *server.Server
 
 func TestMain(m *testing.M) {
-	opts := &server.Options{}
+	opts := &server.Options{Port: server.RANDOM_PORT}
 	var err error
 	integrationNatsServer, err = server.NewServer(opts)
 	if err != nil {
