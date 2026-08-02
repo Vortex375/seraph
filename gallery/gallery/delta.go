@@ -209,7 +209,15 @@ func (g *GalleryProvider) deltaFeed(ctx context.Context, req *GalleryDeltaReques
 	watermark := g.sequences.watermark()
 
 	items := make([]GalleryDeltaItem, 0, pageSize)
-	maxSeq := req.Since
+	// seeded from pos rather than req.Since: on a continuation page (Cursor
+	// set), pos already sits at the in-progress page's seek position, ahead
+	// of req.Since. Seeding from req.Since here would let a final,
+	// zero-row page (the common case: a drain that lands exactly on a page
+	// boundary and finds nothing further waiting beyond it) report
+	// NextSince = req.Since, regressing the client's cursor back below
+	// items already delivered on the pages before this one - the client
+	// would then re-request and re-receive them on its very next poll.
+	maxSeq := pos
 	exhausted := false
 
 	for len(items) < pageSize && !exhausted {

@@ -531,6 +531,75 @@ func pathFor(i int) string {
 	return "/mounted/photos/holidays/" + string(rune('a'+i)) + ".jpg"
 }
 
+// TestDeltaPageBoundaryWithNothingBeyondDoesNotRegressCursor covers a
+// pagination edge case none of the other cursor tests exercise: a poll's
+// first page returns EXACTLY PageSize items, and those items are literally
+// everything that currently exists - nothing more is waiting beyond them.
+// deltaFeed cannot know that from the first page alone (filling a page forces
+// HasMore=true regardless of whether the underlying scan batch was also
+// short - see deltaFeed's docs), so the client is required to drain one more,
+// empty, continuation page before the poll is considered done.
+//
+// That mandatory empty continuation page is where a real regression lived:
+// its NextSince was computed from a value seeded off the ORIGINAL Since the
+// client sent, not the position the continuation page actually scanned from -
+// so an empty continuation page reported NextSince back at the OLD Since,
+// discarding everything the first, full page had already delivered. The
+// client's very next poll would then re-receive the exact same items it had
+// just been given, and would keep doing so on every subsequent poll (nothing
+// ever advances the cursor past this boundary otherwise). This is a
+// deterministic reproduction of that bug, independent of concurrency or
+// timing - TestDeltaConcurrentWritersLoseNothing could only trip over it by
+// accident, when 60 concurrent writers happened to leave a poll's tail
+// sitting exactly on a page boundary.
+func TestDeltaPageBoundaryWithNothingBeyondDoesNotRegressCursor(t *testing.T) {
+	nc, db := startGalleryProvider(t, map[string][]string{
+		"pino": {"photos"},
+	})
+	clearSourceFolders(t, db)
+	clearPhotos(t, db)
+	clearPendingTombstones(t, db)
+
+	dir := startFileProvider(t, "physical-photos")
+
+	crud(t, nc, &gallery.GallerySourceFolderCrudRequest{
+		Operation:       gallery.GallerySourceFolderOperationAdd,
+		UserId:          "pino",
+		SpaceProviderId: "photos",
+		Path:            "/holidays",
+	})
+
+	const total = 3
+	for i := 0; i < total; i++ {
+		createPhoto(t, nc, db, dir, "physical-photos", fmt.Sprintf("/mounted/photos/holidays/b-%03d.jpg", i))
+	}
+
+	// PageSize exactly matches the number of items that exist: the first page
+	// fills completely, with nothing left over for the scan to have found
+	// "short" - forcing the conservative HasMore=true path even though this
+	// really is everything.
+	first := delta(t, nc, &gallery.GalleryDeltaRequest{UserId: "pino", Since: 0, PageSize: total})
+	require.Equal(t, "", first.Error)
+	require.Len(t, first.Items, total)
+	require.True(t, first.HasMore, "a page that fills exactly to PageSize must not yet claim to be done")
+	require.NotEmpty(t, first.NextCursor)
+
+	// the mandatory drain page: nothing further exists, so this must come
+	// back empty with HasMore false - but its NextSince must reflect
+	// everything the FIRST page already delivered, not regress behind it.
+	drain := delta(t, nc, &gallery.GalleryDeltaRequest{UserId: "pino", Since: 0, Cursor: first.NextCursor, PageSize: total})
+	require.Equal(t, "", drain.Error)
+	require.Empty(t, drain.Items)
+	require.False(t, drain.HasMore)
+	assert.Equal(t, first.Items[total-1].Seq, drain.NextSince,
+		"an empty drain page must report NextSince at the last item already delivered on the page before it, not regress behind it")
+
+	// polling again from the drain's NextSince must not re-deliver anything
+	// already received on the first page
+	again, _ := deltaAll(t, nc, "pino", drain.NextSince)
+	assert.Empty(t, again, "polling from the drain's NextSince re-delivered items already received on the first page")
+}
+
 // TestSequenceMonotonicAcrossSimulatedRestart covers the ticket's strictest
 // requirement: sequence values are never reused, including across a service
 // restart. Simulated the same way the backfill tests simulate a restart
