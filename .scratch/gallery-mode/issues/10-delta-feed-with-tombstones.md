@@ -20,7 +20,7 @@ misses nothing, and that the feed is resumable across app restarts.
 
 **Blocked by:** 07
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] A client polling from a given sequence receives every item changed since, and nothing it has already seen
 - [ ] A deleted photo arrives as a tombstone, so a mirror can remove it
