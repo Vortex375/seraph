@@ -30,8 +30,6 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo/options"
-	"umbasa.net/seraph/messaging"
-	"umbasa.net/seraph/spaces/spaces"
 )
 
 // resolvedFolder is one of the requesting user's Gallery Source Folders,
@@ -109,12 +107,8 @@ func (g *GalleryProvider) resolveFoldersForUser(ctx context.Context, userId stri
 
 	resolved := make([]resolvedFolder, 0, len(folders))
 	for _, f := range folders {
-		req := spaces.SpaceResolveRequest{
-			UserId:          f.UserId,
-			SpaceProviderId: f.SpaceProviderId,
-		}
-		res := spaces.SpaceResolveResponse{}
-		if err := messaging.Request(ctx, g.nc, spaces.SpaceResolveTopic, messaging.Json(&req), messaging.Json(&res)); err != nil {
+		res, err := g.resolveSpace(ctx, spacesResolveRequest(f))
+		if err != nil {
 			g.log.Warn("failed to resolve gallery source folder for listing; excluding it from this query",
 				"error", err, "userId", f.UserId, "spaceProviderId", f.SpaceProviderId, "path", f.Path)
 			continue
@@ -130,14 +124,9 @@ func (g *GalleryProvider) resolveFoldersForUser(ctx context.Context, userId stri
 			continue
 		}
 
-		physicalPath := path.Join(res.Path, f.Path)
-		if physicalPath == "" {
-			physicalPath = "/"
-		}
-
 		resolved = append(resolved, resolvedFolder{
 			providerId:      res.ProviderId,
-			path:            physicalPath,
+			path:            joinPhysicalPath(res.Path, f.Path),
 			spaceProviderId: f.SpaceProviderId,
 			spacePath:       f.Path,
 		})
@@ -315,6 +304,7 @@ func (g *GalleryProvider) listPhotos(ctx context.Context, req *GalleryListReques
 				Size:             p.Size,
 				Mime:             p.Mime,
 				Unsupported:      p.Unsupported,
+				MetadataPending:  p.MetadataPending,
 			})
 
 			if len(items) == pageSize {

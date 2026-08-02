@@ -31,6 +31,8 @@ type GallerySourceFolderPrototype struct {
 	UserId          entities.Definable[string]             `bson:"userId" json:"userId"`
 	SpaceProviderId entities.Definable[string]             `bson:"spaceProviderId" json:"spaceProviderId"`
 	Path            entities.Definable[string]             `bson:"path" json:"path"`
+	BackfillDone    entities.Definable[bool]               `bson:"backfillDone"`
+	BackfillCursor  entities.Definable[string]             `bson:"backfillCursor"`
 }
 
 // Entity representing a Gallery Source Folder: a folder in Seraph whose photos
@@ -55,4 +57,21 @@ type GallerySourceFolder struct {
 
 	// the path within the space, as picked by the user
 	Path string `bson:"path" json:"path"`
+
+	// BackfillDone is true once the paged File Index prefix query for this
+	// folder's resolved physical prefix has run to completion - i.e. every
+	// page up to HasMore=false has been fed through the read-model upsert
+	// path. See backfill.go.
+	BackfillDone bool `bson:"backfillDone" json:"-"`
+
+	// BackfillCursor is the last FileIndexListReply.NextCursor consumed so
+	// far, so that a backfill interrupted by a restart (before BackfillDone
+	// is set) resumes from roughly where it left off rather than rescanning
+	// the whole prefix from the beginning. This is a resume-efficiency
+	// optimization only, never a correctness requirement: every page,
+	// resumed or not, is fed through the same upsert-on-(providerId, path)
+	// path live events use, so even a full restart-from-scratch (empty
+	// cursor) can never produce a duplicate gallery item - see
+	// TestBackfillRestartDoesNotDuplicate.
+	BackfillCursor string `bson:"backfillCursor" json:"-"`
 }

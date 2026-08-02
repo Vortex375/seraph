@@ -119,6 +119,17 @@ type GalleryListItem struct {
 	// listing - backup coverage and display are independent questions - so
 	// the app can show a placeholder rather than the item silently missing.
 	Unsupported string `json:"unsupported"`
+
+	// MetadataPending is true when this item was populated by backfill and
+	// has not yet had byte-level extraction (Capture Date from EXIF, pixel
+	// dimensions, orientation) run against it - see
+	// [gallery.GalleryPhoto.MetadataPending]. CapturedAt is still populated
+	// (from the File Index's modification time, or "first indexed" as a last
+	// resort) so the item sorts sensibly, but the app should treat it as
+	// provisional: a real EXIF Capture Date and dimensions will appear later
+	// without any action needed, the moment a live file-change event touches
+	// this path.
+	MetadataPending bool `json:"metadataPending"`
 }
 
 // GalleryListResponse carries one page of a gallery listing.

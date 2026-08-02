@@ -40,6 +40,7 @@ import (
 	"umbasa.net/seraph/messaging"
 	"umbasa.net/seraph/spaces/spaces"
 	"umbasa.net/seraph/tracing"
+	"umbasa.net/seraph/util"
 )
 
 const GallerySourceFolderCrudTopic = "seraph.gallery.sourcefolder.crud"
@@ -80,19 +81,32 @@ type GalleryProvider struct {
 	ingest       *ingestConsumer
 	ingestCancel context.CancelFunc
 	wg           sync.WaitGroup
+
+	// backfillLimiter/backfillCtx bound and cancel backfill; see backfill.go.
+	// backfillLimiter caps how many Gallery Source Folders are backfilled
+	// concurrently (backfillParallel) so a burst of ADDs cannot turn into an
+	// unbounded pile of goroutines competing with live ingestion and query
+	// serving. backfillCtx is cancelled on Stop so an in-flight backfill
+	// unblocks promptly instead of leaking past shutdown; g.wg (shared with
+	// ingestion) is what Stop actually waits on to know every backfill
+	// goroutine has exited.
+	backfillLimiter util.Limiter
+	backfillCtx     context.Context
+	backfillCancel  context.CancelFunc
 }
 
 func New(p Params) (Result, error) {
 	return Result{
 		GalleryProvider: &GalleryProvider{
-			log:           p.Logger.GetLogger("gallery"),
-			tracer:        p.Tracing.TracerProvider.Tracer("gallery"),
-			nc:            p.Nc,
-			js:            p.Js,
-			logging:       p.Logger,
-			sourceFolders: p.Db.Collection("gallerySourceFolders"),
-			photos:        p.Db.Collection("galleryPhotos"),
-			prefixCache:   newPrefixCache(),
+			log:             p.Logger.GetLogger("gallery"),
+			tracer:          p.Tracing.TracerProvider.Tracer("gallery"),
+			nc:              p.Nc,
+			js:              p.Js,
+			logging:         p.Logger,
+			sourceFolders:   p.Db.Collection("gallerySourceFolders"),
+			photos:          p.Db.Collection("galleryPhotos"),
+			prefixCache:     newPrefixCache(),
+			backfillLimiter: util.NewLimiter(backfillParallel),
 		},
 	}, nil
 }
@@ -152,6 +166,22 @@ func (g *GalleryProvider) Start() error {
 		g.ingest = ingest
 	}
 
+	backfillCtx, backfillCancel := context.WithCancel(context.Background())
+	g.backfillCtx = backfillCtx
+	g.backfillCancel = backfillCancel
+
+	// resume/restart any Gallery Source Folder backfill that had not
+	// finished when the service last stopped. Runs in the background like
+	// every other backfill (see startBackfill/runBackfill) so Start()
+	// returns promptly regardless of how many folders are still pending.
+	g.wg.Add(1)
+	go func() {
+		defer g.wg.Done()
+		if err := g.resumeIncompleteBackfills(backfillCtx); err != nil {
+			g.log.Error("failed to resume incomplete gallery source folder backfills", "error", err)
+		}
+	}()
+
 	return nil
 }
 
@@ -177,6 +207,10 @@ func (g *GalleryProvider) Stop() error {
 	if g.ingestCancel != nil {
 		g.ingestCancel()
 		g.ingestCancel = nil
+	}
+	if g.backfillCancel != nil {
+		g.backfillCancel()
+		g.backfillCancel = nil
 	}
 	g.wg.Wait()
 	return nil
@@ -294,6 +328,19 @@ func (g *GalleryProvider) addSourceFolder(ctx context.Context, req *GallerySourc
 		g.log.Error("failed to refresh gallery source folder prefix cache after ADD", "error", err)
 	}
 
+	// backfill already-indexed photos under this folder in the background -
+	// see backfill.go. ADD must return promptly, so this only resolves the
+	// folder's physical prefix (one more SpaceResolveRequest, already paid
+	// for access-checking above the resolution result isn't reused because
+	// checkAccess deliberately reports only yes/no, not the resolved
+	// prefix) and hands off to a goroutine; it never itself queries the File
+	// Index. Safe to call for an idempotent re-ADD of an already-backfilled
+	// folder too: runBackfill's BackfillDone check makes that a no-op rather
+	// than a redundant rescan.
+	if p, ok := g.resolveFolderPrefix(ctx, folder); ok {
+		g.startBackfill(folder.Id, p)
+	}
+
 	return &GallerySourceFolderCrudResponse{
 		SourceFolder: []GallerySourceFolder{folder},
 	}
@@ -359,13 +406,10 @@ func (g *GalleryProvider) removeSourceFolder(ctx context.Context, req *GallerySo
 // resolving it for that user. An empty resolve response means the space does not
 // exist or is not assigned to the user; either way the folder must be refused.
 func (g *GalleryProvider) checkAccess(ctx context.Context, userId string, spaceProviderId string) error {
-	req := spaces.SpaceResolveRequest{
+	res, err := g.resolveSpace(ctx, spaces.SpaceResolveRequest{
 		UserId:          userId,
 		SpaceProviderId: spaceProviderId,
-	}
-	res := spaces.SpaceResolveResponse{}
-
-	err := messaging.Request(ctx, g.nc, spaces.SpaceResolveTopic, messaging.Json(&req), messaging.Json(&res))
+	})
 	if err != nil {
 		return fmt.Errorf("unable to resolve space %s for user %s: %w", spaceProviderId, userId, err)
 	}
@@ -377,6 +421,43 @@ func (g *GalleryProvider) checkAccess(ctx context.Context, userId string, spaceP
 	}
 
 	return nil
+}
+
+// resolveSpace is the single place that issues a spaces.SpaceResolveRequest
+// over NATS. checkAccess (the ADD access check), refreshPrefixCache (the
+// ingestion prefix cache), resolveFoldersForUser (the query-time access
+// check) and backfill's resolveFolderPrefix all resolve a Gallery Source
+// Folder's Space coordinates to a physical (providerId, path); they differ
+// only in what they do with the result and how they react to a failure, not
+// in how the request is built or sent - so that part lives here once.
+func (g *GalleryProvider) resolveSpace(ctx context.Context, req spaces.SpaceResolveRequest) (spaces.SpaceResolveResponse, error) {
+	res := spaces.SpaceResolveResponse{}
+	err := messaging.Request(ctx, g.nc, spaces.SpaceResolveTopic, messaging.Json(&req), messaging.Json(&res))
+	return res, err
+}
+
+// spacesResolveRequest builds the SpaceResolveRequest for one Gallery Source
+// Folder - the same (UserId, SpaceProviderId) pair every resolution call
+// site (checkAccess, refreshPrefixCache, resolveFoldersForUser, backfill)
+// sends, extracted so backfill does not need to know the request shape
+// beyond "give me a folder".
+func spacesResolveRequest(f GallerySourceFolder) spaces.SpaceResolveRequest {
+	return spaces.SpaceResolveRequest{
+		UserId:          f.UserId,
+		SpaceProviderId: f.SpaceProviderId,
+	}
+}
+
+// joinPhysicalPath joins a resolved Space's physical root (SpaceResolveResponse.Path)
+// with a Gallery Source Folder's Space-relative Path into the physical path
+// to query/match against, normalizing an empty join to "/" exactly like
+// refreshPrefixCache and resolveFoldersForUser already do inline.
+func joinPhysicalPath(spaceRootPath string, folderPath string) string {
+	p := path.Join(spaceRootPath, folderPath)
+	if p == "" {
+		p = "/"
+	}
+	return p
 }
 
 // normalizePath brings a user-picked path into a canonical form so that the

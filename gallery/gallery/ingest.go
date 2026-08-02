@@ -25,7 +25,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
 	"strings"
 	"sync"
 	"time"
@@ -35,8 +34,6 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"umbasa.net/seraph/events"
 	"umbasa.net/seraph/file-provider/fileprovider"
-	"umbasa.net/seraph/messaging"
-	"umbasa.net/seraph/spaces/spaces"
 	"umbasa.net/seraph/util"
 )
 
@@ -136,12 +133,8 @@ func (g *GalleryProvider) refreshPrefixCache(ctx context.Context) error {
 	seen := make(map[prefix]bool)
 	prefixes := make([]prefix, 0, len(folders))
 	for _, f := range folders {
-		req := spaces.SpaceResolveRequest{
-			UserId:          f.UserId,
-			SpaceProviderId: f.SpaceProviderId,
-		}
-		res := spaces.SpaceResolveResponse{}
-		if err := messaging.Request(ctx, g.nc, spaces.SpaceResolveTopic, messaging.Json(&req), messaging.Json(&res)); err != nil {
+		res, err := g.resolveSpace(ctx, spacesResolveRequest(f))
+		if err != nil {
 			g.log.Warn("failed to resolve gallery source folder; excluding it from ingestion until it resolves",
 				"error", err, "userId", f.UserId, "spaceProviderId", f.SpaceProviderId, "path", f.Path)
 			continue
@@ -152,11 +145,7 @@ func (g *GalleryProvider) refreshPrefixCache(ctx context.Context) error {
 			continue
 		}
 
-		physicalPath := path.Join(res.Path, f.Path)
-		if physicalPath == "" {
-			physicalPath = "/"
-		}
-		p := prefix{providerId: res.ProviderId, path: physicalPath}
+		p := prefix{providerId: res.ProviderId, path: joinPhysicalPath(res.Path, f.Path)}
 		if !seen[p] {
 			seen[p] = true
 			prefixes = append(prefixes, p)
@@ -313,6 +302,14 @@ func (g *GalleryProvider) markDeleted(ctx context.Context, providerId string, fi
 // into the read model, upserted on the physical key (providerId, path) so
 // the same file arriving twice - by two live events, or later by backfill -
 // produces exactly one document.
+//
+// This is the live-event path, so it always performs full byte-level
+// extraction and always writes metadataPending: false - even if a prior
+// backfill page had already written a MetadataPending placeholder for this
+// same physical key. A live event carries strictly better information than
+// backfill ever can (see backfill.go's package docs on the metadata
+// tension), so it unconditionally wins and heals the placeholder, regardless
+// of which of the two arrived first.
 func (g *GalleryProvider) upsertPhoto(ctx context.Context, ev *events.FileChangedEvent) error {
 	meta, capturedAt, capturedAtSource, err := g.extractForEvent(ctx, ev)
 	if err != nil {
@@ -335,6 +332,7 @@ func (g *GalleryProvider) upsertPhoto(ctx context.Context, ev *events.FileChange
 			"mime":             ev.Mime,
 			"unsupported":      meta.Unsupported,
 			"deleted":          false,
+			"metadataPending":  false,
 		},
 		// IndexedAt/CapturedAt-when-falling-back-to-indexed must only be set
 		// on first insert: a later re-processing of the same file (a

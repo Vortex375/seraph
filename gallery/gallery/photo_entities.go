@@ -73,6 +73,7 @@ type GalleryPhotoPrototype struct {
 	Unsupported      entities.Definable[string]             `bson:"unsupported" json:"unsupported"`
 	Deleted          entities.Definable[bool]               `bson:"deleted" json:"deleted"`
 	IndexedAt        entities.Definable[int64]              `bson:"indexedAt" json:"indexedAt"`
+	MetadataPending  entities.Definable[bool]               `bson:"metadataPending" json:"metadataPending"`
 }
 
 // GalleryPhoto is the gallery read model: one document per physical file
@@ -130,4 +131,22 @@ type GalleryPhoto struct {
 	// unix seconds (UTC) this item was first written to the read model; the
 	// last rung of the Capture Date fallback chain
 	IndexedAt int64 `bson:"indexedAt" json:"indexedAt"`
+
+	// MetadataPending is true when this document was written by backfill
+	// (see backfill.go) and has never had byte-level extraction (pixel
+	// dimensions, orientation, EXIF Capture Date) run against it, because
+	// backfill deliberately reads only the File Index and never opens the
+	// file through the File Provider. Such a document is still fully listed
+	// (backup coverage and display are independent, exactly like
+	// Unsupported) but its CapturedAt is at best rung two of the fallback
+	// chain (modification time) and Width/Height/Orientation are zero.
+	//
+	// A live "created" or "changed" event for the same physical key always
+	// runs full extraction and sets this back to false - see upsertPhoto -
+	// so a backfilled placeholder self-heals the moment a live event touches
+	// it, whether that is the live event that raced the backfill page, or a
+	// later edit of the file. Nothing currently re-scans a MetadataPending
+	// document on its own; it stays pending until something writes to that
+	// path again.
+	MetadataPending bool `bson:"metadataPending" json:"metadataPending"`
 }
