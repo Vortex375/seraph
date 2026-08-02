@@ -133,3 +133,17 @@ were read by hand and are structurally sound — balanced braces, no duplicate
 declarations, single route registration, response field names matching the Go
 JSON tags, and `readDir`/`File.isDir`/`File.name` matching `file_service.dart`'s
 actual signature. Worth a `flutter analyze` on a machine that has the toolchain.
+
+### Follow-up — Dart changes since verified with a real toolchain
+
+The verifier's caveat that the five Dart files had never been seen by a compiler
+is now closed. The Flutter toolchain was not on `PATH`, but it exists at
+`/home/vortex/Development/flutter/flutter/bin/flutter`.
+
+`flutter analyze` over `app/seraph_app` reports **zero issues in
+`lib/src/gallery/` and zero errors anywhere**. The 48 findings it does report are
+all pre-existing `avoid_print`, `strict_top_level_inference` and
+`depend_on_referenced_packages` infos in login, search, settings, share, the
+media player and one chat test — none introduced by this ticket.
+
+The hand review was correct. No code change needed.
