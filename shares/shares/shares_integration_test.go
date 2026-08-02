@@ -27,6 +27,7 @@ import (
 
 	"github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/testcontainers/testcontainers-go"
@@ -55,7 +56,11 @@ func TestMain(m *testing.M) {
 }
 
 func setup() {
-	opts := &server.Options{}
+	opts := &server.Options{
+		Port:      server.RANDOM_PORT,
+		JetStream: true,
+		StoreDir:  os.TempDir(),
+	}
 	var err error
 	natsServer, err = server.NewServer(opts)
 	if err != nil {
@@ -151,6 +156,11 @@ func getSpacesProvider(t *testing.T) (*spaces.SpacesProvider, *nats.Conn, *mongo
 		t.Fatal(err)
 	}
 
+	js, err := jetstream.New(nc)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	v := viper.New()
 	v.Set("mongo.url", mongoUrl)
 	v.Set("mongo.db", "spaces_test")
@@ -171,6 +181,7 @@ func getSpacesProvider(t *testing.T) (*spaces.SpacesProvider, *nats.Conn, *mongo
 
 	res2, _ := spaces.New(spaces.Params{
 		Nc:      nc,
+		Js:      js,
 		Logger:  logger,
 		Tracing: tracing.NewNoopTracing(),
 		Db:      db,
