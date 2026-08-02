@@ -338,8 +338,11 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
   final int? localSize;
   final int? localDateTaken;
 
-  /// Capture Date in epoch milliseconds (UTC) - the sort key for the merged
-  /// gallery view (design decision D5).
+  /// Capture Date in epoch SECONDS (UTC) - the sort key for the merged
+  /// gallery view (design decision D5). Seconds, not milliseconds, because
+  /// that is what the delta feed carries: the gallery service derives the
+  /// value with Go's `time.Time.Unix()` (`gallery/gallery/ingest.go`,
+  /// `resolveCaptureDate`) and the mirror stores the wire value unconverted.
   final int capturedAt;
   final String capturedAtSource;
   final int width;
@@ -1108,18 +1111,339 @@ class SyncCursorsCompanion extends UpdateCompanion<SyncCursor> {
   }
 }
 
+class $CachedThumbnailsTable extends CachedThumbnails
+    with TableInfo<$CachedThumbnailsTable, CachedThumbnail> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $CachedThumbnailsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _providerIdMeta =
+      const VerificationMeta('providerId');
+  @override
+  late final GeneratedColumn<String> providerId = GeneratedColumn<String>(
+      'provider_id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _pathMeta = const VerificationMeta('path');
+  @override
+  late final GeneratedColumn<String> path = GeneratedColumn<String>(
+      'path', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _sizeMeta = const VerificationMeta('size');
+  @override
+  late final GeneratedColumn<int> size = GeneratedColumn<int>(
+      'size', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _bytesMeta = const VerificationMeta('bytes');
+  @override
+  late final GeneratedColumn<Uint8List> bytes = GeneratedColumn<Uint8List>(
+      'bytes', aliasedName, false,
+      type: DriftSqlType.blob, requiredDuringInsert: true);
+  static const VerificationMeta _fetchedAtMeta =
+      const VerificationMeta('fetchedAt');
+  @override
+  late final GeneratedColumn<int> fetchedAt = GeneratedColumn<int>(
+      'fetched_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns =>
+      [providerId, path, size, bytes, fetchedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'cached_thumbnails';
+  @override
+  VerificationContext validateIntegrity(Insertable<CachedThumbnail> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('provider_id')) {
+      context.handle(
+          _providerIdMeta,
+          providerId.isAcceptableOrUnknown(
+              data['provider_id']!, _providerIdMeta));
+    } else if (isInserting) {
+      context.missing(_providerIdMeta);
+    }
+    if (data.containsKey('path')) {
+      context.handle(
+          _pathMeta, path.isAcceptableOrUnknown(data['path']!, _pathMeta));
+    } else if (isInserting) {
+      context.missing(_pathMeta);
+    }
+    if (data.containsKey('size')) {
+      context.handle(
+          _sizeMeta, size.isAcceptableOrUnknown(data['size']!, _sizeMeta));
+    } else if (isInserting) {
+      context.missing(_sizeMeta);
+    }
+    if (data.containsKey('bytes')) {
+      context.handle(
+          _bytesMeta, bytes.isAcceptableOrUnknown(data['bytes']!, _bytesMeta));
+    } else if (isInserting) {
+      context.missing(_bytesMeta);
+    }
+    if (data.containsKey('fetched_at')) {
+      context.handle(_fetchedAtMeta,
+          fetchedAt.isAcceptableOrUnknown(data['fetched_at']!, _fetchedAtMeta));
+    } else if (isInserting) {
+      context.missing(_fetchedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {providerId, path, size};
+  @override
+  CachedThumbnail map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return CachedThumbnail(
+      providerId: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}provider_id'])!,
+      path: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}path'])!,
+      size: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}size'])!,
+      bytes: attachedDatabase.typeMapping
+          .read(DriftSqlType.blob, data['${effectivePrefix}bytes'])!,
+      fetchedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}fetched_at'])!,
+    );
+  }
+
+  @override
+  $CachedThumbnailsTable createAlias(String alias) {
+    return $CachedThumbnailsTable(attachedDatabase, alias);
+  }
+}
+
+class CachedThumbnail extends DataClass implements Insertable<CachedThumbnail> {
+  final String providerId;
+  final String path;
+
+  /// The `w`/`h` value the preview endpoint was asked for. The endpoint snaps
+  /// to its own size ladder, so this is the requested size, not necessarily
+  /// the returned pixel size.
+  final int size;
+  final Uint8List bytes;
+
+  /// Epoch milliseconds this entry was written, used for oldest-first
+  /// eviction.
+  final int fetchedAt;
+  const CachedThumbnail(
+      {required this.providerId,
+      required this.path,
+      required this.size,
+      required this.bytes,
+      required this.fetchedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['provider_id'] = Variable<String>(providerId);
+    map['path'] = Variable<String>(path);
+    map['size'] = Variable<int>(size);
+    map['bytes'] = Variable<Uint8List>(bytes);
+    map['fetched_at'] = Variable<int>(fetchedAt);
+    return map;
+  }
+
+  CachedThumbnailsCompanion toCompanion(bool nullToAbsent) {
+    return CachedThumbnailsCompanion(
+      providerId: Value(providerId),
+      path: Value(path),
+      size: Value(size),
+      bytes: Value(bytes),
+      fetchedAt: Value(fetchedAt),
+    );
+  }
+
+  factory CachedThumbnail.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return CachedThumbnail(
+      providerId: serializer.fromJson<String>(json['providerId']),
+      path: serializer.fromJson<String>(json['path']),
+      size: serializer.fromJson<int>(json['size']),
+      bytes: serializer.fromJson<Uint8List>(json['bytes']),
+      fetchedAt: serializer.fromJson<int>(json['fetchedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'providerId': serializer.toJson<String>(providerId),
+      'path': serializer.toJson<String>(path),
+      'size': serializer.toJson<int>(size),
+      'bytes': serializer.toJson<Uint8List>(bytes),
+      'fetchedAt': serializer.toJson<int>(fetchedAt),
+    };
+  }
+
+  CachedThumbnail copyWith(
+          {String? providerId,
+          String? path,
+          int? size,
+          Uint8List? bytes,
+          int? fetchedAt}) =>
+      CachedThumbnail(
+        providerId: providerId ?? this.providerId,
+        path: path ?? this.path,
+        size: size ?? this.size,
+        bytes: bytes ?? this.bytes,
+        fetchedAt: fetchedAt ?? this.fetchedAt,
+      );
+  CachedThumbnail copyWithCompanion(CachedThumbnailsCompanion data) {
+    return CachedThumbnail(
+      providerId:
+          data.providerId.present ? data.providerId.value : this.providerId,
+      path: data.path.present ? data.path.value : this.path,
+      size: data.size.present ? data.size.value : this.size,
+      bytes: data.bytes.present ? data.bytes.value : this.bytes,
+      fetchedAt: data.fetchedAt.present ? data.fetchedAt.value : this.fetchedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('CachedThumbnail(')
+          ..write('providerId: $providerId, ')
+          ..write('path: $path, ')
+          ..write('size: $size, ')
+          ..write('bytes: $bytes, ')
+          ..write('fetchedAt: $fetchedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      providerId, path, size, $driftBlobEquality.hash(bytes), fetchedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is CachedThumbnail &&
+          other.providerId == this.providerId &&
+          other.path == this.path &&
+          other.size == this.size &&
+          $driftBlobEquality.equals(other.bytes, this.bytes) &&
+          other.fetchedAt == this.fetchedAt);
+}
+
+class CachedThumbnailsCompanion extends UpdateCompanion<CachedThumbnail> {
+  final Value<String> providerId;
+  final Value<String> path;
+  final Value<int> size;
+  final Value<Uint8List> bytes;
+  final Value<int> fetchedAt;
+  final Value<int> rowid;
+  const CachedThumbnailsCompanion({
+    this.providerId = const Value.absent(),
+    this.path = const Value.absent(),
+    this.size = const Value.absent(),
+    this.bytes = const Value.absent(),
+    this.fetchedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  CachedThumbnailsCompanion.insert({
+    required String providerId,
+    required String path,
+    required int size,
+    required Uint8List bytes,
+    required int fetchedAt,
+    this.rowid = const Value.absent(),
+  })  : providerId = Value(providerId),
+        path = Value(path),
+        size = Value(size),
+        bytes = Value(bytes),
+        fetchedAt = Value(fetchedAt);
+  static Insertable<CachedThumbnail> custom({
+    Expression<String>? providerId,
+    Expression<String>? path,
+    Expression<int>? size,
+    Expression<Uint8List>? bytes,
+    Expression<int>? fetchedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (providerId != null) 'provider_id': providerId,
+      if (path != null) 'path': path,
+      if (size != null) 'size': size,
+      if (bytes != null) 'bytes': bytes,
+      if (fetchedAt != null) 'fetched_at': fetchedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  CachedThumbnailsCompanion copyWith(
+      {Value<String>? providerId,
+      Value<String>? path,
+      Value<int>? size,
+      Value<Uint8List>? bytes,
+      Value<int>? fetchedAt,
+      Value<int>? rowid}) {
+    return CachedThumbnailsCompanion(
+      providerId: providerId ?? this.providerId,
+      path: path ?? this.path,
+      size: size ?? this.size,
+      bytes: bytes ?? this.bytes,
+      fetchedAt: fetchedAt ?? this.fetchedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (providerId.present) {
+      map['provider_id'] = Variable<String>(providerId.value);
+    }
+    if (path.present) {
+      map['path'] = Variable<String>(path.value);
+    }
+    if (size.present) {
+      map['size'] = Variable<int>(size.value);
+    }
+    if (bytes.present) {
+      map['bytes'] = Variable<Uint8List>(bytes.value);
+    }
+    if (fetchedAt.present) {
+      map['fetched_at'] = Variable<int>(fetchedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('CachedThumbnailsCompanion(')
+          ..write('providerId: $providerId, ')
+          ..write('path: $path, ')
+          ..write('size: $size, ')
+          ..write('bytes: $bytes, ')
+          ..write('fetchedAt: $fetchedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$GalleryMirrorDatabase extends GeneratedDatabase {
   _$GalleryMirrorDatabase(QueryExecutor e) : super(e);
   $GalleryMirrorDatabaseManager get managers =>
       $GalleryMirrorDatabaseManager(this);
   late final $GalleryItemsTable galleryItems = $GalleryItemsTable(this);
   late final $SyncCursorsTable syncCursors = $SyncCursorsTable(this);
+  late final $CachedThumbnailsTable cachedThumbnails =
+      $CachedThumbnailsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
   @override
   List<DatabaseSchemaEntity> get allSchemaEntities =>
-      [galleryItems, syncCursors];
+      [galleryItems, syncCursors, cachedThumbnails];
 }
 
 typedef $$GalleryItemsTableCreateCompanionBuilder = GalleryItemsCompanion
@@ -1640,6 +1964,182 @@ typedef $$SyncCursorsTableProcessedTableManager = ProcessedTableManager<
     ),
     SyncCursor,
     PrefetchHooks Function()>;
+typedef $$CachedThumbnailsTableCreateCompanionBuilder
+    = CachedThumbnailsCompanion Function({
+  required String providerId,
+  required String path,
+  required int size,
+  required Uint8List bytes,
+  required int fetchedAt,
+  Value<int> rowid,
+});
+typedef $$CachedThumbnailsTableUpdateCompanionBuilder
+    = CachedThumbnailsCompanion Function({
+  Value<String> providerId,
+  Value<String> path,
+  Value<int> size,
+  Value<Uint8List> bytes,
+  Value<int> fetchedAt,
+  Value<int> rowid,
+});
+
+class $$CachedThumbnailsTableFilterComposer
+    extends Composer<_$GalleryMirrorDatabase, $CachedThumbnailsTable> {
+  $$CachedThumbnailsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get providerId => $composableBuilder(
+      column: $table.providerId, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get path => $composableBuilder(
+      column: $table.path, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get size => $composableBuilder(
+      column: $table.size, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<Uint8List> get bytes => $composableBuilder(
+      column: $table.bytes, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get fetchedAt => $composableBuilder(
+      column: $table.fetchedAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$CachedThumbnailsTableOrderingComposer
+    extends Composer<_$GalleryMirrorDatabase, $CachedThumbnailsTable> {
+  $$CachedThumbnailsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get providerId => $composableBuilder(
+      column: $table.providerId, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get path => $composableBuilder(
+      column: $table.path, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get size => $composableBuilder(
+      column: $table.size, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<Uint8List> get bytes => $composableBuilder(
+      column: $table.bytes, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get fetchedAt => $composableBuilder(
+      column: $table.fetchedAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$CachedThumbnailsTableAnnotationComposer
+    extends Composer<_$GalleryMirrorDatabase, $CachedThumbnailsTable> {
+  $$CachedThumbnailsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get providerId => $composableBuilder(
+      column: $table.providerId, builder: (column) => column);
+
+  GeneratedColumn<String> get path =>
+      $composableBuilder(column: $table.path, builder: (column) => column);
+
+  GeneratedColumn<int> get size =>
+      $composableBuilder(column: $table.size, builder: (column) => column);
+
+  GeneratedColumn<Uint8List> get bytes =>
+      $composableBuilder(column: $table.bytes, builder: (column) => column);
+
+  GeneratedColumn<int> get fetchedAt =>
+      $composableBuilder(column: $table.fetchedAt, builder: (column) => column);
+}
+
+class $$CachedThumbnailsTableTableManager extends RootTableManager<
+    _$GalleryMirrorDatabase,
+    $CachedThumbnailsTable,
+    CachedThumbnail,
+    $$CachedThumbnailsTableFilterComposer,
+    $$CachedThumbnailsTableOrderingComposer,
+    $$CachedThumbnailsTableAnnotationComposer,
+    $$CachedThumbnailsTableCreateCompanionBuilder,
+    $$CachedThumbnailsTableUpdateCompanionBuilder,
+    (
+      CachedThumbnail,
+      BaseReferences<_$GalleryMirrorDatabase, $CachedThumbnailsTable,
+          CachedThumbnail>
+    ),
+    CachedThumbnail,
+    PrefetchHooks Function()> {
+  $$CachedThumbnailsTableTableManager(
+      _$GalleryMirrorDatabase db, $CachedThumbnailsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$CachedThumbnailsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$CachedThumbnailsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$CachedThumbnailsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> providerId = const Value.absent(),
+            Value<String> path = const Value.absent(),
+            Value<int> size = const Value.absent(),
+            Value<Uint8List> bytes = const Value.absent(),
+            Value<int> fetchedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              CachedThumbnailsCompanion(
+            providerId: providerId,
+            path: path,
+            size: size,
+            bytes: bytes,
+            fetchedAt: fetchedAt,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String providerId,
+            required String path,
+            required int size,
+            required Uint8List bytes,
+            required int fetchedAt,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              CachedThumbnailsCompanion.insert(
+            providerId: providerId,
+            path: path,
+            size: size,
+            bytes: bytes,
+            fetchedAt: fetchedAt,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$CachedThumbnailsTableProcessedTableManager = ProcessedTableManager<
+    _$GalleryMirrorDatabase,
+    $CachedThumbnailsTable,
+    CachedThumbnail,
+    $$CachedThumbnailsTableFilterComposer,
+    $$CachedThumbnailsTableOrderingComposer,
+    $$CachedThumbnailsTableAnnotationComposer,
+    $$CachedThumbnailsTableCreateCompanionBuilder,
+    $$CachedThumbnailsTableUpdateCompanionBuilder,
+    (
+      CachedThumbnail,
+      BaseReferences<_$GalleryMirrorDatabase, $CachedThumbnailsTable,
+          CachedThumbnail>
+    ),
+    CachedThumbnail,
+    PrefetchHooks Function()>;
 
 class $GalleryMirrorDatabaseManager {
   final _$GalleryMirrorDatabase _db;
@@ -1648,4 +2148,6 @@ class $GalleryMirrorDatabaseManager {
       $$GalleryItemsTableTableManager(_db, _db.galleryItems);
   $$SyncCursorsTableTableManager get syncCursors =>
       $$SyncCursorsTableTableManager(_db, _db.syncCursors);
+  $$CachedThumbnailsTableTableManager get cachedThumbnails =>
+      $$CachedThumbnailsTableTableManager(_db, _db.cachedThumbnails);
 }

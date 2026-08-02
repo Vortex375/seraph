@@ -18,8 +18,12 @@ part 'gallery_mirror_database.g.dart';
 ///
 /// [SyncCursors] is a second, tiny table holding delta-feed sync progress
 /// (the last-applied sequence and, mid-poll, the page cursor) so a restart
-/// resumes instead of re-fetching the whole gallery.
-@DriftDatabase(tables: [GalleryItems, SyncCursors])
+/// resumes instead of re-fetching the whole gallery. [CachedThumbnails] is a
+/// third: bytes already fetched from the preview endpoint, so that a gallery
+/// opened with no network still shows the thumbnails it has already seen.
+/// Neither is a second source of gallery items - the one-table constraint is
+/// about what the UI list is built from, and that is [GalleryItems] alone.
+@DriftDatabase(tables: [GalleryItems, SyncCursors, CachedThumbnails])
 class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
   GalleryMirrorDatabase(super.e);
 
@@ -32,7 +36,7 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
   }
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -49,6 +53,11 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
             // (the EXIF "no rotation" value) until the next delta sync
             // refreshes them.
             await m.addColumn(galleryItems, galleryItems.orientation);
+          }
+          if (from < 3) {
+            // v3 added the thumbnail byte cache. It is pure cache: creating
+            // it empty costs one cold fetch per thumbnail and nothing else.
+            await m.createTable(cachedThumbnails);
           }
         },
         beforeOpen: (details) async {
@@ -108,8 +117,11 @@ class GalleryItems extends Table {
 
   // --- Display metadata, shared by cloud and (later) device items ---
 
-  /// Capture Date in epoch milliseconds (UTC) - the sort key for the merged
-  /// gallery view (design decision D5).
+  /// Capture Date in epoch SECONDS (UTC) - the sort key for the merged
+  /// gallery view (design decision D5). Seconds, not milliseconds, because
+  /// that is what the delta feed carries: the gallery service derives the
+  /// value with Go's `time.Time.Unix()` (`gallery/gallery/ingest.go`,
+  /// `resolveCaptureDate`) and the mirror stores the wire value unconverted.
   IntColumn get capturedAt => integer()();
   TextColumn get capturedAtSource => text().withDefault(const Constant(''))();
 
@@ -158,4 +170,38 @@ class SyncCursors extends Table {
 
   @override
   Set<Column> get primaryKey => {source};
+}
+
+/// Thumbnail bytes already fetched from the existing preview endpoint, kept
+/// so that "with no network, the gallery still opens and shows already-cached
+/// Thumbnails" is a property the app actually has rather than one it inherits
+/// from whatever HTTP cache happens to be underneath it.
+///
+/// It lives in the mirror database rather than in files on disk for one
+/// reason: drift already runs on every platform this app ships to, including
+/// the web build (sqlite3-over-WebAssembly), so there is a single code path
+/// instead of a `dart:io` cache plus a browser-cache assumption. Nothing here
+/// is a source of gallery items - see [GalleryMirrorDatabase]'s doc.
+///
+/// Keyed on the same ([providerId], [path]) identity as [GalleryItems] plus
+/// the requested [size], because the grid and the viewer ask for different
+/// sizes of the same photo. [fetchedAt] exists so the cache can be pruned
+/// oldest-first once it exceeds its entry budget.
+class CachedThumbnails extends Table {
+  TextColumn get providerId => text()();
+  TextColumn get path => text()();
+
+  /// The `w`/`h` value the preview endpoint was asked for. The endpoint snaps
+  /// to its own size ladder, so this is the requested size, not necessarily
+  /// the returned pixel size.
+  IntColumn get size => integer()();
+
+  BlobColumn get bytes => blob()();
+
+  /// Epoch milliseconds this entry was written, used for oldest-first
+  /// eviction.
+  IntColumn get fetchedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => {providerId, path, size};
 }

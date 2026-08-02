@@ -4,6 +4,8 @@ import 'package:seraph_app/src/chat/chat_service.dart';
 import 'package:seraph_app/src/file_browser/file_browser_controller.dart';
 import 'package:seraph_app/src/file_browser/file_service.dart';
 import 'package:seraph_app/src/file_browser/selection_controller.dart';
+import 'package:seraph_app/src/gallery/gallery_grid_controller.dart';
+import 'package:seraph_app/src/gallery/gallery_image_loader.dart';
 import 'package:seraph_app/src/gallery/gallery_service.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
@@ -28,7 +30,20 @@ class InitialBinding extends Bindings {
     Get.put(GalleryService(Get.find(), Get.find()));
     final galleryMirrorDatabase = Get.put(GalleryMirrorDatabase.open());
     final galleryMirror = Get.put(GalleryMirror(galleryMirrorDatabase));
-    Get.put(GallerySyncService(Get.find(), Get.find(), galleryMirror));
+    final gallerySyncService =
+        Get.put(GallerySyncService(Get.find(), Get.find(), galleryMirror));
+    Get.put(GalleryImageLoader(Get.find(), Get.find(), galleryMirrorDatabase));
+    // Lazily, because it reads the mirror on creation and nothing outside
+    // Gallery Mode needs it - but registered here rather than in the gallery
+    // route's binding, because the grid and the full-screen viewer are two
+    // routes that must share one list.
+    Get.lazyPut(
+      () => GalleryGridController(
+        mirror: galleryMirror,
+        syncService: gallerySyncService,
+      ),
+      fenix: true,
+    );
   }
 
 }

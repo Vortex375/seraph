@@ -145,6 +145,43 @@ class GalleryMirror {
     return GalleryMirrorPage(items: items, totalCount: totalCount);
   }
 
+  /// One page of the mirror in the same Capture-Date-descending order as
+  /// [queryPage], but WITHOUT the total count.
+  ///
+  /// The grid asks for the count once, when it opens, and then keeps it: the
+  /// item count must not move under the user's thumb as pages load, so
+  /// re-counting on every page fetch would be both wasted work and a way to
+  /// make the list shift. [queryPage] stays as it is for callers that want
+  /// both in one go.
+  Future<List<GalleryItem>> queryItems({int offset = 0, int limit = 100}) {
+    final query = _db.select(_db.galleryItems)
+      ..orderBy([
+        (t) => OrderingTerm(expression: t.capturedAt, mode: OrderingMode.desc),
+        (t) => OrderingTerm(expression: t.id, mode: OrderingMode.desc),
+      ])
+      ..limit(limit, offset: offset);
+
+    return query.get();
+  }
+
+  /// The Capture Date of the item at [offset] in the gallery's order, or null
+  /// if the mirror has no item there.
+  ///
+  /// This is what the date scrubber needs: while the user drags it, the
+  /// position under their thumb has to be turned into a point in time without
+  /// first loading the page of items it lands on - the whole point of the
+  /// scrubber is to move faster than pages can load.
+  Future<DateTime?> capturedAtAtOffset(int offset) async {
+    if (offset < 0) {
+      return null;
+    }
+    final rows = await queryItems(offset: offset, limit: 1);
+    if (rows.isEmpty) {
+      return null;
+    }
+    return DateTime.fromMillisecondsSinceEpoch(rows.first.capturedAt * 1000);
+  }
+
   /// The total number of items currently in the mirror.
   Future<int> totalCount() async {
     final countExp = _db.galleryItems.id.count();
