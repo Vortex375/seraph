@@ -189,7 +189,6 @@ func (wc *warmConsumer) handleMessage(ctx context.Context, msg jetstream.Msg) {
 		Path:       req.Path,
 		Width:      warmSize,
 		Height:     warmSize,
-		Exact:      true,
 	})
 
 	switch resp.ErrorClass {
