@@ -12,7 +12,7 @@ correct only by luck.
 
 **Blocked by:** 03, 07
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] Re-pointing a Space at another File Provider makes the gallery consume events for the new physical path and stop consuming them for the old one
 - [ ] A Space becoming inaccessible to a user makes their gallery stop returning photos from it
