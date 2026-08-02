@@ -35,11 +35,17 @@ Record `git rev-parse HEAD` as this ticket's **base**. The verifier reviews agai
 One `Agent` call, `subagent_type: "general-purpose"`, `model: "sonnet"`. The sub-agent starts cold, so the prompt carries everything:
 
 - The ticket's file path, and: "Read it in full, including every acceptance criterion."
+- **"Do the work yourself. Do NOT spawn sub-agents — you are the one holding the tools."**
+- **"Do not edit the ticket file. Status and comments are the foreman's to write; you report back and nothing else."**
 - "Run `/implement` on this ticket. Its blockers are all complete — build on what they landed."
 - "Work only what this ticket asks for. Anything else you notice, name it in your report."
 - "Commit to the current branch when the acceptance criteria are met."
 - "Report back in under 200 words: what you built, which files, and any decision you had to make that the ticket did not settle. Do not paste code or diffs."
 - "If the ticket asks a question only the user can answer, stop and return `BLOCKED: <the question>` rather than choosing for them."
+
+The no-delegation line is not boilerplate. A worker that delegates spends its budget writing prompts and returns with nothing built. Carry the line verbatim into **every** dispatch, implementer and verifier alike.
+
+Workers that edit their own ticket file self-mark it `resolved`, which destroys the one signal step 5 runs on. Carry that line too.
 
 **Done when:** the implementer has returned a report or `BLOCKED:`.
 
@@ -48,6 +54,8 @@ One `Agent` call, `subagent_type: "general-purpose"`, `model: "sonnet"`. The sub
 Fresh eyes, never having seen the implementer's reasoning. One `Agent` call, `subagent_type: "general-purpose"`, `model: "sonnet"`:
 
 - The ticket's file path and the base SHA, with the diff command `git diff <base>...HEAD`.
+- **"Do the work yourself. Do NOT spawn sub-agents — read the diff and run the tests with your own tools."**
+- **"Do not edit the ticket file. Your verdict goes in your reply; the foreman writes it to the ticket."**
 - "Check the diff against every acceptance criterion in the ticket. Judge what the code does, not what the commit message claims."
 - "Run the project's test suite and typechecker, and treat a failure as a defect."
 - "Return a verdict on the first line — `APPROVED` or `REWORK` — and nothing else on it. If `REWORK`, follow it with a numbered list of defects, each naming the criterion it fails and the file it lives in. Under 300 words. Do not paste diffs."
@@ -58,7 +66,7 @@ The implementer's `/implement` already ran `/code-review` over its own work, whi
 
 ### 5. Route the verdict
 
-A ticket resolves only on a verifier's `APPROVED`. Your own impression of the work is not a verdict.
+A ticket resolves only on a verifier's `APPROVED`. Your own impression of the work is not a verdict — and neither is a `Status:` line, which a worker may have written itself despite being told not to. Read the verdict, not the ticket's status field.
 
 - **APPROVED** → set the ticket's `Status:` to `resolved` and append the implementer's report and the verdict under the ticket's `## Comments` heading. That comment is the phase's memory: it survives a compact, where your context may not. Return to step 2.
 - **REWORK** → dispatch the fix. Send the defect list back to the *same* implementer with `SendMessage` when the defects are things it got wrong; spawn a *new* implementer when the verdict says the approach itself is wrong, since the original's context is now working against it. Either way, return to step 4 with the same base SHA.
