@@ -21,7 +21,7 @@ it returns.
 
 **Blocked by:** 10
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] The app has a local database with a migration mechanism that survives an app upgrade adding a column
 - [ ] A cold start with no local data populates the mirror from the delta feed

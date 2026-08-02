@@ -12,7 +12,7 @@ folder.
 
 **Blocked by:** 08
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] A "Rescan folder" action is available per Gallery Source Folder in the app
 - [ ] Triggering it causes a real File Provider re-scan of that folder, not just a re-read of the index
