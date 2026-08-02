@@ -24,7 +24,7 @@ photos rather than over a gigabyte for all four sizes.
 
 **Blocked by:** 07
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] A photo entering the read model results in a Thumbnail at the configured warm size, without anyone requesting it
 - [ ] Backfilling a folder of thousands of photos warms all of them, with no silent losses
