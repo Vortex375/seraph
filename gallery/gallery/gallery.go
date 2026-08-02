@@ -108,6 +108,15 @@ type GalleryProvider struct {
 	backfillCtx     context.Context
 	backfillCancel  context.CancelFunc
 
+	// rescanLimiter caps how many Gallery Source Folder rescans (rescan.go)
+	// run concurrently, mirroring backfillLimiter - a burst of RESCAN
+	// requests (or a startup resuming several interrupted rescans) must not
+	// turn into an unbounded pile of File Provider walks competing with live
+	// ingestion and query serving. It shares backfillCtx/g.wg with backfill,
+	// since both are the same kind of backgrounded, cancel-on-Stop,
+	// waited-on-by-Stop work.
+	rescanLimiter util.Limiter
+
 	// warmUnsupported is the durable consumer that receives
 	// ThumbnailWarmUnsupportedNotice messages from the thumbnailer and
 	// records the reason against the corresponding gallery item; see
@@ -132,6 +141,7 @@ func New(p Params) (Result, error) {
 			sequences:         newSequenceAllocator(p.Db.Collection("gallerySequenceCounters")),
 			prefixCache:       newPrefixCache(),
 			backfillLimiter:   util.NewLimiter(backfillParallel),
+			rescanLimiter:     util.NewLimiter(rescanParallel),
 		},
 	}, nil
 }
@@ -252,6 +262,16 @@ func (g *GalleryProvider) Start() error {
 		}
 	}()
 
+	// resume any Gallery Source Folder rescan that was still running when the
+	// service last stopped - see resumeIncompleteRescans's docs.
+	g.wg.Add(1)
+	go func() {
+		defer g.wg.Done()
+		if err := g.resumeIncompleteRescans(backfillCtx); err != nil {
+			g.log.Error("failed to resume incomplete gallery source folder rescans", "error", err)
+		}
+	}()
+
 	return nil
 }
 
@@ -328,6 +348,9 @@ func (g *GalleryProvider) handleSourceFolderCrud(ctx context.Context, req *Galle
 
 	case GallerySourceFolderOperationRemove:
 		return g.removeSourceFolder(ctx, req)
+
+	case GallerySourceFolderOperationRescan:
+		return g.rescanSourceFolder(ctx, req)
 
 	default:
 		return &GallerySourceFolderCrudResponse{

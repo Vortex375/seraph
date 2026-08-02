@@ -214,6 +214,31 @@ func (h *galleryHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup, publi
 		ctx.JSON(http.StatusOK, res)
 	})
 
+	apiGroup.POST("gallery/source-folders/:sourceFolderId/rescan", func(ctx *gin.Context) {
+		sourceFolderId := ctx.Param("sourceFolderId")
+
+		req := gallery.GallerySourceFolderCrudRequest{
+			Operation: gallery.GallerySourceFolderOperationRescan,
+			UserId:    h.auth.GetUserId(ctx.Request.Context()),
+			Id:        sourceFolderId,
+		}
+
+		res, err := h.request(ctx, &req)
+		if err != nil {
+			ctx.AbortWithError(http.StatusInternalServerError, err)
+			return
+		}
+
+		if res.Error != "" {
+			// rescan is scoped to the requesting user inside the gallery
+			// service, so another user's folder is simply not found
+			ctx.AbortWithError(http.StatusNotFound, errors.New(res.Error))
+			return
+		}
+
+		ctx.JSON(http.StatusAccepted, res)
+	})
+
 	apiGroup.DELETE("gallery/source-folders/:sourceFolderId", func(ctx *gin.Context) {
 		sourceFolderId := ctx.Param("sourceFolderId")
 

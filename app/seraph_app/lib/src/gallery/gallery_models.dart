@@ -8,11 +8,17 @@ class GallerySourceFolder {
     required this.id,
     required this.spaceProviderId,
     required this.path,
+    this.rescanRunning = false,
   });
 
   final String id;
   final String spaceProviderId;
   final String path;
+
+  /// True while a genuine File Provider re-scan of this folder (triggered by
+  /// the "Rescan folder" action) is still running. Cleared automatically once
+  /// the scan finishes - the app learns this by re-fetching the folder list.
+  final bool rescanRunning;
 
   /// The location as it appears in the file browser, i.e. the space provider
   /// followed by the path within it.
@@ -23,6 +29,7 @@ class GallerySourceFolder {
       id: json['id'] as String? ?? '',
       spaceProviderId: json['spaceProviderId'] as String? ?? '',
       path: json['path'] as String? ?? '/',
+      rescanRunning: json['rescanRunning'] as bool? ?? false,
     );
   }
 }

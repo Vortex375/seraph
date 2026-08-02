@@ -1,4 +1,6 @@
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:seraph_app/src/app_bar/app_bar.dart';
@@ -27,10 +29,21 @@ class _GalleryViewState extends State<GalleryView> {
   bool _isLoading = true;
   String? _error;
 
+  // Ids of folders whose rescan we are actively polling for completion, so
+  // we can tell the user once RescanRunning flips back to false server-side.
+  final Set<String> _watchingRescan = {};
+  Timer? _rescanPollTimer;
+
   @override
   void initState() {
     super.initState();
     _loadFolders();
+  }
+
+  @override
+  void dispose() {
+    _rescanPollTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadFolders() async {
@@ -104,6 +117,69 @@ class _GalleryViewState extends State<GalleryView> {
     await _loadFolders();
   }
 
+  /// Triggers a genuine File Provider re-scan of [folder] and starts polling
+  /// so the user learns both that it started and when it finished - the
+  /// server itself only reports current state (RescanRunning), so "finished"
+  /// is observed by polling until it flips back to false rather than any
+  /// push notification.
+  Future<void> _rescanFolder(GallerySourceFolder folder) async {
+    try {
+      await galleryService.rescanSourceFolder(folder.id);
+    } catch (e) {
+      _showMessage('Failed to start rescan: $e');
+      return;
+    }
+    _showMessage('Rescanning ${folder.displayPath}…');
+    _watchingRescan.add(folder.id);
+    await _loadFolders();
+    _scheduleRescanPoll();
+  }
+
+  /// Polls listSourceFolders every few seconds while any folder in
+  /// _watchingRescan still reports RescanRunning, so the "rescan finished"
+  /// message appears without the user needing to manually refresh.
+  void _scheduleRescanPoll() {
+    _rescanPollTimer?.cancel();
+    if (_watchingRescan.isEmpty) {
+      return;
+    }
+    _rescanPollTimer = Timer(const Duration(seconds: 3), () async {
+      if (!mounted) {
+        return;
+      }
+      List<GallerySourceFolder> folders;
+      try {
+        folders = await galleryService.listSourceFolders();
+      } catch (_) {
+        // transient failure: try again on the next tick rather than giving up
+        _scheduleRescanPoll();
+        return;
+      }
+      if (!mounted) {
+        return;
+      }
+
+      for (final id in _watchingRescan.toList()) {
+        final match = folders.where((f) => f.id == id);
+        final stillRunning = match.isNotEmpty && match.first.rescanRunning;
+        if (!stillRunning) {
+          _watchingRescan.remove(id);
+          final displayPath =
+              match.isNotEmpty ? match.first.displayPath : null;
+          _showMessage(displayPath != null
+              ? 'Rescan of $displayPath finished.'
+              : 'Rescan finished.');
+        }
+      }
+
+      setState(() {
+        _folders = folders;
+      });
+
+      _scheduleRescanPoll();
+    });
+  }
+
   void _showMessage(String message) {
     if (!mounted) {
       return;
@@ -175,10 +251,31 @@ class _GalleryViewState extends State<GalleryView> {
         return ListTile(
           leading: const Icon(Icons.photo_library),
           title: Text(folder.displayPath),
-          trailing: IconButton(
-            icon: const Icon(Icons.delete_outline),
-            tooltip: 'Remove',
-            onPressed: () => _removeFolder(folder),
+          subtitle: folder.rescanRunning ? const Text('Rescanning…') : null,
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (folder.rescanRunning)
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12),
+                  child: SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              else
+                IconButton(
+                  icon: const Icon(Icons.sync),
+                  tooltip: 'Rescan folder',
+                  onPressed: () => _rescanFolder(folder),
+                ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline),
+                tooltip: 'Remove',
+                onPressed: () => _removeFolder(folder),
+              ),
+            ],
           ),
         );
       },

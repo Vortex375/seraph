@@ -23,9 +23,14 @@ const (
 	GallerySourceFolderOperationList   = "LIST"
 	GallerySourceFolderOperationAdd    = "ADD"
 	GallerySourceFolderOperationRemove = "REMOVE"
+	// GallerySourceFolderOperationRescan triggers a genuine File Provider
+	// re-scan of an already-configured folder - see rescan.go. Unlike ADD, it
+	// never reads the File Index; it is the explicit escape hatch for when
+	// the index itself is stale.
+	GallerySourceFolderOperationRescan = "RESCAN"
 )
 
-// Request to list, add or remove Gallery Source Folders.
+// Request to list, add, remove or rescan Gallery Source Folders.
 //
 // UserId is always required and always applied as a filter: the service never
 // serves or modifies another user's folders. The gateway takes it from the
@@ -34,7 +39,8 @@ type GallerySourceFolderCrudRequest struct {
 	Operation string `bson:"operation" json:"operation"`
 	UserId    string `bson:"userId" json:"userId"`
 
-	// Id identifies the folder to remove; used by REMOVE only.
+	// Id identifies the folder to remove or rescan; used by REMOVE and
+	// RESCAN only.
 	Id string `bson:"id" json:"id"`
 
 	// SpaceProviderId and Path identify the folder to add; used by ADD only.

@@ -35,6 +35,7 @@ type GallerySourceFolderPrototype struct {
 	BackfillCursor     entities.Definable[string]             `bson:"backfillCursor"`
 	PhysicalProviderId entities.Definable[string]             `bson:"physicalProviderId"`
 	PhysicalPath       entities.Definable[string]             `bson:"physicalPath"`
+	RescanRunning      entities.Definable[bool]               `bson:"rescanRunning"`
 }
 
 // Entity representing a Gallery Source Folder: a folder in Seraph whose photos
@@ -102,4 +103,17 @@ type GallerySourceFolder struct {
 	// more often than an empty one, which would sweep none at all.
 	PhysicalProviderId string `bson:"physicalProviderId" json:"-"`
 	PhysicalPath       string `bson:"physicalPath" json:"-"`
+
+	// RescanRunning is true while a genuine File Provider re-scan triggered
+	// by RESCAN (see rescan.go) is walking this folder's physical tree. It is
+	// the ONLY state a RESCAN request needs to check to refuse starting a
+	// second concurrent scan over the same folder (see startRescan), and it
+	// is what the app polls (via LIST) to show "rescan running" / "rescan
+	// finished" feedback - there is no separate job/progress channel.
+	//
+	// Persisted rather than held only in memory so that a service restart
+	// mid-scan does not leave the flag stuck true forever with nothing to
+	// ever clear it: resumeIncompleteRescans (rescan.go) clears or resumes
+	// exactly like resumeIncompleteBackfills does for BackfillDone.
+	RescanRunning bool `bson:"rescanRunning" json:"rescanRunning"`
 }

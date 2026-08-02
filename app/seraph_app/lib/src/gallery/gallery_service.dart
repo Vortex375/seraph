@@ -76,4 +76,24 @@ class GalleryService {
       options: Options(headers: await _getRequestHeaders()),
     );
   }
+
+  /// Triggers a genuine File Provider re-scan of a Gallery Source Folder, so
+  /// photos present on disk but missing from the (potentially stale) File
+  /// Index appear in the gallery. Runs in the background on the server;
+  /// callers should re-fetch [listSourceFolders] to observe
+  /// [GallerySourceFolder.rescanRunning] flip back to false when it finishes.
+  /// Safe to call again while a rescan is already running - the server does
+  /// not start a second one.
+  Future<GallerySourceFolder> rescanSourceFolder(String id) async {
+    final response = await dio.post<Map<String, dynamic>>(
+      '/api/gallery/source-folders/$id/rescan',
+      options: Options(headers: await _getRequestHeaders()),
+    );
+
+    final rawList = response.data?['sourceFolder'];
+    if (rawList is List && rawList.isNotEmpty) {
+      return GallerySourceFolder.fromJson(rawList[0] as Map<String, dynamic>);
+    }
+    throw Exception('Failed to rescan gallery source folder');
+  }
 }
