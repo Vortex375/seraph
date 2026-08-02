@@ -1,3 +1,4 @@
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_delta_models.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
@@ -27,7 +28,7 @@ void main() {
     late GalleryMirror mirror;
 
     setUp(() {
-      db = GalleryMirrorDatabase.forTesting();
+      db = GalleryMirrorDatabase(NativeDatabase.memory());
       mirror = GalleryMirror(db);
     });
 

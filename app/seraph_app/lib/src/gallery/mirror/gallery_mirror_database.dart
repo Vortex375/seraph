@@ -1,10 +1,5 @@
-import 'dart:io';
-
 import 'package:drift/drift.dart';
-import 'package:drift/native.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
-import 'package:sqlite3/sqlite3.dart';
+import 'package:seraph_app/src/gallery/mirror/connection/connection.dart';
 
 part 'gallery_mirror_database.g.dart';
 
@@ -28,18 +23,12 @@ part 'gallery_mirror_database.g.dart';
 class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
   GalleryMirrorDatabase(super.e);
 
-  /// Opens (creating if necessary) the on-disk mirror database in the app's
-  /// support directory, exactly like [SettingsController] locates its
-  /// `GetStorage` box - so the mirror survives an app restart in the same
-  /// place other local app state already lives.
+  /// Opens the mirror database for the current platform - a file in the app
+  /// support directory on mobile/desktop, sqlite3-over-WebAssembly in the
+  /// browser. See `connection/connection.dart` for why that choice is made
+  /// behind a conditional import rather than an `if (kIsWeb)` here.
   factory GalleryMirrorDatabase.open() {
-    return GalleryMirrorDatabase(_openConnection());
-  }
-
-  /// An in-memory database for tests: fast, isolated per test, and requires
-  /// no platform channels.
-  factory GalleryMirrorDatabase.forTesting() {
-    return GalleryMirrorDatabase(NativeDatabase.memory());
+    return GalleryMirrorDatabase(openMirrorConnection());
   }
 
   @override
@@ -66,20 +55,6 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
           await customStatement('PRAGMA foreign_keys = ON');
         },
       );
-}
-
-LazyDatabase _openConnection() {
-  return LazyDatabase(() async {
-    final dir = await getApplicationSupportDirectory();
-    final file = File(p.join(dir.path, 'gallery_mirror.sqlite'));
-
-    // package:sqlite3 (v3+) bundles its own native library and locates a
-    // writable temp directory itself on every platform this app targets, so
-    // no extra platform workaround package is needed here.
-    sqlite3.tempDirectory = (await getTemporaryDirectory()).path;
-
-    return NativeDatabase.createInBackground(file);
-  });
 }
 
 /// One row per gallery item, cloud or (later) device.

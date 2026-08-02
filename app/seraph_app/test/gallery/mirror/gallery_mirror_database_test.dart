@@ -106,7 +106,7 @@ void main() {
 
     test('a fresh install creates the current schema directly via onCreate',
         () async {
-      final db = GalleryMirrorDatabase.forTesting();
+      final db = GalleryMirrorDatabase(NativeDatabase.memory());
       addTearDown(db.close);
 
       // No migration needed; onCreate should produce a fully working schema.

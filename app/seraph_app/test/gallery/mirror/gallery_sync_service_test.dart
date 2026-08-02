@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:get/get.dart' hide Response;
 import 'package:oidc/oidc.dart';
@@ -26,7 +27,7 @@ void main() {
       settingsController = _FakeSettingsController('https://seraph.test');
       loginController = _FakeLoginController.initialized('access-token');
       dio = Dio(BaseOptions(baseUrl: settingsController.serverUrl.value));
-      db = GalleryMirrorDatabase.forTesting();
+      db = GalleryMirrorDatabase(NativeDatabase.memory());
       mirror = GalleryMirror(db);
       service = GallerySyncService(settingsController, loginController, mirror,
           dio: dio);
