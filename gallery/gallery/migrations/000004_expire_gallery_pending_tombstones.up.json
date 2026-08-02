@@ -1,0 +1,14 @@
+[
+  {
+    "createIndexes": "galleryPendingTombstones",
+    "indexes": [
+      {
+        "key": {
+          "createdAt": 1
+        },
+        "name": "galleryPendingTombstones_createdAt_ttl_idx",
+        "expireAfterSeconds": 2592000
+      }
+    ]
+  }
+]

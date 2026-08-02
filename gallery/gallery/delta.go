@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"path"
 	"strconv"
+	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -80,11 +81,31 @@ var deltaSort = bson.D{{Key: "seq", Value: 1}}
 // why this exists as its own small per-user collection rather than being
 // folded into galleryPhotos.
 type pendingTombstone struct {
-	UserId          string `bson:"userId"`
-	SpaceProviderId string `bson:"spaceProviderId"`
-	SpacePath       string `bson:"spacePath"`
-	Seq             int64  `bson:"seq"`
+	UserId          string    `bson:"userId"`
+	SpaceProviderId string    `bson:"spaceProviderId"`
+	SpacePath       string    `bson:"spacePath"`
+	Seq             int64     `bson:"seq"`
+	CreatedAt       time.Time `bson:"createdAt"`
 }
+
+// DeltaTombstoneRetention is how long a folder-removal tombstone stays
+// available in the feed before Mongo expires it, enforced by the TTL index on
+// galleryPendingTombstones.createdAt (migration 000004).
+//
+// These rows are written per photo per user on every folder REMOVE, so
+// without an expiry the collection would grow without bound - folder churn
+// on a large gallery would accumulate rows forever. Consumption-based
+// cleanup was rejected for exactly the failure it cannot handle: a client
+// that polls once and never returns (app deleted, device lost) would pin its
+// rows permanently, so deletion could never be driven by delivery alone.
+//
+// The tradeoff a TTL makes explicit: a mirror that has not polled for longer
+// than this window can miss a removal, so it must not trust its cursor
+// indefinitely. A client offline longer than the retention window should
+// cold-start from sequence zero (which the feed fully supports - see
+// GalleryDeltaRequest.Since) rather than resuming, and reconcile by treating
+// anything it holds that the feed does not re-deliver as gone.
+const DeltaTombstoneRetention = 30 * 24 * time.Hour
 
 // deltaRow is the common shape deltaFeed merges galleryPhotos candidates and
 // galleryPendingTombstones candidates into before turning them into
@@ -140,6 +161,14 @@ type deltaRow struct {
 //     because by the time this function runs later, the removed folder no
 //     longer exists to translate through and (1) above could not produce an
 //     identity for them at all.
+//
+// Both sources are additionally bounded above by the allocator's safe
+// watermark, captured once per request. Without that bound this function
+// would happily serve a high sequence while a lower one was still being
+// written, advancing the client's cursor past a document it never received -
+// see sequenceAllocator's docs for why that is silent, permanent mirror data
+// loss rather than a transient hiccup. Anything above the watermark is simply
+// left for the next poll, a few milliseconds later.
 func (g *GalleryProvider) deltaFeed(ctx context.Context, req *GalleryDeltaRequest) *GalleryDeltaResponse {
 	if req.UserId == "" {
 		return &GalleryDeltaResponse{Error: "userId is required"}
@@ -172,12 +201,19 @@ func (g *GalleryProvider) deltaFeed(ctx context.Context, req *GalleryDeltaReques
 		return &GalleryDeltaResponse{Error: err.Error()}
 	}
 
+	// Captured once, before any scanning: the highest sequence it is safe to
+	// serve without stepping over a lower one that is still being written.
+	// Re-reading it mid-scan would be pointless and slightly worse - a value
+	// that rose between batches could let a later batch serve past a gap an
+	// earlier batch had correctly stopped short of.
+	watermark := g.sequences.watermark()
+
 	items := make([]GalleryDeltaItem, 0, pageSize)
 	maxSeq := req.Since
 	exhausted := false
 
 	for len(items) < pageSize && !exhausted {
-		rows, batchFullyWalked, findErr := g.nextDeltaRows(ctx, req.UserId, pos)
+		rows, batchFullyWalked, findErr := g.nextDeltaRows(ctx, req.UserId, pos, watermark)
 		if findErr != nil {
 			return &GalleryDeltaResponse{Error: findErr.Error()}
 		}
@@ -262,19 +298,19 @@ func deltaItemFor(row deltaRow, folders []resolvedFolder) (GalleryDeltaItem, boo
 	}, true
 }
 
-// nextDeltaRows pulls the next batch of candidates strictly after seq pos,
-// merged in seq order from galleryPhotos and this user's
-// galleryPendingTombstones. batchFullyWalked reports whether both
+// nextDeltaRows pulls the next batch of candidates strictly after seq pos and
+// no higher than watermark, merged in seq order from galleryPhotos and this
+// user's galleryPendingTombstones. batchFullyWalked reports whether both
 // underlying batches were short (i.e. exhausted), following the same
 // "distinguish end-of-data from page-filled-up" convention listPhotos uses
 // (query.go).
-func (g *GalleryProvider) nextDeltaRows(ctx context.Context, userId string, pos int64) ([]deltaRow, bool, error) {
-	photoBatch, photosShort, err := g.nextPhotoRows(ctx, pos)
+func (g *GalleryProvider) nextDeltaRows(ctx context.Context, userId string, pos int64, watermark int64) ([]deltaRow, bool, error) {
+	photoBatch, photosShort, err := g.nextPhotoRows(ctx, pos, watermark)
 	if err != nil {
 		return nil, false, err
 	}
 
-	tombstoneBatch, tombstonesShort, err := g.nextTombstoneRows(ctx, userId, pos)
+	tombstoneBatch, tombstonesShort, err := g.nextTombstoneRows(ctx, userId, pos, watermark)
 	if err != nil {
 		return nil, false, err
 	}
@@ -302,8 +338,8 @@ func sortDeltaRows(rows []deltaRow) {
 	}
 }
 
-func (g *GalleryProvider) nextPhotoRows(ctx context.Context, pos int64) ([]deltaRow, bool, error) {
-	filter := bson.M{"seq": bson.M{"$gt": pos}}
+func (g *GalleryProvider) nextPhotoRows(ctx context.Context, pos int64, watermark int64) ([]deltaRow, bool, error) {
+	filter := bson.M{"seq": bson.M{"$gt": pos, "$lte": watermark}}
 	findOpts := options.Find().SetSort(deltaSort).SetLimit(int64(deltaScanBatchSize))
 
 	cur, err := g.photos.Find(ctx, filter, findOpts)
@@ -324,8 +360,8 @@ func (g *GalleryProvider) nextPhotoRows(ctx context.Context, pos int64) ([]delta
 	return rows, len(batch) < deltaScanBatchSize, nil
 }
 
-func (g *GalleryProvider) nextTombstoneRows(ctx context.Context, userId string, pos int64) ([]deltaRow, bool, error) {
-	filter := bson.M{"userId": userId, "seq": bson.M{"$gt": pos}}
+func (g *GalleryProvider) nextTombstoneRows(ctx context.Context, userId string, pos int64, watermark int64) ([]deltaRow, bool, error) {
+	filter := bson.M{"userId": userId, "seq": bson.M{"$gt": pos, "$lte": watermark}}
 	findOpts := options.Find().SetSort(deltaSort).SetLimit(int64(deltaScanBatchSize))
 
 	cur, err := g.pendingTombstones.Find(ctx, filter, findOpts)
@@ -399,11 +435,11 @@ func (g *GalleryProvider) bumpSeqForPrefix(ctx context.Context, p prefix) error 
 	}
 
 	for _, d := range docs {
-		seq, err := g.nextSequence(ctx)
+		err := g.withSequence(ctx, func(seq int64) error {
+			_, err := g.photos.UpdateByID(ctx, d.Id, bson.M{"$set": bson.M{"seq": seq}})
+			return err
+		})
 		if err != nil {
-			return fmt.Errorf("allocating delta sequence: %w", err)
-		}
-		if _, err := g.photos.UpdateByID(ctx, d.Id, bson.M{"$set": bson.M{"seq": seq}}); err != nil {
 			return fmt.Errorf("bumping delta sequence for %v: %w", d.Id, err)
 		}
 	}
@@ -453,17 +489,18 @@ func (g *GalleryProvider) recordRemovalTombstones(ctx context.Context, userId st
 		if !ok {
 			continue
 		}
-		seq, err := g.nextSequence(ctx)
+		err := g.withSequence(ctx, func(seq int64) error {
+			row := pendingTombstone{
+				UserId:          userId,
+				SpaceProviderId: removedFolder.spaceProviderId,
+				SpacePath:       removedFolder.toSpacePath(rest),
+				Seq:             seq,
+				CreatedAt:       time.Now(),
+			}
+			_, err := g.pendingTombstones.InsertOne(ctx, row)
+			return err
+		})
 		if err != nil {
-			return fmt.Errorf("allocating delta sequence: %w", err)
-		}
-		row := pendingTombstone{
-			UserId:          userId,
-			SpaceProviderId: removedFolder.spaceProviderId,
-			SpacePath:       removedFolder.toSpacePath(rest),
-			Seq:             seq,
-		}
-		if _, err := g.pendingTombstones.InsertOne(ctx, row); err != nil {
 			return fmt.Errorf("recording removal tombstone for %s/%s: %w", d.ProviderId, d.Path, err)
 		}
 	}

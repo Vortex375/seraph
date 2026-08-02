@@ -77,24 +77,29 @@ type GallerySourceFolder struct {
 	// TestBackfillRestartDoesNotDuplicate.
 	BackfillCursor string `bson:"backfillCursor" json:"-"`
 
-	// PhysicalProviderId/PhysicalPath cache this folder's most recently
-	// resolved physical prefix - the same (providerId, path) resolveSpace
-	// last returned for it, refreshed every time ADD resolves it (see
-	// addSourceFolder). This is a denormalized, best-effort convenience
-	// value ONLY: it is never used for access control (that is always a
-	// fresh resolveSpace call - see resolveFoldersForUser, refreshPrefixCache
-	// - and stays that way) and it can go stale between refreshes (a Space
-	// remount, an access change) exactly like the ingestion prefixCache can.
+	// PhysicalProviderId/PhysicalPath hold this folder's currently resolved
+	// physical prefix - the (providerId, path) resolveSpace returns for it -
+	// kept in step by refreshPrefixCache (ingest.go), which is the seam every
+	// resolution trigger shares: startup, ADD, and a relevant spaces.changed
+	// event. An administrator re-pointing a Space at a different File
+	// Provider therefore updates this alongside the in-memory ingestion
+	// prefix cache, rather than leaving it pinned to where the folder used to
+	// live.
 	//
-	// Its one purpose is letting REMOVE scope a best-effort delta-feed
-	// tombstone sweep (see recordRemovalTombstones in delta.go, called from
-	// removeSourceFolder) over the photos this folder used to make visible,
-	// WITHOUT resolving the Space again - REMOVE's tested contract is that it
-	// contacts no other service (see TestRemoveTouchesNoFileProvider), and by
-	// the time REMOVE runs the only physical prefix available at all is
-	// whatever was cached here the last time this folder was successfully
-	// resolved. A stale or missing value only costs a delayed or
-	// imperfectly-scoped tombstone sweep, never an access-control bug.
+	// It is never used for access control - that is always a fresh
+	// resolveSpace call (resolveFoldersForUser, refreshPrefixCache) and stays
+	// that way. Its one purpose is letting REMOVE scope its delta-feed
+	// tombstone sweep (recordRemovalTombstones in delta.go, called from
+	// removeSourceFolder) over the photos this folder made visible, WITHOUT
+	// resolving the Space again: REMOVE's tested contract is that it contacts
+	// no other service (see TestRemoveTouchesNoFileProvider), so the
+	// persisted prefix is the only physical location available to it at all.
+	//
+	// The one case where it can lag reality is a folder that stopped
+	// resolving entirely (access revoked, Space deleted): refreshPrefixCache
+	// deliberately leaves the last known value in place rather than clearing
+	// it, since a stale-but-real prefix still sweeps the right documents far
+	// more often than an empty one, which would sweep none at all.
 	PhysicalProviderId string `bson:"physicalProviderId" json:"-"`
 	PhysicalPath       string `bson:"physicalPath" json:"-"`
 }

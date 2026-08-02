@@ -71,8 +71,13 @@ type GalleryProvider struct {
 
 	sourceFolders     *mongo.Collection
 	photos            *mongo.Collection
-	sequenceCounters  *mongo.Collection
 	pendingTombstones *mongo.Collection
+
+	// sequences allocates delta-feed sequence values and tracks which of them
+	// are still in flight, so the feed never serves past an allocated-but-
+	// unwritten one; see sequenceAllocator's docs (sequence.go), including
+	// its explicit single-instance assumption.
+	sequences *sequenceAllocator
 
 	crudSub  *nats.Subscription
 	listSub  *nats.Subscription
@@ -114,8 +119,8 @@ func New(p Params) (Result, error) {
 			logging:           p.Logger,
 			sourceFolders:     p.Db.Collection("gallerySourceFolders"),
 			photos:            p.Db.Collection("galleryPhotos"),
-			sequenceCounters:  p.Db.Collection("gallerySequenceCounters"),
 			pendingTombstones: p.Db.Collection("galleryPendingTombstones"),
+			sequences:         newSequenceAllocator(p.Db.Collection("gallerySequenceCounters")),
 			prefixCache:       newPrefixCache(),
 			backfillLimiter:   util.NewLimiter(backfillParallel),
 		},
@@ -392,16 +397,21 @@ func (g *GalleryProvider) addSourceFolder(ctx context.Context, req *GallerySourc
 	// folder too: runBackfill's BackfillDone check makes that a no-op rather
 	// than a redundant rescan.
 	//
-	// The same resolution also feeds two more things: caching the physical
+	// The same resolution also feeds two more things: persisting the physical
 	// prefix onto the folder document (PhysicalProviderId/PhysicalPath - see
-	// their docs on GallerySourceFolder) so a later REMOVE can scope its own
-	// best-effort tombstone sweep without resolving again, and bumping the
-	// delta sequence of every already-ingested photo newly covered by this
-	// folder in the background, so an addition surfaces through the delta
-	// feed without the client needing to know a folder was added - see
-	// bumpSeqForPrefix's docs (delta.go). Both run independently of backfill
-	// and are safe to interleave with it, since bumpSeqForPrefix only ever
-	// touches Seq and never the rest of the document.
+	// their docs on GallerySourceFolder) so a later REMOVE can scope its
+	// tombstone sweep without resolving again, and bumping the delta sequence
+	// of every already-ingested photo newly covered by this folder in the
+	// background, so an addition surfaces through the delta feed without the
+	// client needing to know a folder was added - see bumpSeqForPrefix's docs
+	// (delta.go). Both run independently of backfill and are safe to
+	// interleave with it, since bumpSeqForPrefix only ever touches Seq and
+	// never the rest of the document.
+	//
+	// refreshPrefixCache above has already persisted the prefix for every
+	// folder including this one; the explicit write here covers the ordering
+	// case where that refresh failed or raced this ADD, so the folder is
+	// never left without a prefix its own REMOVE would need.
 	if p, ok := g.resolveFolderPrefix(ctx, folder); ok {
 		if err := g.cachePhysicalPrefix(ctx, folder.Id, p); err != nil {
 			g.log.Error("failed to cache resolved physical prefix on gallery source folder", "error", err, "folderId", folder.Id.Hex())
@@ -481,17 +491,21 @@ func (g *GalleryProvider) removeSourceFolder(ctx context.Context, req *GallerySo
 	//
 	// The tombstone sweep below is the one exception to "touches nothing
 	// else" worth calling out explicitly: it reads the physical prefix
-	// cached on the just-deleted document itself (see PhysicalProviderId/
+	// persisted on the just-deleted document itself (see PhysicalProviderId/
 	// PhysicalPath's docs) rather than resolving anything, so it costs a
 	// local Mongo scan/write over this service's own read model and nothing
 	// more - no NATS request to any other service, so
-	// TestRemoveTouchesNoFileProvider still holds. It is what makes a REMOVE
-	// eventually surface as tombstones in the delta feed (see
-	// recordRemovalTombstones's docs in delta.go) rather than leaving the
-	// removed folder's photos permanently, silently visible to a mirror. A
-	// folder that was never successfully resolved (PhysicalProviderId empty
-	// - e.g. it never had access) has nothing to sweep, which is correct: it
-	// never made anything visible in the first place.
+	// TestRemoveTouchesNoFileProvider still holds. That prefix is kept
+	// current by refreshPrefixCache on startup, ADD and spaces.changed, so a
+	// Space re-pointed since this folder was added still sweeps the physical
+	// location the photos actually live at now.
+	//
+	// This is what makes a REMOVE surface as tombstones in the delta feed
+	// (see recordRemovalTombstones's docs in delta.go) rather than leaving
+	// the removed folder's photos permanently, silently visible to a mirror.
+	// A folder that never resolved even once (PhysicalProviderId empty - e.g.
+	// it never had access) has nothing to sweep, which is correct: it never
+	// made anything visible in the first place.
 	if folder.PhysicalProviderId != "" {
 		removedFolder := resolvedFolder{
 			providerId:      folder.PhysicalProviderId,

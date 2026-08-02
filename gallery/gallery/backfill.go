@@ -298,39 +298,40 @@ func (g *GalleryProvider) saveBackfillProgress(ctx context.Context, folderId pri
 func (g *GalleryProvider) backfillUpsert(ctx context.Context, entry events.FileIndexListEntry) error {
 	capturedAt, capturedAtSource := backfillCaptureDate(entry)
 
-	// Allocated unconditionally, before knowing whether this call will
-	// actually insert - $setOnInsert means a no-op call (the physical key
-	// already exists) simply never writes this value anywhere, so the
-	// allocated number is quietly skipped rather than reused. That is fine:
-	// nextSequence's contract is monotonic and unique, never contiguous, so a
-	// gap left by a skipped allocation is invisible to the delta feed.
-	seq, err := g.nextSequence(ctx)
-	if err != nil {
-		return fmt.Errorf("allocating delta sequence: %w", err)
-	}
+	// The sequence is allocated unconditionally, before knowing whether this
+	// call will actually insert - $setOnInsert means a no-op call (the
+	// physical key already exists) simply never writes this value anywhere,
+	// so the allocated number is quietly skipped rather than reused. That is
+	// fine: the allocator's contract is monotonic and unique, never
+	// contiguous, so a gap left by a skipped allocation is invisible to the
+	// delta feed. Going through withSequence still matters even for a
+	// skipped one, because the feed must not serve past this allocation
+	// while the upsert that might use it is still in flight - see
+	// sequenceAllocator's docs.
+	return g.withSequence(ctx, func(seq int64) error {
+		filter := bson.M{"providerId": entry.ProviderId, "path": entry.Path}
+		update := bson.M{
+			"$setOnInsert": bson.M{
+				"providerId":       entry.ProviderId,
+				"path":             entry.Path,
+				"capturedAt":       capturedAt,
+				"capturedAtSource": capturedAtSource,
+				"size":             entry.Size,
+				"mime":             entry.Mime,
+				"deleted":          false,
+				"indexedAt":        time.Now().Unix(),
+				"width":            0,
+				"height":           0,
+				"orientation":      0,
+				"unsupported":      "",
+				"metadataPending":  true,
+				"seq":              seq,
+			},
+		}
 
-	filter := bson.M{"providerId": entry.ProviderId, "path": entry.Path}
-	update := bson.M{
-		"$setOnInsert": bson.M{
-			"providerId":       entry.ProviderId,
-			"path":             entry.Path,
-			"capturedAt":       capturedAt,
-			"capturedAtSource": capturedAtSource,
-			"size":             entry.Size,
-			"mime":             entry.Mime,
-			"deleted":          false,
-			"indexedAt":        time.Now().Unix(),
-			"width":            0,
-			"height":           0,
-			"orientation":      0,
-			"unsupported":      "",
-			"metadataPending":  true,
-			"seq":              seq,
-		},
-	}
-
-	_, err = g.photos.UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
-	return err
+		_, err := g.photos.UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
+		return err
+	})
 }
 
 // backfillCaptureDate implements the Capture Date fallback chain starting at

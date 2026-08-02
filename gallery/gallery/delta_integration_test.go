@@ -21,9 +21,12 @@ package gallery_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -624,4 +627,181 @@ func TestSequenceMonotonicAcrossSimulatedRestart(t *testing.T) {
 	require.Contains(t, seqs, "/holidays/before-restart.jpg")
 	require.Contains(t, seqs, "/holidays/after-restart.jpg")
 	assert.Less(t, seqs["/holidays/before-restart.jpg"], seqs["/holidays/after-restart.jpg"])
+}
+
+// TestDeltaConcurrentWritersLoseNothing is the race test the sequential
+// cases above cannot be: many photos are ingested CONCURRENTLY (ingestion
+// runs ingestParallel handlers, so several documents are genuinely mid-write
+// at any instant) while a client polls the feed continuously and advances its
+// cursor after every poll, exactly as a real mirror would.
+//
+// This is what catches the sequence-gap visibility bug. Allocation and the
+// document write are two separate operations, so without the allocator's
+// watermark (see sequenceAllocator in sequence.go) a poll can observe seq
+// N+1, serve it, and advance the client past seq N while seq N's write is
+// still in flight - that photo is then permanently absent from the mirror and
+// no later poll recovers it, because the cursor has already moved beyond it.
+// The assertion below is therefore specifically "every photo arrived", not
+// merely "the feed returned something".
+func TestDeltaConcurrentWritersLoseNothing(t *testing.T) {
+	nc, db := startGalleryProvider(t, map[string][]string{
+		"pino": {"photos"},
+	})
+	clearSourceFolders(t, db)
+	clearPhotos(t, db)
+	clearPendingTombstones(t, db)
+
+	dir := startFileProvider(t, "physical-photos")
+
+	crud(t, nc, &gallery.GallerySourceFolderCrudRequest{
+		Operation:       gallery.GallerySourceFolderOperationAdd,
+		UserId:          "pino",
+		SpaceProviderId: "photos",
+		Path:            "/holidays",
+	})
+
+	const total = 60
+	const writers = 6
+
+	// write every fixture up front so the concurrent phase is purely
+	// publish-and-ingest, with no filesystem work skewing the interleaving
+	paths := make([]string, total)
+	for i := 0; i < total; i++ {
+		paths[i] = fmt.Sprintf("/mounted/photos/holidays/c-%03d.jpg", i)
+		writeFixture(t, dir, paths[i], buildJPEGWithExif(t, 12, 8, "2019:01:01 00:00:00", 0))
+	}
+
+	// the mirror a real client would keep: applied strictly from feed pages,
+	// never read back from Mongo
+	var mu sync.Mutex
+	mirror := make(map[string]int) // space path -> times delivered
+	tombstoned := make(map[string]bool)
+
+	pollerDone := make(chan struct{})
+	stopPolling := make(chan struct{})
+
+	pollNc, err := nats.Connect(natsServer.ClientURL())
+	require.NoError(t, err)
+	t.Cleanup(func() { pollNc.Close() })
+
+	go func() {
+		defer close(pollerDone)
+		since := int64(0)
+		for {
+			res := gallery.GalleryDeltaResponse{}
+			err := messaging.Request(context.Background(), pollNc, gallery.GalleryDeltaTopic,
+				messaging.Json(&gallery.GalleryDeltaRequest{UserId: "pino", Since: since, PageSize: 7}),
+				messaging.Json(&res))
+			if err != nil {
+				return
+			}
+
+			mu.Lock()
+			for _, item := range res.Items {
+				if item.Tombstone {
+					tombstoned[item.Path] = true
+					continue
+				}
+				mirror[item.Path]++
+			}
+			mu.Unlock()
+
+			// advance exactly as a real client does: keep paging within this
+			// poll, then commit the new cursor once the poll is drained
+			if res.HasMore {
+				// drain remaining pages of this poll before advancing Since
+				cursor := res.NextCursor
+				for cursor != "" {
+					page := gallery.GalleryDeltaResponse{}
+					if err := messaging.Request(context.Background(), pollNc, gallery.GalleryDeltaTopic,
+						messaging.Json(&gallery.GalleryDeltaRequest{UserId: "pino", Since: since, Cursor: cursor, PageSize: 7}),
+						messaging.Json(&page)); err != nil {
+						return
+					}
+					mu.Lock()
+					for _, item := range page.Items {
+						if item.Tombstone {
+							tombstoned[item.Path] = true
+							continue
+						}
+						mirror[item.Path]++
+					}
+					mu.Unlock()
+					if !page.HasMore {
+						since = page.NextSince
+						break
+					}
+					cursor = page.NextCursor
+				}
+			} else {
+				since = res.NextSince
+			}
+
+			select {
+			case <-stopPolling:
+				return
+			default:
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}()
+
+	// concurrent publishers: several goroutines pushing file-change events at
+	// once, which ingestion then processes with its own parallelism on top
+	var wg sync.WaitGroup
+	for w := 0; w < writers; w++ {
+		wg.Add(1)
+		go func(worker int) {
+			defer wg.Done()
+			pubNc, err := nats.Connect(natsServer.ClientURL())
+			if err != nil {
+				return
+			}
+			defer pubNc.Close()
+			for i := worker; i < total; i += writers {
+				ev := events.FileChangedEvent{
+					Event:      events.Event{ID: uuid.NewString(), Version: 1},
+					FileID:     uuid.NewString(),
+					ProviderID: "physical-photos",
+					Change:     events.FileChangedEventCreated,
+					Path:       paths[i],
+					Size:       673,
+					ModTime:    time.Now().Unix(),
+					Mime:       "image/jpeg",
+				}
+				data, err := ev.Marshal()
+				if err != nil {
+					return
+				}
+				pubNc.Publish(fmt.Sprintf(events.FileChangedTopicPattern, ev.FileID), data)
+			}
+			pubNc.Flush()
+		}(w)
+	}
+	wg.Wait()
+
+	// wait until every document has actually landed in the read model, so the
+	// poller has something complete to converge on
+	waitForPhotoCount(t, db, "physical-photos", total)
+
+	// let the poller keep running a little longer so it can drain everything
+	// written after its last poll, then stop it
+	waitForCondition(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(mirror) == total
+	}, "the polling mirror never received every concurrently-written photo - a sequence was served while a lower one was still unwritten")
+
+	close(stopPolling)
+	<-pollerDone
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	assert.Empty(t, tombstoned, "no photo was deleted, so no tombstone should have been delivered")
+	require.Len(t, mirror, total, "every concurrently-written photo must reach the mirror exactly once")
+	for i := 0; i < total; i++ {
+		spacePath := fmt.Sprintf("/holidays/c-%03d.jpg", i)
+		assert.Equal(t, 1, mirror[spacePath], "photo %s must be delivered exactly once, not %d times", spacePath, mirror[spacePath])
+	}
 }

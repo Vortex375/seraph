@@ -121,6 +121,22 @@ func (c *prefixCache) matches(providerId string, filePath string) bool {
 // (access revoked, Space deleted) is simply dropped from the cache: its
 // events stop matching, which is exactly the access-control behaviour the
 // query path also relies on.
+//
+// It also persists each successfully resolved prefix back onto its folder
+// document (PhysicalProviderId/PhysicalPath - see cachePhysicalPrefix). That
+// matters because this function is the single seam every resolution trigger
+// shares - startup, ADD, and a relevant spaces.changed event (see
+// reactToSpaceChanged) - so an administrator re-pointing a Space at a
+// different File Provider updates the persisted prefix here too, not just
+// the in-memory ingestion cache. Without that, a folder REMOVEd after a
+// re-point would sweep tombstones against the OLD physical prefix and a
+// mirror would keep showing photos that had actually gone away.
+//
+// A folder that fails to resolve keeps its last persisted prefix rather than
+// having it cleared: an unresolvable folder is usually a transient or
+// access-related condition, and the stale-but-real prefix is strictly better
+// than nothing for a later REMOVE sweep, which is the only thing that reads
+// it.
 func (g *GalleryProvider) refreshPrefixCache(ctx context.Context) error {
 	cur, err := g.sourceFolders.Find(ctx, bson.M{})
 	if err != nil {
@@ -148,6 +164,17 @@ func (g *GalleryProvider) refreshPrefixCache(ctx context.Context) error {
 		}
 
 		p := prefix{providerId: res.ProviderId, path: joinPhysicalPath(res.Path, f.Path)}
+
+		// keep the folder's persisted physical prefix in step with what it
+		// actually resolves to right now - see this function's docs and
+		// GallerySourceFolder.PhysicalProviderId/PhysicalPath
+		if f.PhysicalProviderId != p.providerId || f.PhysicalPath != p.path {
+			if err := g.cachePhysicalPrefix(ctx, f.Id, p); err != nil {
+				g.log.Error("failed to update persisted physical prefix for gallery source folder",
+					"error", err, "folderId", f.Id.Hex(), "userId", f.UserId, "spaceProviderId", f.SpaceProviderId)
+			}
+		}
+
 		if !seen[p] {
 			seen[p] = true
 			prefixes = append(prefixes, p)
@@ -301,14 +328,12 @@ func (ic *ingestConsumer) handleMessage(ctx context.Context, msg jetstream.Msg) 
 // document silently vanishing from a query it can no longer distinguish from
 // "never existed".
 func (g *GalleryProvider) markDeleted(ctx context.Context, providerId string, filePath string) error {
-	seq, err := g.nextSequence(ctx)
-	if err != nil {
-		return fmt.Errorf("allocating delta sequence: %w", err)
-	}
-	filter := bson.M{"providerId": providerId, "path": filePath}
-	update := bson.M{"$set": bson.M{"deleted": true, "seq": seq}}
-	_, err = g.photos.UpdateOne(ctx, filter, update)
-	return err
+	return g.withSequence(ctx, func(seq int64) error {
+		filter := bson.M{"providerId": providerId, "path": filePath}
+		update := bson.M{"$set": bson.M{"deleted": true, "seq": seq}}
+		_, err := g.photos.UpdateOne(ctx, filter, update)
+		return err
+	})
 }
 
 // upsertPhoto extracts metadata for a created/changed file and writes it
@@ -329,41 +354,38 @@ func (g *GalleryProvider) upsertPhoto(ctx context.Context, ev *events.FileChange
 		return err
 	}
 
-	seq, err := g.nextSequence(ctx)
-	if err != nil {
-		return fmt.Errorf("allocating delta sequence: %w", err)
-	}
-
 	now := time.Now().Unix()
 
-	filter := bson.M{"providerId": ev.ProviderID, "path": ev.Path}
-	update := bson.M{
-		"$set": bson.M{
-			"providerId":       ev.ProviderID,
-			"path":             ev.Path,
-			"capturedAt":       capturedAt,
-			"capturedAtSource": capturedAtSource,
-			"width":            meta.Width,
-			"height":           meta.Height,
-			"orientation":      meta.Orientation,
-			"size":             ev.Size,
-			"mime":             ev.Mime,
-			"unsupported":      meta.Unsupported,
-			"deleted":          false,
-			"metadataPending":  false,
-			"seq":              seq,
-		},
-		// IndexedAt/CapturedAt-when-falling-back-to-indexed must only be set
-		// on first insert: a later re-processing of the same file (a
-		// "changed" event, or backfill racing a live event) must not move an
-		// already-established "first seen" time.
-		"$setOnInsert": bson.M{
-			"indexedAt": now,
-		},
-	}
+	return g.withSequence(ctx, func(seq int64) error {
+		filter := bson.M{"providerId": ev.ProviderID, "path": ev.Path}
+		update := bson.M{
+			"$set": bson.M{
+				"providerId":       ev.ProviderID,
+				"path":             ev.Path,
+				"capturedAt":       capturedAt,
+				"capturedAtSource": capturedAtSource,
+				"width":            meta.Width,
+				"height":           meta.Height,
+				"orientation":      meta.Orientation,
+				"size":             ev.Size,
+				"mime":             ev.Mime,
+				"unsupported":      meta.Unsupported,
+				"deleted":          false,
+				"metadataPending":  false,
+				"seq":              seq,
+			},
+			// IndexedAt/CapturedAt-when-falling-back-to-indexed must only be
+			// set on first insert: a later re-processing of the same file (a
+			// "changed" event, or backfill racing a live event) must not move
+			// an already-established "first seen" time.
+			"$setOnInsert": bson.M{
+				"indexedAt": now,
+			},
+		}
 
-	_, err = g.photos.UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
-	return err
+		_, err := g.photos.UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
+		return err
+	})
 }
 
 // extractForEvent fetches the file through the File Provider, extracts
