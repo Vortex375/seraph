@@ -71,6 +71,11 @@ Location: `app/seraph_app/`
 - Test: `flutter test`
 - Run a single test: `flutter test test/widget_test.dart`
 - Analyze (lint): `flutter analyze` (uses `flutter_lints` via `analysis_options.yaml`)
+- Build (web, the real gate): `flutter build web --release --base-href=/app/`
+
+**`flutter analyze` clean does not mean the code builds.** Analyze has passed on code
+that broke the web build. Do not accept a Dart change — and do not resolve a Dart
+ticket — on `flutter analyze` alone; gate it on the web release build above.
 
 ## Agents app (Agno/AgentOS)
 
@@ -227,7 +232,9 @@ Testing:
 
 Linting:
 - Uses `flutter_lints` via `analysis_options.yaml`.
-- Prefer running `flutter analyze` after changes.
+- Prefer running `flutter analyze` after changes — but treat it as a lint pass, not a
+  build check. It is known to pass on code that fails `flutter build web --release`.
+  Verify Dart changes with the web release build (see the Flutter app commands above).
 
 Formatting:
 - Use `dart format` or `flutter format` for Dart files.
