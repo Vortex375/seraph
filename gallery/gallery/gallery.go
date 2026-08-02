@@ -82,6 +82,12 @@ type GalleryProvider struct {
 	ingestCancel context.CancelFunc
 	wg           sync.WaitGroup
 
+	// spacesChanged is the durable spaces.changed consumer that keeps
+	// prefixCache invalidated when a Space's resolution changes underneath
+	// it; see spaceschanged.go.
+	spacesChanged       *spacesChangedConsumer
+	spacesChangedCancel context.CancelFunc
+
 	// backfillLimiter/backfillCtx bound and cancel backfill; see backfill.go.
 	// backfillLimiter caps how many Gallery Source Folders are backfilled
 	// concurrently (backfillParallel) so a burst of ADDs cannot turn into an
@@ -150,9 +156,10 @@ func (g *GalleryProvider) Start() error {
 
 	// build the prefix cache once at startup so ingestion can match events
 	// cheaply from the first message; ADD/REMOVE keep it current afterwards
-	// (see handleSourceFolderCrud). Re-resolving on spaces.changed - so a
-	// re-pointed Space is picked up without waiting for a folder edit - is
-	// ticket 09's job.
+	// (see handleSourceFolderCrud), and the spaces.changed consumer started
+	// below (see spaceschanged.go) keeps it current when a Space's
+	// resolution changes underneath a folder rather than the folder set
+	// itself changing.
 	if err := g.refreshPrefixCache(context.Background()); err != nil {
 		g.log.Error("failed to build initial gallery source folder prefix cache; ingestion will accept no events until it succeeds", "error", err)
 	}
@@ -164,6 +171,15 @@ func (g *GalleryProvider) Start() error {
 		g.log.Error("failed to start file-change ingestion; the gallery read model will not stay up to date", "error", err)
 	} else {
 		g.ingest = ingest
+	}
+
+	spacesChangedCtx, spacesChangedCancel := context.WithCancel(context.Background())
+	g.spacesChangedCancel = spacesChangedCancel
+	spacesChanged, err := g.startSpacesChangedConsumer(spacesChangedCtx)
+	if err != nil {
+		g.log.Error("failed to start spaces.changed consumer; the ingestion prefix cache will not invalidate on Space changes until restart", "error", err)
+	} else {
+		g.spacesChanged = spacesChanged
 	}
 
 	backfillCtx, backfillCancel := context.WithCancel(context.Background())
@@ -207,6 +223,14 @@ func (g *GalleryProvider) Stop() error {
 	if g.ingestCancel != nil {
 		g.ingestCancel()
 		g.ingestCancel = nil
+	}
+	if g.spacesChanged != nil {
+		g.spacesChanged.stop()
+		g.spacesChanged = nil
+	}
+	if g.spacesChangedCancel != nil {
+		g.spacesChangedCancel()
+		g.spacesChangedCancel = nil
 	}
 	if g.backfillCancel != nil {
 		g.backfillCancel()

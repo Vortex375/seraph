@@ -81,9 +81,11 @@ func (p prefix) contains(providerId string, candidatePath string) bool {
 // folder) happens when the cache is (re)built, never per event - that is the
 // whole point of caching it.
 //
-// Re-resolving on spaces.changed (so a re-pointed Space is picked up without
-// a restart) is ticket 09's job, not this one's; refresh() is the seam it
-// hangs off.
+// The cache is rebuilt on startup, on ADD (see handleSourceFolderCrud), and
+// on a relevant spaces.changed event (see spaceschanged.go) - so a Space
+// re-pointed at a different File Provider, one that becomes inaccessible, or
+// one that is deleted is all picked up without a restart. refresh() (see
+// refreshPrefixCache below) is the seam every one of those call sites shares.
 type prefixCache struct {
 	mu       sync.RWMutex
 	prefixes []prefix
