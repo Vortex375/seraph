@@ -237,6 +237,17 @@ func (g *GalleryProvider) runRescan(ctx context.Context, folderId primitive.Obje
 // live ingestion consumer (ingest.go) already handles without this file
 // needing to touch galleryPhotos directly.
 //
+// Readdir(-1) - the FULL listing - is load-bearing, not just convenient.
+// The File Provider only tags a FileInfoEvent with a `readdir` marker when
+// the call listed an entire directory (see handleReaddir's req.Count check),
+// and that marker is what lets file-indexer reconcile DISAPPEARANCES: on a
+// complete readdir it deletes every indexed child not present in the listing
+// and publishes a FileChangedEvent `deleted` for each (see
+// handleReaddirComplete), which gallery's live consumer turns into a
+// tombstone. So a rescan corrects the index in both directions - files that
+// appeared without an event and files that vanished without one. Switching
+// this to a paged/partial readdir would silently drop that half.
+//
 // This walks breadth-first-ish but really just depth-first via recursion;
 // order does not matter, because every entry is independent and idempotent
 // downstream. Concurrency is deliberately NOT fanned out across
@@ -321,6 +332,17 @@ func (g *GalleryProvider) walkDir(ctx context.Context, client fileprovider.Clien
 func (g *GalleryProvider) healPendingMetadata(ctx context.Context, p prefix) error {
 	filter := prefixFilter(p)
 	filter["metadataPending"] = true
+	// Tombstoned photos are deliberately excluded. markDeleted (ingest.go)
+	// sets deleted:true but leaves metadataPending alone, so a backfilled
+	// placeholder whose file was later deleted stays (deleted:true,
+	// metadataPending:true) forever - it would otherwise be picked up here
+	// and run through upsertPhoto, which unconditionally writes
+	// deleted:false. That is the same "stale data resurrects a live-deleted
+	// file" defect ticket 08's rework fixed in backfillUpsert by moving
+	// deleted into $setOnInsert, and it must not be reintroduced through a
+	// second door. Healing is for photos that are still present; a deleted
+	// one has no metadata worth curing.
+	filter["deleted"] = bson.M{"$ne": true}
 
 	cur, err := g.photos.Find(ctx, filter)
 	if err != nil {

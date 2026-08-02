@@ -32,6 +32,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"umbasa.net/seraph/events"
 	"umbasa.net/seraph/gallery/gallery"
@@ -68,6 +69,21 @@ type stubFileIndexer struct {
 	// no-op rescan on an already up to date folder still causes every entry
 	// to be re-Stat'd/re-Readdir'd even though nothing downstream changes.
 	fileInfoEventCount int
+
+	// dirEventCount counts only FileInfoEvents for DIRECTORIES, which is a
+	// direct, noise-free count of "how many times has a directory been
+	// listed by a walk". Nothing else in the system produces one: the File
+	// Provider publishes a FileInfoEvent from exactly two places, Readdir
+	// (server_file.go) and Stat (server.go), and gallery's own ingestion
+	// path only ever OpenFiles a photo - which is lazy client-side and
+	// Stats nothing (see fileprovider client.OpenFile). So every directory
+	// event observed here was caused by a rescan walk listing that
+	// directory's parent, and by nothing else.
+	//
+	// This is what makes TestRescanTwiceInQuickSuccessionRunsOneScan able to
+	// tell one walk from two: a second walk re-lists the folder root, which
+	// re-emits an event for every subdirectory under it.
+	dirEventCount int
 }
 
 type stubFileIndexerRecord struct {
@@ -108,6 +124,9 @@ func (s *stubFileIndexer) handle(ev events.FileInfoEvent) {
 	s.mu.Unlock()
 
 	if ev.IsDir {
+		s.mu.Lock()
+		s.dirEventCount++
+		s.mu.Unlock()
 		// gallery ingestion only ever cares about files - see
 		// ingestConsumer.handleMessage's IsDir check - so the real
 		// file-indexer would still publish a FileChangedEvent for a changed
@@ -154,6 +173,28 @@ func (s *stubFileIndexer) fileInfoEvents() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.fileInfoEventCount
+}
+
+func (s *stubFileIndexer) dirEvents() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.dirEventCount
+}
+
+// waitTight polls cond at 1ms, unlike waitForCondition's 50ms. Needed where
+// the test must react while a background walk is still in flight rather than
+// merely observe that it eventually happened - a 50ms sampling interval is a
+// large fraction of a walk and would make such a test needlessly racy.
+func waitTight(t *testing.T, cond func() bool, msg string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal(msg)
 }
 
 // rescan issues a RESCAN request for folderId, owned by userId.
@@ -292,10 +333,31 @@ func TestRescanOfUpToDateFolderChangesNothing(t *testing.T) {
 	assert.Equal(t, originalSeq, unchanged.Seq, "rescanning an up to date folder must not touch the existing document")
 }
 
+// rescanRaceSubdirs is how many subdirectories TestRescanTwiceInQuickSuccession
+// RunsOneScan puts under the folder root. It exists to make the first walk
+// take long enough that the second RESCAN provably lands while it is still in
+// flight: each subdirectory costs the walk an OpenFile + Readdir + Close round
+// trip through the File Provider, so a few hundred of them run to hundreds of
+// milliseconds, against the ~1ms it takes the test to fire the second request
+// once it has seen the first directory event.
+const rescanRaceSubdirs = 200
+
 // TestRescanTwiceInQuickSuccessionRunsOneScan covers: firing RESCAN twice
 // back to back for the same folder must not run two concurrent walks. The
 // second request observes the first one already in flight (RescanRunning is
 // already true) and does not start a second walk of its own.
+//
+// Asserting this needs an observable that can COUNT walks, because RESCAN's
+// reply is deliberately identical either way (it reports RescanRunning=true
+// whether this call started the walk or merely found one already running).
+// The stub file-indexer's directory-event count is that observable: a walk
+// lists the folder root exactly once, emitting one FileInfoEvent per
+// subdirectory under it, so one walk means rescanRaceSubdirs directory events
+// and two walks means twice that. Nothing else in the system emits directory
+// events - see stubFileIndexer.dirEventCount.
+//
+// Without the guard in startRescan this test fails with exactly 2x the
+// expected count, which is what makes it worth its runtime.
 func TestRescanTwiceInQuickSuccessionRunsOneScan(t *testing.T) {
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
@@ -304,7 +366,7 @@ func TestRescanTwiceInQuickSuccessionRunsOneScan(t *testing.T) {
 	clearPhotos(t, db)
 
 	dir := startFileProvider(t, "physical-photos")
-	newStubFileIndexer(t, nc)
+	stub := newStubFileIndexer(t, nc)
 
 	res := crud(t, nc, &gallery.GallerySourceFolderCrudRequest{
 		Operation:       gallery.GallerySourceFolderOperationAdd,
@@ -315,23 +377,38 @@ func TestRescanTwiceInQuickSuccessionRunsOneScan(t *testing.T) {
 	require.Equal(t, "", res.Error)
 	folderId := res.SourceFolder[0].Id
 
-	// give the walk something to take a moment over
-	for i := 0; i < 5; i++ {
+	// a wide, shallow tree: one directory per photo, so the walk spends most
+	// of its time on directory round trips rather than on ingestion
+	for i := 0; i < rescanRaceSubdirs; i++ {
 		data := buildPNG(t, 4, 4)
-		writeFixture(t, dir, fmt.Sprintf("/mounted/photos/holidays/pic%d.png", i), data)
+		writeFixture(t, dir, fmt.Sprintf("/mounted/photos/holidays/sub%03d/pic.png", i), data)
 	}
 
 	first := rescan(t, nc, "pino", folderId.Hex())
 	require.Equal(t, "", first.Error)
 	require.True(t, first.SourceFolder[0].RescanRunning)
 
+	// the first walk has listed the root and is now descending into the
+	// subdirectories - it is unambiguously in flight
+	waitTight(t, func() bool {
+		return stub.dirEvents() > 0
+	}, "the first rescan never started walking")
+
 	second := rescan(t, nc, "pino", folderId.Hex())
 	require.Equal(t, "", second.Error)
-	// still just one folder document, still reported running - RESCAN is
-	// idempotent while a scan is already in flight, not an error
+	// still reported running - RESCAN is idempotent while a scan is already
+	// in flight, not an error
 	require.True(t, second.SourceFolder[0].RescanRunning)
 
 	waitForRescanFinished(t, db, folderId)
+	// settle, so a wrongly-started second walk has time to show up
+	time.Sleep(500 * time.Millisecond)
+
+	assert.Equal(t, rescanRaceSubdirs, stub.dirEvents(),
+		"the folder root was listed more than once: a second concurrent walk was started")
+
+	// and the result is still one photo per subdirectory, not two of each
+	waitForPhotoCount(t, db, "physical-photos", rescanRaceSubdirs)
 
 	// exactly one gallerySourceFolders document throughout - RESCAN never
 	// creates state of its own per request
@@ -412,6 +489,26 @@ func TestRescanIsScopedToOwningUser(t *testing.T) {
 	assert.NotEqual(t, "", stolen.Error)
 }
 
+// primeRescanBaseline runs one full rescan of folderId and waits for it to
+// finish, so that afterwards the stub file-indexer's "known" state matches
+// what is on disk exactly - the same state the real file-indexer would hold
+// once it has indexed a folder.
+//
+// Every test below that wants to isolate RESCAN's HEALING pass
+// (healPendingMetadata) from its WALK needs this. Without it, the walk's very
+// first FileInfoEvent for a file is "new" to the indexer, which publishes a
+// FileChangedEvent, which ingest.go's upsertPhoto happily processes - so a
+// test asserting "the placeholder got healed" would pass even if
+// healPendingMetadata did nothing at all. After priming, a second walk over
+// unchanged bytes produces no FileChangedEvent whatsoever, leaving the
+// healing pass as the only thing that can possibly touch the document.
+func primeRescanBaseline(t *testing.T, nc *nats.Conn, db *mongo.Database, userId string, folderId primitive.ObjectID) {
+	t.Helper()
+	res := rescan(t, nc, userId, folderId.Hex())
+	require.Equal(t, "", res.Error)
+	waitForRescanFinished(t, db, folderId)
+}
+
 // TestRescanHealsMetadataPendingPhotos covers ticket 08's gap: a photo
 // backfilled from the File Index (MetadataPending, rung-two Capture Date, no
 // dimensions) whose bytes are UNTOUCHED on disk never receives a
@@ -419,6 +516,11 @@ func TestRescanIsScopedToOwningUser(t *testing.T) {
 // new/changed entry (see stubFileIndexer's docs) - so RESCAN's healing pass
 // (healPendingMetadata) is what is actually responsible for curing it, not
 // the walk.
+//
+// The baseline rescan (see primeRescanBaseline) is what makes that claim
+// testable rather than merely asserted: by the time the placeholder is
+// written, the indexer already knows this file, so the second rescan's walk
+// is provably silent and only the healing pass remains.
 func TestRescanHealsMetadataPendingPhotos(t *testing.T) {
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
@@ -431,10 +533,6 @@ func TestRescanHealsMetadataPendingPhotos(t *testing.T) {
 
 	physicalPath := "/mounted/photos/holidays/pending.jpg"
 	data := buildJPEGWithExif(t, 20, 15, "2016:02:02 02:02:02", 3)
-	// the file already exists on disk with its FINAL bytes before the folder
-	// is ever added - so its FileInfoEvent's (size, modTime) never changes
-	// across the rescan, and the stub file-indexer (like the real one) never
-	// emits a FileChangedEvent for it
 	writeFixture(t, dir, physicalPath, data)
 
 	res := crud(t, nc, &gallery.GallerySourceFolderCrudRequest{
@@ -446,26 +544,23 @@ func TestRescanHealsMetadataPendingPhotos(t *testing.T) {
 	require.Equal(t, "", res.Error)
 	folderId := res.SourceFolder[0].Id
 
-	// simulate backfill having already placed a MetadataPending placeholder
-	// for this file, as it would from a stale File Index entry - bypassing
-	// backfill itself (which needs a stubbed File Index) since this test is
-	// about RESCAN's healing pass, not backfill
-	_, err := db.Collection("galleryPhotos").InsertOne(context.Background(), bson.M{
-		"providerId":       "physical-photos",
-		"path":             physicalPath,
-		"capturedAt":       time.Date(2010, 1, 1, 0, 0, 0, 0, time.UTC).Unix(),
-		"capturedAtSource": gallery.CaptureDateSourceModTime,
-		"size":             int64(len(data)),
-		"mime":             "image/jpeg",
-		"deleted":          false,
-		"indexedAt":        time.Now().Unix(),
-		"width":            0,
-		"height":           0,
-		"orientation":      0,
-		"unsupported":      "",
-		"metadataPending":  true,
-		"seq":              int64(1),
-	})
+	primeRescanBaseline(t, nc, db, "pino", folderId)
+	waitForPhoto(t, db, "physical-photos", physicalPath)
+
+	// Overwrite the document with exactly what backfill would have left
+	// behind for a stale File Index entry: rung-two Capture Date, no
+	// dimensions, MetadataPending. Bypasses backfill itself (which needs a
+	// stubbed File Index) since this test is about RESCAN's healing pass.
+	_, err := db.Collection("galleryPhotos").UpdateOne(context.Background(),
+		bson.M{"providerId": "physical-photos", "path": physicalPath},
+		bson.M{"$set": bson.M{
+			"capturedAt":       time.Date(2010, 1, 1, 0, 0, 0, 0, time.UTC).Unix(),
+			"capturedAtSource": gallery.CaptureDateSourceModTime,
+			"width":            0,
+			"height":           0,
+			"orientation":      0,
+			"metadataPending":  true,
+		}})
 	require.NoError(t, err)
 
 	rescanRes := rescan(t, nc, "pino", folderId.Hex())
@@ -484,4 +579,72 @@ func TestRescanHealsMetadataPendingPhotos(t *testing.T) {
 	assert.Equal(t, 3, healed.Orientation)
 
 	waitForRescanFinished(t, db, folderId)
+}
+
+// TestRescanDoesNotResurrectADeletedPendingPhoto guards the one way the
+// healing pass could have reintroduced the defect ticket 08's rework fixed in
+// backfillUpsert: markDeleted (ingest.go) sets deleted:true but leaves
+// metadataPending alone, so a backfilled placeholder whose file was later
+// deleted sits in the read model as (deleted:true, metadataPending:true)
+// forever. If healPendingMetadata selected on metadataPending alone it would
+// pick that document up and run it through upsertPhoto, which unconditionally
+// writes deleted:false - resurrecting a tombstoned photo with no live event
+// authorising it.
+//
+// The file is deliberately left readable on disk, so extraction WOULD succeed:
+// the guard, not an incidental "the file is gone" failure, is what has to keep
+// the tombstone intact.
+func TestRescanDoesNotResurrectADeletedPendingPhoto(t *testing.T) {
+	nc, db := startGalleryProvider(t, map[string][]string{
+		"pino": {"photos"},
+	})
+	clearSourceFolders(t, db)
+	clearPhotos(t, db)
+
+	dir := startFileProvider(t, "physical-photos")
+	newStubFileIndexer(t, nc)
+
+	physicalPath := "/mounted/photos/holidays/tombstoned.jpg"
+	data := buildJPEGWithExif(t, 10, 10, "2019:03:03 03:03:03", 0)
+	writeFixture(t, dir, physicalPath, data)
+
+	res := crud(t, nc, &gallery.GallerySourceFolderCrudRequest{
+		Operation:       gallery.GallerySourceFolderOperationAdd,
+		UserId:          "pino",
+		SpaceProviderId: "photos",
+		Path:            "/holidays",
+	})
+	require.Equal(t, "", res.Error)
+	folderId := res.SourceFolder[0].Id
+
+	primeRescanBaseline(t, nc, db, "pino", folderId)
+	waitForPhoto(t, db, "physical-photos", physicalPath)
+
+	// the state markDeleted leaves behind on a never-healed backfill
+	// placeholder: tombstoned, but still flagged MetadataPending
+	_, err := db.Collection("galleryPhotos").UpdateOne(context.Background(),
+		bson.M{"providerId": "physical-photos", "path": physicalPath},
+		bson.M{"$set": bson.M{"deleted": true, "metadataPending": true}})
+	require.NoError(t, err)
+
+	before := findPhoto(t, db, "physical-photos", physicalPath)
+	require.NotNil(t, before)
+
+	rescanRes := rescan(t, nc, "pino", folderId.Hex())
+	require.Equal(t, "", rescanRes.Error)
+	waitForRescanFinished(t, db, folderId)
+
+	// settle, so a wrongly-issued heal has time to land
+	time.Sleep(300 * time.Millisecond)
+
+	after := findPhoto(t, db, "physical-photos", physicalPath)
+	require.NotNil(t, after)
+	assert.True(t, after.Deleted, "RESCAN must not resurrect a tombstoned photo")
+	assert.True(t, after.MetadataPending, "a tombstoned photo has no metadata worth healing")
+	assert.Equal(t, before.Seq, after.Seq, "RESCAN must not have written to the tombstoned document at all")
+
+	// and it stays invisible in the listing
+	listRes := list(t, nc, &gallery.GalleryListRequest{UserId: "pino"})
+	require.Equal(t, "", listRes.Error)
+	assert.Len(t, listRes.Items, 0)
 }
