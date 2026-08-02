@@ -36,8 +36,8 @@ dependencies:
   google_fonts: ^8.1.0
   url_launcher: ^6.3.1
   drift: ^2.34.3
-  sqlite3_flutter_libs: ^0.6.0+eol
   path: ^1.9.1
+  sqlite3: ^3.5.0
 
 dev_dependencies:
   flutter_test:
