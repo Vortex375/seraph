@@ -536,3 +536,185 @@ func TestBackfillNeverContactsFileProvider(t *testing.T) {
 	assert.Equal(t, 0, photo.Width)
 	assert.Equal(t, 0, photo.Height)
 }
+
+// TestBackfillDoesNotDowngradeALiveHealedItem covers the invariant that
+// backfill data must never overwrite better data that is already present.
+//
+// Backfill can only ever produce rung-two (modification time) Capture Dates
+// and zero dimensions, so once a live event has healed a document with real
+// EXIF, any subsequent backfill pass touching the same physical key must
+// leave it completely alone. Getting this wrong is uniquely nasty because it
+// is invisible: the photo keeps metadataPending false while silently sorting
+// to its modification-time position forever, which is precisely the
+// "modification time is not an acceptable ordering key" failure the Capture
+// Date chain exists to prevent.
+//
+// Both routes that can re-touch an already-healed key are covered:
+// (a) a restart resuming a backfill whose earlier page was already healed,
+// and (b) a nested folder's own backfill re-walking a file an outer folder
+// already covered.
+func TestBackfillDoesNotDowngradeALiveHealedItem(t *testing.T) {
+	exifCapturedAt := time.Date(2007, 8, 9, 10, 11, 12, 0, time.UTC).Unix()
+	// a deliberately much LATER modification time, so a downgrade moves the
+	// photo to a visibly wrong position rather than being indistinguishable
+	backfillModTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
+
+	// healLive writes an EXIF fixture through the File Provider and publishes
+	// a live "created" event for it, waiting until the read model shows the
+	// document healed to a real EXIF Capture Date.
+	healLive := func(t *testing.T, nc *nats.Conn, db *mongo.Database, dir string, physicalPath string) {
+		t.Helper()
+		data := buildJPEGWithExif(t, 12, 8, "2007:08:09 10:11:12", 1)
+		writeFixture(t, dir, physicalPath, data)
+		publishFileChanged(t, nc, "physical-photos", physicalPath, events.FileChangedEventCreated, int64(len(data)), backfillModTime, "image/jpeg")
+
+		waitForCondition(t, func() bool {
+			p := findPhoto(t, db, "physical-photos", physicalPath)
+			return p != nil && p.CapturedAtSource == gallery.CaptureDateSourceExif
+		}, "the live event never healed the backfilled placeholder to an EXIF Capture Date")
+	}
+
+	// assertStillHealed is the actual regression assertion, shared by both
+	// sub-tests: the document must look exactly as the live event left it.
+	assertStillHealed := func(t *testing.T, db *mongo.Database, physicalPath string) {
+		t.Helper()
+		p := findPhoto(t, db, "physical-photos", physicalPath)
+		require.NotNil(t, p)
+		assert.Equal(t, gallery.CaptureDateSourceExif, p.CapturedAtSource,
+			"backfill downgraded a live-healed item back to modification time")
+		assert.Equal(t, exifCapturedAt, p.CapturedAt,
+			"backfill overwrote a real EXIF Capture Date with the File Index modification time")
+		assert.False(t, p.MetadataPending)
+		// the rest of the live extraction must survive untouched too
+		assert.Equal(t, 12, p.Width)
+		assert.Equal(t, 8, p.Height)
+	}
+
+	t.Run("resumed backfill re-walking an already-healed page", func(t *testing.T) {
+		nc, db := startGalleryProvider(t, map[string][]string{
+			"pino": {"photos"},
+		})
+		clearSourceFolders(t, db)
+		clearPhotos(t, db)
+
+		dir := startFileProvider(t, "physical-photos")
+
+		physicalPath := "/mounted/photos/holidays/healed.jpg"
+		stub := newStubFileIndex(t, nc, 1)
+		stub.set("physical-photos", "/mounted/photos/holidays", withProvider("physical-photos", []events.FileIndexListEntry{
+			fileEntry(physicalPath, 999, backfillModTime, "image/jpeg"),
+			fileEntry("/mounted/photos/holidays/other.jpg", 1, backfillModTime, "image/jpeg"),
+		}))
+
+		res := crud(t, nc, &gallery.GallerySourceFolderCrudRequest{
+			Operation:       gallery.GallerySourceFolderOperationAdd,
+			UserId:          "pino",
+			SpaceProviderId: "photos",
+			Path:            "/holidays",
+		})
+		require.Equal(t, "", res.Error)
+		folderId := res.SourceFolder[0].Id
+
+		waitForPhotoCount(t, db, "physical-photos", 2)
+
+		// a live event heals the first page's file with real EXIF
+		healLive(t, nc, db, dir, physicalPath)
+
+		// now simulate a restart that resumes this folder's backfill from the
+		// very beginning - the worst case, since it guarantees the healed key
+		// is walked again
+		_, err := db.Collection("gallerySourceFolders").UpdateByID(context.Background(), folderId, bson.M{
+			"$set": bson.M{"backfillDone": false, "backfillCursor": ""},
+		})
+		require.NoError(t, err)
+
+		before := stub.requestCount()
+
+		provider, resumeNc, _ := getGalleryProvider(t)
+		require.NoError(t, provider.Start())
+		t.Cleanup(func() {
+			provider.Stop()
+			resumeNc.Close()
+		})
+		require.NoError(t, resumeNc.Flush())
+
+		// wait until the resumed backfill has actually re-walked every page,
+		// so the assertion below is about a completed re-pass and not a race
+		waitForCondition(t, func() bool {
+			return stub.requestCount() >= before+2
+		}, "the resumed backfill never re-walked the healed page")
+		waitForCondition(t, func() bool {
+			var f gallery.GallerySourceFolder
+			err := db.Collection("gallerySourceFolders").FindOne(context.Background(), bson.M{"_id": folderId}).Decode(&f)
+			require.NoError(t, err)
+			return f.BackfillDone
+		}, "the resumed backfill never ran to completion")
+
+		assertStillHealed(t, db, physicalPath)
+	})
+
+	t.Run("nested folder backfill re-walking an already-healed file", func(t *testing.T) {
+		nc, db := startGalleryProvider(t, map[string][]string{
+			"pino": {"photos"},
+		})
+		clearSourceFolders(t, db)
+		clearPhotos(t, db)
+
+		dir := startFileProvider(t, "physical-photos")
+
+		physicalPath := "/mounted/photos/holidays/nested/shared.jpg"
+		stub := newStubFileIndex(t, nc, 0)
+		stub.set("physical-photos", "/mounted/photos/holidays", withProvider("physical-photos", []events.FileIndexListEntry{
+			fileEntry(physicalPath, 999, backfillModTime, "image/jpeg"),
+		}))
+		stub.set("physical-photos", "/mounted/photos/holidays/nested", withProvider("physical-photos", []events.FileIndexListEntry{
+			fileEntry(physicalPath, 999, backfillModTime, "image/jpeg"),
+		}))
+
+		outer := crud(t, nc, &gallery.GallerySourceFolderCrudRequest{
+			Operation:       gallery.GallerySourceFolderOperationAdd,
+			UserId:          "pino",
+			SpaceProviderId: "photos",
+			Path:            "/holidays",
+		})
+		require.Equal(t, "", outer.Error)
+		waitForPhotoCount(t, db, "physical-photos", 1)
+
+		// a live event heals the shared file with real EXIF
+		healLive(t, nc, db, dir, physicalPath)
+
+		// adding the nested folder backfills the very same physical file
+		// again, through a completely separate Gallery Source Folder with its
+		// own cursor - nothing about backfill's own paging can protect this
+		// case, so the upsert itself has to
+		before := stub.requestCount()
+		nested := crud(t, nc, &gallery.GallerySourceFolderCrudRequest{
+			Operation:       gallery.GallerySourceFolderOperationAdd,
+			UserId:          "pino",
+			SpaceProviderId: "photos",
+			Path:            "/holidays/nested",
+		})
+		require.Equal(t, "", nested.Error)
+
+		nestedId := nested.SourceFolder[0].Id
+		waitForCondition(t, func() bool {
+			return stub.requestCount() > before
+		}, "the nested folder's backfill never issued its File Index request")
+		waitForCondition(t, func() bool {
+			var f gallery.GallerySourceFolder
+			err := db.Collection("gallerySourceFolders").FindOne(context.Background(), bson.M{"_id": nestedId}).Decode(&f)
+			require.NoError(t, err)
+			return f.BackfillDone
+		}, "the nested folder's backfill never ran to completion")
+
+		assertStillHealed(t, db, physicalPath)
+
+		// and still exactly one document, as the nested-folder test asserts
+		count, err := db.Collection("galleryPhotos").CountDocuments(context.Background(), bson.M{
+			"providerId": "physical-photos",
+			"path":       physicalPath,
+		})
+		require.NoError(t, err)
+		assert.Equal(t, int64(1), count)
+	})
+}

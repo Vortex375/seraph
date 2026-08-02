@@ -85,6 +85,14 @@ const backfillReplyTimeout = 30 * time.Second
 // because it re-introduces exactly the File-Provider-reading cost this
 // ticket exists to defer.
 //
+// Healing is strictly one-way. Backfill never writes over a document that
+// already exists (see backfillUpsert - every field is $setOnInsert), so once
+// a live event has upgraded an item to real EXIF, no amount of later
+// backfilling - a resume, a nested folder, a re-ADD - can drag it back down.
+// Without that property MetadataPending would be actively misleading: an
+// item could hold a modification-time Capture Date while reporting itself
+// fully extracted.
+//
 // This is a deliberate choice among the options the ticket raised, not a
 // default: it keeps ADD instant and backfill cheap, at the stated cost of
 // backfilled items being lower fidelity until a live event heals them.
@@ -173,13 +181,12 @@ func (g *GalleryProvider) runBackfill(ctx context.Context, folderId primitive.Ob
 		// Already finished by a previous run - e.g. startBackfill was called
 		// again for an idempotent re-ADD of an already-backfilled folder, or
 		// resumeIncompleteBackfills raced a concurrently-finishing backfill
-		// at startup. Re-running would not be incorrect (every page is an
-		// upsert), but it would needlessly re-walk the whole File Index
-		// prefix and, per the metadata tension resolution above, downgrade
-		// any since-healed MetadataPending documents back to pending. Since
-		// backfill tracks its own cursor specifically to avoid reprocessing
-		// entries it has already seen, honouring BackfillDone here is that
-		// same principle applied to "already seen all of it".
+		// at startup. Re-running would be harmless (backfillUpsert only ever
+		// inserts, never overwrites), but it would pointlessly re-walk the
+		// whole File Index prefix, so skip it. This is an efficiency guard
+		// only - correctness under re-walking is backfillUpsert's job, not
+		// this check's, because a nested folder re-walking a shared file is
+		// a different document with its own BackfillDone flag.
 		return
 	}
 
@@ -258,25 +265,42 @@ func (g *GalleryProvider) saveBackfillProgress(ctx context.Context, folderId pri
 // physical-key upsert, using only the fields the entry carries - no File
 // Provider read. See the metadata tension docs above.
 //
-// It deliberately does NOT use $setOnInsert for the metadata fields the way
-// it might seem natural to: a plain $set is correct here for the same reason
-// it is correct in upsertPhoto - the important invariant is that a LIVE
-// event's $set (which always includes metadataPending: false) is never
-// clobbered by a same-or-later-arriving backfill page for the same key. That
-// is guaranteed here not by conditional writes but by ordering: backfill
-// only ever writes metadataPending: true, and only a live event ever writes
-// metadataPending: false, so whichever write lands last, a document that has
-// ever been touched by a live event stays healed. The one case this does
-// allow - backfill re-processing (e.g. after a resume) a key a live event
-// already healed - downgrades it back to pending, which is why backfill
-// tracks its own cursor and does not needlessly reprocess entries it has
-// already seen; see TestBackfillDoesNotDowngradeALiveHealedItem.
+// Every field goes in $setOnInsert, making this strictly "insert this photo
+// if the read model does not have it yet, otherwise leave it completely
+// alone". That is not an incidental choice, it is the whole correctness
+// argument: backfill can only ever produce the WEAKEST version of a document
+// (rung-two modification-time Capture Date, zero dimensions), so it has
+// nothing to contribute to a key that already exists and must never write
+// over one.
+//
+// A plain $set here would be a silent data-loss bug rather than a
+// pessimization. Both a resumed backfill and a nested folder's independent
+// backfill can re-walk a key a live event already healed with real EXIF; a
+// $set would drag capturedAt back to the file's modification time while
+// leaving metadataPending false, so the photo would sort to its upload date
+// forever with nothing flagged to reveal it - exactly the failure the
+// "modification time is not an acceptable ordering key" rule exists to
+// prevent, and exactly what MetadataPending is supposed to make visible.
+// Neither backfill's own cursor nor the BackfillDone check can prevent this,
+// since a nested folder is a different document with a different cursor, so
+// the upsert itself has to. See
+// TestBackfillDoesNotDowngradeALiveHealedItem, which covers both routes.
+//
+// "deleted" is included for the same reason: a live "deleted" event marks
+// the document rather than removing it, so writing deleted:false
+// unconditionally would let a stale File Index page resurrect a file the
+// user has already deleted.
+//
+// The cost of this choice is that a still-pending document never picks up a
+// changed size/mime from a later backfill pass. That is acceptable and
+// self-correcting: anything that actually changes the file emits a live
+// event, and the live path overwrites unconditionally (see upsertPhoto).
 func (g *GalleryProvider) backfillUpsert(ctx context.Context, entry events.FileIndexListEntry) error {
 	capturedAt, capturedAtSource := backfillCaptureDate(entry)
 
 	filter := bson.M{"providerId": entry.ProviderId, "path": entry.Path}
 	update := bson.M{
-		"$set": bson.M{
+		"$setOnInsert": bson.M{
 			"providerId":       entry.ProviderId,
 			"path":             entry.Path,
 			"capturedAt":       capturedAt,
@@ -284,14 +308,12 @@ func (g *GalleryProvider) backfillUpsert(ctx context.Context, entry events.FileI
 			"size":             entry.Size,
 			"mime":             entry.Mime,
 			"deleted":          false,
-		},
-		"$setOnInsert": bson.M{
-			"indexedAt":       time.Now().Unix(),
-			"width":           0,
-			"height":          0,
-			"orientation":     0,
-			"unsupported":     "",
-			"metadataPending": true,
+			"indexedAt":        time.Now().Unix(),
+			"width":            0,
+			"height":           0,
+			"orientation":      0,
+			"unsupported":      "",
+			"metadataPending":  true,
 		},
 	}
 
