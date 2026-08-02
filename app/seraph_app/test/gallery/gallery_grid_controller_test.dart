@@ -94,6 +94,35 @@ void main() {
       expect(controller.itemAt(0), isNotNull);
     });
 
+    test('opening does not wait for the delta feed', () async {
+      await populateMirror(db, count: 4);
+
+      // A server that never answers - the worst case of the first launch
+      // after an update, when the whole gallery could look like it needs
+      // re-fetching. The view must be painting from the mirror long before
+      // this resolves.
+      final dio = Dio();
+      dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+        // deliberately never calls the handler
+      }));
+      final sync = GallerySyncService(
+        FakeSettingsController(),
+        FakeLoginController(),
+        mirror,
+        dio: dio,
+      );
+
+      final controller =
+          GalleryGridController(mirror: mirror, syncService: sync);
+      await controller.open().timeout(const Duration(seconds: 5));
+
+      expect(controller.isLoading.value, isFalse);
+      expect(controller.totalCount.value, 4);
+      expect(controller.itemAt(0), isNotNull);
+      expect(controller.isSyncing.value, isTrue,
+          reason: 'the poll is still out there; the gallery did not wait');
+    });
+
     test('a page arriving does not change the item count', () async {
       await populateMirror(db, count: 500);
 
