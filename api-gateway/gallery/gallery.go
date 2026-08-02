@@ -172,6 +172,48 @@ func (h *galleryHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup, publi
 		ctx.JSON(http.StatusOK, res)
 	})
 
+	apiGroup.GET("gallery/delta", func(ctx *gin.Context) {
+		since := int64(0)
+		if s := ctx.Query("since"); s != "" {
+			parsed, err := strconv.ParseInt(s, 10, 64)
+			if err != nil {
+				ctx.AbortWithError(http.StatusBadRequest, errors.New("invalid since"))
+				return
+			}
+			since = parsed
+		}
+
+		pageSize := 0
+		if ps := ctx.Query("pageSize"); ps != "" {
+			parsed, err := strconv.Atoi(ps)
+			if err != nil {
+				ctx.AbortWithError(http.StatusBadRequest, errors.New("invalid pageSize"))
+				return
+			}
+			pageSize = parsed
+		}
+
+		req := gallery.GalleryDeltaRequest{
+			UserId:   h.auth.GetUserId(ctx.Request.Context()),
+			Since:    since,
+			PageSize: pageSize,
+			Cursor:   ctx.Query("cursor"),
+		}
+
+		res := gallery.GalleryDeltaResponse{}
+		if err := messaging.Request(ctx.Request.Context(), h.nc, gallery.GalleryDeltaTopic, messaging.Json(&req), messaging.Json(&res)); err != nil {
+			ctx.AbortWithError(http.StatusInternalServerError, err)
+			return
+		}
+
+		if res.Error != "" {
+			ctx.AbortWithError(http.StatusInternalServerError, errors.New(res.Error))
+			return
+		}
+
+		ctx.JSON(http.StatusOK, res)
+	})
+
 	apiGroup.DELETE("gallery/source-folders/:sourceFolderId", func(ctx *gin.Context) {
 		sourceFolderId := ctx.Param("sourceFolderId")
 

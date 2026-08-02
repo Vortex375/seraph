@@ -143,3 +143,110 @@ type GalleryListResponse struct {
 	NextCursor string `json:"nextCursor"`
 	HasMore    bool   `json:"hasMore"`
 }
+
+// GalleryDeltaTopic is the NATS request/reply subject for
+// [GalleryDeltaRequest], following the same plain request/reply shape as
+// [GalleryListTopic].
+const GalleryDeltaTopic = "seraph.gallery.delta"
+
+// DefaultDeltaPageSize/MaxDeltaPageSize mirror DefaultListPageSize/
+// MaxListPageSize: a page bound the request can lower but never raise past
+// the max, so a single poll can never force the service to walk or return an
+// unbounded number of changes.
+const DefaultDeltaPageSize = 500
+const MaxDeltaPageSize = 2000
+
+// GalleryDeltaRequest asks for one page of everything that has changed in
+// the requesting user's gallery since Since.
+//
+// UserId is the sole access-control input, exactly like GalleryListRequest:
+// the feed is scoped to this user's own Gallery Source Folders, resolved for
+// this user at request time, so it inherits the listing's access control
+// rather than implementing a second one - a folder whose access was revoked
+// simply stops resolving and its photos stop being reachable by the feed,
+// the same way they stop appearing in the listing.
+type GalleryDeltaRequest struct {
+	UserId string `json:"userId"`
+
+	// Since is the last sequence value the client has already seen (see
+	// GalleryDeltaItem.Seq / GalleryDeltaResponse.NextSince). Zero means "the
+	// beginning" - the client has seen nothing yet, so the response starts
+	// cold-syncing the user's entire current gallery from the delta feed
+	// alone, tombstones included (there are none yet for a client that has
+	// seen nothing).
+	Since int64 `json:"since"`
+
+	// PageSize is the maximum number of items to return. If <= 0,
+	// DefaultDeltaPageSize is used; values above MaxDeltaPageSize are capped.
+	PageSize int `json:"pageSize"`
+
+	// Cursor continues a page in progress. Empty for the first request at a
+	// given Since. See GalleryDeltaResponse.NextCursor for what it encodes
+	// and why it is safe across an app restart.
+	Cursor string `json:"cursor"`
+}
+
+// GalleryDeltaItem is one changed row in the delta feed: either the current
+// state of a photo (Tombstone false) or notice that it has been removed
+// (Tombstone true). A mirror applies a non-tombstone item as an upsert and a
+// tombstone as a delete, keyed on (ProviderId, Path) - the same SPACE
+// coordinates the listing API returns, so a mirror keyed off listing results
+// and a mirror keyed off delta results agree on identity.
+type GalleryDeltaItem struct {
+	// ProviderId is the SPACE provider id, exactly like GalleryListItem.
+	ProviderId string `json:"providerId"`
+	// Path is the SPACE path, exactly like GalleryListItem.
+	Path string `json:"path"`
+
+	// Seq is this item's current delta sequence: the value the client has
+	// "seen" this item up to once it has processed this row. It is safe (and
+	// expected) for a client to persist the maximum Seq it has seen across
+	// every item in every page and pass it back as the next request's Since.
+	Seq int64 `json:"seq"`
+
+	// Tombstone is true when this row represents a removal: the photo was
+	// deleted (or its physical key otherwise stopped being visible) and a
+	// mirror holding it locally should remove it. Every other field below is
+	// zero-valued on a tombstone row - there is no "current state" for a
+	// removed item beyond its identity and its Seq.
+	Tombstone bool `json:"tombstone"`
+
+	CapturedAt       int64  `json:"capturedAt"`
+	CapturedAtSource string `json:"capturedAtSource"`
+
+	Width       int `json:"width"`
+	Height      int `json:"height"`
+	Orientation int `json:"orientation"`
+
+	Size int64  `json:"size"`
+	Mime string `json:"mime"`
+
+	Unsupported     string `json:"unsupported"`
+	MetadataPending bool   `json:"metadataPending"`
+}
+
+// GalleryDeltaResponse carries one page of delta feed results.
+type GalleryDeltaResponse struct {
+	Error string `json:"error"`
+
+	Items []GalleryDeltaItem `json:"items"`
+
+	// NextCursor continues the CURRENT page scan when HasMore is true - pass
+	// it back as GalleryDeltaRequest.Cursor together with the SAME Since used
+	// to obtain it. It encodes a position in the (seq) keyset, not an offset,
+	// so it is safe to persist to disk and resume from after an app restart:
+	// resuming from a stored cursor can neither skip a changed item nor
+	// re-deliver one already applied, independent of how long the gap until
+	// resumption is or what changed on the server in the meantime.
+	NextCursor string `json:"nextCursor"`
+	HasMore    bool   `json:"hasMore"`
+
+	// NextSince is the sequence value to pass as the NEXT poll's Since once
+	// this page (and every prior page of the same poll, if any) has been
+	// applied - i.e. once HasMore is false. It is the maximum Seq observed
+	// across every item examined during this poll (including rows skipped
+	// because they fell outside the user's resolved folders - see delta.go),
+	// so resuming from it is guaranteed not to miss a change that arrived
+	// after this poll started scanning but was assigned a Seq at or below it.
+	NextSince int64 `json:"nextSince"`
+}

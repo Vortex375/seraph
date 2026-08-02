@@ -69,11 +69,14 @@ type GalleryProvider struct {
 	js      jetstream.JetStream
 	logging *logging.Logger
 
-	sourceFolders *mongo.Collection
-	photos        *mongo.Collection
+	sourceFolders     *mongo.Collection
+	photos            *mongo.Collection
+	sequenceCounters  *mongo.Collection
+	pendingTombstones *mongo.Collection
 
-	crudSub *nats.Subscription
-	listSub *nats.Subscription
+	crudSub  *nats.Subscription
+	listSub  *nats.Subscription
+	deltaSub *nats.Subscription
 
 	// prefixCache and the durable file-change consumer implement event
 	// ingestion; see ingest.go.
@@ -104,15 +107,17 @@ type GalleryProvider struct {
 func New(p Params) (Result, error) {
 	return Result{
 		GalleryProvider: &GalleryProvider{
-			log:             p.Logger.GetLogger("gallery"),
-			tracer:          p.Tracing.TracerProvider.Tracer("gallery"),
-			nc:              p.Nc,
-			js:              p.Js,
-			logging:         p.Logger,
-			sourceFolders:   p.Db.Collection("gallerySourceFolders"),
-			photos:          p.Db.Collection("galleryPhotos"),
-			prefixCache:     newPrefixCache(),
-			backfillLimiter: util.NewLimiter(backfillParallel),
+			log:               p.Logger.GetLogger("gallery"),
+			tracer:            p.Tracing.TracerProvider.Tracer("gallery"),
+			nc:                p.Nc,
+			js:                p.Js,
+			logging:           p.Logger,
+			sourceFolders:     p.Db.Collection("gallerySourceFolders"),
+			photos:            p.Db.Collection("galleryPhotos"),
+			sequenceCounters:  p.Db.Collection("gallerySequenceCounters"),
+			pendingTombstones: p.Db.Collection("galleryPendingTombstones"),
+			prefixCache:       newPrefixCache(),
+			backfillLimiter:   util.NewLimiter(backfillParallel),
 		},
 	}, nil
 }
@@ -153,6 +158,24 @@ func (g *GalleryProvider) Start() error {
 		return fmt.Errorf("while starting GalleryProvider: %w", err)
 	}
 	g.listSub = listSub
+
+	deltaSub, err := g.nc.QueueSubscribe(GalleryDeltaTopic, GalleryDeltaTopic, func(msg *nats.Msg) {
+		ctx := messaging.ExtractTraceContext(context.Background(), msg)
+		ctx, span := g.tracer.Start(ctx, "handleGalleryDelta")
+		defer span.End()
+
+		req := GalleryDeltaRequest{}
+		json.Unmarshal(msg.Data, &req)
+
+		resp := g.deltaFeed(ctx, &req)
+
+		data, _ := json.Marshal(resp)
+		msg.Respond(data)
+	})
+	if err != nil {
+		return fmt.Errorf("while starting GalleryProvider: %w", err)
+	}
+	g.deltaSub = deltaSub
 
 	// build the prefix cache once at startup so ingestion can match events
 	// cheaply from the first message; ADD/REMOVE keep it current afterwards
@@ -212,6 +235,13 @@ func (g *GalleryProvider) Stop() error {
 	if g.listSub != nil {
 		err := g.listSub.Unsubscribe()
 		g.listSub = nil
+		if err != nil {
+			return fmt.Errorf("while stopping GalleryProvider: %w", err)
+		}
+	}
+	if g.deltaSub != nil {
+		err := g.deltaSub.Unsubscribe()
+		g.deltaSub = nil
 		if err != nil {
 			return fmt.Errorf("while stopping GalleryProvider: %w", err)
 		}
@@ -361,13 +391,40 @@ func (g *GalleryProvider) addSourceFolder(ctx context.Context, req *GallerySourc
 	// Index. Safe to call for an idempotent re-ADD of an already-backfilled
 	// folder too: runBackfill's BackfillDone check makes that a no-op rather
 	// than a redundant rescan.
+	//
+	// The same resolution also feeds two more things: caching the physical
+	// prefix onto the folder document (PhysicalProviderId/PhysicalPath - see
+	// their docs on GallerySourceFolder) so a later REMOVE can scope its own
+	// best-effort tombstone sweep without resolving again, and bumping the
+	// delta sequence of every already-ingested photo newly covered by this
+	// folder in the background, so an addition surfaces through the delta
+	// feed without the client needing to know a folder was added - see
+	// bumpSeqForPrefix's docs (delta.go). Both run independently of backfill
+	// and are safe to interleave with it, since bumpSeqForPrefix only ever
+	// touches Seq and never the rest of the document.
 	if p, ok := g.resolveFolderPrefix(ctx, folder); ok {
+		if err := g.cachePhysicalPrefix(ctx, folder.Id, p); err != nil {
+			g.log.Error("failed to cache resolved physical prefix on gallery source folder", "error", err, "folderId", folder.Id.Hex())
+		}
 		g.startBackfill(folder.Id, p)
+		g.startSeqBump(p)
 	}
 
 	return &GallerySourceFolderCrudResponse{
 		SourceFolder: []GallerySourceFolder{folder},
 	}
+}
+
+// cachePhysicalPrefix persists a folder's freshly resolved physical prefix
+// onto its gallerySourceFolders document - see PhysicalProviderId/
+// PhysicalPath's docs for why (REMOVE needs it and must not resolve again).
+func (g *GalleryProvider) cachePhysicalPrefix(ctx context.Context, folderId primitive.ObjectID, p prefix) error {
+	update := bson.M{"$set": bson.M{
+		"physicalProviderId": p.providerId,
+		"physicalPath":       p.path,
+	}}
+	_, err := g.sourceFolders.UpdateByID(ctx, folderId, update)
+	return err
 }
 
 // removeSourceFolder removes a Gallery Source Folder from the user's
@@ -421,6 +478,30 @@ func (g *GalleryProvider) removeSourceFolder(ctx context.Context, req *GallerySo
 	// folder is harmless: the read model it feeds is shared infrastructure
 	// (see package docs), access control is enforced per-user at query
 	// time, and the next ADD anywhere naturally refreshes the whole cache.
+	//
+	// The tombstone sweep below is the one exception to "touches nothing
+	// else" worth calling out explicitly: it reads the physical prefix
+	// cached on the just-deleted document itself (see PhysicalProviderId/
+	// PhysicalPath's docs) rather than resolving anything, so it costs a
+	// local Mongo scan/write over this service's own read model and nothing
+	// more - no NATS request to any other service, so
+	// TestRemoveTouchesNoFileProvider still holds. It is what makes a REMOVE
+	// eventually surface as tombstones in the delta feed (see
+	// recordRemovalTombstones's docs in delta.go) rather than leaving the
+	// removed folder's photos permanently, silently visible to a mirror. A
+	// folder that was never successfully resolved (PhysicalProviderId empty
+	// - e.g. it never had access) has nothing to sweep, which is correct: it
+	// never made anything visible in the first place.
+	if folder.PhysicalProviderId != "" {
+		removedFolder := resolvedFolder{
+			providerId:      folder.PhysicalProviderId,
+			path:            folder.PhysicalPath,
+			spaceProviderId: folder.SpaceProviderId,
+			spacePath:       folder.Path,
+		}
+		g.startRemovalTombstoneSweep(folder.UserId, removedFolder)
+	}
+
 	return &GallerySourceFolderCrudResponse{
 		SourceFolder: []GallerySourceFolder{folder},
 	}

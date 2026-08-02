@@ -293,10 +293,21 @@ func (ic *ingestConsumer) handleMessage(ctx context.Context, msg jetstream.Msg) 
 // markDeleted removes a photo from the listing in response to a "deleted"
 // file-change event. The document is flagged rather than physically removed:
 // a later re-creation at the same path is then an ordinary upsert.
+//
+// This is also the delta feed's tombstone write: bumping Seq on the same
+// update that sets Deleted is what makes the deletion show up as a changed
+// row the next time a client polls past this point (see delta.go) - a mirror
+// sees a tombstone for the item and removes it locally, rather than the
+// document silently vanishing from a query it can no longer distinguish from
+// "never existed".
 func (g *GalleryProvider) markDeleted(ctx context.Context, providerId string, filePath string) error {
+	seq, err := g.nextSequence(ctx)
+	if err != nil {
+		return fmt.Errorf("allocating delta sequence: %w", err)
+	}
 	filter := bson.M{"providerId": providerId, "path": filePath}
-	update := bson.M{"$set": bson.M{"deleted": true}}
-	_, err := g.photos.UpdateOne(ctx, filter, update)
+	update := bson.M{"$set": bson.M{"deleted": true, "seq": seq}}
+	_, err = g.photos.UpdateOne(ctx, filter, update)
 	return err
 }
 
@@ -318,6 +329,11 @@ func (g *GalleryProvider) upsertPhoto(ctx context.Context, ev *events.FileChange
 		return err
 	}
 
+	seq, err := g.nextSequence(ctx)
+	if err != nil {
+		return fmt.Errorf("allocating delta sequence: %w", err)
+	}
+
 	now := time.Now().Unix()
 
 	filter := bson.M{"providerId": ev.ProviderID, "path": ev.Path}
@@ -335,6 +351,7 @@ func (g *GalleryProvider) upsertPhoto(ctx context.Context, ev *events.FileChange
 			"unsupported":      meta.Unsupported,
 			"deleted":          false,
 			"metadataPending":  false,
+			"seq":              seq,
 		},
 		// IndexedAt/CapturedAt-when-falling-back-to-indexed must only be set
 		// on first insert: a later re-processing of the same file (a

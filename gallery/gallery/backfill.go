@@ -298,6 +298,17 @@ func (g *GalleryProvider) saveBackfillProgress(ctx context.Context, folderId pri
 func (g *GalleryProvider) backfillUpsert(ctx context.Context, entry events.FileIndexListEntry) error {
 	capturedAt, capturedAtSource := backfillCaptureDate(entry)
 
+	// Allocated unconditionally, before knowing whether this call will
+	// actually insert - $setOnInsert means a no-op call (the physical key
+	// already exists) simply never writes this value anywhere, so the
+	// allocated number is quietly skipped rather than reused. That is fine:
+	// nextSequence's contract is monotonic and unique, never contiguous, so a
+	// gap left by a skipped allocation is invisible to the delta feed.
+	seq, err := g.nextSequence(ctx)
+	if err != nil {
+		return fmt.Errorf("allocating delta sequence: %w", err)
+	}
+
 	filter := bson.M{"providerId": entry.ProviderId, "path": entry.Path}
 	update := bson.M{
 		"$setOnInsert": bson.M{
@@ -314,10 +325,11 @@ func (g *GalleryProvider) backfillUpsert(ctx context.Context, entry events.FileI
 			"orientation":      0,
 			"unsupported":      "",
 			"metadataPending":  true,
+			"seq":              seq,
 		},
 	}
 
-	_, err := g.photos.UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
+	_, err = g.photos.UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
 	return err
 }
 

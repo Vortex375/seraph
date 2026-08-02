@@ -27,12 +27,14 @@ import (
 type GallerySourceFolderPrototype struct {
 	entities.Prototype
 
-	Id              entities.Definable[primitive.ObjectID] `bson:"_id"`
-	UserId          entities.Definable[string]             `bson:"userId" json:"userId"`
-	SpaceProviderId entities.Definable[string]             `bson:"spaceProviderId" json:"spaceProviderId"`
-	Path            entities.Definable[string]             `bson:"path" json:"path"`
-	BackfillDone    entities.Definable[bool]               `bson:"backfillDone"`
-	BackfillCursor  entities.Definable[string]             `bson:"backfillCursor"`
+	Id                 entities.Definable[primitive.ObjectID] `bson:"_id"`
+	UserId             entities.Definable[string]             `bson:"userId" json:"userId"`
+	SpaceProviderId    entities.Definable[string]             `bson:"spaceProviderId" json:"spaceProviderId"`
+	Path               entities.Definable[string]             `bson:"path" json:"path"`
+	BackfillDone       entities.Definable[bool]               `bson:"backfillDone"`
+	BackfillCursor     entities.Definable[string]             `bson:"backfillCursor"`
+	PhysicalProviderId entities.Definable[string]             `bson:"physicalProviderId"`
+	PhysicalPath       entities.Definable[string]             `bson:"physicalPath"`
 }
 
 // Entity representing a Gallery Source Folder: a folder in Seraph whose photos
@@ -74,4 +76,25 @@ type GallerySourceFolder struct {
 	// cursor) can never produce a duplicate gallery item - see
 	// TestBackfillRestartDoesNotDuplicate.
 	BackfillCursor string `bson:"backfillCursor" json:"-"`
+
+	// PhysicalProviderId/PhysicalPath cache this folder's most recently
+	// resolved physical prefix - the same (providerId, path) resolveSpace
+	// last returned for it, refreshed every time ADD resolves it (see
+	// addSourceFolder). This is a denormalized, best-effort convenience
+	// value ONLY: it is never used for access control (that is always a
+	// fresh resolveSpace call - see resolveFoldersForUser, refreshPrefixCache
+	// - and stays that way) and it can go stale between refreshes (a Space
+	// remount, an access change) exactly like the ingestion prefixCache can.
+	//
+	// Its one purpose is letting REMOVE scope a best-effort delta-feed
+	// tombstone sweep (see recordRemovalTombstones in delta.go, called from
+	// removeSourceFolder) over the photos this folder used to make visible,
+	// WITHOUT resolving the Space again - REMOVE's tested contract is that it
+	// contacts no other service (see TestRemoveTouchesNoFileProvider), and by
+	// the time REMOVE runs the only physical prefix available at all is
+	// whatever was cached here the last time this folder was successfully
+	// resolved. A stale or missing value only costs a delayed or
+	// imperfectly-scoped tombstone sweep, never an access-control bug.
+	PhysicalProviderId string `bson:"physicalProviderId" json:"-"`
+	PhysicalPath       string `bson:"physicalPath" json:"-"`
 }

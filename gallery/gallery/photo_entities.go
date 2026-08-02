@@ -74,6 +74,7 @@ type GalleryPhotoPrototype struct {
 	Deleted          entities.Definable[bool]               `bson:"deleted" json:"deleted"`
 	IndexedAt        entities.Definable[int64]              `bson:"indexedAt" json:"indexedAt"`
 	MetadataPending  entities.Definable[bool]               `bson:"metadataPending" json:"metadataPending"`
+	Seq              entities.Definable[int64]              `bson:"seq" json:"seq"`
 }
 
 // GalleryPhoto is the gallery read model: one document per physical file
@@ -149,4 +150,20 @@ type GalleryPhoto struct {
 	// document on its own; it stays pending until something writes to that
 	// path again.
 	MetadataPending bool `bson:"metadataPending" json:"metadataPending"`
+
+	// Seq is the delta feed's monotonic sequence number for this document,
+	// bumped by GalleryProvider.nextSequence (see sequence.go) on every write
+	// that touches it - creation, a live "changed" re-extraction, a backfill
+	// upsert, or a "deleted" tombstone. It is never reused, including across
+	// a service restart (see nextSequence's docs on how that is guaranteed),
+	// and it is what the delta feed (delta.go) pages over: "everything with
+	// seq > N" is the entire definition of "changed since N".
+	//
+	// A document changing twice between two polls still has exactly one Seq
+	// value - its latest - because Seq lives ON the document and is
+	// overwritten in place, rather than being appended to a separate log of
+	// every change. That is deliberate: it lets a client that missed several
+	// intermediate polls catch up with one read of current state per changed
+	// item, instead of replaying every intermediate write.
+	Seq int64 `bson:"seq" json:"seq"`
 }

@@ -1,0 +1,31 @@
+[
+  {
+    "createIndexes": "galleryPhotos",
+    "indexes": [
+      {
+        "key": {
+          "seq": 1
+        },
+        "name": "galleryPhotos_seq_idx"
+      }
+    ]
+  },
+  {
+    "create": "gallerySequenceCounters"
+  },
+  {
+    "create": "galleryPendingTombstones"
+  },
+  {
+    "createIndexes": "galleryPendingTombstones",
+    "indexes": [
+      {
+        "key": {
+          "userId": 1,
+          "seq": 1
+        },
+        "name": "galleryPendingTombstones_userId_seq_idx"
+      }
+    ]
+  }
+]
