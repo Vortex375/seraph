@@ -107,6 +107,15 @@ type GalleryProvider struct {
 	backfillLimiter util.Limiter
 	backfillCtx     context.Context
 	backfillCancel  context.CancelFunc
+
+	// warmUnsupported is the durable consumer that receives
+	// ThumbnailWarmUnsupportedNotice messages from the thumbnailer and
+	// records the reason against the corresponding gallery item; see
+	// warm.go. Thumbnail warm dispatch itself (dispatchThumbnailWarm) needs
+	// no started/stopped state - it is a plain JetStream publish call made
+	// inline from ingest.go/backfill.go.
+	warmUnsupported       *warmUnsupportedConsumer
+	warmUnsupportedCancel context.CancelFunc
 }
 
 func New(p Params) (Result, error) {
@@ -210,6 +219,23 @@ func (g *GalleryProvider) Start() error {
 		g.spacesChanged = spacesChanged
 	}
 
+	// declare the warm work queue stream up front so dispatch (see
+	// dispatchThumbnailWarm, called from ingest.go/backfill.go) has
+	// somewhere to publish to even before the thumbnailer has ever run -
+	// see ensureThumbnailWarmStream's docs.
+	if err := g.ensureThumbnailWarmStream(context.Background()); err != nil {
+		g.log.Error("failed to declare thumbnail warm stream; warm dispatch will fail until it exists", "error", err)
+	}
+
+	warmUnsupportedCtx, warmUnsupportedCancel := context.WithCancel(context.Background())
+	g.warmUnsupportedCancel = warmUnsupportedCancel
+	warmUnsupported, err := g.startWarmUnsupportedConsumer(warmUnsupportedCtx)
+	if err != nil {
+		g.log.Error("failed to start thumbnail warm-unsupported consumer; undecodable photos will not have their reason recorded from the thumbnailer", "error", err)
+	} else {
+		g.warmUnsupported = warmUnsupported
+	}
+
 	backfillCtx, backfillCancel := context.WithCancel(context.Background())
 	g.backfillCtx = backfillCtx
 	g.backfillCancel = backfillCancel
@@ -266,6 +292,14 @@ func (g *GalleryProvider) Stop() error {
 	if g.spacesChangedCancel != nil {
 		g.spacesChangedCancel()
 		g.spacesChangedCancel = nil
+	}
+	if g.warmUnsupported != nil {
+		g.warmUnsupported.stop()
+		g.warmUnsupported = nil
+	}
+	if g.warmUnsupportedCancel != nil {
+		g.warmUnsupportedCancel()
+		g.warmUnsupportedCancel = nil
 	}
 	if g.backfillCancel != nil {
 		g.backfillCancel()

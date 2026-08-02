@@ -41,3 +41,20 @@ const SearchReplyTopicPattern = "seraph.search.%s.reply"
 const FileIndexListRequestTopic = "seraph.fileindex.list"
 const FileIndexListAckTopicPattern = "seraph.fileindex.list.%s.ack"
 const FileIndexListReplyTopicPattern = "seraph.fileindex.list.%s.reply"
+
+// ThumbnailWarmStream/Topic is the durable JetStream work queue for
+// background Thumbnail pre-generation ("warming"). Publishers (e.g. the
+// gallery service, as photos enter its read model) publish
+// ThumbnailWarmRequest fire-and-forget; the thumbnailer consumes it with its
+// own, smaller-than-interactive concurrency budget and acks only once a
+// Thumbnail has actually been produced (or the item is durably
+// undecodable) - see ThumbnailWarmRequest's docs for why this is a
+// durable queue and not core-NATS request/reply.
+const ThumbnailWarmStream = "SERAPH_THUMBNAIL_WARM"
+const ThumbnailWarmTopic = "seraph.thumbnail.warm"
+
+// ThumbnailWarmUnsupportedStream/Topic is the durable JetStream work queue
+// the thumbnailer uses to report a warm request it could not decode back to
+// the publisher's read model - see ThumbnailWarmUnsupportedNotice's docs.
+const ThumbnailWarmUnsupportedStream = "SERAPH_THUMBNAIL_WARM_UNSUPPORTED"
+const ThumbnailWarmUnsupportedTopic = "seraph.thumbnail.warm.unsupported"

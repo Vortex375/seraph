@@ -356,7 +356,7 @@ func (g *GalleryProvider) upsertPhoto(ctx context.Context, ev *events.FileChange
 
 	now := time.Now().Unix()
 
-	return g.withSequence(ctx, func(seq int64) error {
+	err = g.withSequence(ctx, func(seq int64) error {
 		filter := bson.M{"providerId": ev.ProviderID, "path": ev.Path}
 		update := bson.M{
 			"$set": bson.M{
@@ -386,6 +386,20 @@ func (g *GalleryProvider) upsertPhoto(ctx context.Context, ev *events.FileChange
 		_, err := g.photos.UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
 		return err
 	})
+	if err != nil {
+		return err
+	}
+
+	// dispatch background Thumbnail pre-generation now that this photo is in
+	// the read model - fire-and-forget onto the durable warm work queue, not
+	// the thumbnailer's interactive path (see dispatchThumbnailWarm's docs).
+	// Skipped for a file already known undecodable: the thumbnailer would
+	// only fail identically and there is nothing to warm.
+	if meta.Unsupported == "" {
+		g.dispatchThumbnailWarm(ctx, ev.ProviderID, ev.Path)
+	}
+
+	return nil
 }
 
 // extractForEvent fetches the file through the File Provider, extracts

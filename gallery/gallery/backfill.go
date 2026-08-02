@@ -308,7 +308,8 @@ func (g *GalleryProvider) backfillUpsert(ctx context.Context, entry events.FileI
 	// skipped one, because the feed must not serve past this allocation
 	// while the upsert that might use it is still in flight - see
 	// sequenceAllocator's docs.
-	return g.withSequence(ctx, func(seq int64) error {
+	inserted := false
+	err := g.withSequence(ctx, func(seq int64) error {
 		filter := bson.M{"providerId": entry.ProviderId, "path": entry.Path}
 		update := bson.M{
 			"$setOnInsert": bson.M{
@@ -329,9 +330,34 @@ func (g *GalleryProvider) backfillUpsert(ctx context.Context, entry events.FileI
 			},
 		}
 
-		_, err := g.photos.UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
-		return err
+		result, err := g.photos.UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
+		if err != nil {
+			return err
+		}
+		inserted = result.UpsertedCount > 0
+		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	// dispatch background Thumbnail pre-generation for a photo genuinely new
+	// to the read model - fire-and-forget onto the durable warm work queue,
+	// exactly like the live-ingestion path (see upsertPhoto/
+	// dispatchThumbnailWarm). Skipped when this call was a no-op (the
+	// physical key already existed, e.g. a resumed or nested-folder
+	// backfill re-walking an already-ingested photo): that photo was either
+	// already warmed when it first entered the read model, or - per the
+	// metadata tension this file's package docs describe - already
+	// live-healed, in which case its warm request was already dispatched by
+	// upsertPhoto. Re-dispatching would be harmless (see
+	// events.ThumbnailWarmRequest's docs) but is needless amplification
+	// across thousands of backfilled entries with nothing to gain.
+	if inserted {
+		g.dispatchThumbnailWarm(ctx, entry.ProviderId, entry.Path)
+	}
+
+	return nil
 }
 
 // backfillCaptureDate implements the Capture Date fallback chain starting at
