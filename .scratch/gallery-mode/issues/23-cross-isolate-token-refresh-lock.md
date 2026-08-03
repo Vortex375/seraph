@@ -18,7 +18,7 @@ without it is a known logout bug.
 
 **Blocked by:** 22
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] Two isolates hitting an expired token concurrently produce exactly one refresh
 - [ ] The isolate that does not win the lock uses the refreshed token rather than refreshing again
