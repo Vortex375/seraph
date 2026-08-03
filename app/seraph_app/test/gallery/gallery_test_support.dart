@@ -9,6 +9,7 @@ import 'package:oidc/oidc.dart';
 import 'package:seraph_app/src/gallery/local/local_source.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
+import 'package:seraph_app/src/gallery/mirror/gallery_upload_backend.dart';
 import 'package:seraph_app/src/login/login_controller.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
 import 'package:seraph_app/src/share/share_controller.dart';
@@ -202,6 +203,79 @@ class FakeLocalSource implements LocalSource {
   }) async {
     originalCalls.add((relativePath, displayName));
     return originalBytes[_localKey(relativePath, displayName)];
+  }
+}
+
+/// Ticket 19's "covered at the app's mirror seam with a stubbed backend" -
+/// an in-memory stand-in for [GalleryUploadBackend], driven entirely by the
+/// test, so [GalleryUploadService](../../lib/src/gallery/mirror/gallery_upload_service.dart)'s
+/// never-overwrite/disambiguation/mark-synced logic can be exercised without
+/// a real WebDAV server or `webdav_client`'s own Dio adapter plumbing.
+class FakeGalleryUploadBackend implements GalleryUploadBackend {
+  final Map<String, Uint8List> _remote = {};
+
+  /// Every (spaceProviderId, path, bytes) [put] was called with, in order -
+  /// what a test asserts against to check exactly one PUT happened (ticket
+  /// 19's "no client-side staging" criterion - one write, straight to the
+  /// final path, never a staging name followed by a move) and that it
+  /// carried exactly the bytes the fake Local Source reported (the
+  /// byte-identical criterion).
+  final List<(String, String, Uint8List)> putCalls = [];
+
+  /// Every (spaceProviderId, path) [statSize] was asked about, in order -
+  /// what a test asserts against to check the never-overwrite/disambiguation
+  /// loop walked exactly the candidate names it should have, and no more.
+  final List<(String, String)> statCalls = [];
+
+  /// When set, the next [statSize] call throws this instead of consulting
+  /// [_remote] - simulates a failure (a read-only Space, in particular)
+  /// discovered on the existence check itself, before any PUT is attempted.
+  GalleryUploadException? statError;
+
+  /// When set, the next [put] call throws this instead of writing to
+  /// [_remote] - simulates a connection lost mid-upload, or a failure only
+  /// discovered on the write. Because the fake never writes to [_remote]
+  /// before throwing, this is also what stands in for server-side atomic PUT
+  /// (ADR 0002's amendment): a failed [put] leaves nothing at the target
+  /// path, exactly as the ticket's "leaves no partial file" criterion
+  /// requires.
+  GalleryUploadException? putError;
+
+  static String _key(String spaceProviderId, String path) =>
+      '$spaceProviderId\x00$path';
+
+  /// Seeds [_remote] as though [bytes] already occupied (spaceProviderId,
+  /// path) before any upload runs - a test's way of setting up a collision,
+  /// same-size or different-size.
+  void seed(String spaceProviderId, String path, Uint8List bytes) {
+    _remote[_key(spaceProviderId, path)] = bytes;
+  }
+
+  /// What currently sits at (spaceProviderId, path) in the fake, or null -
+  /// read back to confirm an upload actually happened (or didn't), and that
+  /// a disambiguated upload left the original path's content untouched.
+  Uint8List? contentAt(String spaceProviderId, String path) =>
+      _remote[_key(spaceProviderId, path)];
+
+  @override
+  Future<int?> statSize(String spaceProviderId, String path) async {
+    statCalls.add((spaceProviderId, path));
+    final error = statError;
+    if (error != null) {
+      throw error;
+    }
+    return _remote[_key(spaceProviderId, path)]?.length;
+  }
+
+  @override
+  Future<void> put(
+      String spaceProviderId, String path, Uint8List bytes) async {
+    putCalls.add((spaceProviderId, path, bytes));
+    final error = putError;
+    if (error != null) {
+      throw error;
+    }
+    _remote[_key(spaceProviderId, path)] = bytes;
   }
 }
 

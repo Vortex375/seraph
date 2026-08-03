@@ -6,6 +6,8 @@ import 'package:seraph_app/src/gallery/gallery_item_display.dart';
 import 'package:seraph_app/src/gallery/gallery_tile.dart';
 import 'package:seraph_app/src/gallery/local/local_image_loader.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
+import 'package:seraph_app/src/gallery/mirror/gallery_upload_backend.dart';
+import 'package:seraph_app/src/gallery/mirror/gallery_upload_service.dart';
 
 /// A gallery photo, full screen.
 ///
@@ -30,8 +32,23 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
   final GalleryImageLoader loader = Get.find();
   final LocalImageLoader localLoader = Get.find();
 
+  /// Ticket 19: null on a platform with no `GalleryUploadService` registered
+  /// - every platform without a Local Source, and every test that has
+  /// nothing to do with upload - in which case the upload action is simply
+  /// absent from the app bar, mirroring how [GalleryGridController.
+  /// localScanService] being null hides the permission UI elsewhere in
+  /// Gallery Mode.
+  final GalleryUploadService? uploadService =
+      Get.isRegistered<GalleryUploadService>()
+          ? Get.find<GalleryUploadService>()
+          : null;
+
   late final PageController _pageController;
   late final ValueNotifier<int> _currentIndex;
+
+  /// True while an upload started from this view is in flight, so a second
+  /// tap on the button (or on another photo mid-upload) is not offered.
+  final ValueNotifier<bool> _uploading = ValueNotifier<bool>(false);
 
   @override
   void initState() {
@@ -45,6 +62,7 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
   void dispose() {
     _pageController.dispose();
     _currentIndex.dispose();
+    _uploading.dispose();
     super.dispose();
   }
 
@@ -54,6 +72,57 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
       showDragHandle: true,
       builder: (context) => GalleryPhotoDetails(item: item),
     );
+  }
+
+  /// Ticket 19's "user presses a button on a photo and it lands in Seraph":
+  /// the single manual trigger this ticket adds. Reports the outcome as a
+  /// SnackBar and, on anything that changed the mirror ([GalleryUploadResult.
+  /// uploaded]/[GalleryUploadResult.alreadyPresent]), reloads the grid so the
+  /// tile behind this viewer picks up the new Synced Availability
+  /// immediately rather than waiting for the next background sync.
+  Future<void> _upload(GalleryItem item) async {
+    final service = uploadService;
+    if (service == null || _uploading.value) {
+      return;
+    }
+    _uploading.value = true;
+    try {
+      final result = await service.upload(item);
+      if (!mounted) {
+        return;
+      }
+      switch (result) {
+        case GalleryUploadResult.uploaded:
+        case GalleryUploadResult.alreadyPresent:
+          await controller.reload();
+          if (!mounted) {
+            return;
+          }
+          _showSnackBar('Uploaded to Seraph.');
+        case GalleryUploadResult.noSyncPair:
+          _showSnackBar('No Sync Pair covers this folder.');
+        case GalleryUploadResult.deviceFileUnavailable:
+          _showSnackBar('This photo is no longer available on this device.');
+        case GalleryUploadResult.deviceFileChanged:
+          _showSnackBar('This photo changed on this device and was not uploaded.');
+        case GalleryUploadResult.notApplicable:
+          break;
+      }
+    } on GalleryUploadException catch (e) {
+      if (mounted) {
+        _showSnackBar(e.message);
+      }
+    } finally {
+      if (mounted) {
+        _uploading.value = false;
+      }
+    }
+  }
+
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -76,6 +145,35 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
           }),
         ),
         actions: [
+          if (uploadService != null)
+            ValueListenableBuilder<int>(
+              valueListenable: _currentIndex,
+              builder: (context, index, _) => Obx(() {
+                controller.revision.value;
+                final item = controller.itemAt(index);
+                if (item == null ||
+                    item.availability != GalleryAvailability.deviceOnly) {
+                  return const SizedBox.shrink();
+                }
+                return ValueListenableBuilder<bool>(
+                  valueListenable: _uploading,
+                  builder: (context, uploading, _) => IconButton(
+                    icon: uploading
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.cloud_upload_outlined),
+                    tooltip: 'Upload to Seraph',
+                    onPressed: uploading ? null : () => _upload(item),
+                  ),
+                );
+              }),
+            ),
           ValueListenableBuilder<int>(
             valueListenable: _currentIndex,
             builder: (context, index, _) => Obx(() {

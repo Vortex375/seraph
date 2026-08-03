@@ -967,6 +967,75 @@ class GalleryMirror {
     await (_db.delete(_db.syncPairs)..where((t) => t.id.equals(id))).go();
   }
 
+  // --- Ticket 19: upload ---
+
+  /// The remote (providerId, path) [GalleryUploadService](gallery_upload_service.dart)
+  /// would upload [item] to - the exact same pure function
+  /// ([_coveringSyncPair] + [_expectedRemotePath]) [applyLocalScan] already
+  /// uses to dedup a device item against an existing cloud row, reused here
+  /// rather than re-derived, so "the path a photo dedups onto" and "the path
+  /// it uploads to" can never disagree.
+  ///
+  /// Null when [item] carries no local identity (a Cloud only row - nothing
+  /// to upload) or no Sync Pair covers its folder. The latter is not an
+  /// error: this ticket is the manual, one-photo tracer bullet through the
+  /// upload path, not the decision of which items are eligible for it -
+  /// deciding whether an uncovered item should ever be offered upload UI at
+  /// all is ticket 22's (the engine's) job, not this method's.
+  Future<(String providerId, String path)?> expectedUploadTarget(
+    GalleryItem item,
+  ) async {
+    final relativePath = item.localRelativePath;
+    final displayName = item.localDisplayName;
+    if (relativePath == null || displayName == null) {
+      return null;
+    }
+    final pairs = await _activeSyncPairs();
+    final pair = _coveringSyncPair(pairs, relativePath);
+    if (pair == null) {
+      return null;
+    }
+    return _expectedRemotePath(pair, relativePath, displayName);
+  }
+
+  /// Records that [item] now has a Seraph copy at ([providerId], [path]) -
+  /// called once an upload actually succeeds, or once a target path turns
+  /// out to already hold this device's own content (ticket 19's "size
+  /// matches - assume it is ours, mark synced, do not upload" rule). Marks
+  /// the row Synced immediately rather than waiting for the next delta poll
+  /// to independently rediscover the same file, and **is** the "record the
+  /// remote path the photo actually went to" criterion: [path] is whatever
+  /// path the caller actually used - the original target or a disambiguated
+  /// one - never recomputed from the Sync Pair afterwards.
+  ///
+  /// The write is conditioned on [item]'s id AND its local identity still
+  /// matching exactly what it was when the caller started - not on the id
+  /// alone - so a device row deleted or changed by a full scan that raced
+  /// this upload (ticket 19's "deleted or modified on the device mid-upload
+  /// is not marked synced" criterion) leaves this a no-op: the identity in
+  /// the WHERE clause no longer matches the (deleted, or now-different) row,
+  /// zero rows are affected, and the return value tells the caller so.
+  /// Returns whether the row was actually updated.
+  Future<bool> recordUploaded(
+    GalleryItem item,
+    String providerId,
+    String path,
+  ) async {
+    final rows = await (_db.update(_db.galleryItems)
+          ..where((t) =>
+              t.id.equals(item.id) &
+              t.origin.equals(_originDevice) &
+              t.localRelativePath.equals(item.localRelativePath ?? '') &
+              t.localDisplayName.equals(item.localDisplayName ?? '') &
+              t.localSize.equals(item.localSize ?? -1)))
+        .write(GalleryItemsCompanion(
+      origin: const Value(_originBoth),
+      providerId: Value(providerId),
+      path: Value(path),
+    ));
+    return rows > 0;
+  }
+
   /// Retroactively merges [pair]'s Local Source against the mirror as it
   /// stands right now - called once, from [createSyncPair], never from the
   /// ongoing scan/delta-feed paths (those apply [pair] to items they see

@@ -12,6 +12,8 @@ import 'package:seraph_app/src/gallery/local/local_scan_service.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_sync_service.dart';
+import 'package:seraph_app/src/gallery/mirror/gallery_upload_backend.dart';
+import 'package:seraph_app/src/gallery/mirror/gallery_upload_service.dart';
 import 'package:seraph_app/src/media_player/audio_player_controller.dart';
 import 'package:seraph_app/src/search/search_service.dart';
 import 'package:seraph_app/src/spaces_admin/spaces_list_controller.dart';
@@ -39,6 +41,17 @@ class InitialBinding extends Bindings {
     // makes scanning a no-op and leaves the gallery exactly as it was before
     // ticket 15 on iOS, desktop and web.
     final localScanService = Get.put(LocalScanService(galleryMirror));
+    // Ticket 19: uploads one photo end to end, over the same WebDAV client
+    // the file browser already uses (see WebDavGalleryUploadBackend's doc).
+    // Registered unconditionally, like LocalImageLoader below - on a
+    // platform with no Local Source, localScanService.localSource is null
+    // and GalleryUploadService.upload simply reports deviceFileUnavailable
+    // for every call, so there is nothing to gate here.
+    Get.put(GalleryUploadService(
+      galleryMirror,
+      WebDavGalleryUploadBackend(Get.find<FileService>()),
+      localScanService.localSource,
+    ));
     Get.put(GalleryImageLoader(Get.find(), Get.find(), galleryMirrorDatabase));
     // Ticket 28: loads device-photo pixels through the same Local Source the
     // scan above uses. Null-safe on its own when localScanService.localSource

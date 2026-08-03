@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:seraph_app/src/login/login_controller.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
 import 'package:seraph_app/src/share/share_controller.dart';
@@ -63,6 +65,29 @@ class FileService {
     final headers = await getRequestHeaders();
     c.setHeaders(headers);
     return c.readProps(path);
+  }
+
+  /// PUTs [data] to [path], creating any missing intermediate WebDAV
+  /// collections on the way - the `webdav_client` package's own
+  /// `Client.write` already retries a 409 with `mkdirAll` before the PUT
+  /// (`wdWriteWithBytes`/`_createParent` in `webdav_dio.dart`), so callers
+  /// get "missing folders are created on demand" for free rather than this
+  /// method walking the path itself.
+  ///
+  /// Throws (a [Client] is required - see [stat]'s null-client case) when no
+  /// server is configured, and propagates whatever the server responded with
+  /// otherwise - including a 403 on a read-only Space - so a caller such as
+  /// [GalleryUploadService](../gallery/mirror/gallery_upload_backend.dart)
+  /// can translate the failure into a comprehensible reason instead of it
+  /// being swallowed here.
+  Future<void> writeBytes(String path, Uint8List data) async {
+    Client? c = client;
+    if (c == null) {
+      throw StateError('Not connected to a server');
+    }
+    final headers = await getRequestHeaders();
+    c.setHeaders(headers);
+    await c.write(path, data);
   }
 
   String getFileUrl(String path) {
