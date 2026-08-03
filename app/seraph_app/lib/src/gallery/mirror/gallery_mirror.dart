@@ -25,6 +25,25 @@ const String _originBoth = 'both';
 /// duplicate [SyncCursors]' shape for no reason.
 const String localMediaSource = 'local-media';
 
+/// [SyncCursors.source] value for ticket 29's full-scan cadence: epoch
+/// milliseconds at which [GalleryMirror.recordFullScanAt] last recorded a
+/// completed full Local Source scan. A third borrower of [SyncCursors]'
+/// shape, for the same reason [localMediaSource] is - this is "how far has
+/// this device gotten", just measured in wall-clock time rather than a feed
+/// position, so a purpose-built table would only duplicate what this one
+/// already provides.
+const String localFullScanSource = 'local-full-scan';
+
+/// [SyncCursors.source] value for ticket 29's sync throttle: epoch
+/// milliseconds at which the last (non-throttled) [GalleryGridController.
+/// syncNow] completed. Persisted rather than held in memory because the
+/// throttle must survive [GalleryGridController] itself being torn down and
+/// recreated - GetX's `fenix: true` rebuilds it on every navigation back to
+/// the gallery (see the class doc on [GalleryGridController] for why that
+/// registration exists) - and an in-memory-only throttle would reset itself
+/// on exactly the navigation pattern it exists to guard against.
+const String syncThrottleSource = 'sync-throttle';
+
 /// How a mirror query is restricted by Availability - the filter ticket 15
 /// asks for ("filtered to items that are not backed up, and to Cloud only
 /// items"), never affecting ordering, only membership.
@@ -387,11 +406,42 @@ class GalleryMirror {
     await _writeLocalGeneration(generation);
   }
 
-  Future<void> _writeLocalGeneration(int generation) async {
+  Future<void> _writeLocalGeneration(int generation) =>
+      _writeCursorSince(localMediaSource, generation);
+
+  /// Epoch milliseconds at which a full Local Source scan last completed, or
+  /// `0` if one never has - ticket 29's "nothing has ever scanned" and "the
+  /// last full scan is older than the backstop interval" checks both read
+  /// this, since `0` means the same "from the beginning" thing here that it
+  /// does for [since] and [localGeneration].
+  Future<int> lastFullScanAt() => since(source: localFullScanSource);
+
+  /// Records [epochMillis] as the moment a full Local Source scan last
+  /// completed. Called only after a full scan itself succeeds - a failed
+  /// scan must not push this watermark forward, or a device stuck failing
+  /// every scan would never be retried once the backstop interval alone
+  /// gated it.
+  Future<void> recordFullScanAt(int epochMillis) =>
+      _writeCursorSince(localFullScanSource, epochMillis);
+
+  /// Epoch milliseconds at which the last (non-throttled) sync completed,
+  /// or `0` if none ever has - what the sync throttle's window is measured
+  /// from.
+  Future<int> lastSyncedAt() => since(source: syncThrottleSource);
+
+  /// Records [epochMillis] as the moment the last (non-throttled) sync
+  /// completed - called once, at the end of a sync that actually ran, never
+  /// for one the throttle itself skipped (skipping is the whole point:
+  /// recording a throttled call's time would push every subsequent call's
+  /// throttle window forward for nothing).
+  Future<void> recordSyncedAt(int epochMillis) =>
+      _writeCursorSince(syncThrottleSource, epochMillis);
+
+  Future<void> _writeCursorSince(String source, int value) async {
     await _db.into(_db.syncCursors).insertOnConflictUpdate(
           SyncCursorsCompanion(
-            source: Value(localMediaSource),
-            since: Value(generation),
+            source: Value(source),
+            since: Value(value),
           ),
         );
   }
@@ -469,8 +519,9 @@ class GalleryMirror {
   /// `dateModified` - the device-side mirror of the server's EXIF-then-
   /// modification-time fallback chain.
   static int _capturedAtSeconds(LocalMediaItem item) {
-    final millis =
-        item.dateTakenMillis > 0 ? item.dateTakenMillis : item.dateModifiedMillis;
+    final millis = item.dateTakenMillis > 0
+        ? item.dateTakenMillis
+        : item.dateModifiedMillis;
     return millis ~/ 1000;
   }
 

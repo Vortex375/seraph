@@ -6,24 +6,37 @@ import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 /// Drives one full Local Source scan into the mirror - the device-side twin
 /// of `GallerySyncService`, which does the same job for the cloud delta feed.
 ///
-/// The full media-store scan is ticket 15's correctness anchor, run at app
-/// start and again whenever [GalleryGridController]
-/// (`gallery_grid_controller.dart`) refreshes the gallery, and it stays
-/// exactly that: unconditional, periodic, never skipped. Ticket 17 adds two
-/// faster paths on top, both strictly latency shortcuts that a full scan can
-/// always outlive:
+/// [scan] is ticket 15's correctness anchor and remains the only thing that
+/// ever removes or demotes a device row from the mirror (see
+/// [GalleryMirror.applyLocalScan]) - that governing rule does not change.
+/// What ticket 29 changed is its *cadence* on the interactive path: [scan]
+/// no longer runs unconditionally every time [GalleryGridController]
+/// (`gallery_grid_controller.dart`) syncs. [GalleryGridController.syncNow]
+/// now runs [scan] only on a cold start, when the last full scan predates a
+/// backstop interval, or when the caller explicitly forces one (the refresh
+/// button, [GalleryGridController.requestLocalPermission], a resume with a
+/// changed permission grant) - see that controller's own sync-cadence doc
+/// (on its class doc and its private `_fullScanIsDue` helper) for the exact
+/// conditions and the staleness tradeoff they accept. Every other
+/// interactive sync runs [incrementalScan] instead, which is strictly
+/// cheaper but - see its own doc - can never see a deletion.
 ///
-/// - [incrementalScan] - the generation-based fast path, applying only what
-///   changed since the watermark [GalleryMirror.localGeneration] holds.
+/// Ticket 17 adds two further, always-latency-only paths on top of that:
+///
+/// - [incrementalScan] itself, callable directly for the fast path above,
+///   applying only what changed since the watermark [GalleryMirror.
+///   localGeneration] holds.
 /// - [watchForChanges] - subscribes to the Local Source's content-observer
 ///   trigger and runs a debounced [incrementalScan] in response.
 ///
-/// **Neither is ever the only thing standing between a photo and its backup
-/// status.** [watchForChanges]'s callback and [incrementalScan] itself can
-/// both fail silently, be suppressed entirely, or simply never run - the
-/// governing rule this ticket exists to uphold is that none of that can ever
-/// make the gallery wrong, only slower to catch up, because [scan] keeps
-/// running regardless.
+/// **Neither running less often than [scan], nor either of ticket 17's paths,
+/// is ever the only thing standing between a photo and its backup status.**
+/// [watchForChanges]'s callback and [incrementalScan] itself can both fail
+/// silently, be suppressed entirely, or simply never run - the governing
+/// rule both tickets exist to uphold is that none of that can ever make the
+/// gallery wrong, only slower to catch up, because [scan] always still runs
+/// eventually - periodic and forced, not unconditional, but never skipped
+/// forever.
 class LocalScanService {
   LocalScanService(
     this.mirror, {

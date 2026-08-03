@@ -27,7 +27,6 @@ import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 /// only* and nothing can yet put a photo into Seraph from the gallery. An
 /// affordance for something the platform cannot do is worse than its absence.
 class GalleryView extends StatefulWidget {
-
   static const routeName = '/gallery';
 
   const GalleryView({super.key});
@@ -75,13 +74,16 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
   /// Ticket 16's "changing the grant while the app is running is picked up
   /// without requiring a restart": the only route to changing photo access
   /// mid-session is leaving the app (system Settings, the extended-selection
-  /// picker) and coming back, which is exactly a resume. Re-running the same
-  /// sync [open] already runs re-checks the grant and re-scans under it,
-  /// with no special-casing needed at the call site.
+  /// picker) and coming back, which is exactly a resume. [syncOnResume] -
+  /// not [syncNow] directly - is what upholds that under ticket 29's
+  /// throttle: it re-checks the grant itself and forces past the throttle
+  /// when the grant changed, so a resume landing inside the throttle window
+  /// still picks up a permission change instead of being swallowed by it. A
+  /// resume with no grant change is throttled exactly like any other call.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      unawaited(controller.syncNow());
+      unawaited(controller.syncOnResume());
     }
   }
 
@@ -104,52 +106,57 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: seraphAppBar(context,
-        name: 'Gallery',
-        routeName: GalleryView.routeName,
-        actions: [
-          Obx(() => PopupMenuButton<GalleryAvailabilityFilter>(
-                tooltip: 'Filter',
-                icon: Icon(
-                  controller.filter.value == GalleryAvailabilityFilter.all
-                      ? Icons.filter_list
-                      : Icons.filter_alt,
-                ),
-                initialValue: controller.filter.value,
-                onSelected: controller.setFilter,
-                itemBuilder: (context) => const [
-                  PopupMenuItem(
-                    value: GalleryAvailabilityFilter.all,
-                    child: Text('All photos'),
+          name: 'Gallery',
+          routeName: GalleryView.routeName,
+          actions: [
+            Obx(() => PopupMenuButton<GalleryAvailabilityFilter>(
+                  tooltip: 'Filter',
+                  icon: Icon(
+                    controller.filter.value == GalleryAvailabilityFilter.all
+                        ? Icons.filter_list
+                        : Icons.filter_alt,
                   ),
-                  PopupMenuItem(
-                    value: GalleryAvailabilityFilter.notBackedUp,
-                    child: Text('Not backed up'),
-                  ),
-                  PopupMenuItem(
-                    value: GalleryAvailabilityFilter.cloudOnly,
-                    child: Text('Cloud only'),
-                  ),
-                ],
-              )),
-          Obx(() => IconButton(
-                icon: controller.isSyncing.value
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.refresh),
-                tooltip: 'Check for new photos',
-                onPressed:
-                    controller.isSyncing.value ? null : controller.syncNow,
-              )),
-          IconButton(
-            icon: const Icon(Icons.folder_special_outlined),
-            tooltip: 'Gallery folders',
-            onPressed: _openFolders,
-          ),
-        ]
-      ),
+                  initialValue: controller.filter.value,
+                  onSelected: controller.setFilter,
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(
+                      value: GalleryAvailabilityFilter.all,
+                      child: Text('All photos'),
+                    ),
+                    PopupMenuItem(
+                      value: GalleryAvailabilityFilter.notBackedUp,
+                      child: Text('Not backed up'),
+                    ),
+                    PopupMenuItem(
+                      value: GalleryAvailabilityFilter.cloudOnly,
+                      child: Text('Cloud only'),
+                    ),
+                  ],
+                )),
+            Obx(() => IconButton(
+                  icon: controller.isSyncing.value
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh),
+                  tooltip: 'Check for new photos',
+                  // Forced (ticket 29): a manual tap is the user explicitly
+                  // asking for a fresh look, so this bypasses both the
+                  // throttle and the incremental-scan default rather than
+                  // possibly doing nothing at all if pressed again soon after
+                  // the gallery opened.
+                  onPressed: controller.isSyncing.value
+                      ? null
+                      : () => controller.syncNow(force: true),
+                )),
+            IconButton(
+              icon: const Icon(Icons.folder_special_outlined),
+              tooltip: 'Gallery folders',
+              onPressed: _openFolders,
+            ),
+          ]),
       body: Column(
         children: [
           _LocalPermissionBanner(controller: controller),
@@ -586,8 +593,7 @@ class _LocalPermissionBanner extends StatefulWidget {
   final GalleryGridController controller;
 
   @override
-  State<_LocalPermissionBanner> createState() =>
-      _LocalPermissionBannerState();
+  State<_LocalPermissionBanner> createState() => _LocalPermissionBannerState();
 }
 
 class _LocalPermissionBannerState extends State<_LocalPermissionBanner> {

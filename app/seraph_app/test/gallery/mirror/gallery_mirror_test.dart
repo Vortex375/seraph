@@ -249,5 +249,56 @@ void main() {
       final page = await mirror.queryPage();
       expect(page.items, hasLength(1));
     });
+
+    // Ticket 29: the two persisted watermarks GalleryGridController's sync
+    // cadence reads and writes - covered here at the mirror seam directly,
+    // independent of the controller logic that consumes them.
+    group('sync cadence watermarks (ticket 29)', () {
+      test('lastFullScanAt defaults to 0 - "no full scan has ever run"',
+          () async {
+        expect(await mirror.lastFullScanAt(), 0);
+      });
+
+      test('recordFullScanAt persists and is read back by lastFullScanAt',
+          () async {
+        await mirror.recordFullScanAt(123456);
+        expect(await mirror.lastFullScanAt(), 123456);
+
+        // A later call overwrites rather than accumulating a second row.
+        await mirror.recordFullScanAt(999999);
+        expect(await mirror.lastFullScanAt(), 999999);
+      });
+
+      test('lastSyncedAt defaults to 0 - "no sync has ever completed"',
+          () async {
+        expect(await mirror.lastSyncedAt(), 0);
+      });
+
+      test('recordSyncedAt persists and is read back by lastSyncedAt',
+          () async {
+        await mirror.recordSyncedAt(42);
+        expect(await mirror.lastSyncedAt(), 42);
+
+        await mirror.recordSyncedAt(84);
+        expect(await mirror.lastSyncedAt(), 84);
+      });
+
+      test(
+          'the full-scan and sync-throttle watermarks are independent of '
+          'each other and of the delta feed\'s own cursor', () async {
+        await mirror.applyPage(GalleryDeltaResponse(
+          items: [_item(path: '/Photos/a.jpg', seq: 1, capturedAt: 100)],
+          nextCursor: '',
+          hasMore: false,
+          nextSince: 7,
+        ));
+        await mirror.recordFullScanAt(111);
+        await mirror.recordSyncedAt(222);
+
+        expect(await mirror.since(), 7);
+        expect(await mirror.lastFullScanAt(), 111);
+        expect(await mirror.lastSyncedAt(), 222);
+      });
+    });
   });
 }

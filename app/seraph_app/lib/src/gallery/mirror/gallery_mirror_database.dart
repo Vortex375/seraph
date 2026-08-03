@@ -36,7 +36,7 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
   }
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -58,6 +58,17 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
             // v3 added the thumbnail byte cache. It is pure cache: creating
             // it empty costs one cold fetch per thumbnail and nothing else.
             await m.createTable(cachedThumbnails);
+          }
+          if (from < 4) {
+            // v4 (ticket 29) added the three indexes documented on
+            // [GalleryItems] itself - the mirror had grown large enough that
+            // every write and every grid page were full table scans. Adding
+            // an index to an existing table is exactly what `createIndex`
+            // is for: unlike `createTable`/`addColumn` above, there is no
+            // data to backfill, so this is the whole migration step.
+            await m.createIndex(idxGalleryItemsLocalIdentity);
+            await m.createIndex(idxGalleryItemsOriginSizeCapturedAt);
+            await m.createIndex(idxGalleryItemsCapturedAtId);
           }
         },
         beforeOpen: (details) async {
@@ -85,6 +96,48 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
 /// so the future "Cloud only" / "Device only" / "Synced" availability states
 /// (D6/D17 in the design notes) can be read directly off this table without
 /// a join.
+///
+/// **Three indexes (ticket 29), added in schema v4 - see
+/// `GalleryMirrorDatabase.migration`'s `from < 4` step for why an existing
+/// mirror gets them via `createIndex` rather than a table rebuild:**
+///
+/// - [idxGalleryItemsLocalIdentity] on `(localRelativePath, localDisplayName,
+///   localSize, localDateTaken)` - the local-identity probe
+///   `GalleryMirror._upsertLocalItem` runs once per device photo on every
+///   scan. Without it, importing N device photos against an M-row mirror is
+///   an O(N x M) table scan; a device with tens of thousands of photos made
+///   this the dominant cost of opening the gallery.
+/// - [idxGalleryItemsOriginSizeCapturedAt] on `(origin, size, capturedAt)` -
+///   the dedup probe run from both directions (`applyPage`'s device match,
+///   `_upsertLocalItem`'s cloud match). `origin` is deliberately the
+///   leftmost column: SQLite can use a prefix of a multi-column index for a
+///   query that only constrains that prefix, so `availabilitySummary()`'s
+///   three `COUNT ... WHERE origin = ?` queries - run on every [reload] -
+///   use this same index too. A fourth, single-column index on `origin`
+///   alone would only duplicate that prefix for no benefit.
+/// - [idxGalleryItemsCapturedAtId] on `(capturedAt, id)`, ascending - the
+///   grid's own ordering (`queryItems`/`queryPage` sort by `capturedAt DESC,
+///   id DESC`). Declared ascending rather than descending because SQLite can
+///   walk an ascending index backwards to satisfy a `DESC` query directly;
+///   a second, descending-only index here would exist purely to save SQLite
+///   a reverse traversal it already knows how to do for free.
+@TableIndex(
+  name: 'idx_gallery_items_local_identity',
+  columns: {
+    #localRelativePath,
+    #localDisplayName,
+    #localSize,
+    #localDateTaken,
+  },
+)
+@TableIndex(
+  name: 'idx_gallery_items_origin_size_captured_at',
+  columns: {#origin, #size, #capturedAt},
+)
+@TableIndex(
+  name: 'idx_gallery_items_captured_at_id',
+  columns: {#capturedAt, #id},
+)
 class GalleryItems extends Table {
   IntColumn get id => integer().autoIncrement()();
 

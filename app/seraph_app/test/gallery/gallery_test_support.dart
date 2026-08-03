@@ -167,8 +167,7 @@ class FakeLocalSource implements LocalSource {
   /// the success case. A test simulating a photo that cannot be read simply
   /// never calls this for that identity, or calls [forgetLocalBytes]
   /// afterward to simulate it vanishing mid-render.
-  void setLocalBytes(
-      String relativePath, String displayName, Uint8List bytes) {
+  void setLocalBytes(String relativePath, String displayName, Uint8List bytes) {
     final key = _localKey(relativePath, displayName);
     thumbnailBytes[key] = bytes;
     originalBytes[key] = bytes;
@@ -204,6 +203,24 @@ class FakeLocalSource implements LocalSource {
     originalCalls.add((relativePath, displayName));
     return originalBytes[_localKey(relativePath, displayName)];
   }
+}
+
+/// Ticket 29's mirror-seam clock fake: a settable "now" for
+/// [GalleryGridController]'s sync throttle and full-scan backstop, so a test
+/// can assert on both without actually waiting out a 60-second throttle or a
+/// 6-hour backstop. Pass [call] itself as `GalleryGridController(now: ...)`'s
+/// clock; advance time between calls with [advance] or by setting [current]
+/// directly.
+class FakeClock {
+  FakeClock([DateTime? start]) : current = start ?? DateTime(2026);
+
+  DateTime current;
+
+  /// Moves the clock forward by [duration] - the usual way a test simulates
+  /// "some time passed" between two sync calls without a real delay.
+  void advance(Duration duration) => current = current.add(duration);
+
+  DateTime call() => current;
 }
 
 /// A [LocalMediaItem] with sensible defaults, for tests that only care about

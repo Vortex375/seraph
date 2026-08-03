@@ -104,6 +104,98 @@ void main() {
       expect(updated.orientation, 6);
     });
 
+    test(
+        'an app upgrade from v3 (no indexes) creates the three ticket-29 '
+        'indexes without losing existing rows or the sync cursor', () async {
+      final file = File(p.join(tempDir.path, 'mirror.sqlite'));
+
+      // A v3 database - GalleryItems.orientation and CachedThumbnails both
+      // already exist, but none of the ticket 29 indexes do yet. This models
+      // the acceptance criterion directly: "a schema-v4 migration that
+      // preserves existing rows and the sync cursor".
+      final v3Raw = sqlite3.sqlite3.open(file.path);
+      v3Raw.execute('''
+        CREATE TABLE gallery_items (
+          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+          origin TEXT NOT NULL DEFAULT 'cloud',
+          provider_id TEXT NULL,
+          path TEXT NULL,
+          seq INTEGER NULL,
+          local_relative_path TEXT NULL,
+          local_display_name TEXT NULL,
+          local_size INTEGER NULL,
+          local_date_taken INTEGER NULL,
+          captured_at INTEGER NOT NULL,
+          captured_at_source TEXT NOT NULL DEFAULT '',
+          width INTEGER NOT NULL DEFAULT 0,
+          height INTEGER NOT NULL DEFAULT 0,
+          orientation INTEGER NOT NULL DEFAULT 0,
+          size INTEGER NOT NULL DEFAULT 0,
+          mime TEXT NOT NULL DEFAULT '',
+          unsupported TEXT NOT NULL DEFAULT '',
+          metadata_pending INTEGER NOT NULL DEFAULT 0,
+          UNIQUE(provider_id, path)
+        );
+      ''');
+      v3Raw.execute('''
+        CREATE TABLE sync_cursors (
+          source TEXT NOT NULL PRIMARY KEY,
+          since INTEGER NOT NULL DEFAULT 0,
+          pending_cursor TEXT NULL
+        );
+      ''');
+      v3Raw.execute('''
+        CREATE TABLE cached_thumbnails (
+          provider_id TEXT NOT NULL,
+          path TEXT NOT NULL,
+          size INTEGER NOT NULL,
+          bytes BLOB NOT NULL,
+          fetched_at INTEGER NOT NULL,
+          PRIMARY KEY (provider_id, path, size)
+        );
+      ''');
+      v3Raw.execute(
+        "INSERT INTO gallery_items (origin, provider_id, path, seq, captured_at) "
+        "VALUES ('cloud', 'space-a', '/Photos/a.jpg', 5, 1000);",
+      );
+      v3Raw.execute(
+        "INSERT INTO sync_cursors (source, since) VALUES ('server', 5);",
+      );
+      v3Raw.execute('PRAGMA user_version = 3;');
+      v3Raw.close();
+
+      final db = GalleryMirrorDatabase(NativeDatabase(file));
+      addTearDown(db.close);
+
+      // The pre-existing row and cursor both survived the upgrade...
+      final items = await db.select(db.galleryItems).get();
+      expect(items, hasLength(1));
+      expect(items.single.path, '/Photos/a.jpg');
+      final cursor = await (db.select(db.syncCursors)
+            ..where((t) => t.source.equals('server')))
+          .getSingle();
+      expect(cursor.since, 5);
+
+      // ...and all three indexes now exist, queryable straight from SQLite's
+      // own schema table rather than assumed from the migration not
+      // throwing.
+      final indexNames = (await db
+              .customSelect(
+                  "SELECT name FROM sqlite_master WHERE type = 'index' "
+                  "AND tbl_name = 'gallery_items'")
+              .get())
+          .map((row) => row.data['name'] as String)
+          .toSet();
+      expect(
+        indexNames,
+        containsAll(<String>[
+          'idx_gallery_items_local_identity',
+          'idx_gallery_items_origin_size_captured_at',
+          'idx_gallery_items_captured_at_id',
+        ]),
+      );
+    });
+
     test('a fresh install creates the current schema directly via onCreate',
         () async {
       final db = GalleryMirrorDatabase(NativeDatabase.memory());
