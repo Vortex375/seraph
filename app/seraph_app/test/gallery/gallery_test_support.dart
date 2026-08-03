@@ -241,6 +241,15 @@ class FakeGalleryUploadBackend implements GalleryUploadBackend {
   /// requires.
   GalleryUploadException? putError;
 
+  /// Every (spaceProviderId, path) [remove] was called with, in order - what
+  /// ticket 20's mismatch-retry tests assert against to check the untrusted
+  /// remote file was actually deleted before the retry PUT.
+  final List<(String, String)> removeCalls = [];
+
+  /// When set, the next [remove] call throws this instead of deleting from
+  /// [_remote].
+  GalleryUploadException? removeError;
+
   static String _key(String spaceProviderId, String path) =>
       '$spaceProviderId\x00$path';
 
@@ -276,6 +285,16 @@ class FakeGalleryUploadBackend implements GalleryUploadBackend {
       throw error;
     }
     _remote[_key(spaceProviderId, path)] = bytes;
+  }
+
+  @override
+  Future<void> remove(String spaceProviderId, String path) async {
+    removeCalls.add((spaceProviderId, path));
+    final error = removeError;
+    if (error != null) {
+      throw error;
+    }
+    _remote.remove(_key(spaceProviderId, path));
   }
 }
 

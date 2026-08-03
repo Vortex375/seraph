@@ -315,6 +315,131 @@ void main() {
       expect(written.single.path, '/Photos/Phone');
     });
 
+    test(
+        'an app upgrade from v6 adds the ticket-20 verification columns and '
+        'index without losing existing rows, the sync cursor, or the Sync '
+        'Pairs table', () async {
+      final file = File(p.join(tempDir.path, 'mirror.sqlite'));
+
+      // A v6 database - everything through ticket 18's Sync Pairs table
+      // exists, but ticket 20's upload_state/upload_target_* columns do not.
+      final v6Raw = sqlite3.sqlite3.open(file.path);
+      v6Raw.execute('''
+        CREATE TABLE gallery_items (
+          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+          origin TEXT NOT NULL DEFAULT 'cloud',
+          provider_id TEXT NULL,
+          path TEXT NULL,
+          seq INTEGER NULL,
+          local_relative_path TEXT NULL,
+          local_display_name TEXT NULL,
+          local_size INTEGER NULL,
+          local_date_taken INTEGER NULL,
+          captured_at INTEGER NOT NULL,
+          captured_at_source TEXT NOT NULL DEFAULT '',
+          width INTEGER NOT NULL DEFAULT 0,
+          height INTEGER NOT NULL DEFAULT 0,
+          orientation INTEGER NOT NULL DEFAULT 0,
+          size INTEGER NOT NULL DEFAULT 0,
+          mime TEXT NOT NULL DEFAULT '',
+          unsupported TEXT NOT NULL DEFAULT '',
+          metadata_pending INTEGER NOT NULL DEFAULT 0,
+          UNIQUE(provider_id, path)
+        );
+      ''');
+      v6Raw.execute('''
+        CREATE TABLE sync_cursors (
+          source TEXT NOT NULL PRIMARY KEY,
+          since INTEGER NOT NULL DEFAULT 0,
+          pending_cursor TEXT NULL
+        );
+      ''');
+      v6Raw.execute('''
+        CREATE TABLE cached_thumbnails (
+          provider_id TEXT NOT NULL,
+          path TEXT NOT NULL,
+          size INTEGER NOT NULL,
+          bytes BLOB NOT NULL,
+          fetched_at INTEGER NOT NULL,
+          PRIMARY KEY (provider_id, path, size)
+        );
+      ''');
+      v6Raw.execute('''
+        CREATE TABLE local_folder_selections (
+          folder_path TEXT NOT NULL PRIMARY KEY,
+          selected INTEGER NOT NULL
+        );
+      ''');
+      v6Raw.execute('''
+        CREATE TABLE sync_pairs (
+          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+          local_folder_path TEXT NOT NULL,
+          space_provider_id TEXT NOT NULL,
+          path TEXT NOT NULL,
+          created_at INTEGER NOT NULL DEFAULT 0,
+          UNIQUE(local_folder_path)
+        );
+      ''');
+      v6Raw.execute(
+        "INSERT INTO gallery_items (origin, provider_id, path, seq, captured_at) "
+        "VALUES ('cloud', 'space-a', '/Photos/a.jpg', 5, 1000);",
+      );
+      v6Raw.execute(
+        "INSERT INTO sync_cursors (source, since) VALUES ('server', 5);",
+      );
+      v6Raw.execute(
+        "INSERT INTO sync_pairs (local_folder_path, space_provider_id, path) "
+        "VALUES ('DCIM/Camera/', 'space-a', '/Photos/Phone');",
+      );
+      v6Raw.execute('PRAGMA user_version = 6;');
+      v6Raw.close();
+
+      final db = GalleryMirrorDatabase(NativeDatabase(file));
+      addTearDown(db.close);
+
+      // Everything that existed before the upgrade survived.
+      final items = await db.select(db.galleryItems).get();
+      expect(items, hasLength(1));
+      expect(items.single.path, '/Photos/a.jpg');
+      // ...and the new columns are there, defaulting to null - "no upload
+      // pending verification" for every pre-existing row.
+      expect(items.single.uploadState, null);
+      expect(items.single.uploadTargetProviderId, null);
+      expect(items.single.uploadTargetPath, null);
+
+      final cursor = await (db.select(db.syncCursors)
+            ..where((t) => t.source.equals('server')))
+          .getSingle();
+      expect(cursor.since, 5);
+      final pairs = await db.select(db.syncPairs).get();
+      expect(pairs, hasLength(1));
+      expect(pairs.single.localFolderPath, 'DCIM/Camera/');
+
+      // The new index exists.
+      final indexNames = (await db
+              .customSelect(
+                  "SELECT name FROM sqlite_master WHERE type = 'index' "
+                  "AND tbl_name = 'gallery_items'")
+              .get())
+          .map((row) => row.data['name'] as String)
+          .toSet();
+      expect(indexNames, contains('idx_gallery_items_upload_target'));
+
+      // The upgraded schema accepts writes to the new columns.
+      await (db.update(db.galleryItems)
+            ..where((t) => t.path.equals('/Photos/a.jpg')))
+          .write(const GalleryItemsCompanion(
+        uploadState: Value('uploaded'),
+        uploadTargetProviderId: Value('space-b'),
+        uploadTargetPath: Value('/Photos/b.jpg'),
+      ));
+      final updated = await (db.select(db.galleryItems)
+            ..where((t) => t.path.equals('/Photos/a.jpg')))
+          .getSingle();
+      expect(updated.uploadState, 'uploaded');
+      expect(updated.uploadTargetPath, '/Photos/b.jpg');
+    });
+
     test('a fresh install creates the current schema directly via onCreate',
         () async {
       final db = GalleryMirrorDatabase(NativeDatabase.memory());

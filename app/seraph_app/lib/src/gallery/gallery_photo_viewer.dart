@@ -98,7 +98,9 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
           if (!mounted) {
             return;
           }
-          _showSnackBar('Uploaded to Seraph.');
+          // Ticket 20: not "backed up" yet - Seraph has not independently
+          // confirmed it, only this device's own upload response has.
+          _showSnackBar('Uploaded to Seraph - awaiting confirmation.');
         case GalleryUploadResult.noSyncPair:
           _showSnackBar('No Sync Pair covers this folder.');
         case GalleryUploadResult.deviceFileUnavailable:
@@ -152,7 +154,13 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
                 controller.revision.value;
                 final item = controller.itemAt(index);
                 if (item == null ||
-                    item.availability != GalleryAvailability.deviceOnly) {
+                    item.availability != GalleryAvailability.deviceOnly ||
+                    item.isAwaitingVerification) {
+                  // Ticket 20: an item already uploaded and awaiting the
+                  // delta feed's confirmation must not offer the button
+                  // again - it is still Device only (not yet Verified), but
+                  // there is nothing more for a press to do until the feed
+                  // answers.
                   return const SizedBox.shrink();
                 }
                 return ValueListenableBuilder<bool>(

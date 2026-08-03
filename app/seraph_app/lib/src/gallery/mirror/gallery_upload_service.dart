@@ -7,12 +7,17 @@ import 'package:seraph_app/src/gallery/mirror/gallery_upload_backend.dart';
 /// upload button on the full-screen photo viewer, `gallery_photo_viewer.dart`)
 /// turns into a message.
 enum GalleryUploadResult {
-  /// The photo was PUT to a new path and the item is now Synced.
+  /// The photo was PUT to a new path. **Not yet Synced** (ticket 20): the
+  /// item is recorded as awaiting the delta feed's independent confirmation
+  /// - see [GalleryItemDisplay.isAwaitingVerification] in
+  /// `gallery_item_display.dart`.
   uploaded,
 
   /// Nothing was uploaded because content of the same size already occupied
   /// the target path - ticket 19's "size matches, assume it is ours" rule.
-  /// The item is now Synced regardless.
+  /// **Not yet Synced either** - the same feed-verification gate applies
+  /// here as to [uploaded] (ticket 20: not even the upload response, real or
+  /// assumed, is proof by itself).
   alreadyPresent,
 
   /// No Sync Pair covers this item's local folder, so there is no
@@ -55,9 +60,15 @@ enum GalleryUploadResult {
 /// - [LocalSource] for the device copy's bytes ([LocalSource.loadOriginal],
 ///   already built for ticket 28's full-screen viewer).
 /// - [GalleryUploadBackend] for talking to Seraph - narrow specifically so
-///   this class's logic (never overwrite, disambiguate, mark synced) can be
-///   driven by a stubbed backend in tests, per the ticket's own seam
-///   requirement.
+///   this class's logic (never overwrite, disambiguate, record the pending
+///   upload) can be driven by a stubbed backend in tests, per the ticket's
+///   own seam requirement.
+///
+/// **Never marks an item Verified/Synced itself** (ticket 20): [upload]'s
+/// job ends at recording what it did ([GalleryMirror.recordUploaded]) so the
+/// delta feed can independently confirm it later ([GalleryMirror.applyPage]).
+/// [retryMismatchedUpload] is this class's other half of ticket 20 - the one
+/// case an upload gets undone and redone without the user asking.
 class GalleryUploadService {
   GalleryUploadService(this.mirror, this.backend, this.localSource);
 
@@ -81,11 +92,15 @@ class GalleryUploadService {
   /// Uploads [item] - which must be a Device only row - to its Sync Pair's
   /// Seraph folder, at its mirrored relative path, following ticket 19's
   /// rules: no overwrite (disambiguate on a same-path, different-size
-  /// collision), no upload at all on a same-size collision (marked Synced
-  /// directly), no client-side staging (one PUT straight to the final
-  /// candidate path), and no marking Synced unless the device copy read for
-  /// upload is still exactly the one the mirror row describes once the PUT
-  /// (or the same-size short-circuit) completes.
+  /// collision), no upload at all on a same-size collision (recorded as
+  /// pending verification directly), no client-side staging (one PUT
+  /// straight to the final candidate path), and no recording anything unless
+  /// the device copy read for upload is still exactly the one the mirror row
+  /// describes once the PUT (or the same-size short-circuit) completes.
+  ///
+  /// **Never marks [item] Verified/Synced** (ticket 20) - [GalleryUploadResult.
+  /// uploaded] and [GalleryUploadResult.alreadyPresent] both mean "recorded,
+  /// now awaiting the delta feed's independent confirmation", not "done".
   ///
   /// Throws [GalleryUploadException] for a backend failure the caller cannot
   /// route around itself - a read-only Space chief among them - so the UI
@@ -165,6 +180,34 @@ class GalleryUploadService {
     throw const GalleryUploadException(
       'Could not find a free name for this photo after many attempts.',
     );
+  }
+
+  /// Ticket 20's one case the app deletes something remotely on its own:
+  /// [item]'s most recent upload came back from [GalleryMirror.applyPage]
+  /// with a verification MISMATCH - the delta feed reported a length that
+  /// contradicts what this device believes it sent to [GalleryItem.
+  /// uploadTargetProviderId]/[GalleryItem.uploadTargetPath]. That remote
+  /// file cannot be trusted, so it is deleted first, then the upload is
+  /// retried from scratch through [upload] - which re-derives the target,
+  /// re-reads the device copy, and re-runs the full never-overwrite/
+  /// disambiguation logic, exactly as if this were the first attempt.
+  ///
+  /// Deleting before retrying matters: without it, a retry's own `PUT` would
+  /// find the (still-present, wrong-length) file occupying the target path
+  /// and treat it as an ordinary different-size collision, disambiguating
+  /// into a second file next to the untrusted one instead of replacing it.
+  ///
+  /// A caller works through [GalleryMirror.itemsNeedingUploadRetry] to find
+  /// which items need this - not automatic, and not scheduled, from this
+  /// class: ticket 20 is the verification mechanism, not the engine that
+  /// decides when to run it (tickets 22/24).
+  Future<GalleryUploadResult> retryMismatchedUpload(GalleryItem item) async {
+    final targetProviderId = item.uploadTargetProviderId;
+    final targetPath = item.uploadTargetPath;
+    if (targetProviderId != null && targetPath != null) {
+      await backend.remove(targetProviderId, targetPath);
+    }
+    return upload(item);
   }
 
   /// `IMG_0001.jpg` -> `IMG_0001 (2).jpg` for [attempt] == 2 - inserted

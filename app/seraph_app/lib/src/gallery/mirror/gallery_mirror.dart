@@ -17,6 +17,15 @@ const String _originCloud = 'cloud';
 const String _originDevice = 'device';
 const String _originBoth = 'both';
 
+/// [GalleryItems.uploadState] values (ticket 20) - named here for the same
+/// reason the origin values above are. See the column's own doc for what
+/// each one means; [GalleryItemDisplay.isAwaitingVerification] in
+/// `gallery_item_display.dart` reads these same two strings back (raw
+/// literals there too, matching how that file already reads [origin]'s raw
+/// values rather than importing private constants across files).
+const String _uploadStateUploaded = 'uploaded';
+const String _uploadStateMismatch = 'mismatch';
+
 /// [SyncCursors.source] value for ticket 17's device-side incremental-scan
 /// watermark - the highest MediaStore generation already applied. Reuses the
 /// same tiny table the delta feed's [GalleryMirror.since]/[pendingCursor]
@@ -334,6 +343,68 @@ class GalleryMirror {
 
         // No row for this (providerId, path) yet.
         //
+        // Ticket 20 verification: is there a Device only row with an upload
+        // pending confirmation at EXACTLY this (providerId, path)? Checked
+        // before Rule 2/3 below because it is the strongest possible signal
+        // - the literal path [GalleryUploadService] recorded, not a path
+        // Rule 2 would have to re-derive from the Sync Pair (which gets a
+        // disambiguated upload's real path wrong - ticket 19's "record the
+        // path actually used, not a recipe for deriving it").
+        final pendingUpload = await (_db.select(_db.galleryItems)
+              ..where((t) =>
+                  t.origin.equals(_originDevice) &
+                  t.uploadTargetProviderId.equals(item.providerId) &
+                  t.uploadTargetPath.equals(item.path))
+              ..limit(1))
+            .getSingleOrNull();
+
+        if (pendingUpload != null) {
+          if (item.size == (pendingUpload.localSize ?? -1)) {
+            // Verified: Seraph independently reports a file at the expected
+            // path with the expected length (CONTEXT.md's **Verified**).
+            // This is the ONLY place [origin] flips to `both` on the back of
+            // an upload - never [recordUploaded] itself (ticket 20's "no
+            // code path marks an item Verified on the basis of the upload
+            // response alone").
+            await (_db.update(_db.galleryItems)
+                  ..where((t) => t.id.equals(pendingUpload.id)))
+                .write(GalleryItemsCompanion(
+              origin: const Value(_originBoth),
+              providerId: Value(item.providerId),
+              path: Value(item.path),
+              seq: Value(item.seq),
+              capturedAtSource: Value(item.capturedAtSource),
+              width: Value(item.width),
+              height: Value(item.height),
+              orientation: Value(item.orientation),
+              size: Value(item.size),
+              mime: Value(item.mime),
+              unsupported: Value(item.unsupported),
+              metadataPending: Value(item.metadataPending),
+              uploadTargetProviderId: const Value(null),
+              uploadTargetPath: const Value(null),
+              uploadState: const Value(null),
+              // capturedAt deliberately NOT rewritten - same rule as every
+              // other merge in this class: the device row that already
+              // existed keeps its timeline position.
+            ));
+          } else {
+            // Verification CONTRADICTS the upload: Seraph reports a
+            // different length than what this device believes it sent. The
+            // remote file cannot be trusted - flagged here for
+            // [GalleryUploadService.retryMismatchedUpload] to delete it and
+            // retry (this class makes no network calls itself - see the
+            // class doc). [origin] stays `device`: still visibly
+            // not-backed-up, the safe direction, until a retry succeeds.
+            await (_db.update(_db.galleryItems)
+                  ..where((t) => t.id.equals(pendingUpload.id)))
+                .write(const GalleryItemsCompanion(
+              uploadState: Value(_uploadStateMismatch),
+            ));
+          }
+          continue;
+        }
+
         // Rule 2 (ticket 18): a Sync Pair whose Seraph folder covers
         // [item.path] makes the matching Device only row computable by path
         // alone - try every pair whose provider matches, first match wins
@@ -998,15 +1069,24 @@ class GalleryMirror {
     return _expectedRemotePath(pair, relativePath, displayName);
   }
 
-  /// Records that [item] now has a Seraph copy at ([providerId], [path]) -
-  /// called once an upload actually succeeds, or once a target path turns
-  /// out to already hold this device's own content (ticket 19's "size
-  /// matches - assume it is ours, mark synced, do not upload" rule). Marks
-  /// the row Synced immediately rather than waiting for the next delta poll
-  /// to independently rediscover the same file, and **is** the "record the
-  /// remote path the photo actually went to" criterion: [path] is whatever
-  /// path the caller actually used - the original target or a disambiguated
-  /// one - never recomputed from the Sync Pair afterwards.
+  /// Records that [item]'s upload PUT to ([providerId], [path]) succeeded,
+  /// or that the target path turned out to already hold this device's own
+  /// content (ticket 19's "size matches - assume it is ours, do not upload"
+  /// rule) - either way, an upload attempt this device made, now awaiting
+  /// independent confirmation from the delta feed (ticket 20).
+  ///
+  /// **Deliberately does NOT mark the row Synced.** [origin] stays `device`
+  /// - the item keeps showing as not backed up, "in progress" rather than
+  /// done, until [applyPage] sees this exact (providerId, path) come back
+  /// through the feed with a matching length. This is ticket 20's central
+  /// rule: "no code path marks an item Verified on the basis of the upload
+  /// response alone." What this method DOES do is **is** the "record the
+  /// remote path the photo actually went to" criterion from ticket 19:
+  /// [path] is whatever path the caller actually used - the original target
+  /// or a disambiguated one - stored in [GalleryItems.uploadTargetPath] so
+  /// [applyPage] can recognise the feed reporting exactly this file, not a
+  /// path re-derived from the Sync Pair (which would get a disambiguated
+  /// upload wrong).
   ///
   /// The write is conditioned on [item]'s id AND its local identity still
   /// matching exactly what it was when the caller started - not on the id
@@ -1029,12 +1109,27 @@ class GalleryMirror {
               t.localDisplayName.equals(item.localDisplayName ?? '') &
               t.localSize.equals(item.localSize ?? -1)))
         .write(GalleryItemsCompanion(
-      origin: const Value(_originBoth),
-      providerId: Value(providerId),
-      path: Value(path),
+      uploadTargetProviderId: Value(providerId),
+      uploadTargetPath: Value(path),
+      uploadState: const Value(_uploadStateUploaded),
     ));
     return rows > 0;
   }
+
+  /// Every Device only row whose most recent upload's verification came back
+  /// CONTRADICTING it - a length mismatch [applyPage] recorded as
+  /// [_uploadStateMismatch] - for [GalleryUploadService.
+  /// retryMismatchedUpload] to work through: delete the untrusted remote
+  /// file at [GalleryItem.uploadTargetProviderId]/[GalleryItem.
+  /// uploadTargetPath] and retry the upload. This class makes no network
+  /// calls itself (see the class doc), so it only surfaces which rows need
+  /// that done - it never attempts the deletion.
+  Future<List<GalleryItem>> itemsNeedingUploadRetry() => (_db.select(
+          _db.galleryItems)
+        ..where((t) =>
+            t.origin.equals(_originDevice) &
+            t.uploadState.equals(_uploadStateMismatch)))
+      .get();
 
   /// Retroactively merges [pair]'s Local Source against the mirror as it
   /// stands right now - called once, from [createSyncPair], never from the

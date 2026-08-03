@@ -133,6 +133,24 @@ class $GalleryItemsTable extends GalleryItems
       defaultConstraints: GeneratedColumn.constraintIsAlways(
           'CHECK ("metadata_pending" IN (0, 1))'),
       defaultValue: const Constant(false));
+  static const VerificationMeta _uploadStateMeta =
+      const VerificationMeta('uploadState');
+  @override
+  late final GeneratedColumn<String> uploadState = GeneratedColumn<String>(
+      'upload_state', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _uploadTargetProviderIdMeta =
+      const VerificationMeta('uploadTargetProviderId');
+  @override
+  late final GeneratedColumn<String> uploadTargetProviderId =
+      GeneratedColumn<String>('upload_target_provider_id', aliasedName, true,
+          type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _uploadTargetPathMeta =
+      const VerificationMeta('uploadTargetPath');
+  @override
+  late final GeneratedColumn<String> uploadTargetPath = GeneratedColumn<String>(
+      'upload_target_path', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
   @override
   List<GeneratedColumn> get $columns => [
         id,
@@ -152,7 +170,10 @@ class $GalleryItemsTable extends GalleryItems
         size,
         mime,
         unsupported,
-        metadataPending
+        metadataPending,
+        uploadState,
+        uploadTargetProviderId,
+        uploadTargetPath
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -255,6 +276,24 @@ class $GalleryItemsTable extends GalleryItems
           metadataPending.isAcceptableOrUnknown(
               data['metadata_pending']!, _metadataPendingMeta));
     }
+    if (data.containsKey('upload_state')) {
+      context.handle(
+          _uploadStateMeta,
+          uploadState.isAcceptableOrUnknown(
+              data['upload_state']!, _uploadStateMeta));
+    }
+    if (data.containsKey('upload_target_provider_id')) {
+      context.handle(
+          _uploadTargetProviderIdMeta,
+          uploadTargetProviderId.isAcceptableOrUnknown(
+              data['upload_target_provider_id']!, _uploadTargetProviderIdMeta));
+    }
+    if (data.containsKey('upload_target_path')) {
+      context.handle(
+          _uploadTargetPathMeta,
+          uploadTargetPath.isAcceptableOrUnknown(
+              data['upload_target_path']!, _uploadTargetPathMeta));
+    }
     return context;
   }
 
@@ -304,6 +343,13 @@ class $GalleryItemsTable extends GalleryItems
           .read(DriftSqlType.string, data['${effectivePrefix}unsupported'])!,
       metadataPending: attachedDatabase.typeMapping
           .read(DriftSqlType.bool, data['${effectivePrefix}metadata_pending'])!,
+      uploadState: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}upload_state']),
+      uploadTargetProviderId: attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}upload_target_provider_id']),
+      uploadTargetPath: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}upload_target_path']),
     );
   }
 
@@ -356,6 +402,37 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
   final String mime;
   final String unsupported;
   final bool metadataPending;
+
+  /// Null when no upload is currently pending verification for this row -
+  /// which is every row except a `device` one [GalleryMirror.recordUploaded]
+  /// has written to. Two non-null values:
+  ///
+  /// - `'uploaded'` - the PUT (or the same-size "assume it's ours" shortcut)
+  ///   succeeded; [GalleryMirror.applyPage] is watching the feed for
+  ///   confirmation at ([uploadTargetProviderId], [uploadTargetPath]).
+  /// - `'mismatch'` - the feed reported a file there, but at a length that
+  ///   contradicts what this device believes it sent. The remote file cannot
+  ///   be trusted; [GalleryUploadService.retryMismatchedUpload] deletes it
+  ///   and retries.
+  ///
+  /// Cleared back to null the moment verification actually succeeds - at
+  /// that point [origin] has already flipped to `both`, which is what makes
+  /// "Synced" true; this column exists only to gate that flip on the feed
+  /// rather than on the upload response (CONTEXT.md's **Verified**, D10 in
+  /// `docs/gallery-mode-design-notes.md`). Plain text, not a Dart enum
+  /// column, for the same reason [origin] is.
+  final String? uploadState;
+
+  /// The exact (providerId, path) [GalleryUploadService.upload] PUT to, or
+  /// found already occupied by this device's own content - **the path the
+  /// photo actually went to, not a recipe for deriving it** (ticket 19),
+  /// which matters here specifically because a disambiguated upload's real
+  /// path cannot be recomputed from the Sync Pair alone. Set together with
+  /// [uploadState] by [GalleryMirror.recordUploaded]; read back by
+  /// [GalleryMirror.applyPage] to recognise the delta feed independently
+  /// reporting this exact file. Both null whenever [uploadState] is.
+  final String? uploadTargetProviderId;
+  final String? uploadTargetPath;
   const GalleryItem(
       {required this.id,
       required this.origin,
@@ -374,7 +451,10 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
       required this.size,
       required this.mime,
       required this.unsupported,
-      required this.metadataPending});
+      required this.metadataPending,
+      this.uploadState,
+      this.uploadTargetProviderId,
+      this.uploadTargetPath});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -410,6 +490,16 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
     map['mime'] = Variable<String>(mime);
     map['unsupported'] = Variable<String>(unsupported);
     map['metadata_pending'] = Variable<bool>(metadataPending);
+    if (!nullToAbsent || uploadState != null) {
+      map['upload_state'] = Variable<String>(uploadState);
+    }
+    if (!nullToAbsent || uploadTargetProviderId != null) {
+      map['upload_target_provider_id'] =
+          Variable<String>(uploadTargetProviderId);
+    }
+    if (!nullToAbsent || uploadTargetPath != null) {
+      map['upload_target_path'] = Variable<String>(uploadTargetPath);
+    }
     return map;
   }
 
@@ -443,6 +533,15 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
       mime: Value(mime),
       unsupported: Value(unsupported),
       metadataPending: Value(metadataPending),
+      uploadState: uploadState == null && nullToAbsent
+          ? const Value.absent()
+          : Value(uploadState),
+      uploadTargetProviderId: uploadTargetProviderId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(uploadTargetProviderId),
+      uploadTargetPath: uploadTargetPath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(uploadTargetPath),
     );
   }
 
@@ -469,6 +568,10 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
       mime: serializer.fromJson<String>(json['mime']),
       unsupported: serializer.fromJson<String>(json['unsupported']),
       metadataPending: serializer.fromJson<bool>(json['metadataPending']),
+      uploadState: serializer.fromJson<String?>(json['uploadState']),
+      uploadTargetProviderId:
+          serializer.fromJson<String?>(json['uploadTargetProviderId']),
+      uploadTargetPath: serializer.fromJson<String?>(json['uploadTargetPath']),
     );
   }
   @override
@@ -493,6 +596,10 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
       'mime': serializer.toJson<String>(mime),
       'unsupported': serializer.toJson<String>(unsupported),
       'metadataPending': serializer.toJson<bool>(metadataPending),
+      'uploadState': serializer.toJson<String?>(uploadState),
+      'uploadTargetProviderId':
+          serializer.toJson<String?>(uploadTargetProviderId),
+      'uploadTargetPath': serializer.toJson<String?>(uploadTargetPath),
     };
   }
 
@@ -514,7 +621,10 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
           int? size,
           String? mime,
           String? unsupported,
-          bool? metadataPending}) =>
+          bool? metadataPending,
+          Value<String?> uploadState = const Value.absent(),
+          Value<String?> uploadTargetProviderId = const Value.absent(),
+          Value<String?> uploadTargetPath = const Value.absent()}) =>
       GalleryItem(
         id: id ?? this.id,
         origin: origin ?? this.origin,
@@ -539,6 +649,13 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
         mime: mime ?? this.mime,
         unsupported: unsupported ?? this.unsupported,
         metadataPending: metadataPending ?? this.metadataPending,
+        uploadState: uploadState.present ? uploadState.value : this.uploadState,
+        uploadTargetProviderId: uploadTargetProviderId.present
+            ? uploadTargetProviderId.value
+            : this.uploadTargetProviderId,
+        uploadTargetPath: uploadTargetPath.present
+            ? uploadTargetPath.value
+            : this.uploadTargetPath,
       );
   GalleryItem copyWithCompanion(GalleryItemsCompanion data) {
     return GalleryItem(
@@ -574,6 +691,14 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
       metadataPending: data.metadataPending.present
           ? data.metadataPending.value
           : this.metadataPending,
+      uploadState:
+          data.uploadState.present ? data.uploadState.value : this.uploadState,
+      uploadTargetProviderId: data.uploadTargetProviderId.present
+          ? data.uploadTargetProviderId.value
+          : this.uploadTargetProviderId,
+      uploadTargetPath: data.uploadTargetPath.present
+          ? data.uploadTargetPath.value
+          : this.uploadTargetPath,
     );
   }
 
@@ -597,31 +722,38 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
           ..write('size: $size, ')
           ..write('mime: $mime, ')
           ..write('unsupported: $unsupported, ')
-          ..write('metadataPending: $metadataPending')
+          ..write('metadataPending: $metadataPending, ')
+          ..write('uploadState: $uploadState, ')
+          ..write('uploadTargetProviderId: $uploadTargetProviderId, ')
+          ..write('uploadTargetPath: $uploadTargetPath')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(
-      id,
-      origin,
-      providerId,
-      path,
-      seq,
-      localRelativePath,
-      localDisplayName,
-      localSize,
-      localDateTaken,
-      capturedAt,
-      capturedAtSource,
-      width,
-      height,
-      orientation,
-      size,
-      mime,
-      unsupported,
-      metadataPending);
+  int get hashCode => Object.hashAll([
+        id,
+        origin,
+        providerId,
+        path,
+        seq,
+        localRelativePath,
+        localDisplayName,
+        localSize,
+        localDateTaken,
+        capturedAt,
+        capturedAtSource,
+        width,
+        height,
+        orientation,
+        size,
+        mime,
+        unsupported,
+        metadataPending,
+        uploadState,
+        uploadTargetProviderId,
+        uploadTargetPath
+      ]);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -643,7 +775,10 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
           other.size == this.size &&
           other.mime == this.mime &&
           other.unsupported == this.unsupported &&
-          other.metadataPending == this.metadataPending);
+          other.metadataPending == this.metadataPending &&
+          other.uploadState == this.uploadState &&
+          other.uploadTargetProviderId == this.uploadTargetProviderId &&
+          other.uploadTargetPath == this.uploadTargetPath);
 }
 
 class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
@@ -665,6 +800,9 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
   final Value<String> mime;
   final Value<String> unsupported;
   final Value<bool> metadataPending;
+  final Value<String?> uploadState;
+  final Value<String?> uploadTargetProviderId;
+  final Value<String?> uploadTargetPath;
   const GalleryItemsCompanion({
     this.id = const Value.absent(),
     this.origin = const Value.absent(),
@@ -684,6 +822,9 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
     this.mime = const Value.absent(),
     this.unsupported = const Value.absent(),
     this.metadataPending = const Value.absent(),
+    this.uploadState = const Value.absent(),
+    this.uploadTargetProviderId = const Value.absent(),
+    this.uploadTargetPath = const Value.absent(),
   });
   GalleryItemsCompanion.insert({
     this.id = const Value.absent(),
@@ -704,6 +845,9 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
     this.mime = const Value.absent(),
     this.unsupported = const Value.absent(),
     this.metadataPending = const Value.absent(),
+    this.uploadState = const Value.absent(),
+    this.uploadTargetProviderId = const Value.absent(),
+    this.uploadTargetPath = const Value.absent(),
   }) : capturedAt = Value(capturedAt);
   static Insertable<GalleryItem> custom({
     Expression<int>? id,
@@ -724,6 +868,9 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
     Expression<String>? mime,
     Expression<String>? unsupported,
     Expression<bool>? metadataPending,
+    Expression<String>? uploadState,
+    Expression<String>? uploadTargetProviderId,
+    Expression<String>? uploadTargetPath,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -744,6 +891,10 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
       if (mime != null) 'mime': mime,
       if (unsupported != null) 'unsupported': unsupported,
       if (metadataPending != null) 'metadata_pending': metadataPending,
+      if (uploadState != null) 'upload_state': uploadState,
+      if (uploadTargetProviderId != null)
+        'upload_target_provider_id': uploadTargetProviderId,
+      if (uploadTargetPath != null) 'upload_target_path': uploadTargetPath,
     });
   }
 
@@ -765,7 +916,10 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
       Value<int>? size,
       Value<String>? mime,
       Value<String>? unsupported,
-      Value<bool>? metadataPending}) {
+      Value<bool>? metadataPending,
+      Value<String?>? uploadState,
+      Value<String?>? uploadTargetProviderId,
+      Value<String?>? uploadTargetPath}) {
     return GalleryItemsCompanion(
       id: id ?? this.id,
       origin: origin ?? this.origin,
@@ -785,6 +939,10 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
       mime: mime ?? this.mime,
       unsupported: unsupported ?? this.unsupported,
       metadataPending: metadataPending ?? this.metadataPending,
+      uploadState: uploadState ?? this.uploadState,
+      uploadTargetProviderId:
+          uploadTargetProviderId ?? this.uploadTargetProviderId,
+      uploadTargetPath: uploadTargetPath ?? this.uploadTargetPath,
     );
   }
 
@@ -845,6 +1003,16 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
     if (metadataPending.present) {
       map['metadata_pending'] = Variable<bool>(metadataPending.value);
     }
+    if (uploadState.present) {
+      map['upload_state'] = Variable<String>(uploadState.value);
+    }
+    if (uploadTargetProviderId.present) {
+      map['upload_target_provider_id'] =
+          Variable<String>(uploadTargetProviderId.value);
+    }
+    if (uploadTargetPath.present) {
+      map['upload_target_path'] = Variable<String>(uploadTargetPath.value);
+    }
     return map;
   }
 
@@ -868,7 +1036,10 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
           ..write('size: $size, ')
           ..write('mime: $mime, ')
           ..write('unsupported: $unsupported, ')
-          ..write('metadataPending: $metadataPending')
+          ..write('metadataPending: $metadataPending, ')
+          ..write('uploadState: $uploadState, ')
+          ..write('uploadTargetProviderId: $uploadTargetProviderId, ')
+          ..write('uploadTargetPath: $uploadTargetPath')
           ..write(')'))
         .toString();
   }
@@ -1984,6 +2155,9 @@ abstract class _$GalleryMirrorDatabase extends GeneratedDatabase {
   late final Index idxGalleryItemsCapturedAtId = Index(
       'idx_gallery_items_captured_at_id',
       'CREATE INDEX idx_gallery_items_captured_at_id ON gallery_items (captured_at, id)');
+  late final Index idxGalleryItemsUploadTarget = Index(
+      'idx_gallery_items_upload_target',
+      'CREATE INDEX idx_gallery_items_upload_target ON gallery_items (upload_target_provider_id, upload_target_path)');
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -1996,7 +2170,8 @@ abstract class _$GalleryMirrorDatabase extends GeneratedDatabase {
         syncPairs,
         idxGalleryItemsLocalIdentity,
         idxGalleryItemsOriginSizeCapturedAt,
-        idxGalleryItemsCapturedAtId
+        idxGalleryItemsCapturedAtId,
+        idxGalleryItemsUploadTarget
       ];
 }
 
@@ -2020,6 +2195,9 @@ typedef $$GalleryItemsTableCreateCompanionBuilder = GalleryItemsCompanion
   Value<String> mime,
   Value<String> unsupported,
   Value<bool> metadataPending,
+  Value<String?> uploadState,
+  Value<String?> uploadTargetProviderId,
+  Value<String?> uploadTargetPath,
 });
 typedef $$GalleryItemsTableUpdateCompanionBuilder = GalleryItemsCompanion
     Function({
@@ -2041,6 +2219,9 @@ typedef $$GalleryItemsTableUpdateCompanionBuilder = GalleryItemsCompanion
   Value<String> mime,
   Value<String> unsupported,
   Value<bool> metadataPending,
+  Value<String?> uploadState,
+  Value<String?> uploadTargetProviderId,
+  Value<String?> uploadTargetPath,
 });
 
 class $$GalleryItemsTableFilterComposer
@@ -2109,6 +2290,17 @@ class $$GalleryItemsTableFilterComposer
 
   ColumnFilters<bool> get metadataPending => $composableBuilder(
       column: $table.metadataPending,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get uploadState => $composableBuilder(
+      column: $table.uploadState, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get uploadTargetProviderId => $composableBuilder(
+      column: $table.uploadTargetProviderId,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get uploadTargetPath => $composableBuilder(
+      column: $table.uploadTargetPath,
       builder: (column) => ColumnFilters(column));
 }
 
@@ -2179,6 +2371,17 @@ class $$GalleryItemsTableOrderingComposer
   ColumnOrderings<bool> get metadataPending => $composableBuilder(
       column: $table.metadataPending,
       builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get uploadState => $composableBuilder(
+      column: $table.uploadState, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get uploadTargetProviderId => $composableBuilder(
+      column: $table.uploadTargetProviderId,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get uploadTargetPath => $composableBuilder(
+      column: $table.uploadTargetPath,
+      builder: (column) => ColumnOrderings(column));
 }
 
 class $$GalleryItemsTableAnnotationComposer
@@ -2243,6 +2446,15 @@ class $$GalleryItemsTableAnnotationComposer
 
   GeneratedColumn<bool> get metadataPending => $composableBuilder(
       column: $table.metadataPending, builder: (column) => column);
+
+  GeneratedColumn<String> get uploadState => $composableBuilder(
+      column: $table.uploadState, builder: (column) => column);
+
+  GeneratedColumn<String> get uploadTargetProviderId => $composableBuilder(
+      column: $table.uploadTargetProviderId, builder: (column) => column);
+
+  GeneratedColumn<String> get uploadTargetPath => $composableBuilder(
+      column: $table.uploadTargetPath, builder: (column) => column);
 }
 
 class $$GalleryItemsTableTableManager extends RootTableManager<
@@ -2290,6 +2502,9 @@ class $$GalleryItemsTableTableManager extends RootTableManager<
             Value<String> mime = const Value.absent(),
             Value<String> unsupported = const Value.absent(),
             Value<bool> metadataPending = const Value.absent(),
+            Value<String?> uploadState = const Value.absent(),
+            Value<String?> uploadTargetProviderId = const Value.absent(),
+            Value<String?> uploadTargetPath = const Value.absent(),
           }) =>
               GalleryItemsCompanion(
             id: id,
@@ -2310,6 +2525,9 @@ class $$GalleryItemsTableTableManager extends RootTableManager<
             mime: mime,
             unsupported: unsupported,
             metadataPending: metadataPending,
+            uploadState: uploadState,
+            uploadTargetProviderId: uploadTargetProviderId,
+            uploadTargetPath: uploadTargetPath,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
@@ -2330,6 +2548,9 @@ class $$GalleryItemsTableTableManager extends RootTableManager<
             Value<String> mime = const Value.absent(),
             Value<String> unsupported = const Value.absent(),
             Value<bool> metadataPending = const Value.absent(),
+            Value<String?> uploadState = const Value.absent(),
+            Value<String?> uploadTargetProviderId = const Value.absent(),
+            Value<String?> uploadTargetPath = const Value.absent(),
           }) =>
               GalleryItemsCompanion.insert(
             id: id,
@@ -2350,6 +2571,9 @@ class $$GalleryItemsTableTableManager extends RootTableManager<
             mime: mime,
             unsupported: unsupported,
             metadataPending: metadataPending,
+            uploadState: uploadState,
+            uploadTargetProviderId: uploadTargetProviderId,
+            uploadTargetPath: uploadTargetPath,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

@@ -49,6 +49,23 @@ extension GalleryItemDisplay on GalleryItem {
   /// carrying [unsupportedReasonLabel].
   bool get isUnsupported => unsupported.isNotEmpty;
 
+  /// Ticket 20: true when this device has uploaded (or matched) this photo
+  /// and is waiting for the delta feed to independently confirm it - CONTEXT
+  /// .md's **Verified**, not yet true. [availability] is still [GalleryAvailability.deviceOnly]
+  /// here (it must be - the item is not backed up yet, and never claiming
+  /// otherwise is the whole point), so the UI reads this separately to show
+  /// "in progress" rather than a plain "on this device" - user story 18:
+  /// "shown as still in progress rather than as backed up".
+  ///
+  /// Reads [GalleryItems.uploadState]'s raw values directly (`'uploaded'`/
+  /// `'mismatch'`, both truthy here - even a mismatch pending retry is still
+  /// "in progress" from the user's point of view) rather than importing
+  /// `gallery_mirror.dart`'s private constants, the same convention
+  /// [availability] already follows for [origin]'s raw values.
+  bool get isAwaitingVerification =>
+      origin == 'device' &&
+      (uploadState == 'uploaded' || uploadState == 'mismatch');
+
   /// True when this row carries a device copy - [GalleryAvailability.
   /// deviceOnly] or [GalleryAvailability.synced] - so the grid and the
   /// viewer can ask the Local Source seam (ticket 28,

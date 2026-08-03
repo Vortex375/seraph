@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:seraph_app/src/gallery/gallery_item_display.dart';
+import 'package:seraph_app/src/gallery/mirror/gallery_delta_models.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_upload_backend.dart';
@@ -75,7 +76,8 @@ void main() {
     test(
         'places the photo under the Sync Pair Seraph folder at its mirrored '
         'relative path, with no client-side staging, and the Seraph copy is '
-        'byte-identical', () async {
+        'byte-identical - but the item is not yet Synced (ticket 20: only '
+        'the delta feed can make that true)', () async {
       final bytes = _bytesOfLength(4096);
       final item = await scanOneDevicePhoto(bytes: bytes);
 
@@ -90,11 +92,17 @@ void main() {
       expect(call.$2, '/Photos/Phone/2026/IMG_0001.jpg');
       expect(call.$3, bytes, reason: 'the Seraph copy must be byte-identical');
 
-      final synced = (await mirror.queryItems()).single;
-      expect(synced.availability, GalleryAvailability.synced);
-      expect(synced.providerId, 'space-a');
-      expect(synced.path, '/Photos/Phone/2026/IMG_0001.jpg',
-          reason: 'the path actually used is recorded against the item');
+      final pending = (await mirror.queryItems()).single;
+      expect(pending.availability, GalleryAvailability.deviceOnly,
+          reason: 'ticket 20: the upload response alone must never mark an '
+              'item Verified - it stays not-backed-up until the feed '
+              'confirms it');
+      expect(pending.isAwaitingVerification, isTrue,
+          reason: 'shown as in progress, not as plain "on this device"');
+      expect(pending.uploadTargetProviderId, 'space-a',
+          reason: 'the path actually used is recorded against the item, '
+              'for the feed-based verification to check against');
+      expect(pending.uploadTargetPath, '/Photos/Phone/2026/IMG_0001.jpg');
     });
 
     test(
@@ -119,15 +127,17 @@ void main() {
       expect(disambiguated, bytes,
           reason: 'the upload itself must have happened, under a new name');
 
-      final synced = (await mirror.queryItems()).single;
-      expect(synced.path, '/Photos/Phone/2026/IMG_0001 (1).jpg',
+      final pending = (await mirror.queryItems()).single;
+      expect(pending.uploadTargetPath, '/Photos/Phone/2026/IMG_0001 (1).jpg',
           reason: 'the recorded path is the one actually used, not the '
-              'originally computed one');
+              'originally computed one - what ticket 20 verification must '
+              'check against');
     });
 
     test(
         'an occupied target path holding content of the same size results in '
-        'no upload, and the item is marked synced', () async {
+        'no upload, and the item awaits verification the same as a real '
+        'upload would', () async {
       final bytes = _bytesOfLength(4096, 0x11);
       // Different content, same length - the one case ticket 19 accepts
       // getting wrong.
@@ -140,9 +150,13 @@ void main() {
       expect(result, GalleryUploadResult.alreadyPresent);
       expect(backend.putCalls, isEmpty, reason: 'no upload should happen');
 
-      final synced = (await mirror.queryItems()).single;
-      expect(synced.availability, GalleryAvailability.synced);
-      expect(synced.path, '/Photos/Phone/2026/IMG_0001.jpg');
+      final pending = (await mirror.queryItems()).single;
+      expect(pending.availability, GalleryAvailability.deviceOnly,
+          reason: 'ticket 20: even the "assume it is ours" shortcut is not '
+              'Seraph independently reporting the file - the feed still has '
+              'to confirm it before this shows as backed up');
+      expect(pending.isAwaitingVerification, isTrue);
+      expect(pending.uploadTargetPath, '/Photos/Phone/2026/IMG_0001.jpg');
     });
 
     test(
@@ -169,8 +183,10 @@ void main() {
       backend.putError = null;
       final result = await service.upload(item);
       expect(result, GalleryUploadResult.uploaded);
-      final synced = (await mirror.queryItems()).single;
-      expect(synced.availability, GalleryAvailability.synced);
+      final pending = (await mirror.queryItems()).single;
+      expect(pending.isAwaitingVerification, isTrue,
+          reason: 'a successful retry still awaits feed verification, same '
+              'as a first-attempt upload does');
     });
 
     test('a photo deleted from the device mid-upload is not marked synced',
@@ -303,6 +319,331 @@ void main() {
       expect(marked, isFalse);
       expect(await mirror.totalCount(), 0,
           reason: 'no row should have been resurrected or created');
+    });
+  });
+
+  group('Ticket 20: verification through the delta feed', () {
+    late GalleryMirrorDatabase db;
+    late GalleryMirror mirror;
+    late FakeGalleryUploadBackend backend;
+    late FakeLocalSource localSource;
+    late GalleryUploadService service;
+
+    setUp(() async {
+      db = GalleryMirrorDatabase(NativeDatabase.memory());
+      mirror = GalleryMirror(db);
+      backend = FakeGalleryUploadBackend();
+      localSource = FakeLocalSource();
+      service = GalleryUploadService(mirror, backend, localSource);
+
+      await mirror.createSyncPair(
+        localFolderPath: 'DCIM/Camera/',
+        spaceProviderId: 'space-a',
+        path: '/Photos/Phone',
+      );
+    });
+
+    tearDown(() async {
+      await db.close();
+    });
+
+    /// Scans, uploads and returns the resulting (still Device only, pending
+    /// verification) item - what every test below drives a feed page against.
+    Future<GalleryItem> uploadOnePhoto({
+      String relativePath = 'DCIM/Camera/2026/',
+      String displayName = 'IMG_0001.jpg',
+      Uint8List? bytes,
+    }) async {
+      final content = bytes ?? _bytesOfLength(4096);
+      await mirror.applyLocalScan([
+        localMediaItem(
+          relativePath: relativePath,
+          displayName: displayName,
+          size: content.length,
+        ),
+      ]);
+      localSource.setLocalBytes(relativePath, displayName, content);
+      final item = (await mirror.queryItems()).single;
+      final result = await service.upload(item);
+      expect(result, anyOf(GalleryUploadResult.uploaded,
+          GalleryUploadResult.alreadyPresent));
+      return (await mirror.queryItems()).single;
+    }
+
+    test(
+        'the delta feed reporting the expected path with the expected '
+        'length verifies the item - only then does it become Synced',
+        () async {
+      final pending = await uploadOnePhoto();
+      expect(pending.isAwaitingVerification, isTrue);
+
+      await mirror.applyPage(GalleryDeltaResponse(
+        items: [
+          GalleryDeltaItem(
+            providerId: 'space-a',
+            path: '/Photos/Phone/2026/IMG_0001.jpg',
+            seq: 1,
+            tombstone: false,
+            capturedAt: 999999, // deliberately different - must not move it
+            size: 4096,
+          ),
+        ],
+        nextCursor: '',
+        hasMore: false,
+        nextSince: 1,
+      ));
+
+      final verified = (await mirror.queryItems()).single;
+      expect(verified.availability, GalleryAvailability.synced,
+          reason: 'ticket 20: Seraph independently reported the file at '
+              'the expected path with the expected length');
+      expect(verified.isAwaitingVerification, isFalse);
+      expect(verified.providerId, 'space-a');
+      expect(verified.path, '/Photos/Phone/2026/IMG_0001.jpg');
+      expect(verified.capturedAt, pending.capturedAt,
+          reason: 'a device photo keeps its timeline position when it '
+              'becomes Synced');
+    });
+
+    test(
+        'a photo uploaded under a disambiguated name verifies against the '
+        'name it actually went to, not the originally computed one',
+        () async {
+      backend.seed('space-a', '/Photos/Phone/2026/IMG_0001.jpg',
+          _bytesOfLength(100, 0x11));
+      final pending = await uploadOnePhoto();
+      expect(pending.uploadTargetPath, '/Photos/Phone/2026/IMG_0001 (1).jpg');
+
+      // A feed entry at the ORIGINAL (still-occupied-by-someone-else) path
+      // must not verify this item.
+      await mirror.applyPage(GalleryDeltaResponse(
+        items: [
+          GalleryDeltaItem(
+            providerId: 'space-a',
+            path: '/Photos/Phone/2026/IMG_0001.jpg',
+            seq: 1,
+            tombstone: false,
+            capturedAt: 1000,
+            size: 100,
+          ),
+        ],
+        nextCursor: '',
+        hasMore: false,
+        nextSince: 1,
+      ));
+      expect((await mirror.queryItems())
+              .firstWhere((i) => i.localDisplayName == 'IMG_0001.jpg')
+              .isAwaitingVerification,
+          isTrue,
+          reason: 'a feed entry at a different path must not verify this '
+              'item');
+
+      // The feed entry at the disambiguated path DOES verify it.
+      await mirror.applyPage(GalleryDeltaResponse(
+        items: [
+          GalleryDeltaItem(
+            providerId: 'space-a',
+            path: '/Photos/Phone/2026/IMG_0001 (1).jpg',
+            seq: 2,
+            tombstone: false,
+            capturedAt: 1000,
+            size: 4096,
+          ),
+        ],
+        nextCursor: '',
+        hasMore: false,
+        nextSince: 2,
+      ));
+      final verified = (await mirror.queryItems())
+          .firstWhere((i) => i.localDisplayName == 'IMG_0001.jpg');
+      expect(verified.availability, GalleryAvailability.synced);
+      expect(verified.path, '/Photos/Phone/2026/IMG_0001 (1).jpg');
+    });
+
+    test(
+        'a photo whose verification never arrives stays visibly '
+        'un-backed-up indefinitely, even as unrelated feed pages are applied',
+        () async {
+      final pending = await uploadOnePhoto();
+
+      // Pages that say nothing about this item, applied repeatedly - as
+      // would happen over many real poll cycles.
+      for (var i = 0; i < 3; i++) {
+        await mirror.applyPage(GalleryDeltaResponse(
+          items: [
+            GalleryDeltaItem(
+              providerId: 'space-a',
+              path: '/Photos/Other/unrelated-$i.jpg',
+              seq: i + 1,
+              tombstone: false,
+              capturedAt: 1,
+            ),
+          ],
+          nextCursor: '',
+          hasMore: false,
+          nextSince: i + 1,
+        ));
+      }
+
+      final stillPending = (await mirror.queryItems())
+          .firstWhere((i) => i.id == pending.id);
+      expect(stillPending.availability, GalleryAvailability.deviceOnly);
+      expect(stillPending.isAwaitingVerification, isTrue,
+          reason: 'failing in the safe direction: a false alarm, never '
+              'false confidence');
+    });
+
+    test(
+        'a feed entry with a length that contradicts the upload causes the '
+        'remote file to be deleted and the upload retried', () async {
+      final pending = await uploadOnePhoto();
+
+      await mirror.applyPage(GalleryDeltaResponse(
+        items: [
+          GalleryDeltaItem(
+            providerId: 'space-a',
+            path: '/Photos/Phone/2026/IMG_0001.jpg',
+            seq: 1,
+            tombstone: false,
+            capturedAt: 1000,
+            size: 1, // contradicts the 4096 bytes this device uploaded
+          ),
+        ],
+        nextCursor: '',
+        hasMore: false,
+        nextSince: 1,
+      ));
+
+      final mismatched = (await mirror.queryItems())
+          .firstWhere((i) => i.id == pending.id);
+      expect(mismatched.availability, GalleryAvailability.deviceOnly,
+          reason: 'a mismatch must not be mistaken for verification');
+      expect(mismatched.isAwaitingVerification, isTrue);
+
+      final needingRetry = await mirror.itemsNeedingUploadRetry();
+      expect(needingRetry.map((i) => i.id), [pending.id]);
+
+      final result = await service.retryMismatchedUpload(needingRetry.single);
+
+      expect(backend.removeCalls, [('space-a', '/Photos/Phone/2026/IMG_0001.jpg')],
+          reason: 'the untrusted remote file is deleted before the retry');
+      expect(result, GalleryUploadResult.uploaded);
+      expect(backend.putCalls, hasLength(2),
+          reason: 'the original upload plus the retry - the retry landed '
+              'back on the same path since the untrusted file was removed '
+              'first');
+      expect(backend.putCalls.last.$2, '/Photos/Phone/2026/IMG_0001.jpg');
+
+      final retried = (await mirror.queryItems())
+          .firstWhere((i) => i.id == pending.id);
+      expect(retried.isAwaitingVerification, isTrue,
+          reason: 'the retried upload itself is not proof either - it too '
+              'awaits the feed');
+      expect(await mirror.itemsNeedingUploadRetry(), isEmpty);
+
+      // And the retried upload verifies normally.
+      await mirror.applyPage(GalleryDeltaResponse(
+        items: [
+          GalleryDeltaItem(
+            providerId: 'space-a',
+            path: '/Photos/Phone/2026/IMG_0001.jpg',
+            seq: 2,
+            tombstone: false,
+            capturedAt: 1000,
+            size: 4096,
+          ),
+        ],
+        nextCursor: '',
+        hasMore: false,
+        nextSince: 2,
+      ));
+      final verified = (await mirror.queryItems())
+          .firstWhere((i) => i.id == pending.id);
+      expect(verified.availability, GalleryAvailability.synced);
+    });
+
+    test(
+        'a photo verified once is not re-verified on every subsequent sync',
+        () async {
+      final pending = await uploadOnePhoto();
+      await mirror.applyPage(GalleryDeltaResponse(
+        items: [
+          GalleryDeltaItem(
+            providerId: 'space-a',
+            path: '/Photos/Phone/2026/IMG_0001.jpg',
+            seq: 1,
+            tombstone: false,
+            capturedAt: 1000,
+            size: 4096,
+          ),
+        ],
+        nextCursor: '',
+        hasMore: false,
+        nextSince: 1,
+      ));
+      final verified = (await mirror.queryItems())
+          .firstWhere((i) => i.id == pending.id);
+      expect(verified.uploadTargetProviderId, isNull);
+      expect(verified.uploadTargetPath, isNull);
+
+      // A later, ordinary metadata refresh for the same (providerId, path) -
+      // exactly what a ticket-15-style "existing != null" update looks like.
+      // It must not touch [uploadTargetProviderId]/[uploadTargetPath] (both
+      // already null) or otherwise re-run verification.
+      await mirror.applyPage(GalleryDeltaResponse(
+        items: [
+          GalleryDeltaItem(
+            providerId: 'space-a',
+            path: '/Photos/Phone/2026/IMG_0001.jpg',
+            seq: 2,
+            tombstone: false,
+            capturedAt: 1000,
+            size: 4096,
+            mime: 'image/jpeg',
+          ),
+        ],
+        nextCursor: '',
+        hasMore: false,
+        nextSince: 2,
+      ));
+      final stillVerified = (await mirror.queryItems())
+          .firstWhere((i) => i.id == pending.id);
+      expect(stillVerified.availability, GalleryAvailability.synced);
+      expect(stillVerified.mime, 'image/jpeg');
+    });
+
+    test('verification survives an app restart between upload and feed '
+        'delivery', () async {
+      final pending = await uploadOnePhoto();
+
+      // Simulates an app restart: a fresh GalleryMirror wrapping the same
+      // (persisted) database, with no in-process state of its own - exactly
+      // what happens on a real device, since nothing about pending
+      // verification lives anywhere but the database.
+      final restarted = GalleryMirror(db);
+      final beforeRestart =
+          (await restarted.queryItems()).firstWhere((i) => i.id == pending.id);
+      expect(beforeRestart.isAwaitingVerification, isTrue);
+
+      await restarted.applyPage(GalleryDeltaResponse(
+        items: [
+          GalleryDeltaItem(
+            providerId: 'space-a',
+            path: '/Photos/Phone/2026/IMG_0001.jpg',
+            seq: 1,
+            tombstone: false,
+            capturedAt: 1000,
+            size: 4096,
+          ),
+        ],
+        nextCursor: '',
+        hasMore: false,
+        nextSince: 1,
+      ));
+
+      final verified =
+          (await restarted.queryItems()).firstWhere((i) => i.id == pending.id);
+      expect(verified.availability, GalleryAvailability.synced);
     });
   });
 }

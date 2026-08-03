@@ -90,6 +90,23 @@ class FileService {
     await c.write(path, data);
   }
 
+  /// Deletes the file (or collection) at [path].
+  ///
+  /// Throws (a [Client] is required - see [stat]'s null-client case) when no
+  /// server is configured, and propagates whatever the server responded with
+  /// otherwise - including a 404, which
+  /// [WebDavGalleryUploadBackend](../gallery/mirror/gallery_upload_backend.dart)
+  /// translates into "already gone, not an error" rather than surfacing it.
+  Future<void> removeFile(String path) async {
+    Client? c = client;
+    if (c == null) {
+      throw StateError('Not connected to a server');
+    }
+    final headers = await getRequestHeaders();
+    c.setHeaders(headers);
+    await c.remove(path);
+  }
+
   String getFileUrl(String path) {
     if (!path.startsWith('/')) {
       path = '/$path';

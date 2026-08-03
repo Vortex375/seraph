@@ -61,6 +61,16 @@ abstract class GalleryUploadBackend {
   /// amendment) is what makes that true for [WebDavGalleryUploadBackend]
   /// without any client-side staging of its own.
   Future<void> put(String spaceProviderId, String path, Uint8List bytes);
+
+  /// Deletes whatever currently occupies ([spaceProviderId], [path]) - ticket
+  /// 20's one case the app deletes something remotely on its own: a file the
+  /// delta feed reports at a length that contradicts what this device
+  /// believes it uploaded there. See [GalleryUploadService.
+  /// retryMismatchedUpload].
+  ///
+  /// A no-op, not an error, if nothing is there - the remote side may have
+  /// already been cleaned up by a previous, interrupted retry attempt.
+  Future<void> remove(String spaceProviderId, String path);
 }
 
 /// The production [GalleryUploadBackend], over the same [FileService]
@@ -116,6 +126,23 @@ class WebDavGalleryUploadBackend implements GalleryUploadBackend {
       // [FileService.writeBytes] throws this when no server is configured at
       // all - the same "not connected" case [statSize] recognises via a null
       // [FileService.stat] result.
+      throw GalleryUploadException(e.message);
+    }
+  }
+
+  @override
+  Future<void> remove(String spaceProviderId, String path) async {
+    try {
+      await fileService.removeFile(_webDavPath(spaceProviderId, path));
+    } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      if (status == 404) {
+        // Already gone - not an error (see this method's doc on the
+        // interface).
+        return;
+      }
+      throw _translate(e, status);
+    } on StateError catch (e) {
       throw GalleryUploadException(e.message);
     }
   }

@@ -42,7 +42,7 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
   }
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -103,6 +103,24 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
             // Sync Pair configuration.
             await m.createTable(syncPairs);
           }
+          if (from < 7) {
+            // v7 (ticket 20) added verification-through-the-delta-feed
+            // tracking: which (providerId, path) an upload actually targeted,
+            // pending independent confirmation from the feed. Three nullable
+            // columns on an existing table, plus their index - no data to
+            // backfill, since a pre-upgrade device has no upload in flight
+            // that this table did not already know about some other way (a
+            // row either never attempted an upload, in which case these stay
+            // null forever until one does, or ticket 19's old behaviour had
+            // already flipped it to `both` - which this migration leaves
+            // alone; only NEW uploads after the upgrade go through the
+            // verification-gated path).
+            await m.addColumn(galleryItems, galleryItems.uploadState);
+            await m.addColumn(
+                galleryItems, galleryItems.uploadTargetProviderId);
+            await m.addColumn(galleryItems, galleryItems.uploadTargetPath);
+            await m.createIndex(idxGalleryItemsUploadTarget);
+          }
         },
         beforeOpen: (details) async {
           await customStatement('PRAGMA foreign_keys = ON');
@@ -154,6 +172,13 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
 ///   walk an ascending index backwards to satisfy a `DESC` query directly;
 ///   a second, descending-only index here would exist purely to save SQLite
 ///   a reverse traversal it already knows how to do for free.
+/// - [idxGalleryItemsUploadTarget] (ticket 20) on `(uploadTargetProviderId,
+///   uploadTargetPath)` - the probe [GalleryMirror.applyPage] runs for every
+///   non-tombstone feed item to recognise "this is the exact file I uploaded,
+///   pending verification" before falling back to the ordinary dedup rules.
+///   Without it, every delta page item costs a full table scan looking for a
+///   row awaiting verification, on top of the dedup work the page already
+///   does.
 @TableIndex(
   name: 'idx_gallery_items_local_identity',
   columns: {
@@ -170,6 +195,10 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
 @TableIndex(
   name: 'idx_gallery_items_captured_at_id',
   columns: {#capturedAt, #id},
+)
+@TableIndex(
+  name: 'idx_gallery_items_upload_target',
+  columns: {#uploadTargetProviderId, #uploadTargetPath},
 )
 class GalleryItems extends Table {
   IntColumn get id => integer().autoIncrement()();
@@ -225,6 +254,39 @@ class GalleryItems extends Table {
   TextColumn get unsupported => text().withDefault(const Constant(''))();
   BoolColumn get metadataPending =>
       boolean().withDefault(const Constant(false))();
+
+  // --- Ticket 20: verification through the delta feed ---
+
+  /// Null when no upload is currently pending verification for this row -
+  /// which is every row except a `device` one [GalleryMirror.recordUploaded]
+  /// has written to. Two non-null values:
+  ///
+  /// - `'uploaded'` - the PUT (or the same-size "assume it's ours" shortcut)
+  ///   succeeded; [GalleryMirror.applyPage] is watching the feed for
+  ///   confirmation at ([uploadTargetProviderId], [uploadTargetPath]).
+  /// - `'mismatch'` - the feed reported a file there, but at a length that
+  ///   contradicts what this device believes it sent. The remote file cannot
+  ///   be trusted; [GalleryUploadService.retryMismatchedUpload] deletes it
+  ///   and retries.
+  ///
+  /// Cleared back to null the moment verification actually succeeds - at
+  /// that point [origin] has already flipped to `both`, which is what makes
+  /// "Synced" true; this column exists only to gate that flip on the feed
+  /// rather than on the upload response (CONTEXT.md's **Verified**, D10 in
+  /// `docs/gallery-mode-design-notes.md`). Plain text, not a Dart enum
+  /// column, for the same reason [origin] is.
+  TextColumn get uploadState => text().nullable()();
+
+  /// The exact (providerId, path) [GalleryUploadService.upload] PUT to, or
+  /// found already occupied by this device's own content - **the path the
+  /// photo actually went to, not a recipe for deriving it** (ticket 19),
+  /// which matters here specifically because a disambiguated upload's real
+  /// path cannot be recomputed from the Sync Pair alone. Set together with
+  /// [uploadState] by [GalleryMirror.recordUploaded]; read back by
+  /// [GalleryMirror.applyPage] to recognise the delta feed independently
+  /// reporting this exact file. Both null whenever [uploadState] is.
+  TextColumn get uploadTargetProviderId => text().nullable()();
+  TextColumn get uploadTargetPath => text().nullable()();
 
   @override
   List<Set<Column>> get uniqueKeys => [
