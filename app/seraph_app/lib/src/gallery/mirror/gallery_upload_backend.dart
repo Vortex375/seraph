@@ -147,17 +147,27 @@ class WebDavGalleryUploadBackend implements GalleryUploadBackend {
     }
   }
 
-  GalleryUploadException _translate(DioException e, int? status) {
-    if (status == 403) {
-      return const GalleryUploadException(
-        'This Space is read-only - uploading is not allowed here.',
-        readOnly: true,
-      );
-    }
-    if (status == 507) {
-      return const GalleryUploadException('Seraph is out of storage space.');
-    }
-    return GalleryUploadException(
-        'Could not reach Seraph (${status ?? e.message}).');
+  GalleryUploadException _translate(DioException e, int? status) =>
+      translateWebDavError(e, status);
+}
+
+/// Turns a `webdav_client`/Dio failure into a [GalleryUploadException] with a
+/// message fit to show the user - the one piece of [WebDavGalleryUploadBackend]
+/// that is pure translation, with no dependency on [FileService] itself.
+/// Pulled out to a top-level function so ticket 22's headless-isolate backend
+/// (`../sync/gallery_data_sync_service_io.dart`, which deliberately does not
+/// construct a [FileService] - see that file's doc for why) can produce
+/// exactly the same messages without duplicating the status-code mapping.
+GalleryUploadException translateWebDavError(DioException e, int? status) {
+  if (status == 403) {
+    return const GalleryUploadException(
+      'This Space is read-only - uploading is not allowed here.',
+      readOnly: true,
+    );
   }
+  if (status == 507) {
+    return const GalleryUploadException('Seraph is out of storage space.');
+  }
+  return GalleryUploadException(
+      'Could not reach Seraph (${status ?? e.message}).');
 }

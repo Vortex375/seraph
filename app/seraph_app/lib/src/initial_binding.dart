@@ -14,6 +14,7 @@ import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_sync_service.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_upload_backend.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_upload_service.dart';
+import 'package:seraph_app/src/gallery/sync/gallery_data_sync_controller.dart';
 import 'package:seraph_app/src/media_player/audio_player_controller.dart';
 import 'package:seraph_app/src/search/search_service.dart';
 import 'package:seraph_app/src/spaces_admin/spaces_list_controller.dart';
@@ -52,6 +53,14 @@ class InitialBinding extends Bindings {
       WebDavGalleryUploadBackend(Get.find<FileService>()),
       localScanService.localSource,
     ));
+    // Ticket 22: the UI's only window onto the headless engine - reads
+    // GalleryMirror.syncRunState on a timer (see the controller's own doc
+    // for why that, and not a callback from the engine, is the whole
+    // channel). Registered unconditionally, like GalleryUploadService above
+    // - GalleryDataSyncController.isSupported is false wherever
+    // createGalleryDataSyncService() is (every platform without a Local
+    // Source), so there is nothing to gate here either.
+    Get.put(GalleryDataSyncController(galleryMirror));
     Get.put(GalleryImageLoader(Get.find(), Get.find(), galleryMirrorDatabase));
     // Ticket 28: loads device-photo pixels through the same Local Source the
     // scan above uses. Null-safe on its own when localScanService.localSource

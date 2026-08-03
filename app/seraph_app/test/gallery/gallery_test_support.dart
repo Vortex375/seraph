@@ -241,6 +241,16 @@ class FakeGalleryUploadBackend implements GalleryUploadBackend {
   /// requires.
   GalleryUploadException? putError;
 
+  /// Called synchronously every [put], right after it is recorded in
+  /// [putCalls] - ticket 22's mirror-seam coverage for
+  /// [GallerySyncEngine.requestPause] ("pausing takes effect promptly")
+  /// needs a way to call [GallerySyncEngine.requestPause] at an exact,
+  /// known point in a multi-item run, deterministically, rather than racing
+  /// real timing this zero-delay fake has none of - a test sets this to call
+  /// [GallerySyncEngine.requestPause] once [putCalls] reaches the count it
+  /// wants paused after.
+  void Function()? onPut;
+
   /// Every (spaceProviderId, path) [remove] was called with, in order - what
   /// ticket 20's mismatch-retry tests assert against to check the untrusted
   /// remote file was actually deleted before the retry PUT.
@@ -280,6 +290,7 @@ class FakeGalleryUploadBackend implements GalleryUploadBackend {
   Future<void> put(
       String spaceProviderId, String path, Uint8List bytes) async {
     putCalls.add((spaceProviderId, path, bytes));
+    onPut?.call();
     final error = putError;
     if (error != null) {
       throw error;

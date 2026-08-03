@@ -38,6 +38,7 @@ dependencies:
   drift: ^2.34.3
   path: ^1.9.1
   sqlite3: ^3.5.0
+  flutter_foreground_task: ^10.0.0
 
 dev_dependencies:
   flutter_test:

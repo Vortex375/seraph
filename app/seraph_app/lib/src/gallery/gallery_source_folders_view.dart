@@ -9,6 +9,7 @@ import 'package:seraph_app/src/gallery/gallery_service.dart';
 import 'package:seraph_app/src/gallery/local/local_scan_service.dart';
 import 'package:seraph_app/src/gallery/local_folder_picker_dialog.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
+import 'package:seraph_app/src/gallery/sync/gallery_data_sync_controller.dart';
 
 /// Which folders feed Gallery Mode - *In Seraph* (what this screen has always
 /// shown), on a device with a Local Source, *On this device* (ticket 29):
@@ -40,6 +41,16 @@ class _GallerySourceFoldersViewState extends State<GallerySourceFoldersView> {
   final LocalScanService? _localScanService =
       Get.isRegistered<LocalScanService>()
           ? Get.find<LocalScanService>()
+          : null;
+
+  /// Ticket 22: null in any test/build that never registers one - treated
+  /// exactly like [_mirror] being null, so the Backup section stays absent
+  /// rather than erroring. Even when registered,
+  /// [GalleryDataSyncController.isSupported] is what actually decides
+  /// whether the section shows anything - see [_buildBody].
+  final GalleryDataSyncController? _dataSyncController =
+      Get.isRegistered<GalleryDataSyncController>()
+          ? Get.find<GalleryDataSyncController>()
           : null;
 
   /// Whether this platform has a Local Source at all (Android, with the
@@ -521,6 +532,17 @@ class _GallerySourceFoldersViewState extends State<GallerySourceFoldersView> {
             )
           else
             ..._syncPairs.map(_buildSyncPairTile),
+          // Ticket 22: the headless engine's start/pause and progress -
+          // present only where Sync Pairs itself is (same "no Local Source,
+          // no section" rule), since there is nothing to back up without
+          // one, and hidden by _BackupSection itself
+          // (GalleryDataSyncController.isSupported) rather than here, so a
+          // test that never registers the controller sees exactly what a
+          // platform with no Local Source sees.
+          if (_dataSyncController != null) ...[
+            const Divider(height: 32),
+            _BackupSection(controller: _dataSyncController),
+          ],
         ],
       ],
     );
@@ -630,6 +652,113 @@ class _GallerySourceFoldersViewState extends State<GallerySourceFoldersView> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Ticket 22: start/pause a backup run and watch its progress - "how many
+/// photos remain and roughly how much data" (this ticket's own criterion),
+/// mirrored in the Android notification the run also drives
+/// (`gallery_sync_task_handler.dart`).
+///
+/// Reads everything from [GalleryDataSyncController.state], which is itself
+/// nothing but a timer polling [GalleryMirror.syncRunState] - this widget
+/// never talks to the engine or the platform service directly beyond
+/// [GalleryDataSyncController.start]/[pause], and never assumes anything
+/// about a run's progress beyond what the mirror currently says.
+class _BackupSection extends StatelessWidget {
+  const _BackupSection({required this.controller});
+
+  final GalleryDataSyncController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!controller.isSupported) {
+      return const SizedBox.shrink();
+    }
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: Obx(() {
+        final state = controller.state.value;
+        final remaining =
+            (state.totalItems - state.completedItems - state.failedItems)
+                .clamp(0, state.totalItems);
+        final remainingMb =
+            ((state.totalBytes - state.completedBytes) / (1024 * 1024))
+                .clamp(0, double.infinity);
+        final isRunning = state.status == syncStatusRunning;
+        final isPaused = state.status == syncStatusPaused;
+
+        String statusText;
+        switch (state.status) {
+          case syncStatusRunning:
+            statusText = '$remaining photo${remaining == 1 ? '' : 's'} left '
+                '(~${remainingMb.toStringAsFixed(1)} MB)';
+            break;
+          case syncStatusPaused:
+            statusText = remaining > 0
+                ? 'Paused - $remaining photo${remaining == 1 ? '' : 's'} left'
+                : 'Paused';
+            break;
+          case syncStatusError:
+            statusText = state.lastError ?? 'Backup could not start.';
+            break;
+          case syncStatusCompleted:
+            statusText = state.totalItems == 0
+                ? 'Everything is backed up.'
+                : 'Backup complete - ${state.completedItems} photo'
+                    '${state.completedItems == 1 ? '' : 's'} sent'
+                    '${state.failedItems > 0 ? ', ${state.failedItems} failed' : ''}.';
+            break;
+          default:
+            statusText = 'Backup has not run yet.';
+        }
+
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Backup', style: theme.textTheme.titleSmall),
+                      const SizedBox(height: 4),
+                      Text(statusText, style: theme.textTheme.bodySmall),
+                      if (state.totalItems > 0)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: LinearProgressIndicator(
+                            value: state.totalItems == 0
+                                ? 0
+                                : (state.completedItems + state.failedItems) /
+                                    state.totalItems,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (isRunning)
+                  IconButton(
+                    icon: const Icon(Icons.pause_circle_outline),
+                    tooltip: 'Pause backup',
+                    onPressed: controller.pause,
+                  )
+                else
+                  IconButton(
+                    icon: const Icon(Icons.cloud_upload_outlined),
+                    tooltip: isPaused ? 'Resume backup' : 'Start backup',
+                    onPressed: controller.start,
+                  ),
+              ],
+            ),
+          ),
+        );
+      }),
     );
   }
 }

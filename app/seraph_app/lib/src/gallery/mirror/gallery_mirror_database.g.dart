@@ -2190,6 +2190,522 @@ class SyncPairsCompanion extends UpdateCompanion<SyncPairRow> {
   }
 }
 
+class $SyncRunStateTable extends SyncRunState
+    with TableInfo<$SyncRunStateTable, SyncRunStateData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SyncRunStateTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+      'id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _statusMeta = const VerificationMeta('status');
+  @override
+  late final GeneratedColumn<String> status = GeneratedColumn<String>(
+      'status', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _totalItemsMeta =
+      const VerificationMeta('totalItems');
+  @override
+  late final GeneratedColumn<int> totalItems = GeneratedColumn<int>(
+      'total_items', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _completedItemsMeta =
+      const VerificationMeta('completedItems');
+  @override
+  late final GeneratedColumn<int> completedItems = GeneratedColumn<int>(
+      'completed_items', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _failedItemsMeta =
+      const VerificationMeta('failedItems');
+  @override
+  late final GeneratedColumn<int> failedItems = GeneratedColumn<int>(
+      'failed_items', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _totalBytesMeta =
+      const VerificationMeta('totalBytes');
+  @override
+  late final GeneratedColumn<int> totalBytes = GeneratedColumn<int>(
+      'total_bytes', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _completedBytesMeta =
+      const VerificationMeta('completedBytes');
+  @override
+  late final GeneratedColumn<int> completedBytes = GeneratedColumn<int>(
+      'completed_bytes', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _lastErrorMeta =
+      const VerificationMeta('lastError');
+  @override
+  late final GeneratedColumn<String> lastError = GeneratedColumn<String>(
+      'last_error', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _updatedAtMeta =
+      const VerificationMeta('updatedAt');
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+      'updated_at', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        status,
+        totalItems,
+        completedItems,
+        failedItems,
+        totalBytes,
+        completedBytes,
+        lastError,
+        updatedAt
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'sync_run_state';
+  @override
+  VerificationContext validateIntegrity(Insertable<SyncRunStateData> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('status')) {
+      context.handle(_statusMeta,
+          status.isAcceptableOrUnknown(data['status']!, _statusMeta));
+    } else if (isInserting) {
+      context.missing(_statusMeta);
+    }
+    if (data.containsKey('total_items')) {
+      context.handle(
+          _totalItemsMeta,
+          totalItems.isAcceptableOrUnknown(
+              data['total_items']!, _totalItemsMeta));
+    }
+    if (data.containsKey('completed_items')) {
+      context.handle(
+          _completedItemsMeta,
+          completedItems.isAcceptableOrUnknown(
+              data['completed_items']!, _completedItemsMeta));
+    }
+    if (data.containsKey('failed_items')) {
+      context.handle(
+          _failedItemsMeta,
+          failedItems.isAcceptableOrUnknown(
+              data['failed_items']!, _failedItemsMeta));
+    }
+    if (data.containsKey('total_bytes')) {
+      context.handle(
+          _totalBytesMeta,
+          totalBytes.isAcceptableOrUnknown(
+              data['total_bytes']!, _totalBytesMeta));
+    }
+    if (data.containsKey('completed_bytes')) {
+      context.handle(
+          _completedBytesMeta,
+          completedBytes.isAcceptableOrUnknown(
+              data['completed_bytes']!, _completedBytesMeta));
+    }
+    if (data.containsKey('last_error')) {
+      context.handle(_lastErrorMeta,
+          lastError.isAcceptableOrUnknown(data['last_error']!, _lastErrorMeta));
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(_updatedAtMeta,
+          updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  SyncRunStateData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SyncRunStateData(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}id'])!,
+      status: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}status'])!,
+      totalItems: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}total_items'])!,
+      completedItems: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}completed_items'])!,
+      failedItems: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}failed_items'])!,
+      totalBytes: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}total_bytes'])!,
+      completedBytes: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}completed_bytes'])!,
+      lastError: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}last_error']),
+      updatedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}updated_at'])!,
+    );
+  }
+
+  @override
+  $SyncRunStateTable createAlias(String alias) {
+    return $SyncRunStateTable(attachedDatabase, alias);
+  }
+}
+
+class SyncRunStateData extends DataClass
+    implements Insertable<SyncRunStateData> {
+  final String id;
+
+  /// One of [GalleryMirror.syncStatusIdle]/[syncStatusRunning]/
+  /// [syncStatusPaused]/[syncStatusCompleted]/[syncStatusError] - plain text,
+  /// not a Dart enum column, for the same forward-compatibility reason
+  /// [GalleryItems.origin] is.
+  final String status;
+
+  /// How many items [GallerySyncEngine.run] queued for this run in total -
+  /// retries (ticket 20's mismatched uploads) and fresh backlog alike. Fixed
+  /// for the run's lifetime; only [completedItems] and [failedItems] move.
+  final int totalItems;
+
+  /// How many of [totalItems] have been attempted (successfully or not) so
+  /// far - what "photos remaining" (this ticket's own progress criterion) is
+  /// `totalItems - completedItems - failedItems` from.
+  final int completedItems;
+
+  /// How many of [totalItems] threw rather than completing - counted
+  /// separately from [completedItems] so a run that hit failures does not
+  /// silently read as fully done. A visible, actionable failure list is
+  /// ticket 25's job; this is only the count.
+  final int failedItems;
+
+  /// The approximate total byte volume [totalItems] represents - "roughly
+  /// how much data" (this ticket's own progress criterion), summed from each
+  /// item's local file size once, up front, not re-measured per item.
+  final int totalBytes;
+
+  /// Bytes actually moved so far - only items that resulted in a real PUT or
+  /// the ticket-19 same-size short-circuit add to this; an item skipped for
+  /// any other reason (no Sync Pair, device file gone) advances
+  /// [completedItems] without moving this.
+  final int completedBytes;
+
+  /// The most recent per-item failure's message, or null - a single value,
+  /// not a log, because a real failure list (ticket 25) is out of this
+  /// ticket's scope; this exists only so the UI has something more useful to
+  /// show than a bare failure count while that ticket is still ahead.
+  final String? lastError;
+
+  /// Epoch milliseconds this row was last written - what
+  /// [GalleryDataSyncController] uses to notice a `running` row has gone
+  /// stale (see its own reconciliation doc) if it is ever extended to time
+  /// out a run whose process vanished without the courtesy of a final write.
+  final int updatedAt;
+  const SyncRunStateData(
+      {required this.id,
+      required this.status,
+      required this.totalItems,
+      required this.completedItems,
+      required this.failedItems,
+      required this.totalBytes,
+      required this.completedBytes,
+      this.lastError,
+      required this.updatedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['status'] = Variable<String>(status);
+    map['total_items'] = Variable<int>(totalItems);
+    map['completed_items'] = Variable<int>(completedItems);
+    map['failed_items'] = Variable<int>(failedItems);
+    map['total_bytes'] = Variable<int>(totalBytes);
+    map['completed_bytes'] = Variable<int>(completedBytes);
+    if (!nullToAbsent || lastError != null) {
+      map['last_error'] = Variable<String>(lastError);
+    }
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  SyncRunStateCompanion toCompanion(bool nullToAbsent) {
+    return SyncRunStateCompanion(
+      id: Value(id),
+      status: Value(status),
+      totalItems: Value(totalItems),
+      completedItems: Value(completedItems),
+      failedItems: Value(failedItems),
+      totalBytes: Value(totalBytes),
+      completedBytes: Value(completedBytes),
+      lastError: lastError == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastError),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory SyncRunStateData.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SyncRunStateData(
+      id: serializer.fromJson<String>(json['id']),
+      status: serializer.fromJson<String>(json['status']),
+      totalItems: serializer.fromJson<int>(json['totalItems']),
+      completedItems: serializer.fromJson<int>(json['completedItems']),
+      failedItems: serializer.fromJson<int>(json['failedItems']),
+      totalBytes: serializer.fromJson<int>(json['totalBytes']),
+      completedBytes: serializer.fromJson<int>(json['completedBytes']),
+      lastError: serializer.fromJson<String?>(json['lastError']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'status': serializer.toJson<String>(status),
+      'totalItems': serializer.toJson<int>(totalItems),
+      'completedItems': serializer.toJson<int>(completedItems),
+      'failedItems': serializer.toJson<int>(failedItems),
+      'totalBytes': serializer.toJson<int>(totalBytes),
+      'completedBytes': serializer.toJson<int>(completedBytes),
+      'lastError': serializer.toJson<String?>(lastError),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  SyncRunStateData copyWith(
+          {String? id,
+          String? status,
+          int? totalItems,
+          int? completedItems,
+          int? failedItems,
+          int? totalBytes,
+          int? completedBytes,
+          Value<String?> lastError = const Value.absent(),
+          int? updatedAt}) =>
+      SyncRunStateData(
+        id: id ?? this.id,
+        status: status ?? this.status,
+        totalItems: totalItems ?? this.totalItems,
+        completedItems: completedItems ?? this.completedItems,
+        failedItems: failedItems ?? this.failedItems,
+        totalBytes: totalBytes ?? this.totalBytes,
+        completedBytes: completedBytes ?? this.completedBytes,
+        lastError: lastError.present ? lastError.value : this.lastError,
+        updatedAt: updatedAt ?? this.updatedAt,
+      );
+  SyncRunStateData copyWithCompanion(SyncRunStateCompanion data) {
+    return SyncRunStateData(
+      id: data.id.present ? data.id.value : this.id,
+      status: data.status.present ? data.status.value : this.status,
+      totalItems:
+          data.totalItems.present ? data.totalItems.value : this.totalItems,
+      completedItems: data.completedItems.present
+          ? data.completedItems.value
+          : this.completedItems,
+      failedItems:
+          data.failedItems.present ? data.failedItems.value : this.failedItems,
+      totalBytes:
+          data.totalBytes.present ? data.totalBytes.value : this.totalBytes,
+      completedBytes: data.completedBytes.present
+          ? data.completedBytes.value
+          : this.completedBytes,
+      lastError: data.lastError.present ? data.lastError.value : this.lastError,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncRunStateData(')
+          ..write('id: $id, ')
+          ..write('status: $status, ')
+          ..write('totalItems: $totalItems, ')
+          ..write('completedItems: $completedItems, ')
+          ..write('failedItems: $failedItems, ')
+          ..write('totalBytes: $totalBytes, ')
+          ..write('completedBytes: $completedBytes, ')
+          ..write('lastError: $lastError, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, status, totalItems, completedItems,
+      failedItems, totalBytes, completedBytes, lastError, updatedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SyncRunStateData &&
+          other.id == this.id &&
+          other.status == this.status &&
+          other.totalItems == this.totalItems &&
+          other.completedItems == this.completedItems &&
+          other.failedItems == this.failedItems &&
+          other.totalBytes == this.totalBytes &&
+          other.completedBytes == this.completedBytes &&
+          other.lastError == this.lastError &&
+          other.updatedAt == this.updatedAt);
+}
+
+class SyncRunStateCompanion extends UpdateCompanion<SyncRunStateData> {
+  final Value<String> id;
+  final Value<String> status;
+  final Value<int> totalItems;
+  final Value<int> completedItems;
+  final Value<int> failedItems;
+  final Value<int> totalBytes;
+  final Value<int> completedBytes;
+  final Value<String?> lastError;
+  final Value<int> updatedAt;
+  final Value<int> rowid;
+  const SyncRunStateCompanion({
+    this.id = const Value.absent(),
+    this.status = const Value.absent(),
+    this.totalItems = const Value.absent(),
+    this.completedItems = const Value.absent(),
+    this.failedItems = const Value.absent(),
+    this.totalBytes = const Value.absent(),
+    this.completedBytes = const Value.absent(),
+    this.lastError = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SyncRunStateCompanion.insert({
+    required String id,
+    required String status,
+    this.totalItems = const Value.absent(),
+    this.completedItems = const Value.absent(),
+    this.failedItems = const Value.absent(),
+    this.totalBytes = const Value.absent(),
+    this.completedBytes = const Value.absent(),
+    this.lastError = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  })  : id = Value(id),
+        status = Value(status);
+  static Insertable<SyncRunStateData> custom({
+    Expression<String>? id,
+    Expression<String>? status,
+    Expression<int>? totalItems,
+    Expression<int>? completedItems,
+    Expression<int>? failedItems,
+    Expression<int>? totalBytes,
+    Expression<int>? completedBytes,
+    Expression<String>? lastError,
+    Expression<int>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (status != null) 'status': status,
+      if (totalItems != null) 'total_items': totalItems,
+      if (completedItems != null) 'completed_items': completedItems,
+      if (failedItems != null) 'failed_items': failedItems,
+      if (totalBytes != null) 'total_bytes': totalBytes,
+      if (completedBytes != null) 'completed_bytes': completedBytes,
+      if (lastError != null) 'last_error': lastError,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SyncRunStateCompanion copyWith(
+      {Value<String>? id,
+      Value<String>? status,
+      Value<int>? totalItems,
+      Value<int>? completedItems,
+      Value<int>? failedItems,
+      Value<int>? totalBytes,
+      Value<int>? completedBytes,
+      Value<String?>? lastError,
+      Value<int>? updatedAt,
+      Value<int>? rowid}) {
+    return SyncRunStateCompanion(
+      id: id ?? this.id,
+      status: status ?? this.status,
+      totalItems: totalItems ?? this.totalItems,
+      completedItems: completedItems ?? this.completedItems,
+      failedItems: failedItems ?? this.failedItems,
+      totalBytes: totalBytes ?? this.totalBytes,
+      completedBytes: completedBytes ?? this.completedBytes,
+      lastError: lastError ?? this.lastError,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (status.present) {
+      map['status'] = Variable<String>(status.value);
+    }
+    if (totalItems.present) {
+      map['total_items'] = Variable<int>(totalItems.value);
+    }
+    if (completedItems.present) {
+      map['completed_items'] = Variable<int>(completedItems.value);
+    }
+    if (failedItems.present) {
+      map['failed_items'] = Variable<int>(failedItems.value);
+    }
+    if (totalBytes.present) {
+      map['total_bytes'] = Variable<int>(totalBytes.value);
+    }
+    if (completedBytes.present) {
+      map['completed_bytes'] = Variable<int>(completedBytes.value);
+    }
+    if (lastError.present) {
+      map['last_error'] = Variable<String>(lastError.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncRunStateCompanion(')
+          ..write('id: $id, ')
+          ..write('status: $status, ')
+          ..write('totalItems: $totalItems, ')
+          ..write('completedItems: $completedItems, ')
+          ..write('failedItems: $failedItems, ')
+          ..write('totalBytes: $totalBytes, ')
+          ..write('completedBytes: $completedBytes, ')
+          ..write('lastError: $lastError, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$GalleryMirrorDatabase extends GeneratedDatabase {
   _$GalleryMirrorDatabase(QueryExecutor e) : super(e);
   $GalleryMirrorDatabaseManager get managers =>
@@ -2201,6 +2717,7 @@ abstract class _$GalleryMirrorDatabase extends GeneratedDatabase {
   late final $LocalFolderSelectionsTable localFolderSelections =
       $LocalFolderSelectionsTable(this);
   late final $SyncPairsTable syncPairs = $SyncPairsTable(this);
+  late final $SyncRunStateTable syncRunState = $SyncRunStateTable(this);
   late final Index idxGalleryItemsLocalIdentity = Index(
       'idx_gallery_items_local_identity',
       'CREATE INDEX idx_gallery_items_local_identity ON gallery_items (local_relative_path, local_display_name, local_size, local_date_taken)');
@@ -2223,6 +2740,7 @@ abstract class _$GalleryMirrorDatabase extends GeneratedDatabase {
         cachedThumbnails,
         localFolderSelections,
         syncPairs,
+        syncRunState,
         idxGalleryItemsLocalIdentity,
         idxGalleryItemsOriginSizeCapturedAt,
         idxGalleryItemsCapturedAtId,
@@ -3293,6 +3811,246 @@ typedef $$SyncPairsTableProcessedTableManager = ProcessedTableManager<
     ),
     SyncPairRow,
     PrefetchHooks Function()>;
+typedef $$SyncRunStateTableCreateCompanionBuilder = SyncRunStateCompanion
+    Function({
+  required String id,
+  required String status,
+  Value<int> totalItems,
+  Value<int> completedItems,
+  Value<int> failedItems,
+  Value<int> totalBytes,
+  Value<int> completedBytes,
+  Value<String?> lastError,
+  Value<int> updatedAt,
+  Value<int> rowid,
+});
+typedef $$SyncRunStateTableUpdateCompanionBuilder = SyncRunStateCompanion
+    Function({
+  Value<String> id,
+  Value<String> status,
+  Value<int> totalItems,
+  Value<int> completedItems,
+  Value<int> failedItems,
+  Value<int> totalBytes,
+  Value<int> completedBytes,
+  Value<String?> lastError,
+  Value<int> updatedAt,
+  Value<int> rowid,
+});
+
+class $$SyncRunStateTableFilterComposer
+    extends Composer<_$GalleryMirrorDatabase, $SyncRunStateTable> {
+  $$SyncRunStateTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get status => $composableBuilder(
+      column: $table.status, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get totalItems => $composableBuilder(
+      column: $table.totalItems, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get completedItems => $composableBuilder(
+      column: $table.completedItems,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get failedItems => $composableBuilder(
+      column: $table.failedItems, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get totalBytes => $composableBuilder(
+      column: $table.totalBytes, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get completedBytes => $composableBuilder(
+      column: $table.completedBytes,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get lastError => $composableBuilder(
+      column: $table.lastError, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$SyncRunStateTableOrderingComposer
+    extends Composer<_$GalleryMirrorDatabase, $SyncRunStateTable> {
+  $$SyncRunStateTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get status => $composableBuilder(
+      column: $table.status, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get totalItems => $composableBuilder(
+      column: $table.totalItems, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get completedItems => $composableBuilder(
+      column: $table.completedItems,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get failedItems => $composableBuilder(
+      column: $table.failedItems, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get totalBytes => $composableBuilder(
+      column: $table.totalBytes, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get completedBytes => $composableBuilder(
+      column: $table.completedBytes,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get lastError => $composableBuilder(
+      column: $table.lastError, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$SyncRunStateTableAnnotationComposer
+    extends Composer<_$GalleryMirrorDatabase, $SyncRunStateTable> {
+  $$SyncRunStateTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<int> get totalItems => $composableBuilder(
+      column: $table.totalItems, builder: (column) => column);
+
+  GeneratedColumn<int> get completedItems => $composableBuilder(
+      column: $table.completedItems, builder: (column) => column);
+
+  GeneratedColumn<int> get failedItems => $composableBuilder(
+      column: $table.failedItems, builder: (column) => column);
+
+  GeneratedColumn<int> get totalBytes => $composableBuilder(
+      column: $table.totalBytes, builder: (column) => column);
+
+  GeneratedColumn<int> get completedBytes => $composableBuilder(
+      column: $table.completedBytes, builder: (column) => column);
+
+  GeneratedColumn<String> get lastError =>
+      $composableBuilder(column: $table.lastError, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$SyncRunStateTableTableManager extends RootTableManager<
+    _$GalleryMirrorDatabase,
+    $SyncRunStateTable,
+    SyncRunStateData,
+    $$SyncRunStateTableFilterComposer,
+    $$SyncRunStateTableOrderingComposer,
+    $$SyncRunStateTableAnnotationComposer,
+    $$SyncRunStateTableCreateCompanionBuilder,
+    $$SyncRunStateTableUpdateCompanionBuilder,
+    (
+      SyncRunStateData,
+      BaseReferences<_$GalleryMirrorDatabase, $SyncRunStateTable,
+          SyncRunStateData>
+    ),
+    SyncRunStateData,
+    PrefetchHooks Function()> {
+  $$SyncRunStateTableTableManager(
+      _$GalleryMirrorDatabase db, $SyncRunStateTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SyncRunStateTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SyncRunStateTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SyncRunStateTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> id = const Value.absent(),
+            Value<String> status = const Value.absent(),
+            Value<int> totalItems = const Value.absent(),
+            Value<int> completedItems = const Value.absent(),
+            Value<int> failedItems = const Value.absent(),
+            Value<int> totalBytes = const Value.absent(),
+            Value<int> completedBytes = const Value.absent(),
+            Value<String?> lastError = const Value.absent(),
+            Value<int> updatedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              SyncRunStateCompanion(
+            id: id,
+            status: status,
+            totalItems: totalItems,
+            completedItems: completedItems,
+            failedItems: failedItems,
+            totalBytes: totalBytes,
+            completedBytes: completedBytes,
+            lastError: lastError,
+            updatedAt: updatedAt,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String id,
+            required String status,
+            Value<int> totalItems = const Value.absent(),
+            Value<int> completedItems = const Value.absent(),
+            Value<int> failedItems = const Value.absent(),
+            Value<int> totalBytes = const Value.absent(),
+            Value<int> completedBytes = const Value.absent(),
+            Value<String?> lastError = const Value.absent(),
+            Value<int> updatedAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              SyncRunStateCompanion.insert(
+            id: id,
+            status: status,
+            totalItems: totalItems,
+            completedItems: completedItems,
+            failedItems: failedItems,
+            totalBytes: totalBytes,
+            completedBytes: completedBytes,
+            lastError: lastError,
+            updatedAt: updatedAt,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$SyncRunStateTableProcessedTableManager = ProcessedTableManager<
+    _$GalleryMirrorDatabase,
+    $SyncRunStateTable,
+    SyncRunStateData,
+    $$SyncRunStateTableFilterComposer,
+    $$SyncRunStateTableOrderingComposer,
+    $$SyncRunStateTableAnnotationComposer,
+    $$SyncRunStateTableCreateCompanionBuilder,
+    $$SyncRunStateTableUpdateCompanionBuilder,
+    (
+      SyncRunStateData,
+      BaseReferences<_$GalleryMirrorDatabase, $SyncRunStateTable,
+          SyncRunStateData>
+    ),
+    SyncRunStateData,
+    PrefetchHooks Function()>;
 
 class $GalleryMirrorDatabaseManager {
   final _$GalleryMirrorDatabase _db;
@@ -3307,4 +4065,6 @@ class $GalleryMirrorDatabaseManager {
       $$LocalFolderSelectionsTableTableManager(_db, _db.localFolderSelections);
   $$SyncPairsTableTableManager get syncPairs =>
       $$SyncPairsTableTableManager(_db, _db.syncPairs);
+  $$SyncRunStateTableTableManager get syncRunState =>
+      $$SyncRunStateTableTableManager(_db, _db.syncRunState);
 }

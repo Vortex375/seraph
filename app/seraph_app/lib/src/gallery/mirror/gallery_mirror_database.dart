@@ -28,7 +28,8 @@ part 'gallery_mirror_database.g.dart';
   SyncCursors,
   CachedThumbnails,
   LocalFolderSelections,
-  SyncPairs
+  SyncPairs,
+  SyncRunState,
 ])
 class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
   GalleryMirrorDatabase(super.e);
@@ -42,7 +43,7 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
   }
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 9;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -141,9 +142,48 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
               newColumns: [syncPairs.removedAt],
             ));
           }
+          if (from < 9) {
+            // v9 (ticket 22) added [SyncRunState] - the headless sync
+            // engine's one channel to the UI (spec: "the local database is
+            // the interface between the engine and the UI"). A fresh, empty
+            // table; [GalleryMirror.syncRunState] already reports an idle,
+            // all-zero snapshot when no row exists yet, so an upgraded
+            // device with no run in progress reads exactly as a fresh
+            // install would.
+            await m.createTable(syncRunState);
+          }
         },
         beforeOpen: (details) async {
           await customStatement('PRAGMA foreign_keys = ON');
+          // Ticket 22: the sync engine runs in its own headless isolate -
+          // its own OS process, for all SQLite's locking cares, given how
+          // `flutter_foreground_task` spins up a second `FlutterEngine` for
+          // it - with its own [GalleryMirrorDatabase] connection to this
+          // SAME file the UI isolate has open. WAL lets one writer and any
+          // number of readers proceed concurrently instead of a writer
+          // blocking every reader for the duration of its transaction, and
+          // the busy timeout makes a writer-vs-writer collision (both
+          // isolates committing at once) wait and retry instead of failing
+          // outright with SQLITE_BUSY - together, "the engine and the UI can
+          // both touch the database without corrupting it" (this ticket's
+          // own acceptance criterion) rather than merely "without crashing
+          // most of the time".
+          //
+          // Both are wrapped: an in-memory database (every test in this
+          // suite) silently keeps its "memory" journal mode rather than
+          // erroring on the WAL request, but the web build's sqlite3-over-
+          // WebAssembly executor is a different SQLite VFS entirely and
+          // nothing here should risk the gallery failing to open on a
+          // platform this pair of pragmas was never meant to change
+          // behaviour on in the first place - Sync Pairs, and therefore a
+          // second isolate ever touching this database at all, are Android-
+          // only (D7).
+          try {
+            await customStatement('PRAGMA journal_mode = WAL');
+          } catch (_) {}
+          try {
+            await customStatement('PRAGMA busy_timeout = 5000');
+          } catch (_) {}
         },
       );
 }
@@ -491,4 +531,77 @@ class SyncPairs extends Table {
   /// target" computation filter this to null; dedup/reconcile lookups do
   /// not filter on it at all.
   IntColumn get removedAt => integer().nullable()();
+}
+
+/// Ticket 22's headless sync engine progress: the engine's ONLY channel to
+/// the UI (spec/`docs/gallery-mode-design-notes.md` D11: "the local database
+/// is the interface between the engine and the UI - the engine writes state,
+/// the UI observes and renders"). [GallerySyncEngine]
+/// (`../sync/gallery_sync_engine.dart`) writes this after every item it
+/// processes; [GalleryDataSyncController] (`../sync/gallery_data_sync_controller.dart`)
+/// polls it to drive the in-app progress UI, and the foreground service's own
+/// notification text is updated from the very same row - so the notification
+/// and the app can never disagree about how a run is going, because there is
+/// only one row either of them could be reading.
+///
+/// **Always exactly one row** ([id] is always [GalleryMirror.syncRunStateId])
+/// - there is only ever one backup run at a time (one foreground service, one
+/// engine instance), so this is a snapshot, not a log.
+///
+/// **Why a row survives the app/engine that wrote it dying mid-run:** on
+/// restart, nothing here is treated as proof a run is still active - see
+/// [GalleryMirror.syncRunState]'s doc and [GalleryDataSyncController]'s
+/// reconciliation - so a `running` row left behind by a killed process is
+/// read as "was running, is not now" (correctable to `paused`) rather than as
+/// a stuck state.
+class SyncRunState extends Table {
+  TextColumn get id => text()();
+
+  /// One of [GalleryMirror.syncStatusIdle]/[syncStatusRunning]/
+  /// [syncStatusPaused]/[syncStatusCompleted]/[syncStatusError] - plain text,
+  /// not a Dart enum column, for the same forward-compatibility reason
+  /// [GalleryItems.origin] is.
+  TextColumn get status => text()();
+
+  /// How many items [GallerySyncEngine.run] queued for this run in total -
+  /// retries (ticket 20's mismatched uploads) and fresh backlog alike. Fixed
+  /// for the run's lifetime; only [completedItems] and [failedItems] move.
+  IntColumn get totalItems => integer().withDefault(const Constant(0))();
+
+  /// How many of [totalItems] have been attempted (successfully or not) so
+  /// far - what "photos remaining" (this ticket's own progress criterion) is
+  /// `totalItems - completedItems - failedItems` from.
+  IntColumn get completedItems => integer().withDefault(const Constant(0))();
+
+  /// How many of [totalItems] threw rather than completing - counted
+  /// separately from [completedItems] so a run that hit failures does not
+  /// silently read as fully done. A visible, actionable failure list is
+  /// ticket 25's job; this is only the count.
+  IntColumn get failedItems => integer().withDefault(const Constant(0))();
+
+  /// The approximate total byte volume [totalItems] represents - "roughly
+  /// how much data" (this ticket's own progress criterion), summed from each
+  /// item's local file size once, up front, not re-measured per item.
+  IntColumn get totalBytes => integer().withDefault(const Constant(0))();
+
+  /// Bytes actually moved so far - only items that resulted in a real PUT or
+  /// the ticket-19 same-size short-circuit add to this; an item skipped for
+  /// any other reason (no Sync Pair, device file gone) advances
+  /// [completedItems] without moving this.
+  IntColumn get completedBytes => integer().withDefault(const Constant(0))();
+
+  /// The most recent per-item failure's message, or null - a single value,
+  /// not a log, because a real failure list (ticket 25) is out of this
+  /// ticket's scope; this exists only so the UI has something more useful to
+  /// show than a bare failure count while that ticket is still ahead.
+  TextColumn get lastError => text().nullable()();
+
+  /// Epoch milliseconds this row was last written - what
+  /// [GalleryDataSyncController] uses to notice a `running` row has gone
+  /// stale (see its own reconciliation doc) if it is ever extended to time
+  /// out a run whose process vanished without the courtesy of a final write.
+  IntColumn get updatedAt => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
 }

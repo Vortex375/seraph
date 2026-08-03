@@ -3,6 +3,16 @@
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+    <!-- Ticket 22, headless sync engine
+         (.scratch/gallery-mode/issues/22-headless-sync-engine.md): a
+         user-initiated backup run keeps going with the screen off via a
+         `dataSync` foreground service (`flutter_foreground_task`), so a
+         large batch survives the app being backgrounded. Android 15 caps
+         cumulative `dataSync` foreground runtime at ~6 hours/day, which is
+         why unattended background scheduling (ticket 24) is WorkManager-
+         based rather than a long-lived service - this permission and
+         service cover only the user-initiated, foreground case. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
 
     <!-- Gallery Mode's Local Source seam (ticket 15,
          .scratch/gallery-mode/issues/15-local-source-scan-and-merged-gallery.md):
@@ -73,6 +83,17 @@
             <action android:name="android.intent.action.MEDIA_BUTTON" />
         </intent-filter>
         </receiver>
+
+        <!-- Ticket 22: flutter_foreground_task's own foreground service -
+             its class name is fixed by the plugin ("do not change" per its
+             own docs); declaring it here (rather than only in the plugin's
+             manifest, which does not declare it at all - see the plugin's
+             `android/src/main/AndroidManifest.xml`) is what actually gives
+             it the `dataSync` type, matching the permission above. -->
+        <service
+            android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
 
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

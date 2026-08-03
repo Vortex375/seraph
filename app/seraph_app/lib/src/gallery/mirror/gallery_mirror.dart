@@ -37,6 +37,28 @@ const String _uploadStateAssumed = 'assumed';
 const String _uploadStateMismatch = 'mismatch';
 const String _uploadStateAssumedMismatch = 'assumedMismatch';
 
+/// Ticket 22: the fixed id of [SyncRunState]'s single row - see that table's
+/// class doc for why there is only ever one.
+const String syncRunStateId = 'default';
+
+/// [SyncRunState.status] values - named here for the same reason [origin]'s
+/// and [uploadState]'s values are (see those constants' own doc), and read
+/// back by [GallerySyncEngine] (`../sync/gallery_sync_engine.dart`) and
+/// [GalleryDataSyncController] (`../sync/gallery_data_sync_controller.dart`)
+/// as raw strings, matching how those files already read [origin] and
+/// [uploadState].
+///
+/// No `interrupted` value: a `running` row a process did not survive to
+/// clear reads back as [syncStatusPaused] once
+/// [GalleryDataSyncController]'s startup reconciliation corrects it (see
+/// that method's doc) - `paused` is already exactly "not running, but
+/// resumable", so a fifth status would only duplicate it.
+const String syncStatusIdle = 'idle';
+const String syncStatusRunning = 'running';
+const String syncStatusPaused = 'paused';
+const String syncStatusCompleted = 'completed';
+const String syncStatusError = 'error';
+
 /// [SyncCursors.source] value for ticket 17's device-side incremental-scan
 /// watermark - the highest MediaStore generation already applied. Reuses the
 /// same tiny table the delta feed's [GalleryMirror.since]/[pendingCursor]
@@ -1254,6 +1276,118 @@ class GalleryMirror {
             (t.uploadState.equals(_uploadStateMismatch) |
                 t.uploadState.equals(_uploadStateAssumedMismatch))))
       .get();
+
+  // --- Ticket 22: headless sync engine ---
+
+  /// Every Device only row [GallerySyncEngine] (`../sync/gallery_sync_engine.dart`)
+  /// should attempt to upload right now: no verification already pending
+  /// ([uploadState] null - a row [itemsNeedingUploadRetry] would return, or
+  /// one already awaiting the delta feed's confirmation, is never a second
+  /// upload candidate), and covered by an ACTIVE Sync Pair - the same
+  /// [_activeSyncPairs] "current target for writes" rule
+  /// [expectedUploadTarget] itself applies, reused here rather than
+  /// re-derived so "what the engine will attempt" and "what a single upload
+  /// call would actually do" can never disagree. A row covered only by a
+  /// removed, historical pair is correctly excluded: [expectedUploadTarget]
+  /// would return null for it too (nothing NEW should ever be written to a
+  /// retired target), so queuing it here would only produce a queue entry
+  /// [GalleryUploadService.upload] immediately reports [GalleryUploadResult.
+  /// noSyncPair] for.
+  ///
+  /// Newest [GalleryItem.capturedAt] first - user story 53's "historical
+  /// backlog uploaded newest first". **Deliberately not the spec's two
+  /// priority classes** ("photos observed after setup preempt the backlog") -
+  /// that split, and the failure-list/retry-policy machinery around it, is
+  /// ticket 25's job; this is a single, simple queue ordering that already
+  /// satisfies the newest-first half of it on its own.
+  ///
+  /// Filtered in Dart against a fetched row set, the same style
+  /// [_countCoveredByLocalFolder]/[_unselectedFolders] already use for a
+  /// small, bounded set of Sync Pairs against a larger row set - a purpose-
+  /// built SQL `OR` of per-pair prefix conditions would only duplicate what
+  /// [_coveringSyncPair] already expresses correctly in Dart. This is a
+  /// queue REBUILD, not a per-item probe (D12/the spec's "the queue is
+  /// derived state... rebuildable at any time"), so it is expected to run
+  /// once per engine run, not once per photo.
+  Future<List<GalleryItem>> itemsPendingUpload({int? limit}) async {
+    final pairs = await _activeSyncPairs();
+    if (pairs.isEmpty) {
+      return const [];
+    }
+    final rows = await (_db.select(_db.galleryItems)
+          ..where((t) =>
+              t.origin.equals(_originDevice) & t.uploadState.isNull())
+          ..orderBy([
+            (t) =>
+                OrderingTerm(expression: t.capturedAt, mode: OrderingMode.desc)
+          ]))
+        .get();
+
+    final matching = <GalleryItem>[];
+    for (final row in rows) {
+      if (_coveringSyncPair(pairs, row.localRelativePath ?? '') != null) {
+        matching.add(row);
+        if (limit != null && matching.length >= limit) {
+          break;
+        }
+      }
+    }
+    return matching;
+  }
+
+  /// The single [SyncRunState] row - [GallerySyncEngine]'s only channel to
+  /// the UI (see that table's class doc). An idle, all-zero snapshot when no
+  /// run has ever happened, so a fresh install and "nothing to report" read
+  /// identically rather than the caller having to null-check.
+  Future<SyncRunStateData> syncRunState() async {
+    final row = await (_db.select(_db.syncRunState)
+          ..where((t) => t.id.equals(syncRunStateId)))
+        .getSingleOrNull();
+    return row ??
+        const SyncRunStateData(
+          id: syncRunStateId,
+          status: syncStatusIdle,
+          totalItems: 0,
+          completedItems: 0,
+          failedItems: 0,
+          totalBytes: 0,
+          completedBytes: 0,
+          lastError: null,
+          updatedAt: 0,
+        );
+  }
+
+  /// Overwrites the single [SyncRunState] row - a snapshot, not a log, per
+  /// that table's own doc. Called by [GallerySyncEngine] after every item it
+  /// processes (so a kill mid-run leaves the last-known-good progress behind,
+  /// never a half-written one - the write itself is a single-row upsert,
+  /// atomic by construction) and by [GalleryDataSyncController]'s startup
+  /// reconciliation to correct a `running` row the process that wrote it did
+  /// not survive to clear.
+  Future<void> writeSyncRunState({
+    required String status,
+    required int totalItems,
+    required int completedItems,
+    required int failedItems,
+    required int totalBytes,
+    required int completedBytes,
+    String? lastError,
+    required int updatedAtMillis,
+  }) async {
+    await _db.into(_db.syncRunState).insertOnConflictUpdate(
+          SyncRunStateCompanion(
+            id: const Value(syncRunStateId),
+            status: Value(status),
+            totalItems: Value(totalItems),
+            completedItems: Value(completedItems),
+            failedItems: Value(failedItems),
+            totalBytes: Value(totalBytes),
+            completedBytes: Value(completedBytes),
+            lastError: Value(lastError),
+            updatedAt: Value(updatedAtMillis),
+          ),
+        );
+  }
 
   /// Retroactively merges [pair]'s Local Source against the mirror as it
   /// stands right now - called once, from [createSyncPair], never from the
