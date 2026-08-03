@@ -67,6 +67,18 @@ class _AndroidGalleryDataSyncService implements GalleryDataSyncService {
       serviceTypes: const [ForegroundServiceTypes.dataSync],
       notificationTitle: 'Seraph backup',
       notificationText: 'Starting…',
+      // The pause button [_GallerySyncTaskHandler.onNotificationButtonPressed]
+      // already handles (`gallery_sync_task_handler.dart`) - its id MUST
+      // match [pauseSignal], the same string used there. Set once, here, at
+      // startService: the plugin's native side (`NotificationContent.
+      // updateData` in `flutter_foreground_task`) only overwrites the stored
+      // button set when a later `updateService` call is itself given
+      // `notificationButtons` - [_GallerySyncTaskHandler]'s own periodic
+      // `updateService` calls (title/text only) never do, so this button
+      // persists across every one of them without needing to be re-passed.
+      notificationButtons: const [
+        NotificationButton(id: pauseSignal, text: 'Pause'),
+      ],
       callback: galleryDataSyncCallback,
     );
   }
