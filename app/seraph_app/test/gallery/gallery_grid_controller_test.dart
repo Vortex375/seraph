@@ -553,7 +553,7 @@ void main() {
         // The user left the app, granted full access in system Settings, and
         // came back - simulated here as the fake's state changing under the
         // same running controller instance, then [syncOnResume] - what
-        // GalleryView's resume handler actually calls (ticket 29's throttle
+        // GalleryView's resume handler actually calls (ticket 30's throttle
         // is why it is this and not [syncNow] directly; see the next group).
         source.setPermissionStatus(LocalPermissionStatus.granted);
         source.setItems([localMediaItem(displayName: 'was-restricted.jpg')]);
@@ -565,11 +565,11 @@ void main() {
       });
     });
 
-    // Ticket 29: opening/resuming the gallery no longer blocks on a full
+    // Ticket 30: opening/resuming the gallery no longer blocks on a full
     // sync every time - a throttle skips a redundant re-sync entirely, and
     // the interactive path runs the cheaper incremental scan except on a
     // cold start, past a backstop interval, or when a caller forces one.
-    group('sync cadence (ticket 29)', () {
+    group('sync cadence (ticket 30)', () {
       test(
           'a second syncNow() within the throttle window is a no-op: no '
           'HTTP request, no media-store call, no spinner', () async {

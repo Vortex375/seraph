@@ -250,10 +250,10 @@ void main() {
       expect(page.items, hasLength(1));
     });
 
-    // Ticket 29: the two persisted watermarks GalleryGridController's sync
+    // Ticket 30: the two persisted watermarks GalleryGridController's sync
     // cadence reads and writes - covered here at the mirror seam directly,
     // independent of the controller logic that consumes them.
-    group('sync cadence watermarks (ticket 29)', () {
+    group('sync cadence watermarks (ticket 30)', () {
       test('lastFullScanAt defaults to 0 - "no full scan has ever run"',
           () async {
         expect(await mirror.lastFullScanAt(), 0);

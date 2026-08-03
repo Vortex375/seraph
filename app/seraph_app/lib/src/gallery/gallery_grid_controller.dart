@@ -29,7 +29,7 @@ import 'package:seraph_app/src/gallery/mirror/gallery_sync_service.dart';
 ///   the same size as a loaded tile, so filling it in changes pixels and
 ///   never geometry.
 ///
-/// **Ticket 29's sync cadence** lives entirely in [syncNow] and the private
+/// **Ticket 30's sync cadence** lives entirely in [syncNow] and the private
 /// helpers it calls, because this is the one place both the cloud poll and
 /// the Local Source scan are already orchestrated together:
 ///
@@ -53,14 +53,14 @@ class GalleryGridController extends GetxController {
 
   final GalleryMirror mirror;
 
-  /// Ticket 29's clock seam: everything below that reasons about elapsed
+  /// Ticket 30's clock seam: everything below that reasons about elapsed
   /// time (the sync throttle, the full-scan backstop) reads this instead of
   /// calling [DateTime.now] directly, so a test can drive both without
   /// actually waiting out a 60-second throttle or a 6-hour backstop.
   final DateTime Function() _now;
 
   /// How long a completed [syncNow] suppresses the next unforced one -
-  /// ticket 29's throttle. 60 seconds is short enough that a user who
+  /// ticket 30's throttle. 60 seconds is short enough that a user who
   /// genuinely wants to check again (the refresh button, which always
   /// forces) never feels blocked, and long enough that GetX recreating this
   /// controller on every navigation back to the gallery does not turn
@@ -68,7 +68,7 @@ class GalleryGridController extends GetxController {
   static const Duration syncThrottleWindow = Duration(seconds: 60);
 
   /// How long a full Local Source scan is allowed to go un-repeated before
-  /// [syncNow] forces one anyway, throttle or no - ticket 29's backstop.
+  /// [syncNow] forces one anyway, throttle or no - ticket 30's backstop.
   /// See [_fullScanIsDue]'s doc for the tradeoff this interval is the
   /// visible cost of.
   static const Duration fullScanBackstopInterval = Duration(hours: 6);
@@ -139,7 +139,7 @@ class GalleryGridController extends GetxController {
   /// throttle check can be synchronous: [open] fires [syncNow] with
   /// `unawaited`, precisely so opening the gallery never blocks on a sync
   /// (see that call site's own comment), and [isSyncing] must still flip to
-  /// `true` before [open] itself returns, exactly as it did before ticket 29
+  /// `true` before [open] itself returns, exactly as it did before ticket 30
   /// - a caller awaiting [open] and immediately checking [isSyncing]
   /// (`gallery_grid_controller_test.dart`'s "opening does not wait for the
   /// delta feed") must keep seeing that. An `await` on the throttle's own
@@ -226,7 +226,7 @@ class GalleryGridController extends GetxController {
   /// network, or no device access, shows what the mirror holds, which is the
   /// whole point of there being a mirror.
   ///
-  /// **Ticket 29's throttle:** unless [force] is set, a call within
+  /// **Ticket 30's throttle:** unless [force] is set, a call within
   /// [syncThrottleWindow] of the last completed sync returns immediately -
   /// no cloud request, no Local Source touched, [isSyncing] never flips.
   /// This is what makes GetX recreating this controller on every navigation
@@ -297,7 +297,7 @@ class GalleryGridController extends GetxController {
   }
 
   /// Ticket 16's "changing the grant while the app is running is picked up
-  /// without requiring a restart", reconciled with ticket 29's throttle:
+  /// without requiring a restart", reconciled with ticket 30's throttle:
   /// [GalleryView]'s resume handler calls this instead of [syncNow]
   /// directly, because the throttle alone has no way to know the device
   /// photo-access grant changed while the app was backgrounded - it only
@@ -325,12 +325,12 @@ class GalleryGridController extends GetxController {
   /// when no full scan has ever completed, or the last one predates
   /// [fullScanBackstopInterval]. [GalleryMirror.lastFullScanAt] answers
   /// both at once: `0` covers a genuine cold start *and* an app upgraded
-  /// from before ticket 29's watermark existed (no row at all), and either
+  /// from before ticket 30's watermark existed (no row at all), and either
   /// way the right answer is "run one now".
   ///
   /// **Deliberately not also checking [GalleryMirror.localGeneration] for
   /// `0`**, even though the ticket this method implements
-  /// (`.scratch/gallery-mode/issues/29-gallery-sync-latency-on-open-and-resume.md`)
+  /// (`.scratch/gallery-mode/issues/30-gallery-sync-latency-on-open-and-resume.md`)
   /// names that as its cold-start signal: [LocalScanService.scan] primes
   /// that watermark from [LocalSource.currentGeneration] after every full
   /// scan, including the very first one, and nothing about this codebase
@@ -409,7 +409,7 @@ class GalleryGridController extends GetxController {
   /// [GalleryView]'s job, shown before this is ever called - this method is
   /// only the request itself. Always followed by a forced [syncNow], so a
   /// newly granted or widened selection shows up immediately - bypassing
-  /// both ticket 29's throttle and its incremental-scan default - rather
+  /// both ticket 30's throttle and its incremental-scan default - rather
   /// than waiting for the next unforced sync.
   Future<void> requestLocalPermission() async {
     final scanner = localScanService;

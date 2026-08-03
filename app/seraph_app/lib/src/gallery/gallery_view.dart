@@ -75,7 +75,7 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
   /// without requiring a restart": the only route to changing photo access
   /// mid-session is leaving the app (system Settings, the extended-selection
   /// picker) and coming back, which is exactly a resume. [syncOnResume] -
-  /// not [syncNow] directly - is what upholds that under ticket 29's
+  /// not [syncNow] directly - is what upholds that under ticket 30's
   /// throttle: it re-checks the grant itself and forces past the throttle
   /// when the grant changed, so a resume landing inside the throttle window
   /// still picks up a permission change instead of being swallowed by it. A
@@ -142,7 +142,7 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
                         )
                       : const Icon(Icons.refresh),
                   tooltip: 'Check for new photos',
-                  // Forced (ticket 29): a manual tap is the user explicitly
+                  // Forced (ticket 30): a manual tap is the user explicitly
                   // asking for a fresh look, so this bypasses both the
                   // throttle and the incremental-scan default rather than
                   // possibly doing nothing at all if pressed again soon after

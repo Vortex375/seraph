@@ -1,4 +1,4 @@
-# 29 — Gallery sync latency on open and resume
+# 30 — Gallery sync latency on open and resume
 
 **What to build:** Opening Gallery Mode — or resuming the app onto it — stops
 blocking on a ~30 second sync. The gallery becomes usable immediately and

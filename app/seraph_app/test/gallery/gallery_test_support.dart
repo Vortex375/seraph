@@ -205,7 +205,7 @@ class FakeLocalSource implements LocalSource {
   }
 }
 
-/// Ticket 29's mirror-seam clock fake: a settable "now" for
+/// Ticket 30's mirror-seam clock fake: a settable "now" for
 /// [GalleryGridController]'s sync throttle and full-scan backstop, so a test
 /// can assert on both without actually waiting out a 60-second throttle or a
 /// 6-hour backstop. Pass [call] itself as `GalleryGridController(now: ...)`'s

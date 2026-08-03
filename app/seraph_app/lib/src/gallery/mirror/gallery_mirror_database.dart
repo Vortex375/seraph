@@ -60,7 +60,7 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
             await m.createTable(cachedThumbnails);
           }
           if (from < 4) {
-            // v4 (ticket 29) added the three indexes documented on
+            // v4 (ticket 30) added the three indexes documented on
             // [GalleryItems] itself - the mirror had grown large enough that
             // every write and every grid page were full table scans. Adding
             // an index to an existing table is exactly what `createIndex`
@@ -97,7 +97,7 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
 /// (D6/D17 in the design notes) can be read directly off this table without
 /// a join.
 ///
-/// **Three indexes (ticket 29), added in schema v4 - see
+/// **Three indexes (ticket 30), added in schema v4 - see
 /// `GalleryMirrorDatabase.migration`'s `from < 4` step for why an existing
 /// mirror gets them via `createIndex` rather than a table rebuild:**
 ///

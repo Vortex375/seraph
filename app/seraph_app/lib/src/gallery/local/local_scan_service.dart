@@ -9,7 +9,7 @@ import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 /// [scan] is ticket 15's correctness anchor and remains the only thing that
 /// ever removes or demotes a device row from the mirror (see
 /// [GalleryMirror.applyLocalScan]) - that governing rule does not change.
-/// What ticket 29 changed is its *cadence* on the interactive path: [scan]
+/// What ticket 30 changed is its *cadence* on the interactive path: [scan]
 /// no longer runs unconditionally every time [GalleryGridController]
 /// (`gallery_grid_controller.dart`) syncs. [GalleryGridController.syncNow]
 /// now runs [scan] only on a cold start, when the last full scan predates a

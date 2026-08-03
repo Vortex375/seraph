@@ -25,7 +25,7 @@ const String _originBoth = 'both';
 /// duplicate [SyncCursors]' shape for no reason.
 const String localMediaSource = 'local-media';
 
-/// [SyncCursors.source] value for ticket 29's full-scan cadence: epoch
+/// [SyncCursors.source] value for ticket 30's full-scan cadence: epoch
 /// milliseconds at which [GalleryMirror.recordFullScanAt] last recorded a
 /// completed full Local Source scan. A third borrower of [SyncCursors]'
 /// shape, for the same reason [localMediaSource] is - this is "how far has
@@ -34,7 +34,7 @@ const String localMediaSource = 'local-media';
 /// already provides.
 const String localFullScanSource = 'local-full-scan';
 
-/// [SyncCursors.source] value for ticket 29's sync throttle: epoch
+/// [SyncCursors.source] value for ticket 30's sync throttle: epoch
 /// milliseconds at which the last (non-throttled) [GalleryGridController.
 /// syncNow] completed. Persisted rather than held in memory because the
 /// throttle must survive [GalleryGridController] itself being torn down and
@@ -410,7 +410,7 @@ class GalleryMirror {
       _writeCursorSince(localMediaSource, generation);
 
   /// Epoch milliseconds at which a full Local Source scan last completed, or
-  /// `0` if one never has - ticket 29's "nothing has ever scanned" and "the
+  /// `0` if one never has - ticket 30's "nothing has ever scanned" and "the
   /// last full scan is older than the backstop interval" checks both read
   /// this, since `0` means the same "from the beginning" thing here that it
   /// does for [since] and [localGeneration].

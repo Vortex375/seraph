@@ -110,7 +110,7 @@ void main() {
       final file = File(p.join(tempDir.path, 'mirror.sqlite'));
 
       // A v3 database - GalleryItems.orientation and CachedThumbnails both
-      // already exist, but none of the ticket 29 indexes do yet. This models
+      // already exist, but none of the ticket 30 indexes do yet. This models
       // the acceptance criterion directly: "a schema-v4 migration that
       // preserves existing rows and the sync cursor".
       final v3Raw = sqlite3.sqlite3.open(file.path);
