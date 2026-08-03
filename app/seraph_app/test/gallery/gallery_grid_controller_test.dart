@@ -165,6 +165,11 @@ void main() {
       expect(controller.itemAt(100), isNotNull);
       expect(controller.itemAt(199), isNotNull);
       expect(controller.itemAt(200), isNull);
+
+      // itemAt(200) schedules a page read of its own (it is unloaded, like
+      // any other unloaded index) - drain it before teardown closes the
+      // database, rather than leaving it to race db.close().
+      await pumpEventQueue();
     });
 
     test('an index outside the gallery is not a page read', () async {
@@ -196,6 +201,11 @@ void main() {
 
       // Knowing the date did not require loading the page it lives on.
       expect(controller.itemAt(351), isNull);
+
+      // itemAt(351) schedules a page read of its own - drain it before
+      // teardown closes the database, rather than leaving it to race
+      // db.close().
+      await pumpEventQueue();
     });
 
     test('dates from a loaded page match the mirror order', () async {

@@ -6,8 +6,12 @@ import 'package:seraph_app/src/gallery/folder_picker_dialog.dart';
 import 'package:seraph_app/src/gallery/gallery_grid_controller.dart';
 import 'package:seraph_app/src/gallery/gallery_models.dart';
 import 'package:seraph_app/src/gallery/gallery_service.dart';
+import 'package:seraph_app/src/gallery/local/local_scan_service.dart';
+import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 
-/// Which folders in Seraph feed Gallery Mode.
+/// Which folders feed Gallery Mode - *In Seraph* (what this screen has always
+/// shown) and, on a device with a Local Source, *On this device* (ticket 29):
+/// which of the phone's own photo folders are a Local Folder.
 ///
 /// This used to be all Gallery Mode had; now that the grid itself exists,
 /// choosing the folders is configuration and lives behind the gallery rather
@@ -26,7 +30,24 @@ class GallerySourceFoldersView extends StatefulWidget {
 class _GallerySourceFoldersViewState extends State<GallerySourceFoldersView> {
   final GalleryService galleryService = Get.find();
 
+  /// Null in any test/build that never registers a mirror at all - treated
+  /// exactly like [_hasLocalSource] being false, so the device section stays
+  /// absent rather than erroring.
+  final GalleryMirror? _mirror =
+      Get.isRegistered<GalleryMirror>() ? Get.find<GalleryMirror>() : null;
+  final LocalScanService? _localScanService =
+      Get.isRegistered<LocalScanService>()
+          ? Get.find<LocalScanService>()
+          : null;
+
+  /// Whether this platform has a Local Source at all (Android, with the
+  /// native side present) - the ticket 29 criterion for showing *On this
+  /// device* "rather than present and empty". iOS, desktop, web, and any
+  /// test that registers no [LocalScanService], all read false here.
+  bool get _hasLocalSource => _localScanService?.localSource != null;
+
   List<GallerySourceFolder> _folders = [];
+  List<LocalFolder> _localFolders = [];
   bool _isLoading = true;
   String? _error;
 
@@ -54,6 +75,9 @@ class _GallerySourceFoldersViewState extends State<GallerySourceFoldersView> {
     });
     try {
       _folders = await galleryService.listSourceFolders();
+      if (_hasLocalSource) {
+        _localFolders = await _mirror!.listLocalFolders();
+      }
     } catch (e) {
       _error = 'Failed to load gallery folders: $e';
     } finally {
@@ -62,6 +86,30 @@ class _GallerySourceFoldersViewState extends State<GallerySourceFoldersView> {
           _isLoading = false;
         });
       }
+    }
+  }
+
+  /// Flips [folder]'s selection and re-reads the mirror's folder list, then
+  /// tells the grid to re-read the mirror too - ticket 29's "reflects
+  /// immediately without a rescan": [GalleryGridController.reload] only
+  /// re-reads what [GalleryMirror] already has, unlike [_resyncGallery]'s
+  /// [GalleryGridController.syncNow], which would run a real (and here
+  /// entirely unnecessary) Local Source scan and delta-feed poll.
+  Future<void> _toggleLocalFolder(LocalFolder folder, bool selected) async {
+    final mirror = _mirror;
+    if (mirror == null) {
+      return;
+    }
+    await mirror.setLocalFolderSelected(folder.path, selected);
+    final updated = await mirror.listLocalFolders();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _localFolders = updated;
+    });
+    if (Get.isRegistered<GalleryGridController>()) {
+      unawaited(Get.find<GalleryGridController>().reload());
     }
   }
 
@@ -248,54 +296,105 @@ class _GallerySourceFoldersViewState extends State<GallerySourceFoldersView> {
       );
     }
 
-    if (_folders.isEmpty) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Text(
-            'No gallery folders yet.\n\n'
-            'Add a folder to show its photos in Gallery Mode.',
-            textAlign: TextAlign.center,
-          ),
-        ),
-      );
-    }
-
-    return ListView.builder(
-      itemCount: _folders.length,
-      itemBuilder: (context, index) {
-        final folder = _folders[index];
-        return ListTile(
-          leading: const Icon(Icons.photo_library),
-          title: Text(folder.displayPath),
-          subtitle: folder.rescanRunning ? const Text('Rescanning…') : null,
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (folder.rescanRunning)
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 12),
-                  child: SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                )
-              else
-                IconButton(
-                  icon: const Icon(Icons.sync),
-                  tooltip: 'Rescan folder',
-                  onPressed: () => _rescanFolder(folder),
-                ),
-              IconButton(
-                icon: const Icon(Icons.delete_outline),
-                tooltip: 'Remove',
-                onPressed: () => _removeFolder(folder),
+    // Two sections (ticket 29): *In Seraph* (unconditional - this is what the
+    // screen has always shown) and, only where this device has a Local
+    // Source, *On this device*. The device section is omitted entirely
+    // rather than shown empty when there is no Local Source at all - the
+    // criterion is "no Local Source", not "no folders yet".
+    return ListView(
+      children: [
+        _sectionHeader('In Seraph'),
+        if (_folders.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(24),
+            child: Text(
+              'No gallery folders yet.\n\n'
+              'Add a folder to show its photos in Gallery Mode.',
+              textAlign: TextAlign.center,
+            ),
+          )
+        else
+          ..._folders.map(_buildCloudFolderTile),
+        if (_hasLocalSource) ...[
+          const Divider(height: 32),
+          _sectionHeader('On this device'),
+          if (_localFolders.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Text(
+                'No photo folders found on this device yet.',
+                textAlign: TextAlign.center,
               ),
-            ],
+            )
+          else
+            ..._localFolders.map(_buildLocalFolderTile),
+        ],
+      ],
+    );
+  }
+
+  Widget _sectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Text(
+        title,
+        style: Theme.of(context)
+            .textTheme
+            .titleSmall
+            ?.copyWith(fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+
+  Widget _buildCloudFolderTile(GallerySourceFolder folder) {
+    return ListTile(
+      leading: const Icon(Icons.photo_library),
+      title: Text(folder.displayPath),
+      subtitle: folder.rescanRunning ? const Text('Rescanning…') : null,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (folder.rescanRunning)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          else
+            IconButton(
+              icon: const Icon(Icons.sync),
+              tooltip: 'Rescan folder',
+              onPressed: () => _rescanFolder(folder),
+            ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            tooltip: 'Remove',
+            onPressed: () => _removeFolder(folder),
           ),
-        );
-      },
+        ],
+      ),
+    );
+  }
+
+  /// One row of the *On this device* section: the folder's own path, how
+  /// many device photos it holds (user story 106 - "choosing from evidence
+  /// rather than from a folder name"), and a switch that selects or
+  /// deselects it. A deselected folder stays right here, in the same list,
+  /// so re-selecting it is always one tap away (user story 108) - nothing
+  /// about this tile ever removes a row from [_localFolders].
+  Widget _buildLocalFolderTile(LocalFolder folder) {
+    return ListTile(
+      leading: const Icon(Icons.folder_outlined),
+      title: Text(folder.path),
+      subtitle: Text(
+          '${folder.photoCount} photo${folder.photoCount == 1 ? '' : 's'}'),
+      trailing: Switch(
+        value: folder.selected,
+        onChanged: (value) => _toggleLocalFolder(folder, value),
+      ),
     );
   }
 }
