@@ -23,7 +23,8 @@ part 'gallery_mirror_database.g.dart';
 /// opened with no network still shows the thumbnails it has already seen.
 /// Neither is a second source of gallery items - the one-table constraint is
 /// about what the UI list is built from, and that is [GalleryItems] alone.
-@DriftDatabase(tables: [GalleryItems, SyncCursors, CachedThumbnails])
+@DriftDatabase(
+    tables: [GalleryItems, SyncCursors, CachedThumbnails, LocalFolderSelections])
 class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
   GalleryMirrorDatabase(super.e);
 
@@ -36,7 +37,7 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
   }
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -69,6 +70,23 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
             await m.createIndex(idxGalleryItemsLocalIdentity);
             await m.createIndex(idxGalleryItemsOriginSizeCapturedAt);
             await m.createIndex(idxGalleryItemsCapturedAtId);
+          }
+          if (from < 5) {
+            // v5 added ticket 29's Local Folder selection. A fresh, empty
+            // table - never a drop-and-recreate of anything existing, and
+            // no existing row is touched. Empty is the correct starting
+            // state: it means "no explicit choice yet" for every folder,
+            // which is exactly what makes [GalleryMirror]'s DCIM default
+            // take over until a user actually toggles something (see the
+            // class doc on [LocalFolderSelections]).
+            //
+            // This step was written as v4 on its own branch and renumbered
+            // when it landed after ticket 30's indexes, which had already
+            // taken v4. The renumber is the whole point of the `from <`
+            // ladder: a device that already migrated to v4 for the indexes
+            // still gets this table, which a second, competing v4 would
+            // have silently denied it.
+            await m.createTable(localFolderSelections);
           }
         },
         beforeOpen: (details) async {
@@ -257,4 +275,33 @@ class CachedThumbnails extends Table {
 
   @override
   Set<Column> get primaryKey => {providerId, path, size};
+}
+
+/// Ticket 29's Local Folder selection: which folders on this device feed the
+/// merged gallery, as an explicit override a user has made by toggling one in
+/// the *On this device* section of the Gallery folders screen.
+///
+/// A folder never explicitly toggled has **no row here at all** - its
+/// selection is the DCIM default [GalleryMirror] computes instead (see the
+/// class doc on `GalleryMirror.listLocalFolders` in `gallery_mirror.dart`).
+/// That is what makes "the seed happens once and a user's choice is never
+/// re-derived afterwards" true without a separate seed-marker row: a row
+/// exists only once a user has made a choice, and once it does it wins over
+/// the default forever, restart after restart.
+///
+/// **Never sent to the server** (design record D21, `docs/gallery-mode-
+/// design-notes.md`, and D4's own reasoning): a Local Folder names a path
+/// that exists on exactly one phone, so a second device has nothing useful
+/// to read here.
+class LocalFolderSelections extends Table {
+  /// The device's own folder identifier - on Android, MediaStore's
+  /// `RELATIVE_PATH` value (e.g. `DCIM/Camera/`), exactly the string
+  /// [GalleryItems.localRelativePath] stores - so folder enumeration and
+  /// selection lookup are a plain equality match, no normalisation needed.
+  TextColumn get folderPath => text()();
+
+  BoolColumn get selected => boolean()();
+
+  @override
+  Set<Column> get primaryKey => {folderPath};
 }

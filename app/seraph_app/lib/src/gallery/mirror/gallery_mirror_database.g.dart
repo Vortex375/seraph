@@ -1430,6 +1430,213 @@ class CachedThumbnailsCompanion extends UpdateCompanion<CachedThumbnail> {
   }
 }
 
+class $LocalFolderSelectionsTable extends LocalFolderSelections
+    with TableInfo<$LocalFolderSelectionsTable, LocalFolderSelection> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $LocalFolderSelectionsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _folderPathMeta =
+      const VerificationMeta('folderPath');
+  @override
+  late final GeneratedColumn<String> folderPath = GeneratedColumn<String>(
+      'folder_path', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _selectedMeta =
+      const VerificationMeta('selected');
+  @override
+  late final GeneratedColumn<bool> selected = GeneratedColumn<bool>(
+      'selected', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: true,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("selected" IN (0, 1))'));
+  @override
+  List<GeneratedColumn> get $columns => [folderPath, selected];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'local_folder_selections';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<LocalFolderSelection> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('folder_path')) {
+      context.handle(
+          _folderPathMeta,
+          folderPath.isAcceptableOrUnknown(
+              data['folder_path']!, _folderPathMeta));
+    } else if (isInserting) {
+      context.missing(_folderPathMeta);
+    }
+    if (data.containsKey('selected')) {
+      context.handle(_selectedMeta,
+          selected.isAcceptableOrUnknown(data['selected']!, _selectedMeta));
+    } else if (isInserting) {
+      context.missing(_selectedMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {folderPath};
+  @override
+  LocalFolderSelection map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return LocalFolderSelection(
+      folderPath: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}folder_path'])!,
+      selected: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}selected'])!,
+    );
+  }
+
+  @override
+  $LocalFolderSelectionsTable createAlias(String alias) {
+    return $LocalFolderSelectionsTable(attachedDatabase, alias);
+  }
+}
+
+class LocalFolderSelection extends DataClass
+    implements Insertable<LocalFolderSelection> {
+  /// The device's own folder identifier - on Android, MediaStore's
+  /// `RELATIVE_PATH` value (e.g. `DCIM/Camera/`), exactly the string
+  /// [GalleryItems.localRelativePath] stores - so folder enumeration and
+  /// selection lookup are a plain equality match, no normalisation needed.
+  final String folderPath;
+  final bool selected;
+  const LocalFolderSelection(
+      {required this.folderPath, required this.selected});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['folder_path'] = Variable<String>(folderPath);
+    map['selected'] = Variable<bool>(selected);
+    return map;
+  }
+
+  LocalFolderSelectionsCompanion toCompanion(bool nullToAbsent) {
+    return LocalFolderSelectionsCompanion(
+      folderPath: Value(folderPath),
+      selected: Value(selected),
+    );
+  }
+
+  factory LocalFolderSelection.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return LocalFolderSelection(
+      folderPath: serializer.fromJson<String>(json['folderPath']),
+      selected: serializer.fromJson<bool>(json['selected']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'folderPath': serializer.toJson<String>(folderPath),
+      'selected': serializer.toJson<bool>(selected),
+    };
+  }
+
+  LocalFolderSelection copyWith({String? folderPath, bool? selected}) =>
+      LocalFolderSelection(
+        folderPath: folderPath ?? this.folderPath,
+        selected: selected ?? this.selected,
+      );
+  LocalFolderSelection copyWithCompanion(LocalFolderSelectionsCompanion data) {
+    return LocalFolderSelection(
+      folderPath:
+          data.folderPath.present ? data.folderPath.value : this.folderPath,
+      selected: data.selected.present ? data.selected.value : this.selected,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalFolderSelection(')
+          ..write('folderPath: $folderPath, ')
+          ..write('selected: $selected')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(folderPath, selected);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is LocalFolderSelection &&
+          other.folderPath == this.folderPath &&
+          other.selected == this.selected);
+}
+
+class LocalFolderSelectionsCompanion
+    extends UpdateCompanion<LocalFolderSelection> {
+  final Value<String> folderPath;
+  final Value<bool> selected;
+  final Value<int> rowid;
+  const LocalFolderSelectionsCompanion({
+    this.folderPath = const Value.absent(),
+    this.selected = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  LocalFolderSelectionsCompanion.insert({
+    required String folderPath,
+    required bool selected,
+    this.rowid = const Value.absent(),
+  })  : folderPath = Value(folderPath),
+        selected = Value(selected);
+  static Insertable<LocalFolderSelection> custom({
+    Expression<String>? folderPath,
+    Expression<bool>? selected,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (folderPath != null) 'folder_path': folderPath,
+      if (selected != null) 'selected': selected,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  LocalFolderSelectionsCompanion copyWith(
+      {Value<String>? folderPath, Value<bool>? selected, Value<int>? rowid}) {
+    return LocalFolderSelectionsCompanion(
+      folderPath: folderPath ?? this.folderPath,
+      selected: selected ?? this.selected,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (folderPath.present) {
+      map['folder_path'] = Variable<String>(folderPath.value);
+    }
+    if (selected.present) {
+      map['selected'] = Variable<bool>(selected.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalFolderSelectionsCompanion(')
+          ..write('folderPath: $folderPath, ')
+          ..write('selected: $selected, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$GalleryMirrorDatabase extends GeneratedDatabase {
   _$GalleryMirrorDatabase(QueryExecutor e) : super(e);
   $GalleryMirrorDatabaseManager get managers =>
@@ -1438,6 +1645,8 @@ abstract class _$GalleryMirrorDatabase extends GeneratedDatabase {
   late final $SyncCursorsTable syncCursors = $SyncCursorsTable(this);
   late final $CachedThumbnailsTable cachedThumbnails =
       $CachedThumbnailsTable(this);
+  late final $LocalFolderSelectionsTable localFolderSelections =
+      $LocalFolderSelectionsTable(this);
   late final Index idxGalleryItemsLocalIdentity = Index(
       'idx_gallery_items_local_identity',
       'CREATE INDEX idx_gallery_items_local_identity ON gallery_items (local_relative_path, local_display_name, local_size, local_date_taken)');
@@ -1455,6 +1664,7 @@ abstract class _$GalleryMirrorDatabase extends GeneratedDatabase {
         galleryItems,
         syncCursors,
         cachedThumbnails,
+        localFolderSelections,
         idxGalleryItemsLocalIdentity,
         idxGalleryItemsOriginSizeCapturedAt,
         idxGalleryItemsCapturedAtId
@@ -2155,6 +2365,141 @@ typedef $$CachedThumbnailsTableProcessedTableManager = ProcessedTableManager<
     ),
     CachedThumbnail,
     PrefetchHooks Function()>;
+typedef $$LocalFolderSelectionsTableCreateCompanionBuilder
+    = LocalFolderSelectionsCompanion Function({
+  required String folderPath,
+  required bool selected,
+  Value<int> rowid,
+});
+typedef $$LocalFolderSelectionsTableUpdateCompanionBuilder
+    = LocalFolderSelectionsCompanion Function({
+  Value<String> folderPath,
+  Value<bool> selected,
+  Value<int> rowid,
+});
+
+class $$LocalFolderSelectionsTableFilterComposer
+    extends Composer<_$GalleryMirrorDatabase, $LocalFolderSelectionsTable> {
+  $$LocalFolderSelectionsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get folderPath => $composableBuilder(
+      column: $table.folderPath, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get selected => $composableBuilder(
+      column: $table.selected, builder: (column) => ColumnFilters(column));
+}
+
+class $$LocalFolderSelectionsTableOrderingComposer
+    extends Composer<_$GalleryMirrorDatabase, $LocalFolderSelectionsTable> {
+  $$LocalFolderSelectionsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get folderPath => $composableBuilder(
+      column: $table.folderPath, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get selected => $composableBuilder(
+      column: $table.selected, builder: (column) => ColumnOrderings(column));
+}
+
+class $$LocalFolderSelectionsTableAnnotationComposer
+    extends Composer<_$GalleryMirrorDatabase, $LocalFolderSelectionsTable> {
+  $$LocalFolderSelectionsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get folderPath => $composableBuilder(
+      column: $table.folderPath, builder: (column) => column);
+
+  GeneratedColumn<bool> get selected =>
+      $composableBuilder(column: $table.selected, builder: (column) => column);
+}
+
+class $$LocalFolderSelectionsTableTableManager extends RootTableManager<
+    _$GalleryMirrorDatabase,
+    $LocalFolderSelectionsTable,
+    LocalFolderSelection,
+    $$LocalFolderSelectionsTableFilterComposer,
+    $$LocalFolderSelectionsTableOrderingComposer,
+    $$LocalFolderSelectionsTableAnnotationComposer,
+    $$LocalFolderSelectionsTableCreateCompanionBuilder,
+    $$LocalFolderSelectionsTableUpdateCompanionBuilder,
+    (
+      LocalFolderSelection,
+      BaseReferences<_$GalleryMirrorDatabase, $LocalFolderSelectionsTable,
+          LocalFolderSelection>
+    ),
+    LocalFolderSelection,
+    PrefetchHooks Function()> {
+  $$LocalFolderSelectionsTableTableManager(
+      _$GalleryMirrorDatabase db, $LocalFolderSelectionsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$LocalFolderSelectionsTableFilterComposer(
+                  $db: db, $table: table),
+          createOrderingComposer: () =>
+              $$LocalFolderSelectionsTableOrderingComposer(
+                  $db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$LocalFolderSelectionsTableAnnotationComposer(
+                  $db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> folderPath = const Value.absent(),
+            Value<bool> selected = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              LocalFolderSelectionsCompanion(
+            folderPath: folderPath,
+            selected: selected,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String folderPath,
+            required bool selected,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              LocalFolderSelectionsCompanion.insert(
+            folderPath: folderPath,
+            selected: selected,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$LocalFolderSelectionsTableProcessedTableManager
+    = ProcessedTableManager<
+        _$GalleryMirrorDatabase,
+        $LocalFolderSelectionsTable,
+        LocalFolderSelection,
+        $$LocalFolderSelectionsTableFilterComposer,
+        $$LocalFolderSelectionsTableOrderingComposer,
+        $$LocalFolderSelectionsTableAnnotationComposer,
+        $$LocalFolderSelectionsTableCreateCompanionBuilder,
+        $$LocalFolderSelectionsTableUpdateCompanionBuilder,
+        (
+          LocalFolderSelection,
+          BaseReferences<_$GalleryMirrorDatabase, $LocalFolderSelectionsTable,
+              LocalFolderSelection>
+        ),
+        LocalFolderSelection,
+        PrefetchHooks Function()>;
 
 class $GalleryMirrorDatabaseManager {
   final _$GalleryMirrorDatabase _db;
@@ -2165,4 +2510,6 @@ class $GalleryMirrorDatabaseManager {
       $$SyncCursorsTableTableManager(_db, _db.syncCursors);
   $$CachedThumbnailsTableTableManager get cachedThumbnails =>
       $$CachedThumbnailsTableTableManager(_db, _db.cachedThumbnails);
+  $$LocalFolderSelectionsTableTableManager get localFolderSelections =>
+      $$LocalFolderSelectionsTableTableManager(_db, _db.localFolderSelections);
 }

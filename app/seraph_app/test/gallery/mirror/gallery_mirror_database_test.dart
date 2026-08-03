@@ -105,14 +105,17 @@ void main() {
     });
 
     test(
-        'an app upgrade from v3 (no indexes) creates the three ticket-29 '
-        'indexes without losing existing rows or the sync cursor', () async {
+        'an app upgrade from v3 creates the ticket-30 indexes and the Local '
+        'Folder selection table without losing existing rows or the sync '
+        'cursor', () async {
       final file = File(p.join(tempDir.path, 'mirror.sqlite'));
 
       // A v3 database - GalleryItems.orientation and CachedThumbnails both
-      // already exist, but none of the ticket 30 indexes do yet. This models
-      // the acceptance criterion directly: "a schema-v4 migration that
-      // preserves existing rows and the sync cursor".
+      // already exist, but neither ticket 30's indexes (v4) nor ticket 29's
+      // Local Folder selection table (v5) do. One fixture covers both steps
+      // deliberately: the two tickets were written in parallel, each as v4,
+      // and a v3 device has to come out of the ladder with BOTH - which is
+      // exactly what a test per branch would each have missed.
       final v3Raw = sqlite3.sqlite3.open(file.path);
       v3Raw.execute('''
         CREATE TABLE gallery_items (
@@ -167,7 +170,8 @@ void main() {
       final db = GalleryMirrorDatabase(NativeDatabase(file));
       addTearDown(db.close);
 
-      // The pre-existing row and cursor both survived the upgrade...
+      // The pre-existing row and its sync cursor survived - neither a new
+      // index nor a new table may ever cost a user a full gallery re-fetch.
       final items = await db.select(db.galleryItems).get();
       expect(items, hasLength(1));
       expect(items.single.path, '/Photos/a.jpg');
@@ -176,7 +180,7 @@ void main() {
           .getSingle();
       expect(cursor.since, 5);
 
-      // ...and all three indexes now exist, queryable straight from SQLite's
+      // All three indexes now exist, queryable straight from SQLite's
       // own schema table rather than assumed from the migration not
       // throwing.
       final indexNames = (await db
@@ -194,6 +198,21 @@ void main() {
           'idx_gallery_items_captured_at_id',
         ]),
       );
+
+      // The new table exists and is usable - empty, meaning "no explicit
+      // choice yet" for every folder (GalleryMirror's DCIM default fills the
+      // gap; see its class doc).
+      final selections = await db.select(db.localFolderSelections).get();
+      expect(selections, isEmpty);
+      await db.into(db.localFolderSelections).insertOnConflictUpdate(
+            LocalFolderSelectionsCompanion.insert(
+              folderPath: 'DCIM/Camera/',
+              selected: false,
+            ),
+          );
+      final written = await db.select(db.localFolderSelections).get();
+      expect(written, hasLength(1));
+      expect(written.single.selected, isFalse);
     });
 
     test('a fresh install creates the current schema directly via onCreate',

@@ -44,6 +44,41 @@ const String localFullScanSource = 'local-full-scan';
 /// on exactly the navigation pattern it exists to guard against.
 const String syncThrottleSource = 'sync-throttle';
 
+/// D21/ticket 29's first-run default: a folder under `DCIM` is selected,
+/// every other folder is not - applied only where [LocalFolderSelections] has
+/// no explicit row for the folder (see [GalleryMirror.listLocalFolders]'s
+/// doc for why that is what makes the seed apply once and never re-derive a
+/// choice the user has already made).
+bool _defaultFolderSelected(String folderPath) =>
+    folderPath == 'DCIM' || folderPath.startsWith('DCIM/');
+
+/// One folder on the device, as ticket 29's *On this device* section shows
+/// it.
+class LocalFolder {
+  const LocalFolder({
+    required this.path,
+    required this.photoCount,
+    required this.selected,
+  });
+
+  /// The device's own folder identifier - on Android, MediaStore's
+  /// `RELATIVE_PATH` (e.g. `DCIM/Camera/`), exactly what
+  /// [GalleryItems.localRelativePath] stores.
+  final String path;
+
+  /// How many device photos currently sit in this folder, regardless of
+  /// whether it is selected - user story 106, "choosing from evidence rather
+  /// than from a folder name".
+  final int photoCount;
+
+  /// Whether this folder's photos currently feed the gallery - an explicit
+  /// row in [LocalFolderSelections] if the user has ever toggled this
+  /// folder, else [_defaultFolderSelected]. The exact predicate every read
+  /// in this class applies, so this can never disagree with what the grid
+  /// does with the folder's photos.
+  final bool selected;
+}
+
 /// How a mirror query is restricted by Availability - the filter ticket 15
 /// asks for ("filtered to items that are not backed up, and to Cloud only
 /// items"), never affecting ordering, only membership.
@@ -532,20 +567,29 @@ class GalleryMirror {
   /// [filter] restricts which rows are included (ticket 15's Availability
   /// filter) without ever changing their relative order - Availability is
   /// shown, and now filterable, but it never fragments the ordering.
+  ///
+  /// Ticket 29's Local Folder selection is applied here too, folded into the
+  /// same [filter] machinery rather than as a separate step - see
+  /// [_visibilityPredicates].
   Future<GalleryMirrorPage> queryPage({
     int offset = 0,
     int limit = 100,
     GalleryAvailabilityFilter filter = GalleryAvailabilityFilter.all,
   }) async {
+    final unselectedFolders = await _unselectedFolders();
+
     final query = _db.select(_db.galleryItems)
       ..orderBy([
         (t) => OrderingTerm(expression: t.capturedAt, mode: OrderingMode.desc),
         (t) => OrderingTerm(expression: t.id, mode: OrderingMode.desc),
       ])
-      ..limit(limit, offset: offset);
-    _applyFilter(query, filter);
+      ..limit(limit, offset: offset)
+      ..where((t) =>
+          _visibilityPredicates(t, unselectedFolders).forFilter(filter));
 
-    final items = await query.get();
+    final rows = await query.get();
+    final items =
+        rows.map((r) => _presentedItem(r, unselectedFolders)).toList();
     final totalCount = await this.totalCount(filter: filter);
 
     return GalleryMirrorPage(items: items, totalCount: totalCount);
@@ -563,32 +607,78 @@ class GalleryMirror {
     int offset = 0,
     int limit = 100,
     GalleryAvailabilityFilter filter = GalleryAvailabilityFilter.all,
-  }) {
+  }) async {
+    final unselectedFolders = await _unselectedFolders();
+
     final query = _db.select(_db.galleryItems)
       ..orderBy([
         (t) => OrderingTerm(expression: t.capturedAt, mode: OrderingMode.desc),
         (t) => OrderingTerm(expression: t.id, mode: OrderingMode.desc),
       ])
-      ..limit(limit, offset: offset);
-    _applyFilter(query, filter);
+      ..limit(limit, offset: offset)
+      ..where((t) =>
+          _visibilityPredicates(t, unselectedFolders).forFilter(filter));
 
-    return query.get();
+    final rows = await query.get();
+    return rows.map((r) => _presentedItem(r, unselectedFolders)).toList();
   }
 
-  void _applyFilter(
-    SimpleSelectStatement<$GalleryItemsTable, GalleryItem> query,
-    GalleryAvailabilityFilter filter,
-  ) {
-    switch (filter) {
-      case GalleryAvailabilityFilter.all:
-        break;
-      case GalleryAvailabilityFilter.notBackedUp:
-        query.where((t) => t.origin.equals(_originDevice));
-        break;
-      case GalleryAvailabilityFilter.cloudOnly:
-        query.where((t) => t.origin.equals(_originCloud));
-        break;
+  /// What a caller actually sees for [item]: unchanged, **except** a Synced
+  /// row ([_originBoth]) whose device copy sits in a currently-unselected
+  /// Local Folder is handed back as Cloud only - [GalleryItem.origin]
+  /// rewritten to [_originCloud] and its `local*` columns cleared.
+  ///
+  /// This is never written back to [GalleryItems] - the full media-store
+  /// scan and dedup (`applyLocalScan`/`applyLocalDelta`/`applyPage`) read and
+  /// write the table directly, never through this method, so they keep
+  /// seeing the row's real origin regardless of any folder selection (ticket
+  /// 29's governing rule). It is applied here, in the one place every reader
+  /// - the grid, the tile, the viewer, [GalleryItemDisplay.availability] and
+  /// [GalleryItemDisplay.hasLocalCopy] in `gallery_item_display.dart`, all of
+  /// which read straight off the returned [GalleryItem] - gets its rows from,
+  /// which is what makes "one predicate, applied once" true: none of them
+  /// need to know Local Folders exist.
+  GalleryItem _presentedItem(GalleryItem item, Set<String> unselectedFolders) {
+    if (item.origin != _originBoth) {
+      return item;
     }
+    if (!unselectedFolders.contains(item.localRelativePath)) {
+      return item;
+    }
+    return item.copyWith(
+      origin: _originCloud,
+      localRelativePath: const Value(null),
+      localDisplayName: const Value(null),
+      localSize: const Value(null),
+      localDateTaken: const Value(null),
+    );
+  }
+
+  /// The three visibility predicates ticket 29's rule reduces to, built once
+  /// per read and reused by [queryPage]/[queryItems] (as a WHERE clause) and
+  /// [totalCount]/[availabilitySummary] (as a count) alike - so a row can
+  /// never be counted into one bucket while the grid shows it in another.
+  ///
+  /// - [_Visibility.deviceOnly]: a `device` row whose folder IS selected.
+  ///   A `device` row in an unselected folder matches none of the three -
+  ///   its device copy is invisible, and the row behaves as though it did
+  ///   not exist (ticket 29's rule, in full).
+  /// - [_Visibility.synced]: a `both` row whose folder IS selected.
+  /// - [_Visibility.cloudOnly]: every `cloud` row, plus a `both` row whose
+  ///   folder is NOT selected - the "displays, badges and counts as Cloud
+  ///   only" case.
+  _Visibility _visibilityPredicates(
+    $GalleryItemsTable t,
+    Set<String> unselectedFolders,
+  ) {
+    final folderSelected = t.localRelativePath.isNotIn(unselectedFolders);
+    final folderUnselected = t.localRelativePath.isIn(unselectedFolders);
+    return _Visibility(
+      deviceOnly: t.origin.equals(_originDevice) & folderSelected,
+      synced: t.origin.equals(_originBoth) & folderSelected,
+      cloudOnly:
+          t.origin.equals(_originCloud) | (t.origin.equals(_originBoth) & folderUnselected),
+    );
   }
 
   /// The Capture Date of the item at [offset] in the gallery's order, or null
@@ -613,18 +703,15 @@ class GalleryMirror {
   }
 
   /// The total number of items currently in the mirror, optionally
-  /// restricted by Availability.
+  /// restricted by Availability. Ticket 29's Local Folder selection is
+  /// already folded into what "restricted by Availability" means - see
+  /// [_visibilityPredicates].
   Future<int> totalCount({
     GalleryAvailabilityFilter filter = GalleryAvailabilityFilter.all,
-  }) {
-    switch (filter) {
-      case GalleryAvailabilityFilter.all:
-        return _countWhere(null);
-      case GalleryAvailabilityFilter.notBackedUp:
-        return _countWhere(_originDevice);
-      case GalleryAvailabilityFilter.cloudOnly:
-        return _countWhere(_originCloud);
-    }
+  }) async {
+    final unselectedFolders = await _unselectedFolders();
+    return _countMatching((t) =>
+        _visibilityPredicates(t, unselectedFolders).forFilter(filter));
   }
 
   /// How many items are Device only, Synced and Cloud only right now - the
@@ -632,10 +719,20 @@ class GalleryMirror {
   /// WHOLE mirror, regardless of any Availability filter a caller has
   /// applied to what it is displaying - the summary is meant to answer "what
   /// would I lose", not "what am I currently looking at".
+  ///
+  /// Ticket 29: a Device only photo in an unselected folder is not counted
+  /// here at all (its device copy is invisible, full stop) and a Synced
+  /// photo whose device copy sits in an unselected folder counts as Cloud
+  /// only - the exact same [_visibilityPredicates] the grid and the
+  /// Availability filter use, so this summary can never disagree with them.
   Future<GalleryAvailabilitySummary> availabilitySummary() async {
-    final deviceOnly = await _countWhere(_originDevice);
-    final synced = await _countWhere(_originBoth);
-    final cloudOnly = await _countWhere(_originCloud);
+    final unselectedFolders = await _unselectedFolders();
+    final deviceOnly = await _countMatching(
+        (t) => _visibilityPredicates(t, unselectedFolders).deviceOnly);
+    final synced = await _countMatching(
+        (t) => _visibilityPredicates(t, unselectedFolders).synced);
+    final cloudOnly = await _countMatching(
+        (t) => _visibilityPredicates(t, unselectedFolders).cloudOnly);
     return GalleryAvailabilitySummary(
       deviceOnly: deviceOnly,
       synced: synced,
@@ -643,13 +740,131 @@ class GalleryMirror {
     );
   }
 
-  Future<int> _countWhere(String? origin) async {
+  Future<int> _countMatching(
+    Expression<bool> Function($GalleryItemsTable t) predicate,
+  ) async {
     final countExp = _db.galleryItems.id.count();
     final query = _db.selectOnly(_db.galleryItems)..addColumns([countExp]);
-    if (origin != null) {
-      query.where(_db.galleryItems.origin.equals(origin));
-    }
+    query.where(predicate(_db.galleryItems));
     final row = await query.getSingle();
     return row.read(countExp) ?? 0;
+  }
+
+  // --- Ticket 29: Local Folder selection ---
+
+  /// The device's photo folders, enumerated from rows already in the mirror
+  /// (D21/ticket 29: no second scan, no new platform call) - what the *On
+  /// this device* section of the Gallery folders screen lists. Empty on a
+  /// platform with no Local Source, since then no row ever carries
+  /// [GalleryItems.localRelativePath].
+  ///
+  /// [LocalFolder.selected] is computed with exactly the same rule
+  /// [queryPage]/[queryItems]/[totalCount]/[availabilitySummary] apply on the
+  /// read path (an explicit [LocalFolderSelections] row if the user has ever
+  /// toggled this folder, else [_defaultFolderSelected]), so a folder never
+  /// reports a selection state the grid disagrees with.
+  Future<List<LocalFolder>> listLocalFolders() async {
+    final pathColumn = _db.galleryItems.localRelativePath;
+    final countExp = _db.galleryItems.id.count();
+    final query = _db.selectOnly(_db.galleryItems)
+      ..addColumns([pathColumn, countExp])
+      ..where(pathColumn.isNotNull())
+      ..groupBy([pathColumn]);
+
+    final rows = await query.get();
+    final overrides = await _folderOverrides();
+
+    final folders = rows.map((row) {
+      final path = row.read(pathColumn)!;
+      final count = row.read(countExp) ?? 0;
+      return LocalFolder(
+        path: path,
+        photoCount: count,
+        selected: overrides[path] ?? _defaultFolderSelected(path),
+      );
+    }).toList()
+      ..sort((a, b) => a.path.compareTo(b.path));
+    return folders;
+  }
+
+  /// Records the user's explicit choice for [folderPath] - selected or not -
+  /// so every subsequent read reflects it immediately: no rescan, no
+  /// re-merge, exactly [_presentedItem]/[_visibilityPredicates] re-evaluated
+  /// against the new choice. Only ever writes [LocalFolderSelections], never
+  /// touches [GalleryItems] - the filter lives entirely on the read path.
+  Future<void> setLocalFolderSelected(String folderPath, bool selected) async {
+    await _db.into(_db.localFolderSelections).insertOnConflictUpdate(
+          LocalFolderSelectionsCompanion(
+            folderPath: Value(folderPath),
+            selected: Value(selected),
+          ),
+        );
+  }
+
+  Future<Map<String, bool>> _folderOverrides() async {
+    final rows = await _db.select(_db.localFolderSelections).get();
+    return {for (final row in rows) row.folderPath: row.selected};
+  }
+
+  /// Every folder, among folders that currently have at least one device row
+  /// in the mirror, that is NOT selected right now - what every read-path
+  /// query above excludes ([_Visibility.deviceOnly]) or demotes to Cloud only
+  /// ([_Visibility.cloudOnly]).
+  ///
+  /// Scoped to folders present in the mirror rather than every folder
+  /// [LocalFolderSelections] has ever recorded a choice for: a folder with no
+  /// device rows left cannot hide anything regardless of its stored choice,
+  /// and this keeps the set - and the SQL `IN (...)` list built from it -
+  /// bounded by how many folders actually exist on the device right now.
+  Future<Set<String>> _unselectedFolders() async {
+    final pathColumn = _db.galleryItems.localRelativePath;
+    final query = _db.selectOnly(_db.galleryItems, distinct: true)
+      ..addColumns([pathColumn])
+      ..where(pathColumn.isNotNull());
+    final rows = await query.get();
+    final overrides = await _folderOverrides();
+
+    final unselected = <String>{};
+    for (final row in rows) {
+      final path = row.read(pathColumn);
+      if (path == null) {
+        continue;
+      }
+      final selected = overrides[path] ?? _defaultFolderSelected(path);
+      if (!selected) {
+        unselected.add(path);
+      }
+    }
+    return unselected;
+  }
+}
+
+/// The three visibility predicates [GalleryMirror._visibilityPredicates]
+/// builds for one read - see that method's doc for what each one means and
+/// why there are exactly three.
+class _Visibility {
+  const _Visibility({
+    required this.deviceOnly,
+    required this.synced,
+    required this.cloudOnly,
+  });
+
+  final Expression<bool> deviceOnly;
+  final Expression<bool> synced;
+  final Expression<bool> cloudOnly;
+
+  /// Every row visible under [GalleryAvailabilityFilter.all]: the union of
+  /// all three buckets - nothing else exists.
+  Expression<bool> get all => deviceOnly | synced | cloudOnly;
+
+  Expression<bool> forFilter(GalleryAvailabilityFilter filter) {
+    switch (filter) {
+      case GalleryAvailabilityFilter.all:
+        return all;
+      case GalleryAvailabilityFilter.notBackedUp:
+        return deviceOnly;
+      case GalleryAvailabilityFilter.cloudOnly:
+        return cloudOnly;
+    }
   }
 }

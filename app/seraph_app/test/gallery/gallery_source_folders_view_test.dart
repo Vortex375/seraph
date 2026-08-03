@@ -1,9 +1,13 @@
 import 'package:dio/dio.dart';
+import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:get/get.dart' hide Response;
 import 'package:seraph_app/src/gallery/gallery_service.dart';
 import 'package:seraph_app/src/gallery/gallery_source_folders_view.dart';
+import 'package:seraph_app/src/gallery/local/local_scan_service.dart';
+import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
+import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 
 import 'gallery_test_support.dart';
 
@@ -55,7 +59,27 @@ void main() {
     ));
   }
 
-  tearDown(Get.reset);
+  /// Ticket 29: registers a Local Source alongside the cloud service, so the
+  /// screen's *On this device* section has something to show. Left
+  /// unregistered by [setUpService] alone, which is what the "no device
+  /// section" tests rely on.
+  GalleryMirrorDatabase? mirrorDb;
+  late GalleryMirror mirror;
+
+  void setUpServiceWithLocalSource() {
+    setUpService();
+    final db = GalleryMirrorDatabase(NativeDatabase.memory());
+    mirrorDb = db;
+    mirror = GalleryMirror(db);
+    Get.put(mirror);
+    Get.put(LocalScanService(mirror, localSource: FakeLocalSource()));
+  }
+
+  tearDown(() async {
+    Get.reset();
+    await mirrorDb?.close();
+    mirrorDb = null;
+  });
 
   Widget wrap() => const MaterialApp(home: GallerySourceFoldersView());
 
@@ -115,5 +139,87 @@ void main() {
     // Let it time out too, so no timer outlives the test.
     await tester.pump(const Duration(seconds: 5));
     await tester.pumpAndSettle();
+  });
+
+  // Ticket 29: the *On this device* section.
+  group('Local Folders', () {
+    testWidgets(
+        'the device section is absent entirely where there is no Local '
+        'Source, rather than present and empty', (tester) async {
+      setUpService();
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      expect(find.text('On this device'), findsNothing);
+    });
+
+    testWidgets(
+        'lists the device\'s folders with their photo counts, defaulting '
+        'DCIM to selected and everything else to not', (tester) async {
+      setUpServiceWithLocalSource();
+      await mirror.applyLocalScan([
+        localMediaItem(
+            relativePath: 'DCIM/Camera/', displayName: 'a.jpg', size: 1),
+        localMediaItem(
+            relativePath: 'DCIM/Camera/', displayName: 'b.jpg', size: 2),
+        localMediaItem(
+            relativePath: 'Pictures/Screenshots/',
+            displayName: 'c.jpg',
+            size: 3),
+      ]);
+
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      expect(find.text('On this device'), findsOneWidget);
+      expect(find.text('DCIM/Camera/'), findsOneWidget);
+      expect(find.text('2 photos'), findsOneWidget);
+      expect(find.text('Pictures/Screenshots/'), findsOneWidget);
+      expect(find.text('1 photo'), findsOneWidget);
+
+      final dcimSwitch = tester.widget<Switch>(find.descendant(
+          of: find.ancestor(
+              of: find.text('DCIM/Camera/'), matching: find.byType(ListTile)),
+          matching: find.byType(Switch)));
+      expect(dcimSwitch.value, isTrue, reason: 'DCIM is selected by default');
+
+      final screenshotsSwitch = tester.widget<Switch>(find.descendant(
+          of: find.ancestor(
+              of: find.text('Pictures/Screenshots/'),
+              matching: find.byType(ListTile)),
+          matching: find.byType(Switch)));
+      expect(screenshotsSwitch.value, isFalse,
+          reason: 'not under DCIM, so unselected by default');
+    });
+
+    testWidgets(
+        'deselecting a folder takes effect immediately and the folder stays '
+        'listed, ready to be selected again', (tester) async {
+      setUpServiceWithLocalSource();
+      await mirror.applyLocalScan([
+        localMediaItem(relativePath: 'DCIM/Camera/', displayName: 'a.jpg'),
+      ]);
+
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      final dcimSwitchFinder = find.descendant(
+          of: find.ancestor(
+              of: find.text('DCIM/Camera/'), matching: find.byType(ListTile)),
+          matching: find.byType(Switch));
+      expect(tester.widget<Switch>(dcimSwitchFinder).value, isTrue);
+
+      await tester.tap(dcimSwitchFinder);
+      await tester.pumpAndSettle();
+
+      // Still listed...
+      expect(find.text('DCIM/Camera/'), findsOneWidget);
+      // ...but now off, and the mirror agrees immediately - no rescan.
+      expect(tester.widget<Switch>(dcimSwitchFinder).value, isFalse);
+      expect((await mirror.listLocalFolders()).single.selected, isFalse);
+      expect(await mirror.totalCount(), 0,
+          reason: 'the deselected folder\'s only photo must be gone from '
+              'the merged gallery right away');
+    });
   });
 }
