@@ -277,6 +277,88 @@ void main() {
       await subscription.cancel();
     });
   });
+
+  // The defect this covers: `setMethodCallHandler` is a single global slot
+  // per channel name, so a second `AndroidLocalSource` constructed against
+  // the same channel silently steals the first's handler - the first's
+  // `changes` stream then simply stops emitting, forever, with nothing to
+  // observe. `dispose()` exists so releasing the first is a deliberate,
+  // observable step instead of an accident nothing enforces.
+  group('dispose', () {
+    test('closes the changes stream, so a listener sees it end rather than '
+        'silently stop', () async {
+      final source = AndroidLocalSource(channel: channel);
+      var done = false;
+      final subscription = source.changes.listen((_) {}, onDone: () {
+        done = true;
+      });
+
+      source.dispose();
+      await pumpEventQueue();
+
+      expect(done, isTrue,
+          reason: 'disposal must be observable, not merely inferable from a '
+              'stream that just stops emitting');
+      await subscription.cancel();
+    });
+
+    test('is safe to call more than once', () async {
+      final source = AndroidLocalSource(channel: channel);
+      source.dispose();
+      expect(() => source.dispose(), returnsNormally);
+    });
+
+    test('releases the method call handler, so a native call arriving after '
+        'disposal is not delivered and does not throw', () async {
+      final source = AndroidLocalSource(channel: channel);
+      final events = <void>[];
+      final subscription = source.changes.listen(events.add);
+
+      source.dispose();
+      await pumpEventQueue();
+
+      await _simulateNativeCall(channel, 'onLocalMediaChanged');
+      await pumpEventQueue();
+
+      expect(events, isEmpty);
+      await subscription.cancel();
+    });
+
+    test(
+        'disposing the first instance before constructing a second releases '
+        'the channel cleanly - the second does not silently kill the '
+        "first's stream, because the first is already, observably, done",
+        () async {
+      final first = AndroidLocalSource(channel: channel);
+      final firstEvents = <void>[];
+      var firstDone = false;
+      final firstSubscription = first.changes.listen(firstEvents.add,
+          onDone: () {
+        firstDone = true;
+      });
+
+      first.dispose();
+      await pumpEventQueue();
+      expect(firstDone, isTrue);
+
+      final second = AndroidLocalSource(channel: channel);
+      final secondEvents = <void>[];
+      final secondSubscription = second.changes.listen(secondEvents.add);
+
+      await _simulateNativeCall(channel, 'onLocalMediaChanged');
+      await pumpEventQueue();
+
+      expect(secondEvents, hasLength(1),
+          reason: 'the second instance now legitimately owns the channel\'s '
+              'single handler slot');
+      expect(firstEvents, isEmpty,
+          reason: 'the first was released, not silently overridden');
+
+      await firstSubscription.cancel();
+      await secondSubscription.cancel();
+      second.dispose();
+    });
+  });
 }
 
 /// Simulates the native side calling [method] on [channel] with no

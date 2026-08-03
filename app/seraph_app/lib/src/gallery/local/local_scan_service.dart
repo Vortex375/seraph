@@ -131,6 +131,25 @@ class LocalScanService {
     _changesSubscription = null;
   }
 
+  /// Releases everything this service holds onto: [stopWatchingForChanges]'s
+  /// subscription and timer, then [LocalSource.dispose] on [localSource]
+  /// itself. Nothing calls this today - `initial_binding.dart` registers one
+  /// [LocalScanService] for the app's entire lifetime via `Get.put`, so there
+  /// is currently no point at which the app itself needs to release it - but
+  /// leaving the lifecycle unstated is exactly what let [AndroidLocalSource]
+  /// (`android_local_source.dart`) go this long without a way to release its
+  /// method-channel handler at all. Making the release explicit here, rather
+  /// than assumed from the singleton's lifetime, is what protects a future
+  /// non-singleton binding - or a test constructing more than one
+  /// [LocalScanService] against the same real channel - from the silent
+  /// stream-death [LocalSource.dispose] documents.
+  ///
+  /// A no-op with no Local Source. Safe to call more than once.
+  void dispose() {
+    stopWatchingForChanges();
+    localSource?.dispose();
+  }
+
   void _scheduleScan() {
     _debounceTimer?.cancel();
     _debounceTimer = Timer(_debounce, () {

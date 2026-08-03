@@ -361,5 +361,49 @@ void main() {
                 'any notification-driven path');
       });
     });
+
+    // The lifecycle this fix makes explicit: releasing the Local Source
+    // must not be left implicit in the singleton's app-lifetime existence.
+    group('dispose', () {
+      test('stops watching for changes and releases the Local Source',
+          () async {
+        final source = FakeLocalSource();
+        final service = LocalScanService(
+          mirror,
+          localSource: source,
+          debounce: const Duration(milliseconds: 5),
+        );
+        service.watchForChanges(() {});
+
+        service.dispose();
+
+        expect(source.disposeCount, 1);
+
+        // A notification arriving after dispose must not trigger a scan -
+        // stopWatchingForChanges's own subscription-release guarantee,
+        // still upheld once folded into dispose().
+        source.emitChange();
+        await Future.delayed(const Duration(milliseconds: 20));
+        await pumpEventQueue();
+        expect(source.incrementalScanCount, 0);
+      });
+
+      test('is safe to call more than once', () async {
+        final source = FakeLocalSource();
+        final service = LocalScanService(mirror, localSource: source);
+
+        service.dispose();
+        service.dispose();
+
+        expect(source.disposeCount, 2,
+            reason: 'the source itself decides how to handle repeat '
+                'disposal - LocalScanService just always forwards the call');
+      });
+
+      test('is a no-op with no Local Source', () async {
+        final service = LocalScanService(mirror, localSource: null);
+        expect(() => service.dispose(), returnsNormally);
+      });
+    });
   });
 }

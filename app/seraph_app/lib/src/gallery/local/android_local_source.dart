@@ -34,14 +34,37 @@ class AndroidLocalSource implements LocalSource {
   final MethodChannel _channel;
   final StreamController<void> _changesController =
       StreamController<void>.broadcast();
+  bool _disposed = false;
 
   @override
   Stream<void> get changes => _changesController.stream;
 
   Future<void> _handleNativeCall(MethodCall call) async {
+    // A call can still be in flight when [dispose] runs (it clears the
+    // handler, but does not cancel whatever already reached this method) -
+    // dropping it here, rather than adding to a closing/closed controller,
+    // is what keeps that race from ever throwing.
+    if (_disposed) {
+      return;
+    }
     if (call.method == 'onLocalMediaChanged') {
       _changesController.add(null);
     }
+  }
+
+  @override
+  void dispose() {
+    if (_disposed) {
+      return;
+    }
+    _disposed = true;
+    // Releases this instance's claim on the channel's single handler slot
+    // (see the class doc and [LocalSource.dispose]) before closing the
+    // controller, so a construction-order mistake elsewhere produces a
+    // second instance that simply owns the slot cleanly, rather than a
+    // first instance whose stream went quietly dead.
+    _channel.setMethodCallHandler(null);
+    unawaited(_changesController.close());
   }
 
   @override

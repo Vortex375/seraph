@@ -590,4 +590,7 @@ class _ThrowingLocalSource implements LocalSource {
 
   @override
   Future<void> openAppSettings() async {}
+
+  @override
+  void dispose() {}
 }

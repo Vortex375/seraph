@@ -97,10 +97,34 @@ class FakeLocalSource implements LocalSource {
   /// Simulates one content-observer notification - ticket 17's trigger only,
   /// carrying no information about what changed. A test drives bursts by
   /// calling this more than once in quick succession.
-  void emitChange() => _changesController.add(null);
+  ///
+  /// A no-op once [dispose] has closed the underlying controller - mirrors
+  /// `AndroidLocalSource` never delivering a native call that arrives after
+  /// its own disposal (see [LocalSource.dispose]), so a test simulating a
+  /// stray notification racing disposal does not hit a spurious "Cannot add
+  /// new events after calling close" instead of exercising what it means to.
+  void emitChange() {
+    if (!_changesController.isClosed) {
+      _changesController.add(null);
+    }
+  }
 
   @override
   Stream<void> get changes => _changesController.stream;
+
+  /// How many times [dispose] has been called - what a test asserts against
+  /// to check [LocalScanService.dispose] reaches the source at all, even
+  /// though this fake (unlike `AndroidLocalSource`) has no method-channel
+  /// handler to release.
+  int disposeCount = 0;
+
+  @override
+  void dispose() {
+    disposeCount++;
+    if (!_changesController.isClosed) {
+      unawaited(_changesController.close());
+    }
+  }
 
   @override
   Future<int> currentGeneration() async => generation;

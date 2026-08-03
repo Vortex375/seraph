@@ -189,4 +189,22 @@ abstract class LocalSource {
   /// since [requestPermission] re-shown after a partial grant offers more
   /// selection, not a way back to "allow all".
   Future<void> openAppSettings();
+
+  /// Releases whatever platform resources this instance holds - on Android,
+  /// the method-channel handler backing [changes] and the [changes]
+  /// controller itself.
+  ///
+  /// `setMethodCallHandler` is a single global slot per channel name:
+  /// constructing a second [LocalSource] against the same channel without
+  /// disposing the first silently steals its handler, and the first's
+  /// [changes] stream then simply stops emitting forever - no error, nothing
+  /// to observe. Calling [dispose] first turns that into a clean, observable
+  /// stream close instead. [LocalScanService] (`local_scan_service.dart`)
+  /// calls this from its own disposal path so a caller that creates more
+  /// than one Local Source over its lifetime never hits the silent case.
+  ///
+  /// Must be safe to call more than once, and must leave [changes] unable to
+  /// emit again afterward - a disposed source is inert, not merely
+  /// "probably not going to be used again".
+  void dispose();
 }
