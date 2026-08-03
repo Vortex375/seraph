@@ -13,7 +13,7 @@ import android.provider.Settings
 import android.util.Size
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import io.flutter.embedding.android.FlutterActivity
+import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -34,8 +34,21 @@ import java.util.concurrent.Executors
  * file - everything above the `seraph/local_media` channel, starting with
  * `AndroidLocalSource` on the Dart side, is platform-neutral and knows
  * nothing about either.
+ *
+ * Extends [AudioServiceActivity] rather than `FlutterActivity` directly:
+ * audio_service keeps its own long-lived `FlutterEngine` (via
+ * `AudioServicePlugin.getFlutterEngine`) so playback survives the Activity
+ * being destroyed, and [AudioServiceActivity] is the plugin's documented
+ * seam for supplying that engine. AndroidManifest.xml's launcher activity
+ * must be this class (`.MainActivity`), not
+ * `com.ryanheise.audioservice.AudioServiceActivity` directly - the plugin's
+ * own activity class has no [configureFlutterEngine] override, so the
+ * `seraph/local_media` channel below would never be registered and every
+ * call on it - including the permission request behind Gallery Mode's
+ * "Allow access" banner - would silently resolve as if no photos and no
+ * permission existed.
  */
-class MainActivity : FlutterActivity() {
+class MainActivity : AudioServiceActivity() {
     private val channelName = "seraph/local_media"
 
     // MediaStore's own resolver.query is a blocking call; running it on the
