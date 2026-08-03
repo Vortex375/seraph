@@ -36,7 +36,7 @@ grid or spin forever.
 
 **Blocked by:** 15, 16
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] A Device only photo renders its actual image in the grid, not a placeholder
 - [ ] A Device only photo renders its full image in the full-screen viewer
@@ -51,3 +51,90 @@ grid or spin forever.
 - [ ] All device-image access sits behind the Local Source seam; nothing above it names MediaStore or a content URI
 - [ ] On platforms without a Local Source implementation, the gallery renders exactly as it did before this ticket
 - [ ] Covered at the app's mirror seam by driving a fake Local Source that returns image bytes, including the decode-failure and deleted-mid-render cases
+
+## Comments
+
+### Preceding fix (commit 93d9f3f)
+
+Not part of this ticket, but landed immediately before it and shares its files.
+`AndroidLocalSource` claimed the global `setMethodCallHandler` slot in its
+constructor and never released it, and never closed its `_changesController`, so
+a second instance would silently kill the first's `changes` stream. Safe only by
+accident, via `LocalScanService` being a `Get.put` singleton. `LocalSource` gained
+`dispose()`, `AndroidLocalSource` implements it behind a `_disposed` guard that is
+idempotent and drops native calls arriving mid-dispose, and
+`LocalScanService.dispose()` calls into it. Verified APPROVED: the guard was
+checked in the code rather than by test name, the channel architecture was left
+alone, and ticket 17's observer release through `onClose()` is untouched.
+
+### Implementer report (commit 9649963)
+
+Device photo previews, closing the gap ticket 15 left where device items rendered
+a phone icon instead of pixels — in the grid and the full-screen viewer both.
+
+- `local_media_item.dart` — `LocalSource` gained `loadThumbnail` / `loadOriginal`,
+  resolved per call from the durable `(relativePath, displayName)` identity rather
+  than the same-scan-only `mediaStoreId` hint, returning null quietly on any
+  failure.
+- `MainActivity.kt` — new `loadThumbnail` / `loadOriginal` channel handlers that
+  re-resolve the content Uri fresh each call, use `ContentResolver.loadThumbnail`
+  for tile-sized bitmaps (never decoding a full JPEG to fill a tile) and
+  `openInputStream` for the original. Every failure mode reports null, never a
+  channel error.
+- `android_local_source.dart` — implements the two new methods.
+- `local_image_loader.dart` (new) — `LocalImageLoader` and a `LocalGalleryImage`
+  `ImageProvider`, mirroring the existing `GalleryImageLoader` / `GalleryImage`,
+  with in-flight de-duplication.
+- `gallery_tile.dart` / `gallery_photo_viewer.dart` — Device only renders the
+  local image with a placeholder `errorBuilder` fallback; Synced prefers the
+  device copy and falls back to the cloud image on failure; Cloud only unchanged.
+- `initial_binding.dart`, `gallery_view.dart` — wired `LocalImageLoader` through
+  Get.
+
+Tests: new `AndroidLocalSource` channel coverage plus a "device photo previews"
+widget group in `gallery_view_test.dart` covering Device only / Synced / Cloud
+only rendering, decode failure, deleted-mid-render and a partial grant. 214/214
+pass (200 baseline + 14 new), `flutter analyze` 45 pre-existing issues (none new),
+`flutter build web --release` and `flutter build apk --debug` both succeed.
+
+Decisions the ticket did not settle:
+
+1. Photo identity for byte-loading is `(relativePath, displayName)` re-resolved via
+   a fresh MediaStore query each call rather than any cached id — this is what
+   makes the deleted and changed-id cases resolve to nothing instead of the wrong
+   file.
+2. No explicit cancellation of in-flight native requests for off-screen tiles.
+   Relies on Flutter's bounded `ImageCache` and in-flight de-duplication, the same
+   strategy the existing cloud thumbnail path already uses; the acceptance
+   criterion allows "cancelled or evicted".
+3. Flutter's `ImageCache` is a process-wide singleton across tests, so
+   `gallery_view_test.dart`'s `tearDown` now clears it — otherwise two tests
+   reusing the same device-photo identity would silently share a cached decode.
+
+Noticed but out of scope: `gallery_photo_viewer.dart` had already grown large
+before this ticket. Splitting `_CloudPhotoStack` / `_LocalPhotoStack` out was
+necessary here to avoid nesting two `InteractiveViewer`s, but the file could use a
+further split later.
+
+### Verifier verdict
+
+APPROVED. Checked against the code rather than commit messages:
+
+- Nothing above the seam names MediaStore or a content URI — a grep over `lib/`
+  turns up only comments inside the seam files themselves.
+- The grid requests tile-sized bitmaps via `LocalGalleryImage(width:, height:)`
+  sized from the tile's own `decodeWidth`, backed by `ContentResolver.loadThumbnail`;
+  the viewer's layer omits width/height to fetch the original. Grid and viewer are
+  cleanly split, and the grid is not quietly decoding full images.
+- Memory is bounded by Flutter's own `ImageCache` at untouched defaults plus
+  `GridView.builder` virtualization. No custom unbounded cache was added;
+  `LocalImageLoader` only de-duplicates in-flight requests.
+- Decode failure and deleted-mid-render both resolve to null or a thrown
+  `LocalGalleryImageUnavailable` caught by `errorBuilder`, isolated per tile.
+- Partial grant reuses ticket 16's native access gate; no summary or badge changed.
+- No regressions: `gallery_mirror.dart`, `local_scan_service.dart` and the
+  content-observer code from tickets 15 and 17 are untouched. `LocalSource.dispose()`
+  is unchanged and no second lifecycle was introduced.
+
+`flutter test` 214/214, `flutter analyze` 45 issues all pre-existing (0 new),
+`flutter build web --release` and `flutter build apk --debug` both succeed.
