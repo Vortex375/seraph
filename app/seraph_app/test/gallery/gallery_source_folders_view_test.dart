@@ -289,5 +289,28 @@ void main() {
       // removes the Gallery Source Folder it created (D18).
       expect(posted, isEmpty);
     });
+
+    // Ticket 21: retargeting. Like the add-Sync-Pair flow (ticket 18's own
+    // note on this file), the nested FolderPickerDialog-then-confirm flow is
+    // not driven end to end here - it would need a stubbed WebDAV
+    // FileService, which nothing in this file sets up. Retarget's actual
+    // effect on the mirror (old target kept as history, new target used for
+    // new uploads) is covered at the mirror seam instead
+    // (`gallery_sync_pair_retarget_test.dart`); this just checks the action
+    // is wired into the tile.
+    testWidgets('a Sync Pair tile offers Retarget alongside Remove',
+        (tester) async {
+      setUpServiceWithLocalSource();
+      await mirror.createSyncPair(
+        localFolderPath: 'DCIM/Camera/',
+        spaceProviderId: 'space-a',
+        path: '/Photos/Phone',
+      );
+
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      expect(find.byTooltip('Retarget Sync Pair'), findsOneWidget);
+    });
   });
 }

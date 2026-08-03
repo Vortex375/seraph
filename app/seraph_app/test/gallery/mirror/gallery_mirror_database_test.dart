@@ -440,6 +440,140 @@ void main() {
       expect(updated.uploadTargetPath, '/Photos/b.jpg');
     });
 
+    test(
+        'an app upgrade from v7 adds the ticket-21 removedAt column and '
+        'drops the old UNIQUE(local_folder_path) constraint, without losing '
+        'the existing Sync Pair', () async {
+      final file = File(p.join(tempDir.path, 'mirror.sqlite'));
+
+      // A v7 database - everything through ticket 20's verification
+      // columns exists, but sync_pairs still has ticket 18's original
+      // UNIQUE(local_folder_path) constraint and no removed_at column.
+      final v7Raw = sqlite3.sqlite3.open(file.path);
+      v7Raw.execute('''
+        CREATE TABLE gallery_items (
+          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+          origin TEXT NOT NULL DEFAULT 'cloud',
+          provider_id TEXT NULL,
+          path TEXT NULL,
+          seq INTEGER NULL,
+          local_relative_path TEXT NULL,
+          local_display_name TEXT NULL,
+          local_size INTEGER NULL,
+          local_date_taken INTEGER NULL,
+          captured_at INTEGER NOT NULL,
+          captured_at_source TEXT NOT NULL DEFAULT '',
+          width INTEGER NOT NULL DEFAULT 0,
+          height INTEGER NOT NULL DEFAULT 0,
+          orientation INTEGER NOT NULL DEFAULT 0,
+          size INTEGER NOT NULL DEFAULT 0,
+          mime TEXT NOT NULL DEFAULT '',
+          unsupported TEXT NOT NULL DEFAULT '',
+          metadata_pending INTEGER NOT NULL DEFAULT 0,
+          upload_state TEXT NULL,
+          upload_target_provider_id TEXT NULL,
+          upload_target_path TEXT NULL,
+          UNIQUE(provider_id, path)
+        );
+      ''');
+      v7Raw.execute('''
+        CREATE TABLE sync_cursors (
+          source TEXT NOT NULL PRIMARY KEY,
+          since INTEGER NOT NULL DEFAULT 0,
+          pending_cursor TEXT NULL
+        );
+      ''');
+      v7Raw.execute('''
+        CREATE TABLE cached_thumbnails (
+          provider_id TEXT NOT NULL,
+          path TEXT NOT NULL,
+          size INTEGER NOT NULL,
+          bytes BLOB NOT NULL,
+          fetched_at INTEGER NOT NULL,
+          PRIMARY KEY (provider_id, path, size)
+        );
+      ''');
+      v7Raw.execute('''
+        CREATE TABLE local_folder_selections (
+          folder_path TEXT NOT NULL PRIMARY KEY,
+          selected INTEGER NOT NULL
+        );
+      ''');
+      v7Raw.execute('''
+        CREATE TABLE sync_pairs (
+          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+          local_folder_path TEXT NOT NULL,
+          space_provider_id TEXT NOT NULL,
+          path TEXT NOT NULL,
+          created_at INTEGER NOT NULL DEFAULT 0,
+          UNIQUE(local_folder_path)
+        );
+      ''');
+      v7Raw.execute('''
+        CREATE INDEX idx_gallery_items_upload_target
+          ON gallery_items (upload_target_provider_id, upload_target_path);
+      ''');
+      v7Raw.execute(
+        "INSERT INTO gallery_items (origin, provider_id, path, seq, captured_at) "
+        "VALUES ('cloud', 'space-a', '/Photos/a.jpg', 5, 1000);",
+      );
+      v7Raw.execute(
+        "INSERT INTO sync_cursors (source, since) VALUES ('server', 5);",
+      );
+      v7Raw.execute(
+        "INSERT INTO sync_pairs (local_folder_path, space_provider_id, path) "
+        "VALUES ('DCIM/Camera/', 'space-a', '/Photos/Phone');",
+      );
+      v7Raw.execute('PRAGMA user_version = 7;');
+      v7Raw.close();
+
+      final db = GalleryMirrorDatabase(NativeDatabase(file));
+      addTearDown(db.close);
+
+      // Everything that existed before the upgrade survived, and the
+      // pre-existing pair defaults to active (removedAt null).
+      final pairs = await db.select(db.syncPairs).get();
+      expect(pairs, hasLength(1));
+      expect(pairs.single.localFolderPath, 'DCIM/Camera/');
+      expect(pairs.single.path, '/Photos/Phone');
+      expect(pairs.single.removedAt, null);
+
+      final items = await db.select(db.galleryItems).get();
+      expect(items, hasLength(1));
+      expect(items.single.path, '/Photos/a.jpg');
+
+      final cursor = await (db.select(db.syncCursors)
+            ..where((t) => t.source.equals('server')))
+          .getSingle();
+      expect(cursor.since, 5);
+
+      // The old UNIQUE(local_folder_path) constraint is gone: a second row
+      // for the SAME local folder - what a retarget produces, an old
+      // removed pair plus a newly created active one - is now accepted
+      // rather than rejected.
+      await (db.update(db.syncPairs)
+            ..where((t) => t.localFolderPath.equals('DCIM/Camera/')))
+          .write(SyncPairsCompanion(removedAt: Value(DateTime.now()
+              .millisecondsSinceEpoch)));
+      await db.into(db.syncPairs).insert(
+            SyncPairsCompanion.insert(
+              localFolderPath: 'DCIM/Camera/',
+              spaceProviderId: 'space-b',
+              path: '/Photos/PhoneNew',
+              createdAt: Value(DateTime.now().millisecondsSinceEpoch),
+            ),
+          );
+      final afterRetarget = await (db.select(db.syncPairs)
+            ..orderBy([(t) => OrderingTerm(expression: t.id)]))
+          .get();
+      expect(afterRetarget, hasLength(2));
+      expect(afterRetarget.every((p) => p.localFolderPath == 'DCIM/Camera/'),
+          isTrue);
+      expect(afterRetarget[0].removedAt != null, isTrue);
+      expect(afterRetarget[1].removedAt, null);
+      expect(afterRetarget[1].path, '/Photos/PhoneNew');
+    });
+
     test('a fresh install creates the current schema directly via onCreate',
         () async {
       final db = GalleryMirrorDatabase(NativeDatabase.memory());

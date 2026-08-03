@@ -405,15 +405,26 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
 
   /// Null when no upload is currently pending verification for this row -
   /// which is every row except a `device` one [GalleryMirror.recordUploaded]
-  /// has written to. Two non-null values:
+  /// has written to. Four non-null values, one of two pairs depending on
+  /// HOW the row got here (ticket 20's rework - the distinction matters
+  /// because only one of the two may ever have its remote file deleted):
   ///
-  /// - `'uploaded'` - the PUT (or the same-size "assume it's ours" shortcut)
-  ///   succeeded; [GalleryMirror.applyPage] is watching the feed for
-  ///   confirmation at ([uploadTargetProviderId], [uploadTargetPath]).
-  /// - `'mismatch'` - the feed reported a file there, but at a length that
-  ///   contradicts what this device believes it sent. The remote file cannot
-  ///   be trusted; [GalleryUploadService.retryMismatchedUpload] deletes it
-  ///   and retries.
+  /// - `'uploaded'` - a real PUT succeeded; [GalleryMirror.applyPage] is
+  ///   watching the feed for confirmation at ([uploadTargetProviderId],
+  ///   [uploadTargetPath]).
+  /// - `'assumed'` - the ticket-19 "same size, assume it's ours" shortcut
+  ///   fired instead: nothing was PUT, this device merely believes a
+  ///   pre-existing file at the target path is its own content.
+  /// - `'mismatch'` - a row that was `'uploaded'`, but the feed reported a
+  ///   length that contradicts what this device sent. The remote file IS
+  ///   this device's own upload, so it cannot be trusted and
+  ///   [GalleryUploadService.retryMismatchedUpload] deletes it and retries.
+  /// - `'assumedMismatch'` - a row that was `'assumed'`, but the feed
+  ///   contradicted it. This device never wrote that file, so the mismatch
+  ///   only disproves the assumption - it is never permission to delete
+  ///   someone else's content. [GalleryUploadService.retryMismatchedUpload]
+  ///   falls back to ticket 19's different-size collision rule instead:
+  ///   disambiguate to a new name, leaving the file exactly as it was.
   ///
   /// Cleared back to null the moment verification actually succeeds - at
   /// that point [origin] has already flipped to `both`, which is what makes
@@ -1848,9 +1859,15 @@ class $SyncPairsTable extends SyncPairs
       type: DriftSqlType.int,
       requiredDuringInsert: false,
       defaultValue: const Constant(0));
+  static const VerificationMeta _removedAtMeta =
+      const VerificationMeta('removedAt');
+  @override
+  late final GeneratedColumn<int> removedAt = GeneratedColumn<int>(
+      'removed_at', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
   @override
   List<GeneratedColumn> get $columns =>
-      [id, localFolderPath, spaceProviderId, path, createdAt];
+      [id, localFolderPath, spaceProviderId, path, createdAt, removedAt];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -1890,15 +1907,15 @@ class $SyncPairsTable extends SyncPairs
       context.handle(_createdAtMeta,
           createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
     }
+    if (data.containsKey('removed_at')) {
+      context.handle(_removedAtMeta,
+          removedAt.isAcceptableOrUnknown(data['removed_at']!, _removedAtMeta));
+    }
     return context;
   }
 
   @override
   Set<GeneratedColumn> get $primaryKey => {id};
-  @override
-  List<Set<GeneratedColumn>> get uniqueKeys => [
-        {localFolderPath},
-      ];
   @override
   SyncPairRow map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
@@ -1913,6 +1930,8 @@ class $SyncPairsTable extends SyncPairs
           .read(DriftSqlType.string, data['${effectivePrefix}path'])!,
       createdAt: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}created_at'])!,
+      removedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}removed_at']),
     );
   }
 
@@ -1937,7 +1956,9 @@ class SyncPairRow extends DataClass implements Insertable<SyncPairRow> {
   /// The Seraph folder side, in Space terms - the same
   /// (spaceProviderId, path) pair [GallerySourceFolder] uses, since this
   /// folder IS one (ticket 18's rule: a Sync Pair's Seraph folder
-  /// automatically becomes a Gallery Source Folder).
+  /// automatically becomes a Gallery Source Folder). This is THIS row's
+  /// target - current if [removedAt] is null, historical otherwise; see the
+  /// class doc for how the two are used differently.
   final String spaceProviderId;
   final String path;
 
@@ -1945,12 +1966,22 @@ class SyncPairRow extends DataClass implements Insertable<SyncPairRow> {
   /// [GalleryMirror.listSyncPairs] (oldest first, so the list does not
   /// reorder itself as photo counts change).
   final int createdAt;
+
+  /// Null while this pair is active (the normal state for every row before
+  /// ticket 21). Set to the epoch milliseconds [GalleryMirror.removeSyncPair]
+  /// ran at otherwise - the row is kept, never deleted, purely as a
+  /// historical target for dedup/reconcile lookups (see the class doc).
+  /// [GalleryMirror.listSyncPairs] (the UI's list) and every "current
+  /// target" computation filter this to null; dedup/reconcile lookups do
+  /// not filter on it at all.
+  final int? removedAt;
   const SyncPairRow(
       {required this.id,
       required this.localFolderPath,
       required this.spaceProviderId,
       required this.path,
-      required this.createdAt});
+      required this.createdAt,
+      this.removedAt});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -1959,6 +1990,9 @@ class SyncPairRow extends DataClass implements Insertable<SyncPairRow> {
     map['space_provider_id'] = Variable<String>(spaceProviderId);
     map['path'] = Variable<String>(path);
     map['created_at'] = Variable<int>(createdAt);
+    if (!nullToAbsent || removedAt != null) {
+      map['removed_at'] = Variable<int>(removedAt);
+    }
     return map;
   }
 
@@ -1969,6 +2003,9 @@ class SyncPairRow extends DataClass implements Insertable<SyncPairRow> {
       spaceProviderId: Value(spaceProviderId),
       path: Value(path),
       createdAt: Value(createdAt),
+      removedAt: removedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(removedAt),
     );
   }
 
@@ -1981,6 +2018,7 @@ class SyncPairRow extends DataClass implements Insertable<SyncPairRow> {
       spaceProviderId: serializer.fromJson<String>(json['spaceProviderId']),
       path: serializer.fromJson<String>(json['path']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
+      removedAt: serializer.fromJson<int?>(json['removedAt']),
     );
   }
   @override
@@ -1992,6 +2030,7 @@ class SyncPairRow extends DataClass implements Insertable<SyncPairRow> {
       'spaceProviderId': serializer.toJson<String>(spaceProviderId),
       'path': serializer.toJson<String>(path),
       'createdAt': serializer.toJson<int>(createdAt),
+      'removedAt': serializer.toJson<int?>(removedAt),
     };
   }
 
@@ -2000,13 +2039,15 @@ class SyncPairRow extends DataClass implements Insertable<SyncPairRow> {
           String? localFolderPath,
           String? spaceProviderId,
           String? path,
-          int? createdAt}) =>
+          int? createdAt,
+          Value<int?> removedAt = const Value.absent()}) =>
       SyncPairRow(
         id: id ?? this.id,
         localFolderPath: localFolderPath ?? this.localFolderPath,
         spaceProviderId: spaceProviderId ?? this.spaceProviderId,
         path: path ?? this.path,
         createdAt: createdAt ?? this.createdAt,
+        removedAt: removedAt.present ? removedAt.value : this.removedAt,
       );
   SyncPairRow copyWithCompanion(SyncPairsCompanion data) {
     return SyncPairRow(
@@ -2019,6 +2060,7 @@ class SyncPairRow extends DataClass implements Insertable<SyncPairRow> {
           : this.spaceProviderId,
       path: data.path.present ? data.path.value : this.path,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      removedAt: data.removedAt.present ? data.removedAt.value : this.removedAt,
     );
   }
 
@@ -2029,14 +2071,15 @@ class SyncPairRow extends DataClass implements Insertable<SyncPairRow> {
           ..write('localFolderPath: $localFolderPath, ')
           ..write('spaceProviderId: $spaceProviderId, ')
           ..write('path: $path, ')
-          ..write('createdAt: $createdAt')
+          ..write('createdAt: $createdAt, ')
+          ..write('removedAt: $removedAt')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, localFolderPath, spaceProviderId, path, createdAt);
+  int get hashCode => Object.hash(
+      id, localFolderPath, spaceProviderId, path, createdAt, removedAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -2045,7 +2088,8 @@ class SyncPairRow extends DataClass implements Insertable<SyncPairRow> {
           other.localFolderPath == this.localFolderPath &&
           other.spaceProviderId == this.spaceProviderId &&
           other.path == this.path &&
-          other.createdAt == this.createdAt);
+          other.createdAt == this.createdAt &&
+          other.removedAt == this.removedAt);
 }
 
 class SyncPairsCompanion extends UpdateCompanion<SyncPairRow> {
@@ -2054,12 +2098,14 @@ class SyncPairsCompanion extends UpdateCompanion<SyncPairRow> {
   final Value<String> spaceProviderId;
   final Value<String> path;
   final Value<int> createdAt;
+  final Value<int?> removedAt;
   const SyncPairsCompanion({
     this.id = const Value.absent(),
     this.localFolderPath = const Value.absent(),
     this.spaceProviderId = const Value.absent(),
     this.path = const Value.absent(),
     this.createdAt = const Value.absent(),
+    this.removedAt = const Value.absent(),
   });
   SyncPairsCompanion.insert({
     this.id = const Value.absent(),
@@ -2067,6 +2113,7 @@ class SyncPairsCompanion extends UpdateCompanion<SyncPairRow> {
     required String spaceProviderId,
     required String path,
     this.createdAt = const Value.absent(),
+    this.removedAt = const Value.absent(),
   })  : localFolderPath = Value(localFolderPath),
         spaceProviderId = Value(spaceProviderId),
         path = Value(path);
@@ -2076,6 +2123,7 @@ class SyncPairsCompanion extends UpdateCompanion<SyncPairRow> {
     Expression<String>? spaceProviderId,
     Expression<String>? path,
     Expression<int>? createdAt,
+    Expression<int>? removedAt,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -2083,6 +2131,7 @@ class SyncPairsCompanion extends UpdateCompanion<SyncPairRow> {
       if (spaceProviderId != null) 'space_provider_id': spaceProviderId,
       if (path != null) 'path': path,
       if (createdAt != null) 'created_at': createdAt,
+      if (removedAt != null) 'removed_at': removedAt,
     });
   }
 
@@ -2091,13 +2140,15 @@ class SyncPairsCompanion extends UpdateCompanion<SyncPairRow> {
       Value<String>? localFolderPath,
       Value<String>? spaceProviderId,
       Value<String>? path,
-      Value<int>? createdAt}) {
+      Value<int>? createdAt,
+      Value<int?>? removedAt}) {
     return SyncPairsCompanion(
       id: id ?? this.id,
       localFolderPath: localFolderPath ?? this.localFolderPath,
       spaceProviderId: spaceProviderId ?? this.spaceProviderId,
       path: path ?? this.path,
       createdAt: createdAt ?? this.createdAt,
+      removedAt: removedAt ?? this.removedAt,
     );
   }
 
@@ -2119,6 +2170,9 @@ class SyncPairsCompanion extends UpdateCompanion<SyncPairRow> {
     if (createdAt.present) {
       map['created_at'] = Variable<int>(createdAt.value);
     }
+    if (removedAt.present) {
+      map['removed_at'] = Variable<int>(removedAt.value);
+    }
     return map;
   }
 
@@ -2129,7 +2183,8 @@ class SyncPairsCompanion extends UpdateCompanion<SyncPairRow> {
           ..write('localFolderPath: $localFolderPath, ')
           ..write('spaceProviderId: $spaceProviderId, ')
           ..write('path: $path, ')
-          ..write('createdAt: $createdAt')
+          ..write('createdAt: $createdAt, ')
+          ..write('removedAt: $removedAt')
           ..write(')'))
         .toString();
   }
@@ -3059,6 +3114,7 @@ typedef $$SyncPairsTableCreateCompanionBuilder = SyncPairsCompanion Function({
   required String spaceProviderId,
   required String path,
   Value<int> createdAt,
+  Value<int?> removedAt,
 });
 typedef $$SyncPairsTableUpdateCompanionBuilder = SyncPairsCompanion Function({
   Value<int> id,
@@ -3066,6 +3122,7 @@ typedef $$SyncPairsTableUpdateCompanionBuilder = SyncPairsCompanion Function({
   Value<String> spaceProviderId,
   Value<String> path,
   Value<int> createdAt,
+  Value<int?> removedAt,
 });
 
 class $$SyncPairsTableFilterComposer
@@ -3093,6 +3150,9 @@ class $$SyncPairsTableFilterComposer
 
   ColumnFilters<int> get createdAt => $composableBuilder(
       column: $table.createdAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get removedAt => $composableBuilder(
+      column: $table.removedAt, builder: (column) => ColumnFilters(column));
 }
 
 class $$SyncPairsTableOrderingComposer
@@ -3120,6 +3180,9 @@ class $$SyncPairsTableOrderingComposer
 
   ColumnOrderings<int> get createdAt => $composableBuilder(
       column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get removedAt => $composableBuilder(
+      column: $table.removedAt, builder: (column) => ColumnOrderings(column));
 }
 
 class $$SyncPairsTableAnnotationComposer
@@ -3145,6 +3208,9 @@ class $$SyncPairsTableAnnotationComposer
 
   GeneratedColumn<int> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<int> get removedAt =>
+      $composableBuilder(column: $table.removedAt, builder: (column) => column);
 }
 
 class $$SyncPairsTableTableManager extends RootTableManager<
@@ -3179,6 +3245,7 @@ class $$SyncPairsTableTableManager extends RootTableManager<
             Value<String> spaceProviderId = const Value.absent(),
             Value<String> path = const Value.absent(),
             Value<int> createdAt = const Value.absent(),
+            Value<int?> removedAt = const Value.absent(),
           }) =>
               SyncPairsCompanion(
             id: id,
@@ -3186,6 +3253,7 @@ class $$SyncPairsTableTableManager extends RootTableManager<
             spaceProviderId: spaceProviderId,
             path: path,
             createdAt: createdAt,
+            removedAt: removedAt,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
@@ -3193,6 +3261,7 @@ class $$SyncPairsTableTableManager extends RootTableManager<
             required String spaceProviderId,
             required String path,
             Value<int> createdAt = const Value.absent(),
+            Value<int?> removedAt = const Value.absent(),
           }) =>
               SyncPairsCompanion.insert(
             id: id,
@@ -3200,6 +3269,7 @@ class $$SyncPairsTableTableManager extends RootTableManager<
             spaceProviderId: spaceProviderId,
             path: path,
             createdAt: createdAt,
+            removedAt: removedAt,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

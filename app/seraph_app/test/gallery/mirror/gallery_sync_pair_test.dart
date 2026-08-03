@@ -489,8 +489,10 @@ void main() {
     });
 
     test(
-        'removing a Sync Pair returns its items to heuristic dedup, without '
-        'duplicating or dropping any gallery row', () async {
+        'ticket 21: removing a Sync Pair does NOT return its items to '
+        'heuristic dedup - a folder it ever covered keeps its one '
+        'deterministic path+size chance forever, never the fuzzy '
+        '(size, capturedAt) fallback', () async {
       final pair = await mirror.createSyncPair(
         localFolderPath: 'DCIM/Camera/',
         spaceProviderId: 'space-a',
@@ -515,10 +517,13 @@ void main() {
       expect(afterRemoval.single.id, beforeRemoval.single.id);
       expect(afterRemoval.single.origin, 'device');
 
-      // The folder is no longer covered by any pair, so a cloud item
-      // arriving at an unrelated path, but matching by (size, capturedAt),
-      // now falls back to the heuristic and merges - ticket 15's original
-      // behaviour, restored.
+      // Before ticket 21, a folder losing its only pair fell back to the
+      // ticket 15 heuristic - here, that would have wrongly merged this
+      // unrelated cloud item onto 'kept.jpg' purely because they collide on
+      // (size, capturedAt). Ticket 21: the removed pair is kept as a
+      // historical target ([GalleryMirror._allSyncPairs]), so this folder
+      // stays covered forever - the heuristic never gets a vote on it again,
+      // removed pair or not.
       await mirror.applyPage(GalleryDeltaResponse(
         items: [
           _cloudItem(
@@ -533,9 +538,63 @@ void main() {
       ));
 
       final items = await mirror.queryItems();
+      expect(items, hasLength(2),
+          reason: 'the unrelated cloud item must NOT steal the device row - '
+              'it becomes its own Cloud only item instead');
+      final byAvailability = <GalleryAvailability, int>{};
+      for (final item in items) {
+        byAvailability[item.availability] =
+            (byAvailability[item.availability] ?? 0) + 1;
+      }
+      expect(byAvailability[GalleryAvailability.deviceOnly], 1,
+          reason: '\'kept.jpg\' stays exactly what it was - not backed up');
+      expect(byAvailability[GalleryAvailability.cloudOnly], 1);
+    });
+
+    test(
+        'ticket 21: a cloud item arriving at a removed pair\'s own '
+        '(historical) target still merges deterministically, even with no '
+        'active pair covering the folder any more', () async {
+      final pair = await mirror.createSyncPair(
+        localFolderPath: 'DCIM/Camera/',
+        spaceProviderId: 'space-a',
+        path: '/Photos/Phone',
+      );
+      await mirror.applyLocalScan([
+        localMediaItem(
+          relativePath: 'DCIM/Camera/',
+          displayName: 'late.jpg',
+          size: 777,
+          dateTakenMillis: 3000000,
+        ),
+      ]);
+      await mirror.removeSyncPair(pair.id);
+
+      // The delta feed only now reports the file at the removed pair's own
+      // target - e.g. an upload that was in flight, or a slow-arriving feed
+      // page, at the moment the pair was removed.
+      await mirror.applyPage(GalleryDeltaResponse(
+        items: [
+          _cloudItem(
+              path: '/Photos/Phone/late.jpg',
+              seq: 1,
+              // Deliberately disagrees with the device's own Capture Date -
+              // path+size, not (size, capturedAt), is what must decide this.
+              capturedAt: 999,
+              size: 777)
+        ],
+        nextCursor: '',
+        hasMore: false,
+        nextSince: 1,
+      ));
+
+      final items = await mirror.queryItems();
       expect(items, hasLength(1),
-          reason: 'no row duplicated or dropped by the removal');
+          reason: 'the device row and the historical-target cloud item '
+              'merge onto one Synced row rather than staying two');
       expect(items.single.availability, GalleryAvailability.synced);
+      expect(items.single.capturedAt, 3000000 ~/ 1000,
+          reason: 'the device row (which existed first) keeps its position');
     });
   });
 }

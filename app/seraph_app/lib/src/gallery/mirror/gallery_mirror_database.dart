@@ -42,7 +42,7 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
   }
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -120,6 +120,26 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
                 galleryItems, galleryItems.uploadTargetProviderId);
             await m.addColumn(galleryItems, galleryItems.uploadTargetPath);
             await m.createIndex(idxGalleryItemsUploadTarget);
+          }
+          if (from < 8) {
+            // v8 (ticket 21) added [SyncPairs.removedAt] and dropped the
+            // table's UNIQUE(local_folder_path) constraint - a retargeted
+            // Local Source now has more than one row (an old, removed one
+            // and a new, active one) sharing the same [SyncPairs.
+            // localFolderPath], which the old column-level UNIQUE constraint
+            // would have rejected outright. SQLite cannot alter or drop a
+            // table-level constraint in place, so this is a full rebuild via
+            // [alterTable]'s 12-step procedure rather than a plain
+            // `addColumn` - it recreates the table from the CURRENT (already
+            // constraint-free) Dart definition and copies every existing row
+            // across untouched, [removedAt] defaulting to null (still
+            // active) for all of them. See the class doc on [SyncPairs] for
+            // why keeping every past target, not just the current one, is
+            // what makes reconcile survive a retarget.
+            await m.alterTable(TableMigration(
+              syncPairs,
+              newColumns: [syncPairs.removedAt],
+            ));
           }
         },
         beforeOpen: (details) async {
@@ -406,13 +426,31 @@ class LocalFolderSelections extends Table {
 /// which live server-side because the thumbnail pre-generator needs to read
 /// them and cannot reach into a phone's local database.
 ///
-/// [localFolderPath] is unique: ticket 18's rule that **a Local Source may
-/// appear in at most one Sync Pair**, enforced by [GalleryMirror.
-/// createSyncPair] checking for overlap (not just exact-match) BEFORE this
-/// constraint would ever fire, so the error a user sees is the friendly
-/// [SyncPairConflictException] rather than a raw unique-constraint failure.
-/// The column-level constraint is a backstop against a bug in that check,
-/// not the primary defence.
+/// **Ticket 21 revised what "one row per Local Source" means.** A Sync Pair
+/// is no longer deleted on removal - [GalleryMirror.removeSyncPair] sets
+/// [removedAt] instead - and [localFolderPath] is consequently no longer a
+/// unique column: a retargeted Local Source (delete-pair-plus-create-pair)
+/// leaves an old, removed row and a new, active one both carrying the same
+/// [localFolderPath]. **A Local Source may still appear in at most one
+/// ACTIVE Sync Pair** ([removedAt] null), enforced the same way ticket 18's
+/// overlap rule always was - [GalleryMirror.createSyncPair] checking before
+/// insert, scoped to active rows only - so retargeting the same folder is
+/// exactly the "delete then create" the spec calls for, not blocked by a
+/// leftover historical row.
+///
+/// **Why keep the old rows at all, rather than truly deleting them:** the
+/// spec's rule for the remote path function surviving a retarget is *current
+/// target for writes, all targets for lookups*. [GalleryMirror.
+/// expectedUploadTarget] (a write) reads only the active row for a Local
+/// Source. Dedup and reconcile ([GalleryMirror._upsertLocalItem],
+/// [GalleryMirror.applyPage]) are lookups - they consult every row a Local
+/// Source has EVER had, active or not, because a photo already sitting at an
+/// old target does not stop being backed up just because the pair that put
+/// it there was replaced. Without this, a reinstall (or any reconcile pass)
+/// after a retarget would only know about the new target, find nothing at
+/// the old one, and duplicate every photo already there - the exact failure
+/// `.scratch/gallery-mode/spec.md`'s "Remote path is a pure function"
+/// section warns about.
 ///
 /// Named `SyncPairRow` rather than drift's default `SyncPair` (see
 /// [DataClassName] below) because `SyncPair` is already
@@ -434,7 +472,9 @@ class SyncPairs extends Table {
   /// The Seraph folder side, in Space terms - the same
   /// (spaceProviderId, path) pair [GallerySourceFolder] uses, since this
   /// folder IS one (ticket 18's rule: a Sync Pair's Seraph folder
-  /// automatically becomes a Gallery Source Folder).
+  /// automatically becomes a Gallery Source Folder). This is THIS row's
+  /// target - current if [removedAt] is null, historical otherwise; see the
+  /// class doc for how the two are used differently.
   TextColumn get spaceProviderId => text()();
   TextColumn get path => text()();
 
@@ -443,8 +483,12 @@ class SyncPairs extends Table {
   /// reorder itself as photo counts change).
   IntColumn get createdAt => integer().withDefault(const Constant(0))();
 
-  @override
-  List<Set<Column>> get uniqueKeys => [
-        {localFolderPath},
-      ];
+  /// Null while this pair is active (the normal state for every row before
+  /// ticket 21). Set to the epoch milliseconds [GalleryMirror.removeSyncPair]
+  /// ran at otherwise - the row is kept, never deleted, purely as a
+  /// historical target for dedup/reconcile lookups (see the class doc).
+  /// [GalleryMirror.listSyncPairs] (the UI's list) and every "current
+  /// target" computation filter this to null; dedup/reconcile lookups do
+  /// not filter on it at all.
+  IntColumn get removedAt => integer().nullable()();
 }

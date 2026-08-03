@@ -290,12 +290,22 @@ class GalleryMirror {
   /// and even then it skips any Device only row a *different* pair covers -
   /// once a pair covers a device item, the heuristic never gets a vote on it
   /// (see [_coveringSyncPair]'s callers).
+  ///
+  /// **Ticket 21: Rule 2 is checked against every Sync Pair a Local Source
+  /// has EVER had, not only its current one** ([_allSyncPairs], not
+  /// [_activeSyncPairs]) - the spec's "current target for writes, all
+  /// targets for lookups" rule. A cloud item arriving at an OLD target - a
+  /// folder that remains a Gallery Source Folder after a retarget, still
+  /// reported by the delta feed - inverts correctly through the (removed)
+  /// pair row that produced it, so the matching Device only row is still
+  /// found by path alone rather than falling through to the ticket 15
+  /// heuristic (or worse, never matching at all and reading as unprotected).
   Future<void> applyPage(
     GalleryDeltaResponse page, {
     String source = gallerySyncSource,
   }) async {
     await _db.transaction(() async {
-      final syncPairs = await _activeSyncPairs();
+      final syncPairs = await _allSyncPairs();
 
       for (final item in page.items) {
         final existing = await (_db.select(_db.galleryItems)
@@ -563,12 +573,19 @@ class GalleryMirror {
   ///    displayName, size, dateTaken)` - is left alone. This is what makes a
   ///    changed (non-durable) media-store id a no-op: identity, not id,
   ///    decides "have we seen this file before".
-  /// 2. Otherwise, if a Sync Pair covers [item]'s folder, its expected
-  ///    remote path is a pure function of `(pair, relative path)` - a Cloud
-  ///    only row at that exact path, matching size, is merged onto
-  ///    deterministically, and this is the item's ONLY remaining chance to
+  /// 2. Otherwise, if a Sync Pair covers [item]'s folder - **ticket 21:
+  ///    checked against every target that Local Source has EVER had, not
+  ///    only its current one** - each candidate target's expected remote
+  ///    path is a pure function of `(pair, relative path)`, and a Cloud only
+  ///    row at that exact path, matching size, is merged onto
+  ///    deterministically. This is the item's ONLY remaining chance to
   ///    match: rule 3 below never runs for a covered item, matched or not
-  ///    (see [_upsertLocalItem]'s doc).
+  ///    (see [_upsertLocalItem]'s doc). Consulting historical targets too is
+  ///    what makes "already backed up" survive a retarget: a device photo
+  ///    already sitting at the OLD target must still be recognised as
+  ///    already-backed-up rather than merely as one no active pair happens
+  ///    to explain (which would both duplicate it and, worse, tell the user
+  ///    their library is unprotected when it is not).
   /// 3. Otherwise (no pair covers this item), a Cloud only row matching by
   ///    `(size, capturedAt)` is plausibly the same photo arriving from the
   ///    other side - e.g. a photo already in Seraph (copied over SMB,
@@ -596,7 +613,7 @@ class GalleryMirror {
   /// order.
   Future<void> applyLocalScan(List<LocalMediaItem> items) async {
     await _db.transaction(() async {
-      final syncPairs = await _activeSyncPairs();
+      final syncPairs = await _allSyncPairs();
       final seenIdentities = <String>{};
 
       for (final item in items) {
@@ -660,7 +677,7 @@ class GalleryMirror {
     required int generation,
   }) async {
     await _db.transaction(() async {
-      final syncPairs = await _activeSyncPairs();
+      final syncPairs = await _allSyncPairs();
       for (final item in items) {
         await _upsertLocalItem(item, syncPairs);
       }
@@ -728,19 +745,25 @@ class GalleryMirror {
   /// Otherwise, ticket 18's rule order decides what happens next:
   ///
   /// - If a Sync Pair in [syncPairs] covers [item]'s folder
-  ///   ([_coveringSyncPair]), its expected remote path is computed
-  ///   ([_expectedRemotePath]) and a Cloud only row there, matching size, is
-  ///   merged onto if one exists. **Whether or not that match succeeds, this
-  ///   is the item's only chance** - a covered item never falls through to
-  ///   the heuristic below, so two burst-shot device photos of identical
-  ///   size and Capture Date, both covered by the same pair, stay two Device
-  ///   only rows rather than colliding onto one (the failure the heuristic
-  ///   was always liable to and ticket 18 exists to fix for covered items).
-  /// - Otherwise (no pair covers [item]), a Cloud only row matching by
-  ///   `(size, capturedAt)` is plausibly the same photo arriving from the
-  ///   other side - ticket 15's original best-effort heuristic, explicitly
-  ///   named as such and never treated as authoritative; merged onto if
-  ///   found.
+  ///   ([_allCoveringSyncPairs]), each covering pair's expected remote path
+  ///   is computed ([_expectedRemotePath]) in turn - current target first,
+  ///   see that method's doc - and a Cloud only row there, matching size, is
+  ///   merged onto as soon as one is found. **Ticket 21: every target the
+  ///   folder has EVER had is tried, not only the current one** - a photo
+  ///   already sitting at an old, historical target (from before a
+  ///   retarget) still merges deterministically instead of silently
+  ///   becoming a second, unmatched Device only row. **Whether or not any
+  ///   target matches, this is the item's only chance** - a covered item
+  ///   never falls through to the heuristic below, so two burst-shot device
+  ///   photos of identical size and Capture Date, both covered by the same
+  ///   pair, stay two Device only rows rather than colliding onto one (the
+  ///   failure the heuristic was always liable to and ticket 18 exists to
+  ///   fix for covered items).
+  /// - Otherwise (no pair, current or historical, covers [item]), a Cloud
+  ///   only row matching by `(size, capturedAt)` is plausibly the same photo
+  ///   arriving from the other side - ticket 15's original best-effort
+  ///   heuristic, explicitly named as such and never treated as
+  ///   authoritative; merged onto if found.
   /// - Otherwise, a new Device only row.
   ///
   /// Never deletes or demotes anything - that determination needs the whole
@@ -764,40 +787,43 @@ class GalleryMirror {
     final capturedAt = _capturedAtSeconds(item);
     final capturedAtSource = item.dateTakenMillis > 0 ? 'exif' : 'modTime';
 
-    final coveringPair = _coveringSyncPair(syncPairs, item.relativePath);
+    final coveringPairs = _allCoveringSyncPairs(syncPairs, item.relativePath);
 
-    if (coveringPair != null) {
-      final expected = _expectedRemotePath(
-          coveringPair, item.relativePath, item.displayName);
-      final pairMatch = await (_db.select(_db.galleryItems)
-            ..where((t) =>
-                t.origin.equals(_originCloud) &
-                t.providerId.equals(expected.$1) &
-                t.path.equals(expected.$2) &
-                t.size.equals(item.size))
-            ..limit(1))
-          .getSingleOrNull();
+    if (coveringPairs.isNotEmpty) {
+      for (final pair in coveringPairs) {
+        final expected =
+            _expectedRemotePath(pair, item.relativePath, item.displayName);
+        final pairMatch = await (_db.select(_db.galleryItems)
+              ..where((t) =>
+                  t.origin.equals(_originCloud) &
+                  t.providerId.equals(expected.$1) &
+                  t.path.equals(expected.$2) &
+                  t.size.equals(item.size))
+              ..limit(1))
+            .getSingleOrNull();
 
-      if (pairMatch != null) {
-        await (_db.update(_db.galleryItems)
-              ..where((t) => t.id.equals(pairMatch.id)))
-            .write(GalleryItemsCompanion(
-          origin: const Value(_originBoth),
-          localRelativePath: Value(item.relativePath),
-          localDisplayName: Value(item.displayName),
-          localSize: Value(item.size),
-          localDateTaken: Value(item.dateTakenMillis),
-          // capturedAt deliberately NOT rewritten - the match is on path
-          // plus size alone, so a disagreeing Capture Date (ticket 18's
-          // criterion) never blocks it, and the row must not move either
-          // way.
-        ));
-        return;
+        if (pairMatch != null) {
+          await (_db.update(_db.galleryItems)
+                ..where((t) => t.id.equals(pairMatch.id)))
+              .write(GalleryItemsCompanion(
+            origin: const Value(_originBoth),
+            localRelativePath: Value(item.relativePath),
+            localDisplayName: Value(item.displayName),
+            localSize: Value(item.size),
+            localDateTaken: Value(item.dateTakenMillis),
+            // capturedAt deliberately NOT rewritten - the match is on path
+            // plus size alone, so a disagreeing Capture Date (ticket 18's
+            // criterion) never blocks it, and the row must not move either
+            // way.
+          ));
+          return;
+        }
       }
 
-      // Covered by a pair but nothing uploaded there yet - a new Device
-      // only row. The heuristic below is never reached: once a pair covers
-      // an item, it is the only vote (ticket 18).
+      // Covered (currently or historically) but nothing uploaded to any of
+      // those targets yet - a new Device only row. The heuristic below is
+      // never reached: once a pair covers an item, it is the only vote
+      // (ticket 18, extended by ticket 21 to every target it has ever had).
       await _db.into(_db.galleryItems).insert(
             GalleryItemsCompanion.insert(
               origin: const Value(_originDevice),
@@ -876,18 +902,33 @@ class GalleryMirror {
 
   // --- Ticket 18: Sync Pairs ---
 
-  /// Every configured Sync Pair, unordered - what [_upsertLocalItem] and
-  /// [applyPage] both check a device or cloud item against before falling
-  /// back to the ticket 15 heuristic. Fetched once per [applyLocalScan]/
-  /// [applyLocalDelta]/[applyPage] transaction rather than once per item,
-  /// since the count is small (a handful at most) and re-reading it per item
-  /// would only add one more query to every single photo for no benefit.
+  /// Every currently ACTIVE Sync Pair ([SyncPairRow.removedAt] null),
+  /// unordered - the spec's "current target for writes" half. What decides
+  /// where a NEW upload goes ([expectedUploadTarget]), what [createSyncPair]
+  /// checks its overlap rule against, and what [listSyncPairs] shows. A
+  /// removed pair is never a candidate for any of these three, even though
+  /// its row is kept around (see [SyncPairs]' class doc) for
+  /// [_allSyncPairs]' sake.
   Future<List<SyncPairRow>> _activeSyncPairs() =>
-      _db.select(_db.syncPairs).get();
+      (_db.select(_db.syncPairs)..where((t) => t.removedAt.isNull())).get();
 
-  /// The Sync Pair covering [relativePath], or null if none does - first
-  /// match wins, though create-time overlap checking ([createSyncPair]) is
-  /// what actually keeps this to at most one pair in practice. Coverage is a
+  /// Every Sync Pair a Local Source has EVER had - active and removed alike
+  /// - the spec's "all targets for lookups" half (ticket 21). What
+  /// [_upsertLocalItem] and [applyPage] both check a device or cloud item
+  /// against before falling back to the ticket 15 heuristic: a photo already
+  /// sitting at an old, historical target must still be recognised as
+  /// already-backed-up, not just at whichever target happens to be active
+  /// right now. Fetched once per [applyLocalScan]/[applyLocalDelta]/
+  /// [applyPage] transaction rather than once per item, since the count is
+  /// small (a handful of pairs, plus however many times each has been
+  /// retargeted - nowhere near per-photo scale) and re-reading it per item
+  /// would only add one more query to every single photo for no benefit.
+  Future<List<SyncPairRow>> _allSyncPairs() => _db.select(_db.syncPairs).get();
+
+  /// The first Sync Pair in [pairs] covering [relativePath], or null if none
+  /// does - first match wins, though create-time overlap checking
+  /// ([createSyncPair], scoped to active pairs) is what actually keeps this
+  /// to at most one match when [pairs] is [_activeSyncPairs]. Coverage is a
   /// plain string-prefix test: both a Local Folder's path and a
   /// [LocalMediaItem.relativePath] are always trailing-slash-terminated (the
   /// MediaStore `RELATIVE_PATH` convention this whole seam relies on), so
@@ -905,13 +946,39 @@ class GalleryMirror {
     return null;
   }
 
+  /// Every Sync Pair in [pairs] covering [relativePath] - the ticket 21
+  /// counterpart of [_coveringSyncPair] for lookups over [_allSyncPairs]:
+  /// a retargeted Local Source can have more than one pair (one active, any
+  /// number removed) whose [SyncPairRow.localFolderPath] covers the same
+  /// [relativePath], each with a different target to check. Ordered most
+  /// recently created first, so the active pair - normally the most recent,
+  /// since retargeting is delete-then-create - is tried before older,
+  /// historical ones; this is only a tie-break for the vanishingly unlikely
+  /// case where more than one target happens to hold a same-size file at the
+  /// exact expected path, not a correctness requirement.
+  List<SyncPairRow> _allCoveringSyncPairs(
+    List<SyncPairRow> pairs,
+    String relativePath,
+  ) {
+    final matches = pairs
+        .where((pair) =>
+            relativePath == pair.localFolderPath ||
+            relativePath.startsWith(pair.localFolderPath))
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return matches;
+  }
+
   /// The remote (providerId, path) a device item at [relativePath]/
   /// [displayName] maps to under [pair] - the pure function ticket 18 (and
   /// later ticket 19's actual upload) both rely on: `relativePath` with the
   /// pair's local folder prefix stripped, appended to the pair's Seraph
   /// folder. E.g. `DCIM/Camera/2026/` + `IMG_0001.jpg` under a pair
   /// `DCIM/Camera/ -> /Photos/Phone` yields `/Photos/Phone/2026/IMG_0001.jpg`
-  /// - exactly the ticket's own worked example.
+  /// - exactly the ticket's own worked example. [pair] may be active or
+  /// removed - the function only reads its `(localFolderPath,
+  /// spaceProviderId, path)`, so it computes an old, historical target's
+  /// expected path exactly as readily as the current one's.
   (String providerId, String path) _expectedRemotePath(
     SyncPairRow pair,
     String relativePath,
@@ -965,9 +1032,12 @@ class GalleryMirror {
   /// Seraph folder ([spaceProviderId], [path]).
   ///
   /// Throws [SyncPairConflictException] if [localFolderPath] overlaps an
-  /// existing pair's Local Source (ticket 18's "at most one Sync Pair per
-  /// Local Source" rule) - checked and inserted inside the same transaction,
-  /// so two concurrent creates can never both pass the check.
+  /// existing ACTIVE pair's Local Source (ticket 18's "at most one Sync Pair
+  /// per Local Source" rule, scoped by ticket 21 to active pairs only -
+  /// [_activeSyncPairs] - so retargeting, a remove immediately followed by a
+  /// create for the same folder, is never blocked by the just-removed row it
+  /// intentionally leaves behind) - checked and inserted inside the same
+  /// transaction, so two concurrent creates can never both pass the check.
   ///
   /// **Does not add the Seraph folder to the user's Gallery Source
   /// Folders.** That is a server-side call (`GalleryService.
@@ -1025,11 +1095,15 @@ class GalleryMirror {
     });
   }
 
-  /// Every configured Sync Pair, oldest first, with each one's current
+  /// Every currently ACTIVE Sync Pair, oldest first, with each one's current
   /// [SyncPair.photoCount] - what the *Sync Pairs* section of the Gallery
-  /// folders screen lists.
+  /// folders screen lists. A removed pair (ticket 21: [removeSyncPair] keeps
+  /// its row rather than deleting it) never appears here - it is kept purely
+  /// as a historical target for dedup/reconcile, not as something the user
+  /// still configures.
   Future<List<SyncPair>> listSyncPairs() async {
     final rows = await (_db.select(_db.syncPairs)
+          ..where((t) => t.removedAt.isNull())
           ..orderBy([(t) => OrderingTerm(expression: t.createdAt)]))
         .get();
     final pairs = <SyncPair>[];
@@ -1046,20 +1120,35 @@ class GalleryMirror {
     return pairs;
   }
 
-  /// Deletes the Sync Pair with [id]. Ticket 18's lifecycle rule (D18 in
+  /// Retires the Sync Pair with [id]. Ticket 18's lifecycle rule (D18 in
   /// `docs/gallery-mode-design-notes.md`): this stops FUTURE dedup
-  /// consideration for [SyncPairRow.localFolderPath] - it never touches a
-  /// [GalleryItems] row itself. Every row already merged via this pair
-  /// (Synced, `origin == 'both'`) stays exactly as it is; only items this
-  /// pair has not yet matched fall back to the (size, capturedAt) heuristic
-  /// on the next scan or delta page, simply because [_coveringSyncPair]
-  /// stops finding this pair once it is gone - no row is duplicated or
-  /// dropped by the removal itself. **Never removes the Gallery Source
-  /// Folder** this pair created - that is separate, server-side
-  /// configuration the caller does not touch just because the pair is gone
-  /// (D18: "the cloud folder remains a Gallery Source Folder").
+  /// consideration for NEW uploads through [SyncPairRow.localFolderPath] -
+  /// it never touches a [GalleryItems] row itself. Every row already merged
+  /// via this pair (Synced, `origin == 'both'`) stays exactly as it is.
+  ///
+  /// **Ticket 21: the row is kept, marked [SyncPairRow.removedAt], never
+  /// deleted.** [_activeSyncPairs] (what [expectedUploadTarget] and
+  /// [createSyncPair]'s overlap check read) stops finding it immediately -
+  /// no new upload targets this Local Source, and the same local folder can
+  /// be given a new active pair right away (retargeting). But [_allSyncPairs]
+  /// (what [_upsertLocalItem]/[applyPage]'s dedup and reconcile lookups
+  /// read) keeps finding it forever, as one more historical target - a photo
+  /// this pair already put in Seraph keeps reading as already-backed-up,
+  /// retarget or no retarget, reinstall or no reinstall, and a device item
+  /// this pair covered still gets its one deterministic path+size chance
+  /// against that historical target before anything falls back to the
+  /// ticket 15 (size, capturedAt) heuristic. No row is duplicated or dropped
+  /// by the removal itself.
+  /// **Never removes the Gallery Source Folder** this pair created - that is
+  /// separate, server-side configuration the caller does not touch just
+  /// because the pair is gone (D18: "the cloud folder remains a Gallery
+  /// Source Folder").
   Future<void> removeSyncPair(int id) async {
-    await (_db.delete(_db.syncPairs)..where((t) => t.id.equals(id))).go();
+    await (_db.update(_db.syncPairs)..where((t) => t.id.equals(id))).write(
+      SyncPairsCompanion(
+        removedAt: Value(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
   }
 
   // --- Ticket 19: upload ---

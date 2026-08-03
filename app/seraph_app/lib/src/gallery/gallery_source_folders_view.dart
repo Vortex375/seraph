@@ -273,6 +273,86 @@ class _GallerySourceFoldersViewState extends State<GallerySourceFoldersView> {
     await _loadFolders();
   }
 
+  /// Ticket 21: retargeting, spelled out in the UI exactly as the spec
+  /// requires - "delete-pair-plus-create-pair" - rather than left for the
+  /// user to notice they can do by removing and re-adding by hand.
+  ///
+  /// Picks a new Seraph folder, states plainly what will and will not
+  /// happen (photos already at [pair]'s current target stay there; only new
+  /// photos go to the new one) and only THEN performs the two calls: add
+  /// the new folder as a Gallery Source Folder, remove the old pair
+  /// ([GalleryMirror.removeSyncPair] keeps it as a historical target - see
+  /// that method's doc - it is not simply gone), create the new one for the
+  /// SAME Local Source. The new Gallery Source Folder call runs first, for
+  /// the same reason [_addSyncPair] orders it first: idempotent and
+  /// harmless to leave in place even if a later step fails, whereas a local
+  /// pair pointing at a folder the server never learned about is a state
+  /// this screen could not represent honestly.
+  Future<void> _retargetSyncPair(SyncPair pair) async {
+    final mirror = _mirror;
+    if (mirror == null) {
+      return;
+    }
+
+    final picked = await showDialog<PickedFolder>(
+      context: context,
+      builder: (context) => const FolderPickerDialog(),
+    );
+    if (picked == null || !mounted) {
+      return;
+    }
+    final newDisplayPath = picked.path == '/'
+        ? '/${picked.spaceProviderId}'
+        : '/${picked.spaceProviderId}${picked.path}';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Retarget Sync Pair?'),
+        content: Text(
+            '${pair.localFolderPath} will back up to $newDisplayPath from now on.\n\n'
+            'Photos already backed up to ${pair.seraphDisplayPath} stay exactly '
+            'where they are - only NEW photos go to $newDisplayPath.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Retarget'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) {
+      return;
+    }
+
+    try {
+      await galleryService.addSourceFolder(picked.spaceProviderId, picked.path);
+    } catch (e) {
+      _showMessage('Failed to add folder: $e');
+      return;
+    }
+
+    await mirror.removeSyncPair(pair.id);
+    try {
+      await mirror.createSyncPair(
+        localFolderPath: pair.localFolderPath,
+        spaceProviderId: picked.spaceProviderId,
+        path: picked.path,
+      );
+    } catch (e) {
+      _showMessage('Failed to create the new Sync Pair: $e');
+      await _loadFolders();
+      return;
+    }
+
+    await _loadFolders();
+    _resyncGallery();
+  }
+
   /// Triggers a genuine File Provider re-scan of [folder] and starts polling
   /// so the user learns both that it started and when it finished - the
   /// server itself only reports current state (RescanRunning), so "finished"
@@ -526,17 +606,29 @@ class _GallerySourceFoldersViewState extends State<GallerySourceFoldersView> {
   /// One Sync Pair (ticket 18): what it maps to - the device folder and the
   /// Seraph folder it uploads to - and how many photos it currently covers,
   /// per the acceptance criterion ("the pairs list shows what each pair maps
-  /// to and how many photos it covers").
+  /// to and how many photos it covers"). Ticket 21 adds retarget alongside
+  /// remove - both change where FUTURE photos go, neither ever touches a
+  /// photo already backed up.
   Widget _buildSyncPairTile(SyncPair pair) {
     return ListTile(
       leading: const Icon(Icons.sync_alt),
       title: Text('${pair.localFolderPath} -> ${pair.seraphDisplayPath}'),
       subtitle: Text(
           '${pair.photoCount} photo${pair.photoCount == 1 ? '' : 's'} covered'),
-      trailing: IconButton(
-        icon: const Icon(Icons.delete_outline),
-        tooltip: 'Remove Sync Pair',
-        onPressed: () => _removeSyncPair(pair),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.drive_file_move_outline),
+            tooltip: 'Retarget Sync Pair',
+            onPressed: () => _retargetSyncPair(pair),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            tooltip: 'Remove Sync Pair',
+            onPressed: () => _removeSyncPair(pair),
+          ),
+        ],
       ),
     );
   }
