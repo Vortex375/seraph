@@ -140,7 +140,6 @@ class LoginController extends GetxController with WidgetsBindingObserver {
       validateStatus: (status) => true,
     ));
 
-    Object? err;
     try {
       final response = await dio.get('/auth/login');
       print("*** login response");
@@ -151,11 +150,13 @@ class LoginController extends GetxController with WidgetsBindingObserver {
         _isSpaceAdmin.value = true;
         shareController.loadShares();
       } else {
-        await launchUrl(Uri.parse('${settingsController.serverUrl.value}/auth/login?' 
+        await launchUrl(Uri.parse('${settingsController.serverUrl.value}/auth/login?'
           'redirect=true&to=${Uri.encodeFull(Uri.base.toString())}'),
           webOnlyWindowName: '_self');
       }
-    } catch (error) {
+    } catch (err, stack) {
+      print('oidc: web login check failed: $err');
+      print(stack);
       Get.snackbar('Connection failed', 'Failed to connect to server: $err',
         backgroundColor: Colors.amber[800],
         isDismissible: true
@@ -179,8 +180,10 @@ class LoginController extends GetxController with WidgetsBindingObserver {
         settingsController.setOidc(issuer, clientId);
         init(issuer, clientId);
       }
-    } catch (err) {
-      Get.snackbar('Connection failed', 'Failed to connect to server',
+    } catch (err, stack) {
+      print('oidc: discovery failed: $err');
+      print(stack);
+      Get.snackbar('Connection failed', 'Failed to connect to server: $err',
         backgroundColor: Colors.amber[800],
         isDismissible: true
       );
