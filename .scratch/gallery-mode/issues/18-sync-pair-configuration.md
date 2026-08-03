@@ -54,7 +54,7 @@ No uploading in this ticket — configuration only.
 
 **Blocked by:** 06, 15
 
-**Status:** claimed
+**Status:** resolved
 
 - [ ] A user can create a Sync Pair by picking a device folder and a Seraph folder, using the pickers already in the app
 - [ ] Creating a Sync Pair adds its Seraph folder to the user's Gallery Source Folders
@@ -71,3 +71,57 @@ No uploading in this ticket — configuration only.
 - [ ] The heuristic still applies to device items no Sync Pair covers, and is named in the code as best-effort rather than presented as authoritative
 - [ ] Removing a Sync Pair returns its items to heuristic dedup without duplicating or dropping any gallery row
 - [ ] Covered at the app's mirror seam with a fake Local Source and a stubbed backend, including the collision and disagreeing-Capture-Date cases above
+
+## Comments
+
+### Implementer report
+
+Implemented in `app/seraph_app`.
+
+**Schema** (`lib/src/gallery/mirror/gallery_mirror_database.dart`, regenerated `.g.dart`): new
+local-only `SyncPairs` table (`localFolderPath` unique, `spaceProviderId`, `path`, `createdAt`),
+schema v5→v6 with an additive migration, covered by a new migration test in
+`gallery_mirror_database_test.dart`.
+
+**Mirror logic** (`lib/src/gallery/mirror/gallery_mirror.dart`): `createSyncPair` / `listSyncPairs` /
+`removeSyncPair`, plus a `SyncPair` domain model and `SyncPairConflictException`. Dedup now resolves
+in order: (1) existing `(providerId, path)` row, (2) a Sync Pair's deterministic expected-remote-path
+match (path + size, Capture Date never consulted) in both `applyPage` (cloud arriving) and
+`_upsertLocalItem` (device scan arriving), (3) the ticket-15 `(size, capturedAt)` heuristic — which
+now explicitly excludes any device row a Sync Pair covers. Creating a pair retroactively merges
+pre-existing device/cloud counterparts (`_mergeExistingCounterparts`) without any upload. Removing a
+pair only stops future matching — no row is touched, and the Gallery Source Folder it created is left
+alone.
+
+**UI**: new `local_folder_picker_dialog.dart` (lists device folders from
+`GalleryMirror.listLocalFolders()`, disabling ones already paired) and a third *Sync Pairs* section on
+`gallery_source_folders_view.dart`, gated on Local Source presence like the existing *On this device*
+section, wired to add the Seraph folder via `GalleryService.addSourceFolder` then `createSyncPair`.
+
+**Tests**: new `test/gallery/mirror/gallery_sync_pair_test.dart` covers pair CRUD, overlap conflict
+(exact/parent/child), persistence across restart, photo counts, and every dedup criterion
+(disagreeing Capture Date merging in both arrival orders, burst-shot collision protection in both
+arrival orders, uncovered-item heuristic fallback, retroactive merge on creation, no duplication or
+drop on removal). Widget tests added to `gallery_source_folders_view_test.dart`. `flutter test`
+330/330 and `flutter build web --release --base-href=/app/` both pass.
+
+**Decisions the ticket did not settle:**
+
+1. Android's Local Source identifier is the folder identifier itself (MediaStore `RELATIVE_PATH`,
+   e.g. `DCIM/Camera/`) — the same string `LocalFolder.path` already uses — rather than a new
+   abstraction.
+2. The conflict check refuses *overlap* (equal, parent or child folder), not just an exact match,
+   since a parent/child pair would still double-cover files.
+3. The device-folder picker is a new minimal dialog mirroring `FolderPickerDialog`'s chrome, since
+   none existed; the Seraph side reuses `FolderPickerDialog` unchanged.
+4. Following the existing convention in that file, the widget tests do not drive the full nested-dialog
+   add flow (it would need a stubbed WebDAV `FileService`, which no existing test there does for the
+   cloud-folder-add case either); add-flow correctness is covered at the mirror seam instead.
+
+### Verifier verdict
+
+APPROVED — diff reviewed against every acceptance criterion and against the ticket's invariants
+(one Sync Pair per Local Source, remote path a pure function, the Seraph folder becoming a Gallery
+Source Folder, Sync Pairs local-only, configuration moving no photos). `flutter test` passes,
+`flutter build web --release --base-href=/app/` succeeds, no new lint issues in the changed files.
+Verified against base `d696825`.
