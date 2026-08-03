@@ -4,6 +4,25 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
 
+    <!-- Gallery Mode's Local Source seam (ticket 15,
+         .scratch/gallery-mode/issues/15-local-source-scan-and-merged-gallery.md):
+         lets the app's MediaStore scan see the device's photos. minSdk is 34,
+         so READ_MEDIA_IMAGES alone covers full access - no legacy
+         READ_EXTERNAL_STORAGE fallback is needed. Declaring the permission
+         here does not itself prompt the user; the runtime request, with the
+         explanation the user is owed, is ticket 16's job (MainActivity's
+         requestPermission channel method). Until the user grants either
+         permission below, MainActivity's MediaStore query simply reports no
+         photos. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+    <!-- Android 14's partial-grant permission (ticket 16,
+         .scratch/gallery-mode/issues/16-photo-permissions-and-partial-grant.md):
+         granted instead of READ_MEDIA_IMAGES when the user picks "Select
+         photos and videos" rather than "Allow all". Requesting it alongside
+         READ_MEDIA_IMAGES is what makes the system show that choice; without
+         it Android would only ever offer all-or-nothing. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED"/>
+
     <application
         android:label="seraph_app"
         android:name="${applicationName}"

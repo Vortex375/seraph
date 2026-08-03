@@ -1,8 +1,12 @@
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:get/get.dart' hide Response;
 import 'package:seraph_app/src/gallery/gallery_grid_controller.dart';
 import 'package:seraph_app/src/gallery/gallery_item_display.dart';
+import 'package:seraph_app/src/gallery/local/local_scan_service.dart';
+import 'package:seraph_app/src/gallery/local/local_source.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_sync_service.dart';
@@ -264,5 +268,347 @@ void main() {
       expect(controller.itemAt(0), isNull);
       expect(controller.isLoading.value, isFalse);
     });
+
+    test('open() also runs a Local Source scan alongside the cloud sync',
+        () async {
+      final source =
+          FakeLocalSource([localMediaItem(displayName: 'device.jpg')]);
+      final controller = GalleryGridController(
+        mirror: mirror,
+        localScanService: LocalScanService(mirror, localSource: source),
+      );
+
+      await controller.open();
+      await pumpEventQueue();
+
+      expect(source.scanCount, 1);
+      expect(controller.totalCount.value, 1);
+      expect(controller.itemAt(0)!.availability, GalleryAvailability.deviceOnly);
+    });
+
+    test('a failing local scan does not stop the gallery or the cloud sync',
+        () async {
+      await populateMirror(db, count: 2);
+
+      final failingSource = _ThrowingLocalSource();
+      final dio = Dio();
+      dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+        handler.resolve(Response(
+          requestOptions: options,
+          statusCode: 200,
+          data: {
+            'items': <Map<String, dynamic>>[],
+            'nextCursor': '',
+            'hasMore': false,
+            'nextSince': 0,
+          },
+        ));
+      }));
+      final sync = GallerySyncService(
+        FakeSettingsController(),
+        FakeLoginController(),
+        mirror,
+        dio: dio,
+      );
+
+      final controller = GalleryGridController(
+        mirror: mirror,
+        syncService: sync,
+        localScanService: LocalScanService(mirror, localSource: failingSource),
+      );
+
+      await controller.open();
+      await pumpEventQueue();
+
+      expect(controller.syncError.value, isNull,
+          reason: 'the cloud sync succeeded independently of the local scan');
+      expect(controller.totalCount.value, 2,
+          reason: 'the mirror still holds what it had before the failure');
+    });
+
+    // Ticket 17: the content-observer trigger, wired through open()/onClose.
+    test(
+        'a content-observer notification eventually shows a newly taken '
+        'photo without a manual reload', () async {
+      final source = FakeLocalSource()
+        ..incrementalItems = [
+          localMediaItem(displayName: 'just-taken.jpg', size: 7, dateTakenMillis: 20000),
+        ];
+      final controller = GalleryGridController(
+        mirror: mirror,
+        localScanService: LocalScanService(
+          mirror,
+          localSource: source,
+          debounce: const Duration(milliseconds: 5),
+        ),
+      );
+
+      await controller.open();
+      await pumpEventQueue();
+      expect(controller.totalCount.value, 0);
+
+      source.emitChange();
+      await Future.delayed(const Duration(milliseconds: 30));
+      await pumpEventQueue();
+
+      expect(controller.totalCount.value, 1,
+          reason: 'ticket 17: taking a photo makes it appear within seconds '
+              'while the app is running');
+      expect(controller.itemAt(0)!.availability, GalleryAvailability.deviceOnly);
+    });
+
+    test('onClose releases the content-observer subscription', () async {
+      final source = FakeLocalSource();
+      final scanService = LocalScanService(
+        mirror,
+        localSource: source,
+        debounce: const Duration(milliseconds: 5),
+      );
+      final controller = GalleryGridController(
+        mirror: mirror,
+        localScanService: scanService,
+      );
+
+      await controller.open();
+      await pumpEventQueue();
+      controller.onClose();
+
+      source.emitChange();
+      await Future.delayed(const Duration(milliseconds: 30));
+      await pumpEventQueue();
+
+      expect(source.incrementalScanCount, 0,
+          reason: 'a closed controller must not leave a live subscription '
+              'behind it');
+    });
+
+    test('the filter restricts totalCount and itemAt without reordering',
+        () async {
+      final source = FakeLocalSource([
+        localMediaItem(displayName: 'device-only.jpg', size: 1, dateTakenMillis: 10000),
+      ]);
+      final controller = GalleryGridController(
+        mirror: mirror,
+        localScanService: LocalScanService(mirror, localSource: source),
+      );
+      await insertMirrorItem(db, path: '/Photos/cloud.jpg', capturedAt: 500);
+
+      await controller.open();
+      await pumpEventQueue();
+      expect(controller.totalCount.value, 2);
+
+      await controller.setFilter(GalleryAvailabilityFilter.notBackedUp);
+      expect(controller.totalCount.value, 1);
+      expect(controller.itemAt(0)!.availability, GalleryAvailability.deviceOnly);
+
+      await controller.setFilter(GalleryAvailabilityFilter.cloudOnly);
+      expect(controller.totalCount.value, 1);
+      expect(controller.itemAt(0)!.path, '/Photos/cloud.jpg');
+
+      await controller.setFilter(GalleryAvailabilityFilter.all);
+      expect(controller.totalCount.value, 2);
+    });
+
+    test('the summary reports backed-up and not-backed-up counts', () async {
+      final source = FakeLocalSource([
+        localMediaItem(displayName: 'device-only.jpg', size: 1, dateTakenMillis: 10000),
+      ]);
+      final controller = GalleryGridController(
+        mirror: mirror,
+        localScanService: LocalScanService(mirror, localSource: source),
+      );
+      await insertMirrorItem(db, path: '/Photos/cloud.jpg', capturedAt: 500);
+
+      await controller.open();
+      await pumpEventQueue();
+
+      expect(controller.summary.value.deviceOnly, 1);
+      expect(controller.summary.value.cloudOnly, 1);
+      expect(controller.summary.value.backedUp, 1);
+      expect(controller.summary.value.notBackedUp, 1);
+    });
+
+    // Ticket 16's mirror-seam criterion: drive a fake Local Source through
+    // each grant state and assert on what the gallery reports about
+    // coverage, rather than on any widget.
+    group('local photo-access grant (ticket 16)', () {
+      test('with no Local Source at all, the grant is unsupported', () async {
+        final controller = GalleryGridController(mirror: mirror);
+        await controller.open();
+
+        expect(controller.localPermission.value, LocalPermissionStatus.unsupported);
+      });
+
+      test('a full grant is reported as granted', () async {
+        final source =
+            FakeLocalSource([], LocalPermissionStatus.granted);
+        final controller = GalleryGridController(
+          mirror: mirror,
+          localScanService: LocalScanService(mirror, localSource: source),
+        );
+
+        await controller.open();
+        await pumpEventQueue();
+
+        expect(controller.localPermission.value, LocalPermissionStatus.granted);
+      });
+
+      test(
+          'a partial grant is reported as partial, distinct from an empty '
+          'selection meaning denied', () async {
+        final source = FakeLocalSource(
+          const [], // the user selected zero photos so far
+          LocalPermissionStatus.partial,
+        );
+        final controller = GalleryGridController(
+          mirror: mirror,
+          localScanService: LocalScanService(mirror, localSource: source),
+        );
+
+        await controller.open();
+        await pumpEventQueue();
+
+        expect(controller.localPermission.value, LocalPermissionStatus.partial,
+            reason: 'zero visible photos under a partial grant must not be '
+                'mistaken for denial - the grant, not the item count, is '
+                'the source of truth');
+      });
+
+      test('a denied grant leaves the cloud-only gallery fully intact',
+          () async {
+        await insertMirrorItem(db, path: '/Photos/cloud.jpg', capturedAt: 500);
+        final source = FakeLocalSource(const [], LocalPermissionStatus.denied);
+        final controller = GalleryGridController(
+          mirror: mirror,
+          localScanService: LocalScanService(mirror, localSource: source),
+        );
+
+        await controller.open();
+        await pumpEventQueue();
+
+        expect(controller.localPermission.value, LocalPermissionStatus.denied);
+        expect(controller.totalCount.value, 1,
+            reason: 'the cloud item is unaffected by a denied device grant');
+        expect(controller.itemAt(0)!.availability, GalleryAvailability.cloudOnly);
+      });
+
+      test(
+          'requestLocalPermission asks the source, applies the new grant and '
+          'syncs immediately', () async {
+        final source = FakeLocalSource(const [], LocalPermissionStatus.denied);
+        final controller = GalleryGridController(
+          mirror: mirror,
+          localScanService: LocalScanService(mirror, localSource: source),
+        );
+        await controller.open();
+        await pumpEventQueue();
+        expect(controller.localPermission.value, LocalPermissionStatus.denied);
+
+        source.setItems([localMediaItem(displayName: 'newly-granted.jpg')]);
+        source.nextRequestResult = LocalPermissionStatus.granted;
+
+        await controller.requestLocalPermission();
+
+        expect(source.requestCount, 1);
+        expect(controller.localPermission.value, LocalPermissionStatus.granted);
+        expect(controller.totalCount.value, 1,
+            reason: 'the newly visible photo is scanned in immediately, not '
+                'on the next unrelated sync');
+      });
+
+      test('openLocalPermissionSettings reaches the source', () async {
+        final source = FakeLocalSource(const [], LocalPermissionStatus.partial);
+        final controller = GalleryGridController(
+          mirror: mirror,
+          localScanService: LocalScanService(mirror, localSource: source),
+        );
+        await controller.open();
+        await pumpEventQueue();
+
+        await controller.openLocalPermissionSettings();
+
+        expect(source.openSettingsCount, 1);
+      });
+
+      test(
+          'a grant that widens between two syncs (picked up without a '
+          'restart) is reflected the moment the running controller re-syncs',
+          () async {
+        final source = FakeLocalSource(
+          const [], // nothing selected yet
+          LocalPermissionStatus.partial,
+        );
+        final controller = GalleryGridController(
+          mirror: mirror,
+          localScanService: LocalScanService(mirror, localSource: source),
+        );
+        await controller.open();
+        await pumpEventQueue();
+        expect(controller.localPermission.value, LocalPermissionStatus.partial);
+        expect(controller.totalCount.value, 0);
+
+        // The user left the app, granted full access in system Settings, and
+        // came back - simulated here as the fake's state changing under the
+        // same running controller instance, then the same syncNow the app
+        // calls on resume.
+        source.setPermissionStatus(LocalPermissionStatus.granted);
+        source.setItems([localMediaItem(displayName: 'was-restricted.jpg')]);
+
+        await controller.syncNow();
+
+        expect(controller.localPermission.value, LocalPermissionStatus.granted);
+        expect(controller.totalCount.value, 1);
+      });
+    });
   });
+}
+
+class _ThrowingLocalSource implements LocalSource {
+  @override
+  Future<List<LocalMediaItem>> fullScan() {
+    throw StateError('scan failed');
+  }
+
+  @override
+  Future<LocalIncrementalScanResult> incrementalScan(int sinceGeneration) {
+    throw StateError('incremental scan failed');
+  }
+
+  @override
+  Future<int> currentGeneration() {
+    throw StateError('currentGeneration failed');
+  }
+
+  @override
+  Stream<void> get changes => const Stream<void>.empty();
+
+  @override
+  Future<LocalPermissionStatus> permissionStatus() async =>
+      LocalPermissionStatus.granted;
+
+  @override
+  Future<LocalPermissionStatus> requestPermission() async =>
+      LocalPermissionStatus.granted;
+
+  @override
+  Future<void> openAppSettings() async {}
+
+  @override
+  Future<Uint8List?> loadThumbnail({
+    required String relativePath,
+    required String displayName,
+    required int width,
+    required int height,
+  }) async =>
+      null;
+
+  @override
+  Future<Uint8List?> loadOriginal({
+    required String relativePath,
+    required String displayName,
+  }) async =>
+      null;
+
+  @override
+  void dispose() {}
 }

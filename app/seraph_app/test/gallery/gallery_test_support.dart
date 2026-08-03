@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:drift/drift.dart';
@@ -5,11 +6,225 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart' hide Value;
 import 'package:oidc/oidc.dart';
+import 'package:seraph_app/src/gallery/local/local_source.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 import 'package:seraph_app/src/login/login_controller.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
 import 'package:seraph_app/src/share/share_controller.dart';
+
+/// A [LocalSource] driven entirely by the test - what ticket 15's mirror-seam
+/// coverage requirement ("a fake Local Source") asks for. [items] can be
+/// reassigned between scans, so a test can simulate a device photo appearing
+/// or disappearing across two calls to [LocalScanService.scan]
+/// (`local_scan_service.dart`).
+///
+/// [permissionStatus] can likewise be reassigned between reads, so a ticket
+/// 16 test can drive the same fake through granted, partial and denied
+/// without standing up three separate sources - see [setPermissionStatus].
+class FakeLocalSource implements LocalSource {
+  FakeLocalSource([
+    List<LocalMediaItem> items = const [],
+    LocalPermissionStatus permissionStatus = LocalPermissionStatus.granted,
+  ])  : _items = items,
+        _permissionStatus = permissionStatus;
+
+  List<LocalMediaItem> _items;
+  LocalPermissionStatus _permissionStatus;
+  int scanCount = 0;
+  int requestCount = 0;
+  int openSettingsCount = 0;
+
+  /// What the next [requestPermission] resolves to. Defaults to whatever
+  /// [setPermissionStatus] last set, mirroring the real
+  /// `AndroidLocalSource`: asking again reports the grant the platform now
+  /// holds. A test can override this independently (e.g. "still partial
+  /// after the user adds one more photo") by setting it after
+  /// [setPermissionStatus].
+  LocalPermissionStatus? nextRequestResult;
+
+  /// Replaces what the next [fullScan] returns.
+  void setItems(List<LocalMediaItem> items) => _items = items;
+
+  /// Replaces what [permissionStatus] and, unless overridden by
+  /// [nextRequestResult], [requestPermission] report.
+  void setPermissionStatus(LocalPermissionStatus status) =>
+      _permissionStatus = status;
+
+  @override
+  Future<List<LocalMediaItem>> fullScan() async {
+    scanCount++;
+    return _items;
+  }
+
+  @override
+  Future<LocalPermissionStatus> permissionStatus() async => _permissionStatus;
+
+  @override
+  Future<LocalPermissionStatus> requestPermission() async {
+    requestCount++;
+    _permissionStatus = nextRequestResult ?? _permissionStatus;
+    return _permissionStatus;
+  }
+
+  @override
+  Future<void> openAppSettings() async {
+    openSettingsCount++;
+  }
+
+  // --- Ticket 17: incremental scan and the content-observer trigger ---
+
+  /// What [currentGeneration] reports and, by default, what
+  /// [incrementalScan] advances the watermark to - a test that wants to
+  /// simulate "MediaStore's counter moved on" sets this directly.
+  int generation = 0;
+
+  /// What the next [incrementalScan] returns, regardless of `since` - a test
+  /// drives this the same way it drives [setItems] for [fullScan]. Defaults
+  /// to empty, matching a Local Source with nothing new to report.
+  List<LocalMediaItem> incrementalItems = const [];
+
+  /// Every `sinceGeneration` an [incrementalScan] call was made with, in
+  /// order - what a test asserts against to verify the fast path only ever
+  /// asked for what changed after the last watermark, never replayed the
+  /// whole thing.
+  final List<int> incrementalScanSinceCalls = [];
+  int incrementalScanCount = 0;
+
+  final StreamController<void> _changesController =
+      StreamController<void>.broadcast();
+
+  /// Simulates one content-observer notification - ticket 17's trigger only,
+  /// carrying no information about what changed. A test drives bursts by
+  /// calling this more than once in quick succession.
+  ///
+  /// A no-op once [dispose] has closed the underlying controller - mirrors
+  /// `AndroidLocalSource` never delivering a native call that arrives after
+  /// its own disposal (see [LocalSource.dispose]), so a test simulating a
+  /// stray notification racing disposal does not hit a spurious "Cannot add
+  /// new events after calling close" instead of exercising what it means to.
+  void emitChange() {
+    if (!_changesController.isClosed) {
+      _changesController.add(null);
+    }
+  }
+
+  @override
+  Stream<void> get changes => _changesController.stream;
+
+  /// How many times [dispose] has been called - what a test asserts against
+  /// to check [LocalScanService.dispose] reaches the source at all, even
+  /// though this fake (unlike `AndroidLocalSource`) has no method-channel
+  /// handler to release.
+  int disposeCount = 0;
+
+  @override
+  void dispose() {
+    disposeCount++;
+    if (!_changesController.isClosed) {
+      unawaited(_changesController.close());
+    }
+  }
+
+  @override
+  Future<int> currentGeneration() async => generation;
+
+  @override
+  Future<LocalIncrementalScanResult> incrementalScan(
+      int sinceGeneration) async {
+    incrementalScanCount++;
+    incrementalScanSinceCalls.add(sinceGeneration);
+    return LocalIncrementalScanResult(
+      items: incrementalItems,
+      generation: generation,
+    );
+  }
+
+  // --- Ticket 28: device photo previews ---
+
+  /// What [loadThumbnail] returns for a given (relativePath, displayName) -
+  /// unset (or returning null) is exactly the real contract's "cannot
+  /// currently be read" case, so a test drives both the decode-failure and
+  /// deleted-mid-render cases by simply leaving an identity out of this map,
+  /// or removing one between two calls.
+  final Map<String, Uint8List?> thumbnailBytes = {};
+
+  /// Same idea as [thumbnailBytes], for [loadOriginal].
+  final Map<String, Uint8List?> originalBytes = {};
+
+  /// Every (relativePath, displayName, width, height) [loadThumbnail] was
+  /// called with, in order - what a test asserts against to check a request
+  /// was made at tile size rather than some other size.
+  final List<(String, String, int, int)> thumbnailCalls = [];
+
+  /// Every (relativePath, displayName) [loadOriginal] was called with.
+  final List<(String, String)> originalCalls = [];
+
+  static String _localKey(String relativePath, String displayName) =>
+      '$relativePath\x00$displayName';
+
+  /// Sets what [loadThumbnail] and [loadOriginal] return for one photo -
+  /// the success case. A test simulating a photo that cannot be read simply
+  /// never calls this for that identity, or calls [forgetLocalBytes]
+  /// afterward to simulate it vanishing mid-render.
+  void setLocalBytes(
+      String relativePath, String displayName, Uint8List bytes) {
+    final key = _localKey(relativePath, displayName);
+    thumbnailBytes[key] = bytes;
+    originalBytes[key] = bytes;
+  }
+
+  /// Simulates a photo deleted (or otherwise made unreadable) between the
+  /// scan that found it and a later render: whatever [setLocalBytes] set
+  /// for this identity is withdrawn, and the next [loadThumbnail]/
+  /// [loadOriginal] call for it returns null exactly as the real
+  /// [AndroidLocalSource] would for a vanished file.
+  void forgetLocalBytes(String relativePath, String displayName) {
+    final key = _localKey(relativePath, displayName);
+    thumbnailBytes.remove(key);
+    originalBytes.remove(key);
+  }
+
+  @override
+  Future<Uint8List?> loadThumbnail({
+    required String relativePath,
+    required String displayName,
+    required int width,
+    required int height,
+  }) async {
+    thumbnailCalls.add((relativePath, displayName, width, height));
+    return thumbnailBytes[_localKey(relativePath, displayName)];
+  }
+
+  @override
+  Future<Uint8List?> loadOriginal({
+    required String relativePath,
+    required String displayName,
+  }) async {
+    originalCalls.add((relativePath, displayName));
+    return originalBytes[_localKey(relativePath, displayName)];
+  }
+}
+
+/// A [LocalMediaItem] with sensible defaults, for tests that only care about
+/// a couple of fields.
+LocalMediaItem localMediaItem({
+  String relativePath = 'DCIM/Camera/',
+  String displayName = 'IMG_0001.jpg',
+  int size = 1024,
+  int dateTakenMillis = 1000000,
+  int? dateModifiedMillis,
+  int? mediaStoreId,
+}) {
+  return LocalMediaItem(
+    relativePath: relativePath,
+    displayName: displayName,
+    size: size,
+    dateTakenMillis: dateTakenMillis,
+    dateModifiedMillis: dateModifiedMillis ?? dateTakenMillis,
+    mediaStoreId: mediaStoreId,
+  );
+}
 
 /// A 1x1 PNG - enough for a widget test to have real, decodable bytes coming
 /// back from the stubbed preview endpoint.

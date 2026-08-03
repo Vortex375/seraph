@@ -24,6 +24,17 @@ Cross-device duplicates and server-side folder reorganisation are consequently
 not detected and produce extra copies rather than being recognised. Duplicates
 waste space but lose nothing, which is the safe direction.
 
+**The merged gallery's dedup follows historical targets too.** Ticket 18 made
+gallery dedup an exact match on expected remote path plus size, derived from the
+Sync Pair. Once a pair has historical targets, the same *current target for
+writes, all targets for lookups* rule governs dedup: a photo backed up to the old
+target and still sitting there must keep reading as Synced after a retarget. If
+dedup consulted only the current target it would find nothing, fall through, and
+show every already-backed-up photo as Device only — telling the user their
+library is unprotected when it is not, and inviting them to re-upload the lot.
+This is the same lookup as reconcile, over the same set of targets, and the two
+should not grow separate notions of what counts as a match.
+
 **Blocked by:** 19
 
 **Status:** ready-for-agent
@@ -37,4 +48,7 @@ waste space but lose nothing, which is the safe direction.
 - [ ] Reinstalling after a retarget also re-uploads nothing, verified explicitly
 - [ ] Reconcile matches on path and size, using a bulk query rather than one request per photo
 - [ ] A cold reconcile of thousands of photos completes in a small number of paged calls
-- [ ] Covered at the app's mirror seam, including a wipe-and-reconcile test with a retarget in the history
+- [ ] After a retarget, a photo backed up to the old target still reads as Synced in the gallery rather than reverting to Device only
+- [ ] Gallery dedup and reconcile resolve a match over the same set of targets, rather than each carrying its own rule
+- [ ] Removing a Sync Pair leaves items that matched through it reading as Synced, since the remote copies are still there
+- [ ] Covered at the app's mirror seam, including a wipe-and-reconcile test with a retarget in the history, and an assertion on gallery Availability across that retarget

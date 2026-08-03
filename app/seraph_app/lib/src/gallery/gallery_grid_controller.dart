@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:get/get.dart';
+import 'package:seraph_app/src/gallery/local/local_scan_service.dart';
+import 'package:seraph_app/src/gallery/local/local_source.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_sync_service.dart';
@@ -30,6 +32,7 @@ class GalleryGridController extends GetxController {
   GalleryGridController({
     required this.mirror,
     this.syncService,
+    this.localScanService,
     this.pageSize = 120,
   });
 
@@ -38,6 +41,12 @@ class GalleryGridController extends GetxController {
   /// Optional: a gallery that is only ever read (a test, or a device with no
   /// server configured) works without one.
   final GallerySyncService? syncService;
+
+  /// Optional: drives one full Local Source scan into the mirror alongside
+  /// the cloud sync (ticket 15). Null on a platform with no Local Source, or
+  /// in a test that has nothing to do with device photos - the device half
+  /// of the merged gallery is then simply absent, not broken.
+  final LocalScanService? localScanService;
 
   /// How many items one mirror read pulls in. Comfortably more than a screen
   /// of tiles, so a fast flick usually lands inside an already-loaded page.
@@ -57,6 +66,28 @@ class GalleryGridController extends GetxController {
   /// Set when the last background sync failed. The gallery keeps working from
   /// the mirror regardless - this is information, not an error state.
   final Rxn<String> syncError = Rxn<String>();
+
+  /// The Availability filter currently applied to [totalCount] and every
+  /// loaded page - ticket 15's "filtered to items that are not backed up,
+  /// and to Cloud only items". Ordering is never affected by this; only
+  /// membership.
+  final Rx<GalleryAvailabilityFilter> filter =
+      Rx<GalleryAvailabilityFilter>(GalleryAvailabilityFilter.all);
+
+  /// How many items are Device only, Synced and Cloud only, over the WHOLE
+  /// gallery regardless of [filter] - the "one number to trust" summary.
+  final Rx<GalleryAvailabilitySummary> summary = Rx<GalleryAvailabilitySummary>(
+    const GalleryAvailabilitySummary(deviceOnly: 0, synced: 0, cloudOnly: 0),
+  );
+
+  /// The device photo-access grant, as of the last [reload] - ticket 16's
+  /// degraded-mode state. [LocalPermissionStatus.unsupported] when there is
+  /// no [localScanService] at all, which is every platform without a Local
+  /// Source and every test that has nothing to do with device photos; the
+  /// view shows no permission UI in that case, exactly as before this
+  /// ticket.
+  final Rx<LocalPermissionStatus> localPermission =
+      Rx<LocalPermissionStatus>(LocalPermissionStatus.unsupported);
 
   /// Bumped whenever loaded items change, so views can rebuild without the
   /// item map itself having to be observable.
@@ -79,7 +110,25 @@ class GalleryGridController extends GetxController {
   Future<void> open() async {
     await reload();
     isLoading.value = false;
+    // Ticket 17: the content-observer trigger only ever needs to be armed
+    // once per controller lifetime, and [open] - unlike [onInit] - is what
+    // both production (via [onInit]) and every mirror-seam test actually
+    // call, so this is where it lives rather than in [onInit] itself.
+    // [LocalScanService.watchForChanges] is idempotent, so a second [open]
+    // (there is not one today, but nothing here relies on that) would not
+    // double-subscribe.
+    localScanService?.watchForChanges(() => unawaited(reload()));
     unawaited(syncNow());
+  }
+
+  @override
+  void onClose() {
+    // Releases ticket 17's observer subscription with this controller's own
+    // lifecycle, so it never outlives the grid that asked for it - see
+    // [LocalScanService.stopWatchingForChanges]'s doc for why leaving this
+    // subscribed would be a leak.
+    localScanService?.stopWatchingForChanges();
+    super.onClose();
   }
 
   /// Re-reads the item count and drops every loaded page, so the next build
@@ -90,35 +139,110 @@ class GalleryGridController extends GetxController {
   /// a `refresh()` that means "rebuild the widgets bound to me" - a different
   /// thing, and one this must not quietly replace.
   Future<void> reload() async {
-    final count = await mirror.totalCount();
+    final count = await mirror.totalCount(filter: filter.value);
     _items.clear();
     _loadedPages.clear();
     _dates.clear();
     totalCount.value = count;
+    summary.value = await mirror.availabilitySummary();
+    localPermission.value = await localScanService?.permissionStatus() ??
+        LocalPermissionStatus.unsupported;
     revision.value++;
     await _loadPage(0);
   }
 
-  /// Runs one delta-feed poll and refreshes from the mirror afterwards.
+  /// Changes the Availability filter and reloads. A no-op if [value] is
+  /// already the active filter, so a repeated tap on the same filter chip
+  /// does not re-read the mirror for nothing.
+  Future<void> setFilter(GalleryAvailabilityFilter value) async {
+    if (filter.value == value) {
+      return;
+    }
+    filter.value = value;
+    await reload();
+  }
+
+  /// Runs one delta-feed poll and one Local Source scan, then refreshes from
+  /// the mirror. The two run side by side - neither waits on the other - and
+  /// each fails independently: a local scan error (permission revoked
+  /// mid-run, a platform-channel failure) must not stop the cloud sync or
+  /// crash the gallery, and vice versa.
   ///
   /// Failure is not fatal and deliberately not thrown: a gallery with no
-  /// network shows what the mirror holds, which is the whole point of there
-  /// being a mirror.
+  /// network, or no device access, shows what the mirror holds, which is the
+  /// whole point of there being a mirror.
   Future<void> syncNow() async {
     final service = syncService;
-    if (service == null || isSyncing.value) {
+    final scanner = localScanService;
+    if ((service == null && scanner == null) || isSyncing.value) {
       return;
     }
     isSyncing.value = true;
     try {
-      await service.sync();
-      syncError.value = null;
+      await Future.wait([
+        _runCloudSync(service),
+        _runLocalScan(scanner),
+      ]);
       await reload();
-    } catch (e) {
-      syncError.value = '$e';
     } finally {
       isSyncing.value = false;
     }
+  }
+
+  Future<void> _runCloudSync(GallerySyncService? service) async {
+    if (service == null) {
+      return;
+    }
+    try {
+      await service.sync();
+      syncError.value = null;
+    } catch (e) {
+      syncError.value = '$e';
+    }
+  }
+
+  Future<void> _runLocalScan(LocalScanService? scanner) async {
+    if (scanner == null) {
+      return;
+    }
+    try {
+      await scanner.scan();
+    } catch (_) {
+      // Surfacing this to the user - e.g. "can't see the rest of your
+      // photos" under a partial permission grant - is ticket 16's job (see
+      // [localPermission]). Here the mirror simply keeps whatever the last
+      // successful scan produced.
+    }
+  }
+
+  /// Asks for device photo access - or, under an existing partial grant,
+  /// for more of it (Android 14 re-opens its selected-photos picker rather
+  /// than the original dialog once some access already exists). A no-op on
+  /// a platform with no Local Source.
+  ///
+  /// The explanation the user is owed (ticket 16's first criterion) is
+  /// [GalleryView]'s job, shown before this is ever called - this method is
+  /// only the request itself. Always followed by [syncNow], so a newly
+  /// granted or widened selection shows up immediately rather than waiting
+  /// for the next sync.
+  Future<void> requestLocalPermission() async {
+    final scanner = localScanService;
+    if (scanner == null) {
+      return;
+    }
+    localPermission.value = await scanner.requestPermission();
+    await syncNow();
+  }
+
+  /// Opens the platform's settings screen for this app's permissions - the
+  /// only reliable route from a partial grant to full access on Android. A
+  /// no-op on a platform with no Local Source.
+  Future<void> openLocalPermissionSettings() async {
+    final scanner = localScanService;
+    if (scanner == null) {
+      return;
+    }
+    await scanner.openAppSettings();
   }
 
   /// The item at [index] in Capture Date order, newest first - or null if its
@@ -166,7 +290,11 @@ class GalleryGridController extends GetxController {
     _pagesInFlight.add(page);
     try {
       final offset = page * pageSize;
-      final rows = await mirror.queryItems(offset: offset, limit: pageSize);
+      final rows = await mirror.queryItems(
+        offset: offset,
+        limit: pageSize,
+        filter: filter.value,
+      );
       for (var i = 0; i < rows.length; i++) {
         _items[offset + i] = rows[i];
         _dates[offset + i] =
@@ -200,7 +328,8 @@ class GalleryGridController extends GetxController {
     }
     _datesInFlight.add(index);
     try {
-      final date = await mirror.capturedAtAtOffset(index);
+      final date =
+          await mirror.capturedAtAtOffset(index, filter: filter.value);
       if (date != null) {
         _dates[index] = date;
         revision.value++;
