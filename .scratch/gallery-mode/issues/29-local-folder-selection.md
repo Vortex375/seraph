@@ -45,7 +45,7 @@ device-side half and the name of the platform seam.
 
 **Blocked by:** 15, 16, 28
 
-**Status:** open
+**Status:** claimed
 
 - [ ] The Gallery folders screen has an *On this device* section listing the device's photo folders, each with its photo count
 - [ ] A folder can be selected and deselected, and the gallery reflects the change immediately without a rescan
