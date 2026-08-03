@@ -17,6 +17,14 @@ const String _originCloud = 'cloud';
 const String _originDevice = 'device';
 const String _originBoth = 'both';
 
+/// [SyncCursors.source] value for ticket 17's device-side incremental-scan
+/// watermark - the highest MediaStore generation already applied. Reuses the
+/// same tiny table the delta feed's [GalleryMirror.since]/[pendingCursor]
+/// live in: both are exactly "how far has this device gotten through a
+/// change feed", just two different feeds, so a second table would only
+/// duplicate [SyncCursors]' shape for no reason.
+const String localMediaSource = 'local-media';
+
 /// How a mirror query is restricted by Availability - the filter ticket 15
 /// asks for ("filtered to items that are not backed up, and to Cloud only
 /// items"), never affecting ordering, only membership.
@@ -297,64 +305,13 @@ class GalleryMirror {
       final seenIdentities = <String>{};
 
       for (final item in items) {
-        final identityKey = _localIdentityKey(
+        seenIdentities.add(_localIdentityKey(
           relativePath: item.relativePath,
           displayName: item.displayName,
           size: item.size,
           dateTakenMillis: item.dateTakenMillis,
-        );
-        seenIdentities.add(identityKey);
-
-        final existingByIdentity = await (_db.select(_db.galleryItems)
-              ..where((t) =>
-                  t.localRelativePath.equals(item.relativePath) &
-                  t.localDisplayName.equals(item.displayName) &
-                  t.localSize.equals(item.size) &
-                  t.localDateTaken.equals(item.dateTakenMillis))
-              ..limit(1))
-            .getSingleOrNull();
-        if (existingByIdentity != null) {
-          continue;
-        }
-
-        final capturedAt = _capturedAtSeconds(item);
-        final capturedAtSource = item.dateTakenMillis > 0 ? 'exif' : 'modTime';
-
-        final cloudMatch = await (_db.select(_db.galleryItems)
-              ..where((t) =>
-                  t.origin.equals(_originCloud) &
-                  t.size.equals(item.size) &
-                  t.capturedAt.equals(capturedAt))
-              ..limit(1))
-            .getSingleOrNull();
-
-        if (cloudMatch != null) {
-          await (_db.update(_db.galleryItems)
-                ..where((t) => t.id.equals(cloudMatch.id)))
-              .write(GalleryItemsCompanion(
-            origin: const Value(_originBoth),
-            localRelativePath: Value(item.relativePath),
-            localDisplayName: Value(item.displayName),
-            localSize: Value(item.size),
-            localDateTaken: Value(item.dateTakenMillis),
-            // capturedAt deliberately NOT rewritten - see applyPage's mirror
-            // case for why: the row must not move.
-          ));
-          continue;
-        }
-
-        await _db.into(_db.galleryItems).insert(
-              GalleryItemsCompanion.insert(
-                origin: const Value(_originDevice),
-                localRelativePath: Value(item.relativePath),
-                localDisplayName: Value(item.displayName),
-                localSize: Value(item.size),
-                localDateTaken: Value(item.dateTakenMillis),
-                capturedAt: capturedAt,
-                capturedAtSource: Value(capturedAtSource),
-                size: Value(item.size),
-              ),
-            );
+        ));
+        await _upsertLocalItem(item);
       }
 
       final previouslyOnDevice = await (_db.select(_db.galleryItems)
@@ -390,6 +347,113 @@ class GalleryMirror {
         }
       }
     });
+  }
+
+  /// Applies one incremental scan (ticket 17's fast path) to the mirror:
+  /// upserts [items] by local identity using exactly [applyLocalScan]'s
+  /// matching rules, then persists [generation] as the new watermark.
+  ///
+  /// **Unlike [applyLocalScan], this never removes or demotes a row.** An
+  /// incremental scan only knows what changed since the watermark - it has
+  /// no view of the rest of the library, so a row it does not mention says
+  /// nothing about whether that photo still exists. Treating "absent from
+  /// this batch" as "deleted" would be exactly the mistake the ticket's
+  /// governing rule forbids: [applyLocalScan] (the correctness anchor) is
+  /// the only place a device photo is ever removed from the mirror.
+  Future<void> applyLocalDelta(
+    List<LocalMediaItem> items, {
+    required int generation,
+  }) async {
+    await _db.transaction(() async {
+      for (final item in items) {
+        await _upsertLocalItem(item);
+      }
+      await _writeLocalGeneration(generation);
+    });
+  }
+
+  /// The device-side incremental-scan watermark (ticket 17): the highest
+  /// MediaStore generation already applied via [applyLocalDelta], or `0` if
+  /// no scan has ever primed it - the same "0 means from the beginning"
+  /// convention [since] uses for the delta feed. Persisted in [SyncCursors],
+  /// so it survives an app restart exactly as the delta feed's cursor does.
+  Future<int> localGeneration() => since(source: localMediaSource);
+
+  /// Sets the incremental-scan watermark directly, without applying any
+  /// items - used once, right after [applyLocalScan], to prime it at "now"
+  /// (see [LocalSource.currentGeneration]'s doc for why) rather than leaving
+  /// it at whatever it was before the full scan ran.
+  Future<void> primeLocalGeneration(int generation) async {
+    await _writeLocalGeneration(generation);
+  }
+
+  Future<void> _writeLocalGeneration(int generation) async {
+    await _db.into(_db.syncCursors).insertOnConflictUpdate(
+          SyncCursorsCompanion(
+            source: Value(localMediaSource),
+            since: Value(generation),
+          ),
+        );
+  }
+
+  /// The matching rules shared by [applyLocalScan] and [applyLocalDelta]:
+  /// a row already carrying [item]'s exact local identity is left alone: a
+  /// Cloud only row matching by `(size, capturedAt)` is merged onto
+  /// (Device+Cloud dedup, see [applyLocalScan]'s class doc for why this
+  /// heuristic); otherwise a new Device only row is inserted. Never deletes
+  /// or demotes anything - that determination needs the whole scan's result
+  /// set, which only [applyLocalScan] has.
+  Future<void> _upsertLocalItem(LocalMediaItem item) async {
+    final existingByIdentity = await (_db.select(_db.galleryItems)
+          ..where((t) =>
+              t.localRelativePath.equals(item.relativePath) &
+              t.localDisplayName.equals(item.displayName) &
+              t.localSize.equals(item.size) &
+              t.localDateTaken.equals(item.dateTakenMillis))
+          ..limit(1))
+        .getSingleOrNull();
+    if (existingByIdentity != null) {
+      return;
+    }
+
+    final capturedAt = _capturedAtSeconds(item);
+    final capturedAtSource = item.dateTakenMillis > 0 ? 'exif' : 'modTime';
+
+    final cloudMatch = await (_db.select(_db.galleryItems)
+          ..where((t) =>
+              t.origin.equals(_originCloud) &
+              t.size.equals(item.size) &
+              t.capturedAt.equals(capturedAt))
+          ..limit(1))
+        .getSingleOrNull();
+
+    if (cloudMatch != null) {
+      await (_db.update(_db.galleryItems)
+            ..where((t) => t.id.equals(cloudMatch.id)))
+          .write(GalleryItemsCompanion(
+        origin: const Value(_originBoth),
+        localRelativePath: Value(item.relativePath),
+        localDisplayName: Value(item.displayName),
+        localSize: Value(item.size),
+        localDateTaken: Value(item.dateTakenMillis),
+        // capturedAt deliberately NOT rewritten - see applyPage's mirror
+        // case for why: the row must not move.
+      ));
+      return;
+    }
+
+    await _db.into(_db.galleryItems).insert(
+          GalleryItemsCompanion.insert(
+            origin: const Value(_originDevice),
+            localRelativePath: Value(item.relativePath),
+            localDisplayName: Value(item.displayName),
+            localSize: Value(item.size),
+            localDateTaken: Value(item.dateTakenMillis),
+            capturedAt: capturedAt,
+            capturedAtSource: Value(capturedAtSource),
+            size: Value(item.size),
+          ),
+        );
   }
 
   static String _localIdentityKey({

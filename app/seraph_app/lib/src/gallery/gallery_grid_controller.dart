@@ -110,7 +110,25 @@ class GalleryGridController extends GetxController {
   Future<void> open() async {
     await reload();
     isLoading.value = false;
+    // Ticket 17: the content-observer trigger only ever needs to be armed
+    // once per controller lifetime, and [open] - unlike [onInit] - is what
+    // both production (via [onInit]) and every mirror-seam test actually
+    // call, so this is where it lives rather than in [onInit] itself.
+    // [LocalScanService.watchForChanges] is idempotent, so a second [open]
+    // (there is not one today, but nothing here relies on that) would not
+    // double-subscribe.
+    localScanService?.watchForChanges(() => unawaited(reload()));
     unawaited(syncNow());
+  }
+
+  @override
+  void onClose() {
+    // Releases ticket 17's observer subscription with this controller's own
+    // lifecycle, so it never outlives the grid that asked for it - see
+    // [LocalScanService.stopWatchingForChanges]'s doc for why leaving this
+    // subscribed would be a leak.
+    localScanService?.stopWatchingForChanges();
+    super.onClose();
   }
 
   /// Re-reads the item count and drops every loaded page, so the next build

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:seraph_app/src/gallery/local/local_media_item.dart';
 
@@ -10,12 +12,37 @@ import 'package:seraph_app/src/gallery/local/local_media_item.dart';
 /// correctness anchor, and normalises both dates to epoch MILLISECONDS before
 /// they cross the channel (MediaStore's own `DATE_MODIFIED` is SECONDS -
 /// `DATE_TAKEN` is milliseconds - a well-known inconsistency; the Dart side
-/// should never have to know about it).
+/// should never have to know about it). Ticket 17 adds the same projection
+/// filtered by MediaStore's `GENERATION_MODIFIED` column for the incremental
+/// scan, and a trigger-only content-observer signal delivered back over this
+/// same channel (see [changes]).
 class AndroidLocalSource implements LocalSource {
   AndroidLocalSource({MethodChannel? channel})
-      : _channel = channel ?? const MethodChannel('seraph/local_media');
+      : _channel = channel ?? const MethodChannel('seraph/local_media') {
+    // Ticket 17's content observer arrives as a native-to-Dart call on this
+    // same channel ("onLocalMediaChanged", no arguments - a trigger only,
+    // never a description of what changed). Registered eagerly in the
+    // constructor rather than lazily on first [changes] listen: an event
+    // that arrives before anyone is listening is simply dropped, which is
+    // exactly right for a signal whose own delivery must never be load-
+    // bearing for correctness (see [changes]'s doc and ticket 17's
+    // governing rule) - the next full or incremental scan reconciles
+    // regardless.
+    _channel.setMethodCallHandler(_handleNativeCall);
+  }
 
   final MethodChannel _channel;
+  final StreamController<void> _changesController =
+      StreamController<void>.broadcast();
+
+  @override
+  Stream<void> get changes => _changesController.stream;
+
+  Future<void> _handleNativeCall(MethodCall call) async {
+    if (call.method == 'onLocalMediaChanged') {
+      _changesController.add(null);
+    }
+  }
 
   @override
   Future<List<LocalMediaItem>> fullScan() async {
@@ -36,10 +63,55 @@ class AndroidLocalSource implements LocalSource {
       return const [];
     }
 
+    return _parseItems(raw);
+  }
+
+  @override
+  Future<LocalIncrementalScanResult> incrementalScan(int sinceGeneration) async {
+    Map<Object?, Object?>? raw;
+    try {
+      raw = await _channel.invokeMapMethod<Object?, Object?>(
+        'incrementalScan',
+        {'since': sinceGeneration},
+      );
+    } on MissingPluginException {
+      return LocalIncrementalScanResult(
+          items: const [], generation: sinceGeneration);
+    } on PlatformException {
+      return LocalIncrementalScanResult(
+          items: const [], generation: sinceGeneration);
+    }
+
+    if (raw == null) {
+      return LocalIncrementalScanResult(
+          items: const [], generation: sinceGeneration);
+    }
+
+    final items = _parseItems(raw['items'] as List<Object?>?);
+    final generation = (raw['generation'] as num?)?.toInt() ?? sinceGeneration;
+    return LocalIncrementalScanResult(items: items, generation: generation);
+  }
+
+  @override
+  Future<int> currentGeneration() async {
+    try {
+      final generation =
+          await _channel.invokeMethod<int>('currentGeneration');
+      return generation ?? 0;
+    } on MissingPluginException {
+      // No native handler - no generation to speak of. 0 means the next
+      // incremental scan asks for "since the beginning", which is the safe
+      // (if less efficient) default - never an error.
+      return 0;
+    } on PlatformException {
+      return 0;
+    }
+  }
+
+  List<LocalMediaItem> _parseItems(List<Object?>? raw) {
     if (raw == null) {
       return const [];
     }
-
     final items = <LocalMediaItem>[];
     for (final entry in raw) {
       if (entry is! Map) {

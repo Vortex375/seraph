@@ -2,13 +2,17 @@ package net.umbasa.seraph.app
 
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.database.ContentObserver
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.provider.MediaStore
 import android.provider.Settings
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.util.concurrent.Executors
 
@@ -16,7 +20,9 @@ import java.util.concurrent.Executors
  * The Android half of Gallery Mode's Local Source seam (ticket 15,
  * .scratch/gallery-mode/issues/15-local-source-scan-and-merged-gallery.md;
  * permission handling added by ticket 16,
- * .scratch/gallery-mode/issues/16-photo-permissions-and-partial-grant.md).
+ * .scratch/gallery-mode/issues/16-photo-permissions-and-partial-grant.md;
+ * the incremental scan and content observer added by ticket 17,
+ * .scratch/gallery-mode/issues/17-incremental-scan-and-observer.md).
  *
  * MediaStore, and the permission it sits behind, are queried ONLY in this
  * file - everything above the `seraph/local_media` channel, starting with
@@ -39,21 +45,81 @@ class MainActivity : FlutterActivity() {
     private var pendingPermissionResult: MethodChannel.Result? = null
     private val permissionRequestCode = 4201
 
+    // Retained so the content observer (registered/unregistered with
+    // onStart/onStop, below) can call back into Dart independently of
+    // whatever method call is in flight.
+    private var localMediaChannel: MethodChannel? = null
+
+    // Non-null exactly while registered with the resolver - onStart/onStop
+    // is what ticket 17 means by "registered and released with the app's
+    // lifecycle": a ContentObserver left registered past onStop would keep
+    // this Activity reachable from the resolver's observer list even while
+    // backgrounded, which is the leak the ticket's criterion rules out.
+    private var mediaObserver: ContentObserver? = null
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
-            .setMethodCallHandler { call, result ->
-                when (call.method) {
-                    "fullScan" -> handleFullScan(result)
-                    "permissionStatus" -> result.success(currentPermissionStatus())
-                    "requestPermission" -> handleRequestPermission(result)
-                    "openAppSettings" -> {
-                        openAppSettingsScreen()
-                        result.success(null)
-                    }
-                    else -> result.notImplemented()
+        val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
+        localMediaChannel = channel
+        channel.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "fullScan" -> handleFullScan(result)
+                "incrementalScan" -> handleIncrementalScan(call, result)
+                "currentGeneration" -> result.success(currentGeneration())
+                "permissionStatus" -> result.success(currentPermissionStatus())
+                "requestPermission" -> handleRequestPermission(result)
+                "openAppSettings" -> {
+                    openAppSettingsScreen()
+                    result.success(null)
                 }
+                else -> result.notImplemented()
             }
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        registerMediaObserver()
+    }
+
+    override fun onStop() {
+        unregisterMediaObserver()
+        super.onStop()
+    }
+
+    /**
+     * Ticket 17's content observer: registers for any change under the
+     * images collection and, on each one, forwards a trigger-only
+     * "onLocalMediaChanged" call to Dart - no arguments, no description of
+     * what changed. The Dart side (`AndroidLocalSource.changes`,
+     * `LocalScanService.watchForChanges`) decides what to do about it,
+     * including debouncing a burst of these into one incremental scan; this
+     * method's only job is to notice and forward.
+     */
+    private fun registerMediaObserver() {
+        if (mediaObserver != null) {
+            return
+        }
+        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) {
+                // Fire-and-forget: this is a trigger only (ticket 17's
+                // governing rule), never awaited and never allowed to block
+                // on Dart doing anything with it.
+                localMediaChannel?.invokeMethod("onLocalMediaChanged", null)
+            }
+        }
+        mediaObserver = observer
+        applicationContext.contentResolver.registerContentObserver(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            true,
+            observer,
+        )
+    }
+
+    private fun unregisterMediaObserver() {
+        val observer = mediaObserver ?: return
+        mediaObserver = null
+        applicationContext.contentResolver.unregisterContentObserver(observer)
     }
 
     private fun hasFullImageAccess(): Boolean = ContextCompat.checkSelfPermission(
@@ -161,12 +227,60 @@ class MainActivity : FlutterActivity() {
     }
 
     /**
+     * Ticket 17's fast path: the same projection as [handleFullScan], but
+     * restricted to rows MediaStore's own `GENERATION_MODIFIED` column
+     * reports as newer than `since` - available unconditionally at this
+     * app's minSdk (34, well past the API 30 floor for this column and for
+     * [currentGeneration]), so there is no version gate to write. Reports
+     * additions and modifications only; a deletion leaves no row to report a
+     * generation for; noticing one is [handleFullScan]'s job alone.
+     */
+    private fun handleIncrementalScan(call: MethodCall, result: MethodChannel.Result) {
+        if (!hasFullImageAccess() && !hasPartialImageAccess()) {
+            result.success(mapOf("items" to emptyList<Map<String, Any?>>(), "generation" to currentGeneration()))
+            return
+        }
+
+        val since = (call.argument<Number>("since") ?: 0L).toLong()
+        executor.execute {
+            try {
+                val items = queryMediaStore(sinceGeneration = since)
+                // Read AFTER the query: if a change lands between the two,
+                // the resulting watermark is still <= the true current
+                // generation, so that change is simply seen again (harmless
+                // - upserts are idempotent) on the very next incremental
+                // scan rather than silently skipped.
+                val generation = currentGeneration()
+                runOnUiThread {
+                    result.success(mapOf("items" to items, "generation" to generation))
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    result.error("SCAN_FAILED", e.message, null)
+                }
+            }
+        }
+    }
+
+    /**
+     * MediaStore's own change counter for the external volume - no query
+     * against the library at all, just a cheap platform call. Used to prime
+     * the incremental scan's watermark right after a full scan, and to
+     * report the new watermark after each incremental scan.
+     */
+    private fun currentGeneration(): Long =
+        MediaStore.getGeneration(applicationContext, MediaStore.VOLUME_EXTERNAL)
+
+    /**
      * The correctness anchor: one projection-only cursor over exactly the
      * six columns ticket 15 names - id, date taken, date modified, size,
      * relative path, display name. No joins, no per-row extra queries, so
-     * this stays sub-second for 10,000 images.
+     * this stays sub-second for 10,000 images. [sinceGeneration], when
+     * given, adds a single indexed `GENERATION_MODIFIED > ?` filter for
+     * ticket 17's incremental scan - still one query, never a per-row extra
+     * lookup.
      */
-    private fun queryMediaStore(): List<Map<String, Any?>> {
+    private fun queryMediaStore(sinceGeneration: Long? = null): List<Map<String, Any?>> {
         val projection = arrayOf(
             MediaStore.Images.Media._ID,
             MediaStore.Images.Media.DATE_TAKEN,
@@ -175,13 +289,23 @@ class MainActivity : FlutterActivity() {
             MediaStore.Images.Media.RELATIVE_PATH,
             MediaStore.Images.Media.DISPLAY_NAME,
         )
+        val selection = if (sinceGeneration != null) {
+            "${MediaStore.Images.Media.GENERATION_MODIFIED} > ?"
+        } else {
+            null
+        }
+        val selectionArgs = if (sinceGeneration != null) {
+            arrayOf(sinceGeneration.toString())
+        } else {
+            null
+        }
 
         val items = mutableListOf<Map<String, Any?>>()
         applicationContext.contentResolver.query(
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
             projection,
-            null,
-            null,
+            selection,
+            selectionArgs,
             null,
         )?.use { cursor ->
             val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)

@@ -78,6 +78,22 @@ enum LocalPermissionStatus {
   denied,
 }
 
+/// One incremental scan's answer (ticket 17): the photos changed since
+/// [LocalSource.incrementalScan]'s `sinceGeneration` argument, together with
+/// the generation to remember as the new watermark.
+///
+/// [generation] is always populated, even when [items] is empty - a change
+/// elsewhere in the library (or simply time passing with nothing to report)
+/// still advances the platform's own change counter, and the caller must
+/// persist it regardless so the next incremental scan does not re-walk the
+/// same range for nothing.
+class LocalIncrementalScanResult {
+  const LocalIncrementalScanResult({required this.items, required this.generation});
+
+  final List<LocalMediaItem> items;
+  final int generation;
+}
+
 /// The device-side half of a Sync Pair (see `CONTEXT.md`): wherever photos
 /// come from on this device, together with a relative path for each one. On
 /// Android that is external storage's shared media collection and the paths
@@ -109,6 +125,50 @@ abstract class LocalSource {
   /// partial] this still returns whatever subset the user selected - it is
   /// not empty just because access is incomplete.
   Future<List<LocalMediaItem>> fullScan();
+
+  /// Ticket 17's fast path: only the photos whose MediaStore generation
+  /// counter (Android's `GENERATION_MODIFIED`/`MediaStore.getGeneration`,
+  /// unconditionally available at this app's minimum SDK) exceeds
+  /// [sinceGeneration], together with the generation to persist as the new
+  /// watermark. Deliberately reports only additions and modifications -
+  /// never deletions: a row simply is not there to report a generation for
+  /// once it is gone, so noticing a vanished photo stays [fullScan]'s job
+  /// alone (the correctness anchor, ticket 15). A caller must never treat
+  /// this as a substitute for periodic full scans, only as a latency
+  /// shortcut on top of them.
+  ///
+  /// Returns an empty [LocalIncrementalScanResult.items] with
+  /// [LocalIncrementalScanResult.generation] equal to [sinceGeneration] when
+  /// the platform cannot currently produce photos (permission not granted,
+  /// no Local Source) - the same "behaves as if nothing happened" shape
+  /// [fullScan] uses, so a caller never has to special-case failure here
+  /// either.
+  Future<LocalIncrementalScanResult> incrementalScan(int sinceGeneration);
+
+  /// The platform's own current generation counter, with no query against
+  /// the library at all - used once, right after a [fullScan], to prime
+  /// [incrementalScan]'s watermark at "now" rather than "the beginning", so
+  /// the fast path's first run after a full scan has nothing left to
+  /// (redundantly, if harmlessly) replay.
+  Future<int> currentGeneration();
+
+  /// Ticket 17's content observer: a trigger-only, payload-free signal that
+  /// *something* in the library may have changed. Consumers must respond by
+  /// running [incrementalScan] (or, on the next periodic pass, [fullScan]) -
+  /// never by trusting the event's mere arrival as meaning any specific
+  /// photo now exists. Missed or coalesced events must only ever cost
+  /// latency: see the governing rule on [LocalSource]'s own class doc via
+  /// ticket 17
+  /// (`.scratch/gallery-mode/issues/17-incremental-scan-and-observer.md`) -
+  /// "no photo's backup status may ever depend on having received a
+  /// notification".
+  ///
+  /// A broadcast stream: nothing here guarantees only one listener, though
+  /// in practice [LocalScanService] is the only subscriber. Never emits on a
+  /// platform with no underlying observer mechanism - there simply are no
+  /// events, which is indistinguishable from (and exactly as safe as) every
+  /// notification having been missed.
+  Stream<void> get changes;
 
   /// The current grant, without prompting for it. Ticket 16's degraded-mode
   /// warning and its "everything is backed up" guard both read this rather

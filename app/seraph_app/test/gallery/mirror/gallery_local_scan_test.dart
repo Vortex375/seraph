@@ -349,4 +349,117 @@ void main() {
       expect(summary.total, 3);
     });
   });
+
+  // Ticket 17: the incremental scan's mirror-side apply, and its watermark.
+  group('GalleryMirror.applyLocalDelta', () {
+    late GalleryMirrorDatabase db;
+    late GalleryMirror mirror;
+
+    setUp(() {
+      db = GalleryMirrorDatabase(NativeDatabase.memory());
+      mirror = GalleryMirror(db);
+    });
+
+    tearDown(() async {
+      await db.close();
+    });
+
+    test('localGeneration defaults to 0 - "since the beginning", exactly '
+        'like the delta feed\'s since', () async {
+      expect(await mirror.localGeneration(), 0);
+    });
+
+    test('primeLocalGeneration sets the watermark without touching any item',
+        () async {
+      await mirror.primeLocalGeneration(999);
+
+      expect(await mirror.localGeneration(), 999);
+      expect(await mirror.totalCount(), 0);
+    });
+
+    test('upserts new photos as Device only and persists the new watermark',
+        () async {
+      await mirror.applyLocalDelta(
+        [
+          localMediaItem(
+            relativePath: 'DCIM/Camera/',
+            displayName: 'IMG_new.jpg',
+            size: 4096,
+            dateTakenMillis: 1700000000000,
+          ),
+        ],
+        generation: 42,
+      );
+
+      final items = await mirror.queryItems();
+      expect(items, hasLength(1));
+      expect(items.single.availability, GalleryAvailability.deviceOnly);
+      expect(await mirror.localGeneration(), 42);
+    });
+
+    test('dedups onto an existing cloud item exactly like applyLocalScan',
+        () async {
+      await mirror.applyPage(GalleryDeltaResponse(
+        items: [_cloudItem(path: '/Photos/e.jpg', seq: 1, capturedAt: 40000)],
+        nextCursor: '',
+        hasMore: false,
+        nextSince: 1,
+      ));
+      final beforeId = (await mirror.queryItems()).single.id;
+
+      await mirror.applyLocalDelta(
+        [
+          localMediaItem(
+            relativePath: 'DCIM/Camera/',
+            displayName: 'IMG_e.jpg',
+            size: 2048,
+            dateTakenMillis: 40000 * 1000,
+          ),
+        ],
+        generation: 1,
+      );
+
+      final items = await mirror.queryItems();
+      expect(items, hasLength(1));
+      expect(items.single.id, beforeId);
+      expect(items.single.availability, GalleryAvailability.synced);
+    });
+
+    test(
+        'never removes or demotes a row for a photo missing from the batch - '
+        'only applyLocalScan (the full scan) may do that', () async {
+      await mirror.applyLocalScan([
+        localMediaItem(
+          relativePath: 'DCIM/Camera/',
+          displayName: 'still-here.jpg',
+          size: 111,
+          dateTakenMillis: 50000,
+        ),
+      ]);
+      expect(await mirror.totalCount(), 1);
+
+      // An incremental batch that says nothing about "still-here.jpg" at
+      // all - it simply was not among what changed since the watermark.
+      await mirror.applyLocalDelta(const [], generation: 5);
+
+      expect(await mirror.totalCount(), 1,
+          reason: 'absence from an incremental batch must never be read as '
+              'deletion');
+    });
+
+    test('re-applying the same item by identity is a no-op beyond the '
+        'watermark', () async {
+      final item = localMediaItem(
+        relativePath: 'DCIM/Camera/',
+        displayName: 'repeat.jpg',
+        size: 222,
+        dateTakenMillis: 60000,
+      );
+      await mirror.applyLocalDelta([item], generation: 1);
+      await mirror.applyLocalDelta([item], generation: 2);
+
+      expect(await mirror.totalCount(), 1);
+      expect(await mirror.localGeneration(), 2);
+    });
+  });
 }

@@ -324,6 +324,62 @@ void main() {
           reason: 'the mirror still holds what it had before the failure');
     });
 
+    // Ticket 17: the content-observer trigger, wired through open()/onClose.
+    test(
+        'a content-observer notification eventually shows a newly taken '
+        'photo without a manual reload', () async {
+      final source = FakeLocalSource()
+        ..incrementalItems = [
+          localMediaItem(displayName: 'just-taken.jpg', size: 7, dateTakenMillis: 20000),
+        ];
+      final controller = GalleryGridController(
+        mirror: mirror,
+        localScanService: LocalScanService(
+          mirror,
+          localSource: source,
+          debounce: const Duration(milliseconds: 5),
+        ),
+      );
+
+      await controller.open();
+      await pumpEventQueue();
+      expect(controller.totalCount.value, 0);
+
+      source.emitChange();
+      await Future.delayed(const Duration(milliseconds: 30));
+      await pumpEventQueue();
+
+      expect(controller.totalCount.value, 1,
+          reason: 'ticket 17: taking a photo makes it appear within seconds '
+              'while the app is running');
+      expect(controller.itemAt(0)!.availability, GalleryAvailability.deviceOnly);
+    });
+
+    test('onClose releases the content-observer subscription', () async {
+      final source = FakeLocalSource();
+      final scanService = LocalScanService(
+        mirror,
+        localSource: source,
+        debounce: const Duration(milliseconds: 5),
+      );
+      final controller = GalleryGridController(
+        mirror: mirror,
+        localScanService: scanService,
+      );
+
+      await controller.open();
+      await pumpEventQueue();
+      controller.onClose();
+
+      source.emitChange();
+      await Future.delayed(const Duration(milliseconds: 30));
+      await pumpEventQueue();
+
+      expect(source.incrementalScanCount, 0,
+          reason: 'a closed controller must not leave a live subscription '
+              'behind it');
+    });
+
     test('the filter restricts totalCount and itemAt without reordering',
         () async {
       final source = FakeLocalSource([
@@ -510,6 +566,19 @@ class _ThrowingLocalSource implements LocalSource {
   Future<List<LocalMediaItem>> fullScan() {
     throw StateError('scan failed');
   }
+
+  @override
+  Future<LocalIncrementalScanResult> incrementalScan(int sinceGeneration) {
+    throw StateError('incremental scan failed');
+  }
+
+  @override
+  Future<int> currentGeneration() {
+    throw StateError('currentGeneration failed');
+  }
+
+  @override
+  Stream<void> get changes => const Stream<void>.empty();
 
   @override
   Future<LocalPermissionStatus> permissionStatus() async =>

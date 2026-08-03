@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:drift/drift.dart';
@@ -69,6 +70,50 @@ class FakeLocalSource implements LocalSource {
   @override
   Future<void> openAppSettings() async {
     openSettingsCount++;
+  }
+
+  // --- Ticket 17: incremental scan and the content-observer trigger ---
+
+  /// What [currentGeneration] reports and, by default, what
+  /// [incrementalScan] advances the watermark to - a test that wants to
+  /// simulate "MediaStore's counter moved on" sets this directly.
+  int generation = 0;
+
+  /// What the next [incrementalScan] returns, regardless of `since` - a test
+  /// drives this the same way it drives [setItems] for [fullScan]. Defaults
+  /// to empty, matching a Local Source with nothing new to report.
+  List<LocalMediaItem> incrementalItems = const [];
+
+  /// Every `sinceGeneration` an [incrementalScan] call was made with, in
+  /// order - what a test asserts against to verify the fast path only ever
+  /// asked for what changed after the last watermark, never replayed the
+  /// whole thing.
+  final List<int> incrementalScanSinceCalls = [];
+  int incrementalScanCount = 0;
+
+  final StreamController<void> _changesController =
+      StreamController<void>.broadcast();
+
+  /// Simulates one content-observer notification - ticket 17's trigger only,
+  /// carrying no information about what changed. A test drives bursts by
+  /// calling this more than once in quick succession.
+  void emitChange() => _changesController.add(null);
+
+  @override
+  Stream<void> get changes => _changesController.stream;
+
+  @override
+  Future<int> currentGeneration() async => generation;
+
+  @override
+  Future<LocalIncrementalScanResult> incrementalScan(
+      int sinceGeneration) async {
+    incrementalScanCount++;
+    incrementalScanSinceCalls.add(sinceGeneration);
+    return LocalIncrementalScanResult(
+      items: incrementalItems,
+      generation: generation,
+    );
   }
 }
 

@@ -153,5 +153,213 @@ void main() {
         expect(source.openSettingsCount, 1);
       });
     });
+
+    // Ticket 17: the generation-based incremental scan and its watermark.
+    group('incremental scan', () {
+      test('scan() primes the watermark at the source\'s current generation',
+          () async {
+        final source = FakeLocalSource()..generation = 500;
+        final service = LocalScanService(mirror, localSource: source);
+
+        await service.scan();
+
+        expect(await mirror.localGeneration(), 500);
+      });
+
+      test(
+          'incrementalScan() reads the persisted watermark and applies only '
+          'what the source reports changed since it', () async {
+        final source = FakeLocalSource()..generation = 100;
+        final service = LocalScanService(mirror, localSource: source);
+        await service.scan(); // primes the watermark at 100
+
+        source.generation = 250;
+        source.incrementalItems = [
+          localMediaItem(
+              displayName: 'new.jpg', size: 999, dateTakenMillis: 5000000),
+        ];
+
+        await service.incrementalScan();
+
+        expect(source.incrementalScanSinceCalls, [100],
+            reason: 'the fast path must ask for what changed since the last '
+                'watermark, not replay the whole library');
+        final items = await mirror.queryItems();
+        expect(items, hasLength(1));
+        expect(
+            items.single.availability, GalleryAvailability.deviceOnly);
+        expect(await mirror.localGeneration(), 250);
+      });
+
+      test(
+          'incrementalScan() never removes a row missing from its batch - '
+          'only a full scan may do that', () async {
+        final source = FakeLocalSource([
+          localMediaItem(displayName: 'a.jpg', size: 1, dateTakenMillis: 1000),
+        ]);
+        final service = LocalScanService(mirror, localSource: source);
+        await service.scan();
+        expect(await mirror.totalCount(), 1);
+
+        // Nothing in this incremental batch mentions "a.jpg" at all - a
+        // real incremental scan reporting zero changes since the watermark.
+        source.incrementalItems = const [];
+        await service.incrementalScan();
+
+        expect(await mirror.totalCount(), 1,
+            reason: 'an incremental scan must never delete what it did not '
+                'even look at - deletion detection needs the whole '
+                "library's current state, which only a full scan has");
+      });
+
+      test(
+          'the watermark survives across a new LocalScanService instance '
+          'sharing the same mirror - i.e. an app restart', () async {
+        final source = FakeLocalSource()..generation = 777;
+        final firstRun = LocalScanService(mirror, localSource: source);
+        await firstRun.scan();
+
+        // A brand new service instance, as if the app had been killed and
+        // relaunched - only the mirror's own database (never in-process
+        // state) can be what the second instance resumes from.
+        final secondRun = LocalScanService(mirror, localSource: source);
+        await secondRun.incrementalScan();
+
+        expect(source.incrementalScanSinceCalls, [777]);
+      });
+
+      test(
+          'a photo added while the app was not running is picked up by the '
+          'next full scan, independent of the incremental path entirely',
+          () async {
+        final source = FakeLocalSource();
+        final service = LocalScanService(mirror, localSource: source);
+        await service.scan();
+        expect(await mirror.totalCount(), 0);
+
+        // The photo "appeared" while nothing was scanning - a fresh
+        // fullScan() result is all the next scan() (an app-start scan) has
+        // to go on, exactly like a cold app launch.
+        source.setItems([
+          localMediaItem(
+              displayName: 'while-closed.jpg', size: 654, dateTakenMillis: 6000),
+        ]);
+        await service.scan();
+
+        expect(await mirror.totalCount(), 1);
+      });
+    });
+
+    // Ticket 17: the content-observer trigger and its debouncing.
+    group('content-observer trigger', () {
+      test(
+          'a change notification runs a debounced incremental scan and '
+          'notifies the caller once the mirror has been updated', () async {
+        final source = FakeLocalSource()
+          ..incrementalItems = [
+            localMediaItem(
+                displayName: 'burst.jpg', size: 42, dateTakenMillis: 9000),
+          ];
+        final service = LocalScanService(
+          mirror,
+          localSource: source,
+          debounce: const Duration(milliseconds: 5),
+        );
+        var notified = 0;
+        service.watchForChanges(() => notified++);
+
+        source.emitChange();
+        await Future.delayed(const Duration(milliseconds: 30));
+        await pumpEventQueue();
+
+        expect(source.incrementalScanCount, 1);
+        expect(notified, 1);
+        expect(await mirror.totalCount(), 1,
+            reason: 'this is what "taking a photo appears within seconds" '
+                'means at this seam: a trigger leads to an applied scan');
+      });
+
+      test(
+          'a burst of many rapid notifications collapses into a single '
+          'incremental scan, not one per notification', () async {
+        final source = FakeLocalSource();
+        final service = LocalScanService(
+          mirror,
+          localSource: source,
+          debounce: const Duration(milliseconds: 20),
+        );
+        service.watchForChanges(() {});
+
+        for (var i = 0; i < 20; i++) {
+          source.emitChange();
+        }
+        await Future.delayed(const Duration(milliseconds: 80));
+        await pumpEventQueue();
+
+        expect(source.incrementalScanCount, 1,
+            reason: 'a burst of notifications must not turn into a storm of '
+                'scans');
+      });
+
+      test(
+          'stopWatchingForChanges cancels the subscription - no scan runs '
+          'for a notification delivered afterwards', () async {
+        final source = FakeLocalSource();
+        final service = LocalScanService(
+          mirror,
+          localSource: source,
+          debounce: const Duration(milliseconds: 5),
+        );
+        service.watchForChanges(() {});
+        service.stopWatchingForChanges();
+
+        source.emitChange();
+        await Future.delayed(const Duration(milliseconds: 20));
+        await pumpEventQueue();
+
+        expect(source.incrementalScanCount, 0,
+            reason: 'a released subscription must not leak a live scan '
+                'trigger past it');
+      });
+
+      test(
+          'suppressing every content-observer notification still leaves the '
+          'gallery eventually correct - latency is the only casualty, never '
+          'correctness', () async {
+        final source = FakeLocalSource();
+        final service = LocalScanService(
+          mirror,
+          localSource: source,
+          debounce: const Duration(milliseconds: 5),
+        );
+
+        // The governing rule, under direct test: watchForChanges() is never
+        // called at all, so `source.changes` has no subscriber and every
+        // notification the platform could ever send is silently dropped -
+        // this simulates "not a single content-observer notification ever
+        // arrives" as literally as a test can. The only way this photo can
+        // reach the mirror is an explicit scan, exactly what a periodic or
+        // app-start full scan is - never the observer.
+        source.setItems([
+          localMediaItem(
+              displayName: 'never-notified.jpg',
+              size: 321,
+              dateTakenMillis: 8000),
+        ]);
+
+        expect(await mirror.totalCount(), 0,
+            reason: 'nothing has run yet, and the fake never emits a change '
+                'notification on its own');
+
+        await service.scan();
+
+        expect(await mirror.totalCount(), 1,
+            reason: 'a full scan alone - with zero notifications ever '
+                'delivered, ever - must still make the gallery correct');
+        expect(source.incrementalScanCount, 0,
+            reason: 'correctness here came entirely from scan(), not from '
+                'any notification-driven path');
+      });
+    });
   });
 }

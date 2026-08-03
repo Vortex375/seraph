@@ -1,19 +1,36 @@
+import 'dart:async';
+
 import 'package:seraph_app/src/gallery/local/local_source.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 
 /// Drives one full Local Source scan into the mirror - the device-side twin
 /// of `GallerySyncService`, which does the same job for the cloud delta feed.
 ///
-/// This is the full media-store scan the ticket calls the correctness
-/// anchor, run at app start and again whenever [GalleryGridController]
-/// (`gallery_grid_controller.dart`) refreshes the gallery. It is
-/// deliberately the ONLY device change-detection mechanism this ticket
-/// builds: the generation-based incremental scan and the content observer
-/// (design decision D9, tiers 2 and 3) are ticket 17's faster paths and must
-/// not be anticipated here - correctness must never depend on them.
+/// The full media-store scan is ticket 15's correctness anchor, run at app
+/// start and again whenever [GalleryGridController]
+/// (`gallery_grid_controller.dart`) refreshes the gallery, and it stays
+/// exactly that: unconditional, periodic, never skipped. Ticket 17 adds two
+/// faster paths on top, both strictly latency shortcuts that a full scan can
+/// always outlive:
+///
+/// - [incrementalScan] - the generation-based fast path, applying only what
+///   changed since the watermark [GalleryMirror.localGeneration] holds.
+/// - [watchForChanges] - subscribes to the Local Source's content-observer
+///   trigger and runs a debounced [incrementalScan] in response.
+///
+/// **Neither is ever the only thing standing between a photo and its backup
+/// status.** [watchForChanges]'s callback and [incrementalScan] itself can
+/// both fail silently, be suppressed entirely, or simply never run - the
+/// governing rule this ticket exists to uphold is that none of that can ever
+/// make the gallery wrong, only slower to catch up, because [scan] keeps
+/// running regardless.
 class LocalScanService {
-  LocalScanService(this.mirror, {LocalSource? localSource})
-      : localSource = localSource ?? createLocalSource();
+  LocalScanService(
+    this.mirror, {
+    LocalSource? localSource,
+    Duration debounce = const Duration(milliseconds: 750),
+  })  : localSource = localSource ?? createLocalSource(),
+        _debounce = debounce;
 
   final GalleryMirror mirror;
 
@@ -24,10 +41,32 @@ class LocalScanService {
   /// callers need to branch on.
   final LocalSource? localSource;
 
+  /// How long [watchForChanges] waits after a trigger before actually
+  /// running [incrementalScan] - long enough that a burst of rapid
+  /// notifications (burst-mode photography, a batch copy from another app)
+  /// collapses into one scan rather than one per notification (ticket 17's
+  /// "a burst of changes does not trigger a storm of scans"), short enough
+  /// that "appears within seconds" still holds. Overridable for tests, which
+  /// would otherwise have to wait out a debounce sized for production.
+  final Duration _debounce;
+
+  StreamSubscription<void>? _changesSubscription;
+  Timer? _debounceTimer;
+  void Function()? _onChanged;
+  bool _scanRunning = false;
+  bool _scanPending = false;
+
   /// Runs one full scan and applies it to the mirror. Safe to call
   /// repeatedly - a scan that finds nothing new does nothing, and a photo
   /// already known by its local identity is left alone (see
   /// [GalleryMirror.applyLocalScan]).
+  ///
+  /// Also primes [incrementalScan]'s watermark at the Local Source's current
+  /// generation, so the fast path's very first run after this has something
+  /// to be incremental about rather than replaying everything this full scan
+  /// just saw. Priming is one-directional: a full scan never reads the
+  /// watermark, so nothing about the incremental-scan/observer machinery -
+  /// stale, wrong, or entirely absent - can affect what a full scan applies.
   Future<void> scan() async {
     final source = localSource;
     if (source == null) {
@@ -35,6 +74,92 @@ class LocalScanService {
     }
     final items = await source.fullScan();
     await mirror.applyLocalScan(items);
+    final generation = await source.currentGeneration();
+    await mirror.primeLocalGeneration(generation);
+  }
+
+  /// Ticket 17's fast path: applies only the photos changed since
+  /// [GalleryMirror.localGeneration], without ever removing a row - see
+  /// [GalleryMirror.applyLocalDelta]. A photo this misses (a deletion, or a
+  /// change that raced a failed native call) is caught by the next [scan],
+  /// never left permanently wrong - only later than it could have been.
+  ///
+  /// A no-op with no Local Source.
+  Future<void> incrementalScan() async {
+    final source = localSource;
+    if (source == null) {
+      return;
+    }
+    final since = await mirror.localGeneration();
+    final result = await source.incrementalScan(since);
+    await mirror.applyLocalDelta(result.items, generation: result.generation);
+  }
+
+  /// Subscribes to the Local Source's content-observer trigger and runs a
+  /// debounced [incrementalScan] in response, calling [onChanged] once the
+  /// mirror has actually been updated - the caller's cue to re-read it (e.g.
+  /// [GalleryGridController.reload]).
+  ///
+  /// A trigger that arrives while a scan from an earlier trigger is still
+  /// running is not dropped: it schedules exactly one more scan once the
+  /// current one finishes, so a burst's tail end is never lost, only
+  /// coalesced - still just one extra scan, never one per trigger.
+  ///
+  /// A no-op with no Local Source. Idempotent: calling this again while
+  /// already subscribed only updates [onChanged], so a caller recreated by
+  /// GetX's `fenix` mechanism (see `GalleryGridController`) does not have to
+  /// track whether it already subscribed.
+  void watchForChanges(void Function() onChanged) {
+    final source = localSource;
+    if (source == null) {
+      return;
+    }
+    _onChanged = onChanged;
+    _changesSubscription ??= source.changes.listen((_) => _scheduleScan());
+  }
+
+  /// Cancels whatever [watchForChanges] set up - the subscription and any
+  /// pending debounce timer - so nothing keeps the Local Source's stream
+  /// alive past this point. Must be called when the caller no longer needs
+  /// live updates (e.g. [GalleryGridController.onClose]) so the observer
+  /// trigger is released with the app's lifecycle rather than leaking past
+  /// it. Safe to call even if [watchForChanges] was never called.
+  void stopWatchingForChanges() {
+    _debounceTimer?.cancel();
+    _debounceTimer = null;
+    unawaited(_changesSubscription?.cancel());
+    _changesSubscription = null;
+  }
+
+  void _scheduleScan() {
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(_debounce, () {
+      unawaited(_runDebouncedScan());
+    });
+  }
+
+  Future<void> _runDebouncedScan() async {
+    if (_scanRunning) {
+      _scanPending = true;
+      return;
+    }
+    _scanRunning = true;
+    try {
+      await incrementalScan();
+      _onChanged?.call();
+    } catch (_) {
+      // Same failure-isolation policy as GalleryGridController's cloud/full-
+      // scan handling: a trigger-only mechanism failing must never surface
+      // as an error to the caller. The mirror simply keeps whatever the last
+      // successful scan produced, and the next periodic full scan remains
+      // the correctness backstop regardless.
+    } finally {
+      _scanRunning = false;
+      if (_scanPending) {
+        _scanPending = false;
+        unawaited(_runDebouncedScan());
+      }
+    }
   }
 
   /// The device photo-access grant right now, without prompting for it -
