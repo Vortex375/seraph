@@ -753,3 +753,76 @@ entries in that list are still open.
 The open questions above were carried into the spec rather than resolved. The
 `Chtimes` aside in D5 and the format, video, HEIC and iOS items remain out of
 scope by the same reasoning recorded here.
+
+---
+
+## Postscript — 2026-08-03
+
+Phase 2 shipped and met a gap the original conversation did not consider: the
+cloud half of the gallery is chosen folder by folder, and the device half is
+all-or-nothing.
+
+## D21 — Local Folders: a device-side display filter
+
+**Decided.** The user chooses which folders on this device feed Gallery Mode.
+The choice never leaves the phone, and it is a **filter**, never an import
+boundary.
+
+The gap it closes is the one D8 and story 21 already close on the cloud side. A
+phone's media store is not a photo library — it is camera photos alongside
+WhatsApp downloads, screenshots, sticker caches, map tiles and app artwork.
+Ticket 15 imported all of it, so the very pollution the gallery folders exist to
+prevent arrived through the other half of the merged view.
+
+**Stored on the device, like Sync Pairs (D4), and for D4's own reason.** A Local
+Folder names a path that exists on exactly one phone; a second device has
+different folders, so there is nothing for a second device to usefully read.
+D4's decisive argument for putting Gallery Source Folders server-side — the
+thumbnail pre-generator is a backend consumer and cannot read a setting stored on
+a phone — has no counterpart here: nothing on the server ever needs to know which
+device folders a user browses.
+
+**Filter at read time, not at scan time.** The full media-store scan stays
+unfiltered — D9's correctness anchor does not get to depend on a display
+preference — and the mirror keeps a complete row set. The selection is applied in
+the mirror's read path alone.
+
+Three things follow, and each is a reason:
+
+- Changing the selection is **instant and reversible**: no rescan, no re-merge,
+  no dedup rerun. The same property story 25 asks for on the cloud side.
+- The folder list comes **free from rows already in the mirror**, so enumerating
+  the device's folders needs no new native call and no second scan. Under a
+  partial grant it is exactly as complete as the grant is, which is the honest
+  answer.
+- Dedup, local identity matching, and — in phase 3 — the upload queue and
+  verification keep seeing the **whole** device library. A display preference can
+  never make the backup engine wrong, because the backup engine never reads it.
+
+Rejected: filtering at import. It makes deselecting and reselecting a folder a
+full rescan, makes the folder list depend on the very data the filter excludes
+(a deselected folder becomes unenumerable and therefore unrecoverable), and puts
+a display preference on the code path that decides what gets backed up. That
+last one is the disqualifying objection: nothing about which folders a user cares
+to *look* at should be able to reach the answer to "is this photo safe".
+
+**One rule for what the filter does.** An unselected Local Folder makes a row's
+device copy invisible; **the row then behaves exactly as if the device copy did
+not exist.** A Device only photo in an unselected folder leaves the gallery. A
+Synced photo whose device copy is in an unselected folder displays as Cloud only,
+badges as Cloud only, and counts as Cloud only. This is one predicate applied
+once, with display, Availability, the availability filter and the backed-up
+counts all reading its result — so they cannot drift into disagreeing with each
+other, which they would if each applied the selection in its own way.
+
+**Default is the camera folders**, `DCIM/**`, seeded once on first run with
+everything else off. Neither alternative survives contact with a real phone:
+defaulting to everything reproduces exactly the pollution this decision exists to
+fix, and defaulting to nothing makes a fresh install's gallery look broken.
+A folder that appears later is off unless it is under `DCIM`. The seed is a
+heuristic and is recorded as one — it is applied **once**, and the user's own
+selection is never re-derived from it afterwards.
+
+**Phase 3 constraint:** a Sync Pair's Local Source is implicitly selected.
+Backing a folder up while hiding it from the gallery is not a coherent state, and
+this is story 48's rule from the other direction.
