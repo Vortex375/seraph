@@ -7,11 +7,13 @@ import 'package:seraph_app/src/gallery/gallery_grid_controller.dart';
 import 'package:seraph_app/src/gallery/gallery_models.dart';
 import 'package:seraph_app/src/gallery/gallery_service.dart';
 import 'package:seraph_app/src/gallery/local/local_scan_service.dart';
+import 'package:seraph_app/src/gallery/local_folder_picker_dialog.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 
 /// Which folders feed Gallery Mode - *In Seraph* (what this screen has always
-/// shown) and, on a device with a Local Source, *On this device* (ticket 29):
-/// which of the phone's own photo folders are a Local Folder.
+/// shown), on a device with a Local Source, *On this device* (ticket 29):
+/// which of the phone's own photo folders are a Local Folder, and (ticket
+/// 18) *Sync Pairs*: which device folder uploads to which Seraph folder.
 ///
 /// This used to be all Gallery Mode had; now that the grid itself exists,
 /// choosing the folders is configuration and lives behind the gallery rather
@@ -48,6 +50,7 @@ class _GallerySourceFoldersViewState extends State<GallerySourceFoldersView> {
 
   List<GallerySourceFolder> _folders = [];
   List<LocalFolder> _localFolders = [];
+  List<SyncPair> _syncPairs = [];
   bool _isLoading = true;
   String? _error;
 
@@ -77,6 +80,7 @@ class _GallerySourceFoldersViewState extends State<GallerySourceFoldersView> {
       _folders = await galleryService.listSourceFolders();
       if (_hasLocalSource) {
         _localFolders = await _mirror!.listLocalFolders();
+        _syncPairs = await _mirror.listSyncPairs();
       }
     } catch (e) {
       _error = 'Failed to load gallery folders: $e';
@@ -175,6 +179,98 @@ class _GallerySourceFoldersViewState extends State<GallerySourceFoldersView> {
     }
     await _loadFolders();
     _resyncGallery();
+  }
+
+  /// Ticket 18: picks a device folder (from what the mirror already knows -
+  /// [LocalFolderPickerDialog]), then a Seraph folder (the same
+  /// [FolderPickerDialog] *In Seraph* uses), adds the Seraph side as a
+  /// Gallery Source Folder, then creates the Sync Pair itself.
+  ///
+  /// The Gallery Source Folder call runs first: it is idempotent and
+  /// harmless to leave in place even if the pair creation that follows it
+  /// fails, whereas creating a local Sync Pair the server side never learned
+  /// about would be a state this screen could not represent honestly.
+  Future<void> _addSyncPair() async {
+    final mirror = _mirror;
+    if (mirror == null) {
+      return;
+    }
+
+    final localFolderPath = await showDialog<String>(
+      context: context,
+      builder: (context) => LocalFolderPickerDialog(mirror: mirror),
+    );
+    if (localFolderPath == null || !mounted) {
+      return;
+    }
+
+    final picked = await showDialog<PickedFolder>(
+      context: context,
+      builder: (context) => const FolderPickerDialog(),
+    );
+    if (picked == null) {
+      return;
+    }
+
+    try {
+      await galleryService.addSourceFolder(picked.spaceProviderId, picked.path);
+    } catch (e) {
+      _showMessage('Failed to add folder: $e');
+      return;
+    }
+
+    try {
+      await mirror.createSyncPair(
+        localFolderPath: localFolderPath,
+        spaceProviderId: picked.spaceProviderId,
+        path: picked.path,
+      );
+    } on SyncPairConflictException {
+      _showMessage(
+          '$localFolderPath is already used by another Sync Pair - a '
+          'device folder can only back up to one place.');
+      return;
+    } catch (e) {
+      _showMessage('Failed to create Sync Pair: $e');
+      return;
+    }
+
+    await _loadFolders();
+    _resyncGallery();
+  }
+
+  Future<void> _removeSyncPair(SyncPair pair) async {
+    final mirror = _mirror;
+    if (mirror == null) {
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove Sync Pair?'),
+        content: Text(
+            '${pair.localFolderPath} will stop uploading to ${pair.seraphDisplayPath}. '
+            'Photos already there stay put, and ${pair.seraphDisplayPath} stays '
+            'in Gallery folders.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) {
+      return;
+    }
+
+    await mirror.removeSyncPair(pair.id);
+    await _loadFolders();
   }
 
   /// Triggers a genuine File Provider re-scan of [folder] and starts polling
@@ -328,20 +424,49 @@ class _GallerySourceFoldersViewState extends State<GallerySourceFoldersView> {
             )
           else
             ..._localFolders.map(_buildLocalFolderTile),
+          const Divider(height: 32),
+          // Ticket 18: a third section, present only where the device
+          // section itself is - "Configuration is unavailable on platforms
+          // without a Local Source implementation, rather than present and
+          // broken" is the same criterion for both.
+          _sectionHeader('Sync Pairs', onAdd: _addSyncPair),
+          if (_syncPairs.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Text(
+                'No Sync Pairs yet.\n\n'
+                'Add one to back up a device folder to Seraph.',
+                textAlign: TextAlign.center,
+              ),
+            )
+          else
+            ..._syncPairs.map(_buildSyncPairTile),
         ],
       ],
     );
   }
 
-  Widget _sectionHeader(String title) {
+  Widget _sectionHeader(String title, {VoidCallback? onAdd}) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Text(
-        title,
-        style: Theme.of(context)
-            .textTheme
-            .titleSmall
-            ?.copyWith(fontWeight: FontWeight.bold),
+      padding: const EdgeInsets.fromLTRB(16, 16, 8, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: Theme.of(context)
+                  .textTheme
+                  .titleSmall
+                  ?.copyWith(fontWeight: FontWeight.bold),
+            ),
+          ),
+          if (onAdd != null)
+            IconButton(
+              icon: const Icon(Icons.add_circle_outline),
+              tooltip: 'Add Sync Pair',
+              onPressed: onAdd,
+            ),
+        ],
       ),
     );
   }
@@ -394,6 +519,24 @@ class _GallerySourceFoldersViewState extends State<GallerySourceFoldersView> {
       trailing: Switch(
         value: folder.selected,
         onChanged: (value) => _toggleLocalFolder(folder, value),
+      ),
+    );
+  }
+
+  /// One Sync Pair (ticket 18): what it maps to - the device folder and the
+  /// Seraph folder it uploads to - and how many photos it currently covers,
+  /// per the acceptance criterion ("the pairs list shows what each pair maps
+  /// to and how many photos it covers").
+  Widget _buildSyncPairTile(SyncPair pair) {
+    return ListTile(
+      leading: const Icon(Icons.sync_alt),
+      title: Text('${pair.localFolderPath} -> ${pair.seraphDisplayPath}'),
+      subtitle: Text(
+          '${pair.photoCount} photo${pair.photoCount == 1 ? '' : 's'} covered'),
+      trailing: IconButton(
+        icon: const Icon(Icons.delete_outline),
+        tooltip: 'Remove Sync Pair',
+        onPressed: () => _removeSyncPair(pair),
       ),
     );
   }

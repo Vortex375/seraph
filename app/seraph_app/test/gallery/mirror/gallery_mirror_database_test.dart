@@ -215,6 +215,106 @@ void main() {
       expect(written.single.selected, isFalse);
     });
 
+    test(
+        'an app upgrade from v5 creates the ticket-18 Sync Pairs table '
+        'without losing existing rows, the sync cursor, or the Local Folder '
+        'selection table', () async {
+      final file = File(p.join(tempDir.path, 'mirror.sqlite'));
+
+      // A v5 database - everything through ticket 29's Local Folder
+      // selection table exists, but ticket 18's Sync Pairs table does not.
+      final v5Raw = sqlite3.sqlite3.open(file.path);
+      v5Raw.execute('''
+        CREATE TABLE gallery_items (
+          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+          origin TEXT NOT NULL DEFAULT 'cloud',
+          provider_id TEXT NULL,
+          path TEXT NULL,
+          seq INTEGER NULL,
+          local_relative_path TEXT NULL,
+          local_display_name TEXT NULL,
+          local_size INTEGER NULL,
+          local_date_taken INTEGER NULL,
+          captured_at INTEGER NOT NULL,
+          captured_at_source TEXT NOT NULL DEFAULT '',
+          width INTEGER NOT NULL DEFAULT 0,
+          height INTEGER NOT NULL DEFAULT 0,
+          orientation INTEGER NOT NULL DEFAULT 0,
+          size INTEGER NOT NULL DEFAULT 0,
+          mime TEXT NOT NULL DEFAULT '',
+          unsupported TEXT NOT NULL DEFAULT '',
+          metadata_pending INTEGER NOT NULL DEFAULT 0,
+          UNIQUE(provider_id, path)
+        );
+      ''');
+      v5Raw.execute('''
+        CREATE TABLE sync_cursors (
+          source TEXT NOT NULL PRIMARY KEY,
+          since INTEGER NOT NULL DEFAULT 0,
+          pending_cursor TEXT NULL
+        );
+      ''');
+      v5Raw.execute('''
+        CREATE TABLE cached_thumbnails (
+          provider_id TEXT NOT NULL,
+          path TEXT NOT NULL,
+          size INTEGER NOT NULL,
+          bytes BLOB NOT NULL,
+          fetched_at INTEGER NOT NULL,
+          PRIMARY KEY (provider_id, path, size)
+        );
+      ''');
+      v5Raw.execute('''
+        CREATE TABLE local_folder_selections (
+          folder_path TEXT NOT NULL PRIMARY KEY,
+          selected INTEGER NOT NULL
+        );
+      ''');
+      v5Raw.execute(
+        "INSERT INTO gallery_items (origin, provider_id, path, seq, captured_at) "
+        "VALUES ('cloud', 'space-a', '/Photos/a.jpg', 5, 1000);",
+      );
+      v5Raw.execute(
+        "INSERT INTO sync_cursors (source, since) VALUES ('server', 5);",
+      );
+      v5Raw.execute(
+        "INSERT INTO local_folder_selections (folder_path, selected) "
+        "VALUES ('DCIM/Camera/', 1);",
+      );
+      v5Raw.execute('PRAGMA user_version = 5;');
+      v5Raw.close();
+
+      final db = GalleryMirrorDatabase(NativeDatabase(file));
+      addTearDown(db.close);
+
+      // Everything that existed before the upgrade survived.
+      final items = await db.select(db.galleryItems).get();
+      expect(items, hasLength(1));
+      expect(items.single.path, '/Photos/a.jpg');
+      final cursor = await (db.select(db.syncCursors)
+            ..where((t) => t.source.equals('server')))
+          .getSingle();
+      expect(cursor.since, 5);
+      final selections = await db.select(db.localFolderSelections).get();
+      expect(selections, hasLength(1));
+      expect(selections.single.selected, isTrue);
+
+      // The new Sync Pairs table exists and is usable.
+      final pairs = await db.select(db.syncPairs).get();
+      expect(pairs, isEmpty);
+      await db.into(db.syncPairs).insert(
+            SyncPairsCompanion.insert(
+              localFolderPath: 'DCIM/Camera/',
+              spaceProviderId: 'space-a',
+              path: '/Photos/Phone',
+            ),
+          );
+      final written = await db.select(db.syncPairs).get();
+      expect(written, hasLength(1));
+      expect(written.single.localFolderPath, 'DCIM/Camera/');
+      expect(written.single.path, '/Photos/Phone');
+    });
+
     test('a fresh install creates the current schema directly via onCreate',
         () async {
       final db = GalleryMirrorDatabase(NativeDatabase.memory());

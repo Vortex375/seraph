@@ -23,8 +23,13 @@ part 'gallery_mirror_database.g.dart';
 /// opened with no network still shows the thumbnails it has already seen.
 /// Neither is a second source of gallery items - the one-table constraint is
 /// about what the UI list is built from, and that is [GalleryItems] alone.
-@DriftDatabase(
-    tables: [GalleryItems, SyncCursors, CachedThumbnails, LocalFolderSelections])
+@DriftDatabase(tables: [
+  GalleryItems,
+  SyncCursors,
+  CachedThumbnails,
+  LocalFolderSelections,
+  SyncPairs
+])
 class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
   GalleryMirrorDatabase(super.e);
 
@@ -37,7 +42,7 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
   }
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -87,6 +92,16 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
             // still gets this table, which a second, competing v4 would
             // have silently denied it.
             await m.createTable(localFolderSelections);
+          }
+          if (from < 6) {
+            // v6 (ticket 18) added Sync Pairs. A fresh, empty table - a
+            // device that already has Device only or Cloud only rows keeps
+            // them exactly as they are; only a subsequent
+            // [GalleryMirror.createSyncPair] call (never this migration
+            // itself) ever merges or re-labels anything. See the class doc
+            // on [SyncPairs] for why the table is the local-only half of
+            // Sync Pair configuration.
+            await m.createTable(syncPairs);
           }
         },
         beforeOpen: (details) async {
@@ -304,4 +319,59 @@ class LocalFolderSelections extends Table {
 
   @override
   Set<Column> get primaryKey => {folderPath};
+}
+
+/// Ticket 18's Sync Pairs: one row per configured mapping from a Local
+/// Source on this device to a folder in Seraph. Everything under the local
+/// folder is meant to be uploaded there, relative path preserved (ticket 19,
+/// not this one - see [GalleryMirror.createSyncPair]'s "no network" note).
+///
+/// **Local, not server-side** (CONTEXT.md's Sync Pair entry, D4/D18 in
+/// `docs/gallery-mode-design-notes.md`): a Sync Pair references a Local
+/// Source that exists on exactly one device, so losing this table to a data
+/// wipe costs a reconfiguration, never data - unlike Gallery Source Folders,
+/// which live server-side because the thumbnail pre-generator needs to read
+/// them and cannot reach into a phone's local database.
+///
+/// [localFolderPath] is unique: ticket 18's rule that **a Local Source may
+/// appear in at most one Sync Pair**, enforced by [GalleryMirror.
+/// createSyncPair] checking for overlap (not just exact-match) BEFORE this
+/// constraint would ever fire, so the error a user sees is the friendly
+/// [SyncPairConflictException] rather than a raw unique-constraint failure.
+/// The column-level constraint is a backstop against a bug in that check,
+/// not the primary defence.
+///
+/// Named `SyncPairRow` rather than drift's default `SyncPair` (see
+/// [DataClassName] below) because `SyncPair` is already
+/// [GalleryMirror]'s own public, richer model - id plus both sides plus
+/// [SyncPair.photoCount] - which callers outside the mirror actually use.
+@DataClassName('SyncPairRow')
+class SyncPairs extends Table {
+  IntColumn get id => integer().autoIncrement()();
+
+  /// The device-side Local Source - on Android, MediaStore's `RELATIVE_PATH`
+  /// for the folder (e.g. `DCIM/Camera/`), exactly the string
+  /// [GalleryItems.localRelativePath] and [LocalFolderSelections.folderPath]
+  /// use, so "which folder" means the same thing everywhere in the mirror.
+  /// Coverage of a subfolder is a plain string-prefix test against this
+  /// value (both always trailing-slash-terminated, so `DCIM/Camera/` can
+  /// never falsely prefix-match `DCIM/Camera2/`).
+  TextColumn get localFolderPath => text()();
+
+  /// The Seraph folder side, in Space terms - the same
+  /// (spaceProviderId, path) pair [GallerySourceFolder] uses, since this
+  /// folder IS one (ticket 18's rule: a Sync Pair's Seraph folder
+  /// automatically becomes a Gallery Source Folder).
+  TextColumn get spaceProviderId => text()();
+  TextColumn get path => text()();
+
+  /// Epoch milliseconds this pair was created - used only to order
+  /// [GalleryMirror.listSyncPairs] (oldest first, so the list does not
+  /// reorder itself as photo counts change).
+  IntColumn get createdAt => integer().withDefault(const Constant(0))();
+
+  @override
+  List<Set<Column>> get uniqueKeys => [
+        {localFolderPath},
+      ];
 }

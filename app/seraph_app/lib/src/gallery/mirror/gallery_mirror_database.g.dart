@@ -1637,6 +1637,333 @@ class LocalFolderSelectionsCompanion
   }
 }
 
+class $SyncPairsTable extends SyncPairs
+    with TableInfo<$SyncPairsTable, SyncPairRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SyncPairsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _localFolderPathMeta =
+      const VerificationMeta('localFolderPath');
+  @override
+  late final GeneratedColumn<String> localFolderPath = GeneratedColumn<String>(
+      'local_folder_path', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _spaceProviderIdMeta =
+      const VerificationMeta('spaceProviderId');
+  @override
+  late final GeneratedColumn<String> spaceProviderId = GeneratedColumn<String>(
+      'space_provider_id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _pathMeta = const VerificationMeta('path');
+  @override
+  late final GeneratedColumn<String> path = GeneratedColumn<String>(
+      'path', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _createdAtMeta =
+      const VerificationMeta('createdAt');
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+      'created_at', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  @override
+  List<GeneratedColumn> get $columns =>
+      [id, localFolderPath, spaceProviderId, path, createdAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'sync_pairs';
+  @override
+  VerificationContext validateIntegrity(Insertable<SyncPairRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('local_folder_path')) {
+      context.handle(
+          _localFolderPathMeta,
+          localFolderPath.isAcceptableOrUnknown(
+              data['local_folder_path']!, _localFolderPathMeta));
+    } else if (isInserting) {
+      context.missing(_localFolderPathMeta);
+    }
+    if (data.containsKey('space_provider_id')) {
+      context.handle(
+          _spaceProviderIdMeta,
+          spaceProviderId.isAcceptableOrUnknown(
+              data['space_provider_id']!, _spaceProviderIdMeta));
+    } else if (isInserting) {
+      context.missing(_spaceProviderIdMeta);
+    }
+    if (data.containsKey('path')) {
+      context.handle(
+          _pathMeta, path.isAcceptableOrUnknown(data['path']!, _pathMeta));
+    } else if (isInserting) {
+      context.missing(_pathMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(_createdAtMeta,
+          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+        {localFolderPath},
+      ];
+  @override
+  SyncPairRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SyncPairRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      localFolderPath: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}local_folder_path'])!,
+      spaceProviderId: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}space_provider_id'])!,
+      path: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}path'])!,
+      createdAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}created_at'])!,
+    );
+  }
+
+  @override
+  $SyncPairsTable createAlias(String alias) {
+    return $SyncPairsTable(attachedDatabase, alias);
+  }
+}
+
+class SyncPairRow extends DataClass implements Insertable<SyncPairRow> {
+  final int id;
+
+  /// The device-side Local Source - on Android, MediaStore's `RELATIVE_PATH`
+  /// for the folder (e.g. `DCIM/Camera/`), exactly the string
+  /// [GalleryItems.localRelativePath] and [LocalFolderSelections.folderPath]
+  /// use, so "which folder" means the same thing everywhere in the mirror.
+  /// Coverage of a subfolder is a plain string-prefix test against this
+  /// value (both always trailing-slash-terminated, so `DCIM/Camera/` can
+  /// never falsely prefix-match `DCIM/Camera2/`).
+  final String localFolderPath;
+
+  /// The Seraph folder side, in Space terms - the same
+  /// (spaceProviderId, path) pair [GallerySourceFolder] uses, since this
+  /// folder IS one (ticket 18's rule: a Sync Pair's Seraph folder
+  /// automatically becomes a Gallery Source Folder).
+  final String spaceProviderId;
+  final String path;
+
+  /// Epoch milliseconds this pair was created - used only to order
+  /// [GalleryMirror.listSyncPairs] (oldest first, so the list does not
+  /// reorder itself as photo counts change).
+  final int createdAt;
+  const SyncPairRow(
+      {required this.id,
+      required this.localFolderPath,
+      required this.spaceProviderId,
+      required this.path,
+      required this.createdAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['local_folder_path'] = Variable<String>(localFolderPath);
+    map['space_provider_id'] = Variable<String>(spaceProviderId);
+    map['path'] = Variable<String>(path);
+    map['created_at'] = Variable<int>(createdAt);
+    return map;
+  }
+
+  SyncPairsCompanion toCompanion(bool nullToAbsent) {
+    return SyncPairsCompanion(
+      id: Value(id),
+      localFolderPath: Value(localFolderPath),
+      spaceProviderId: Value(spaceProviderId),
+      path: Value(path),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory SyncPairRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SyncPairRow(
+      id: serializer.fromJson<int>(json['id']),
+      localFolderPath: serializer.fromJson<String>(json['localFolderPath']),
+      spaceProviderId: serializer.fromJson<String>(json['spaceProviderId']),
+      path: serializer.fromJson<String>(json['path']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'localFolderPath': serializer.toJson<String>(localFolderPath),
+      'spaceProviderId': serializer.toJson<String>(spaceProviderId),
+      'path': serializer.toJson<String>(path),
+      'createdAt': serializer.toJson<int>(createdAt),
+    };
+  }
+
+  SyncPairRow copyWith(
+          {int? id,
+          String? localFolderPath,
+          String? spaceProviderId,
+          String? path,
+          int? createdAt}) =>
+      SyncPairRow(
+        id: id ?? this.id,
+        localFolderPath: localFolderPath ?? this.localFolderPath,
+        spaceProviderId: spaceProviderId ?? this.spaceProviderId,
+        path: path ?? this.path,
+        createdAt: createdAt ?? this.createdAt,
+      );
+  SyncPairRow copyWithCompanion(SyncPairsCompanion data) {
+    return SyncPairRow(
+      id: data.id.present ? data.id.value : this.id,
+      localFolderPath: data.localFolderPath.present
+          ? data.localFolderPath.value
+          : this.localFolderPath,
+      spaceProviderId: data.spaceProviderId.present
+          ? data.spaceProviderId.value
+          : this.spaceProviderId,
+      path: data.path.present ? data.path.value : this.path,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncPairRow(')
+          ..write('id: $id, ')
+          ..write('localFolderPath: $localFolderPath, ')
+          ..write('spaceProviderId: $spaceProviderId, ')
+          ..write('path: $path, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(id, localFolderPath, spaceProviderId, path, createdAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SyncPairRow &&
+          other.id == this.id &&
+          other.localFolderPath == this.localFolderPath &&
+          other.spaceProviderId == this.spaceProviderId &&
+          other.path == this.path &&
+          other.createdAt == this.createdAt);
+}
+
+class SyncPairsCompanion extends UpdateCompanion<SyncPairRow> {
+  final Value<int> id;
+  final Value<String> localFolderPath;
+  final Value<String> spaceProviderId;
+  final Value<String> path;
+  final Value<int> createdAt;
+  const SyncPairsCompanion({
+    this.id = const Value.absent(),
+    this.localFolderPath = const Value.absent(),
+    this.spaceProviderId = const Value.absent(),
+    this.path = const Value.absent(),
+    this.createdAt = const Value.absent(),
+  });
+  SyncPairsCompanion.insert({
+    this.id = const Value.absent(),
+    required String localFolderPath,
+    required String spaceProviderId,
+    required String path,
+    this.createdAt = const Value.absent(),
+  })  : localFolderPath = Value(localFolderPath),
+        spaceProviderId = Value(spaceProviderId),
+        path = Value(path);
+  static Insertable<SyncPairRow> custom({
+    Expression<int>? id,
+    Expression<String>? localFolderPath,
+    Expression<String>? spaceProviderId,
+    Expression<String>? path,
+    Expression<int>? createdAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (localFolderPath != null) 'local_folder_path': localFolderPath,
+      if (spaceProviderId != null) 'space_provider_id': spaceProviderId,
+      if (path != null) 'path': path,
+      if (createdAt != null) 'created_at': createdAt,
+    });
+  }
+
+  SyncPairsCompanion copyWith(
+      {Value<int>? id,
+      Value<String>? localFolderPath,
+      Value<String>? spaceProviderId,
+      Value<String>? path,
+      Value<int>? createdAt}) {
+    return SyncPairsCompanion(
+      id: id ?? this.id,
+      localFolderPath: localFolderPath ?? this.localFolderPath,
+      spaceProviderId: spaceProviderId ?? this.spaceProviderId,
+      path: path ?? this.path,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (localFolderPath.present) {
+      map['local_folder_path'] = Variable<String>(localFolderPath.value);
+    }
+    if (spaceProviderId.present) {
+      map['space_provider_id'] = Variable<String>(spaceProviderId.value);
+    }
+    if (path.present) {
+      map['path'] = Variable<String>(path.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncPairsCompanion(')
+          ..write('id: $id, ')
+          ..write('localFolderPath: $localFolderPath, ')
+          ..write('spaceProviderId: $spaceProviderId, ')
+          ..write('path: $path, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$GalleryMirrorDatabase extends GeneratedDatabase {
   _$GalleryMirrorDatabase(QueryExecutor e) : super(e);
   $GalleryMirrorDatabaseManager get managers =>
@@ -1647,6 +1974,7 @@ abstract class _$GalleryMirrorDatabase extends GeneratedDatabase {
       $CachedThumbnailsTable(this);
   late final $LocalFolderSelectionsTable localFolderSelections =
       $LocalFolderSelectionsTable(this);
+  late final $SyncPairsTable syncPairs = $SyncPairsTable(this);
   late final Index idxGalleryItemsLocalIdentity = Index(
       'idx_gallery_items_local_identity',
       'CREATE INDEX idx_gallery_items_local_identity ON gallery_items (local_relative_path, local_display_name, local_size, local_date_taken)');
@@ -1665,6 +1993,7 @@ abstract class _$GalleryMirrorDatabase extends GeneratedDatabase {
         syncCursors,
         cachedThumbnails,
         localFolderSelections,
+        syncPairs,
         idxGalleryItemsLocalIdentity,
         idxGalleryItemsOriginSizeCapturedAt,
         idxGalleryItemsCapturedAtId
@@ -2500,6 +2829,176 @@ typedef $$LocalFolderSelectionsTableProcessedTableManager
         ),
         LocalFolderSelection,
         PrefetchHooks Function()>;
+typedef $$SyncPairsTableCreateCompanionBuilder = SyncPairsCompanion Function({
+  Value<int> id,
+  required String localFolderPath,
+  required String spaceProviderId,
+  required String path,
+  Value<int> createdAt,
+});
+typedef $$SyncPairsTableUpdateCompanionBuilder = SyncPairsCompanion Function({
+  Value<int> id,
+  Value<String> localFolderPath,
+  Value<String> spaceProviderId,
+  Value<String> path,
+  Value<int> createdAt,
+});
+
+class $$SyncPairsTableFilterComposer
+    extends Composer<_$GalleryMirrorDatabase, $SyncPairsTable> {
+  $$SyncPairsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get localFolderPath => $composableBuilder(
+      column: $table.localFolderPath,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get spaceProviderId => $composableBuilder(
+      column: $table.spaceProviderId,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get path => $composableBuilder(
+      column: $table.path, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$SyncPairsTableOrderingComposer
+    extends Composer<_$GalleryMirrorDatabase, $SyncPairsTable> {
+  $$SyncPairsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get localFolderPath => $composableBuilder(
+      column: $table.localFolderPath,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get spaceProviderId => $composableBuilder(
+      column: $table.spaceProviderId,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get path => $composableBuilder(
+      column: $table.path, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$SyncPairsTableAnnotationComposer
+    extends Composer<_$GalleryMirrorDatabase, $SyncPairsTable> {
+  $$SyncPairsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get localFolderPath => $composableBuilder(
+      column: $table.localFolderPath, builder: (column) => column);
+
+  GeneratedColumn<String> get spaceProviderId => $composableBuilder(
+      column: $table.spaceProviderId, builder: (column) => column);
+
+  GeneratedColumn<String> get path =>
+      $composableBuilder(column: $table.path, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+}
+
+class $$SyncPairsTableTableManager extends RootTableManager<
+    _$GalleryMirrorDatabase,
+    $SyncPairsTable,
+    SyncPairRow,
+    $$SyncPairsTableFilterComposer,
+    $$SyncPairsTableOrderingComposer,
+    $$SyncPairsTableAnnotationComposer,
+    $$SyncPairsTableCreateCompanionBuilder,
+    $$SyncPairsTableUpdateCompanionBuilder,
+    (
+      SyncPairRow,
+      BaseReferences<_$GalleryMirrorDatabase, $SyncPairsTable, SyncPairRow>
+    ),
+    SyncPairRow,
+    PrefetchHooks Function()> {
+  $$SyncPairsTableTableManager(
+      _$GalleryMirrorDatabase db, $SyncPairsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SyncPairsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SyncPairsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SyncPairsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> localFolderPath = const Value.absent(),
+            Value<String> spaceProviderId = const Value.absent(),
+            Value<String> path = const Value.absent(),
+            Value<int> createdAt = const Value.absent(),
+          }) =>
+              SyncPairsCompanion(
+            id: id,
+            localFolderPath: localFolderPath,
+            spaceProviderId: spaceProviderId,
+            path: path,
+            createdAt: createdAt,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String localFolderPath,
+            required String spaceProviderId,
+            required String path,
+            Value<int> createdAt = const Value.absent(),
+          }) =>
+              SyncPairsCompanion.insert(
+            id: id,
+            localFolderPath: localFolderPath,
+            spaceProviderId: spaceProviderId,
+            path: path,
+            createdAt: createdAt,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$SyncPairsTableProcessedTableManager = ProcessedTableManager<
+    _$GalleryMirrorDatabase,
+    $SyncPairsTable,
+    SyncPairRow,
+    $$SyncPairsTableFilterComposer,
+    $$SyncPairsTableOrderingComposer,
+    $$SyncPairsTableAnnotationComposer,
+    $$SyncPairsTableCreateCompanionBuilder,
+    $$SyncPairsTableUpdateCompanionBuilder,
+    (
+      SyncPairRow,
+      BaseReferences<_$GalleryMirrorDatabase, $SyncPairsTable, SyncPairRow>
+    ),
+    SyncPairRow,
+    PrefetchHooks Function()>;
 
 class $GalleryMirrorDatabaseManager {
   final _$GalleryMirrorDatabase _db;
@@ -2512,4 +3011,6 @@ class $GalleryMirrorDatabaseManager {
       $$CachedThumbnailsTableTableManager(_db, _db.cachedThumbnails);
   $$LocalFolderSelectionsTableTableManager get localFolderSelections =>
       $$LocalFolderSelectionsTableTableManager(_db, _db.localFolderSelections);
+  $$SyncPairsTableTableManager get syncPairs =>
+      $$SyncPairsTableTableManager(_db, _db.syncPairs);
 }
