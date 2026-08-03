@@ -24,7 +24,7 @@ token lock landing first.
 
 **Blocked by:** 20
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] A user-initiated backup run continues with the app backgrounded and the screen off
 - [ ] Progress — photos remaining and approximate data volume — is visible in a notification and in the app
