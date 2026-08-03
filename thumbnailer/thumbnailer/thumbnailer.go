@@ -457,6 +457,29 @@ func (t *Thumbnailer) handleRequest(ctx context.Context, limiter util.Limiter, r
 
 	err = t.thumbnailStorage.Rename(ctx, tmpFilePath, thumbPath)
 	if err != nil {
+		// tmpFilePath is never revisited regardless of why the rename
+		// failed (a fresh random name is used on the next attempt), so
+		// clean it up now rather than leaking it in the _tmp folder forever.
+		if rmErr := t.thumbnailStorage.RemoveAll(ctx, tmpFilePath); rmErr != nil {
+			t.log.Warn("failed to remove leftover temp file after failed rename", "path", tmpFilePath, "error", rmErr)
+		}
+
+		if errors.Is(err, os.ErrExist) {
+			// thumbPath is deterministic (content hash + size, see
+			// thumbName above), so ErrExist here means another goroutine -
+			// almost always a redelivered/concurrent attempt at this exact
+			// same warm or preview request, see warm.go's loop() - already
+			// finished creating this Thumbnail first. That is success, not
+			// failure: treat it exactly like the pre-creation Stat()
+			// short-circuit above, instead of falling through to the
+			// generic "leave unacked for redelivery" handling below, which
+			// would otherwise retry (and lose the same race) forever.
+			t.log.Debug("thumbnail already created by a concurrent attempt; treating rename-exists as success", "path", thumbPath)
+			resp.ProviderID = t.fileProviderId
+			resp.Path = thumbPath
+			return
+		}
+
 		t.log.Error("error while moving thumbnail to destination", "error", err)
 		resp.Error = "error while moving thumbnail to destination" + err.Error()
 		return

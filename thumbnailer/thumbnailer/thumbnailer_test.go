@@ -35,6 +35,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/net/webdav"
 	"umbasa.net/seraph/events"
 	"umbasa.net/seraph/file-provider/fileprovider"
@@ -267,6 +268,67 @@ func TestCreateThumbnail(t *testing.T) {
 	assert.Equal(t, 771, resultImage.Bounds().Size().Y)
 
 	t.Log(tmpDir)
+}
+
+// errExistOnRenameClient wraps a real fileprovider.Client and makes every
+// Rename call fail with os.ErrExist, whatever the real underlying rename
+// would have done - simulating a concurrent/redelivered attempt losing the
+// race to create the same deterministic Thumbnail path, the real production
+// failure mode TestRenameConflictOnDestinationIsTreatedAsSuccess exercises.
+// This package's own test storage (webdav.Dir, backed by plain os.Rename)
+// cannot be coaxed into producing this error natively - unlike some real
+// backends, a plain POSIX rename silently overwrites an existing
+// destination rather than erroring - so the condition is forced directly
+// instead of relying on timing/concurrency, which would be flaky at best
+// and silently no-op at worst.
+type errExistOnRenameClient struct {
+	fileprovider.Client
+	renameCalls int
+}
+
+func (c *errExistOnRenameClient) Rename(ctx context.Context, oldName, newName string) error {
+	c.renameCalls++
+	return os.ErrExist
+}
+
+// TestRenameConflictOnDestinationIsTreatedAsSuccess covers the bug behind a
+// real stuck-queue incident: the destination Thumbnail path is deterministic
+// (content hash + size), so a Rename failing with "already exists" means
+// another attempt - almost always a redelivered warm request racing its own
+// earlier, still-in-flight delivery, see warm.go's loop() - already
+// finished creating it first. That is success, not failure. Before this
+// fix, handleRequest reported it as a generic failure, and since a warm
+// request is left unacked (and so redelivered) on any failure, the same
+// photo would retry and lose this same race forever, exactly as observed in
+// production: the same "file already exists" error repeating for the same
+// path without end.
+func TestRenameConflictOnDestinationIsTreatedAsSuccess(t *testing.T) {
+	thumbnailer, _ := getThumbnailer(t)
+	defer thumbnailer.Stop()
+
+	name := writeFixtureJpeg(t, "fixture_rename_conflict.jpg", 512, 512)
+
+	realStorage := thumbnailer.thumbnailStorage
+	fakeStorage := &errExistOnRenameClient{Client: realStorage}
+	thumbnailer.thumbnailStorage = fakeStorage
+
+	req := ThumbnailRequest{
+		ProviderID: "testinput",
+		Path:       name,
+		Width:      256,
+		Height:     256,
+	}
+	resp := thumbnailer.handleRequest(context.Background(), thumbnailer.limiter, req)
+
+	expectedPath := fmt.Sprintf("%s_256x256.jpg", ThumbnailHash(path.Join(req.ProviderID, req.Path)))
+	assert.Empty(t, resp.Error, "a Rename conflict on the deterministic destination path must be treated as success, not a failure that gets retried forever")
+	assert.Empty(t, resp.ErrorClass)
+	assert.Equal(t, expectedPath, resp.Path)
+	assert.Equal(t, 1, fakeStorage.renameCalls)
+
+	tmpEntries, err := os.ReadDir(filepath.Join(tmpDir, tmpFolderName))
+	require.NoError(t, err)
+	assert.Empty(t, tmpEntries, "the leftover temp file must be cleaned up after a failed rename, not leaked in the _tmp folder")
 }
 
 func TestCreateThumbnailWithinConfiguredCap(t *testing.T) {
