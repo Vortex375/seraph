@@ -36,7 +36,7 @@ produce wrong answers after a retarget.
 
 **Blocked by:** 18
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] Uploading a photo places it under the Sync Pair's Seraph folder at its mirrored relative path
 - [ ] Missing intermediate folders are created, several levels deep if needed
