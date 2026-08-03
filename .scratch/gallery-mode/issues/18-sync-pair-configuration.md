@@ -54,7 +54,7 @@ No uploading in this ticket — configuration only.
 
 **Blocked by:** 06, 15
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] A user can create a Sync Pair by picking a device folder and a Seraph folder, using the pickers already in the app
 - [ ] Creating a Sync Pair adds its Seraph folder to the user's Gallery Source Folders
