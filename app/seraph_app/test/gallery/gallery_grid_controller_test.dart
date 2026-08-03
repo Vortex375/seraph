@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:get/get.dart' hide Response;
@@ -590,6 +592,22 @@ class _ThrowingLocalSource implements LocalSource {
 
   @override
   Future<void> openAppSettings() async {}
+
+  @override
+  Future<Uint8List?> loadThumbnail({
+    required String relativePath,
+    required String displayName,
+    required int width,
+    required int height,
+  }) async =>
+      null;
+
+  @override
+  Future<Uint8List?> loadOriginal({
+    required String relativePath,
+    required String displayName,
+  }) async =>
+      null;
 
   @override
   void dispose() {}

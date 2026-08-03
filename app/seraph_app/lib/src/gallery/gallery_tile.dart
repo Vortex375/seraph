@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:seraph_app/src/gallery/gallery_image_loader.dart';
 import 'package:seraph_app/src/gallery/gallery_item_display.dart';
+import 'package:seraph_app/src/gallery/local/local_image_loader.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 
 /// The size, in pixels, Gallery Mode asks the preview endpoint for.
@@ -21,11 +22,18 @@ class GalleryTile extends StatelessWidget {
     super.key,
     required this.item,
     required this.loader,
+    required this.localLoader,
     this.decodeWidth,
   });
 
   final GalleryItem? item;
   final GalleryImageLoader loader;
+
+  /// Ticket 28: loads a device photo's actual pixels through the Local
+  /// Source seam. Always given - it degrades to "nothing to show" on its
+  /// own on a platform with no Local Source, so tiles never have to branch
+  /// on whether one exists.
+  final LocalImageLoader localLoader;
 
   /// Width to decode the thumbnail at, in device pixels. A grid of 512 px
   /// JPEGs decoded at full size would hold far more memory than the tiles can
@@ -58,23 +66,49 @@ class GalleryTile extends StatelessWidget {
   }
 
   Widget _content(BuildContext context, GalleryItem current) {
-    final theme = Theme.of(context);
-
     if (current.isUnsupported) {
       return _UnsupportedTile(item: current);
     }
 
     final providerId = current.providerId;
     final path = current.path;
-    if (providerId == null || path == null) {
+    final hasCloud = providerId != null && path != null;
+    final hasLocal = current.hasLocalCopy;
+
+    if (!hasCloud) {
       // Device only: nothing has been fetched from Seraph for this item -
-      // there is nothing to fetch. Rendering the actual device thumbnail is
-      // left to a later ticket (see the ticket 15 implementer report); this
-      // placeholder still carries the file name and its Availability badge,
-      // so the item is honestly present in the grid rather than missing.
-      return _DeviceOnlyTile(item: current);
+      // there is nothing to fetch. Ticket 28 renders its actual pixels
+      // through the Local Source seam; a device photo without local fields
+      // at all should not happen (see GalleryItemDisplay.hasLocalCopy's
+      // doc), but this stays an honest placeholder rather than a crash if
+      // it ever did.
+      if (!hasLocal) {
+        return _DeviceOnlyTile(item: current);
+      }
+      return _localThumbnail(
+        context,
+        current,
+        errorBuilder: (context, error, stackTrace) =>
+            _DeviceOnlyTile(item: current),
+      );
     }
 
+    final cloudThumbnail = _cloudThumbnail(context, providerId, path);
+    if (!hasLocal) {
+      return cloudThumbnail;
+    }
+    // Synced: the device copy needs no network and renders instantly, so it
+    // is preferred - falling back to the cloud thumbnail only when the
+    // device copy cannot currently be read (ticket 28).
+    return _localThumbnail(
+      context,
+      current,
+      errorBuilder: (context, error, stackTrace) => cloudThumbnail,
+    );
+  }
+
+  Widget _cloudThumbnail(BuildContext context, String providerId, String path) {
+    final theme = Theme.of(context);
     ImageProvider provider = GalleryImage(
       loader: loader,
       providerId: providerId,
@@ -99,6 +133,43 @@ class GalleryTile extends StatelessWidget {
           color: theme.colorScheme.outline,
         ),
       ),
+      frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+        if (wasSynchronouslyLoaded || frame != null) {
+          return child;
+        }
+        return ColoredBox(color: theme.colorScheme.surfaceContainerHighest);
+      },
+    );
+  }
+
+  /// The device copy, requested at tile size rather than decoded full-size
+  /// and scaled down (ticket 28) - [decodeWidth] is already the tile's own
+  /// device-pixel width, computed by [GalleryView]'s layout, so it is
+  /// passed straight through as both the requested width and height rather
+  /// than wrapped in a [ResizeImage] the way the cloud thumbnail is: there
+  /// is no already-fetched 512px image to shrink here, only a native call
+  /// this makes ask for the right size to begin with.
+  Widget _localThumbnail(
+    BuildContext context,
+    GalleryItem current, {
+    required ImageErrorWidgetBuilder errorBuilder,
+  }) {
+    final theme = Theme.of(context);
+    final width = decodeWidth;
+    final tileSize = (width != null && width > 0) ? width : galleryThumbnailSize;
+
+    return Image(
+      image: LocalGalleryImage(
+        loader: localLoader,
+        relativePath: current.localRelativePath!,
+        displayName: current.localDisplayName!,
+        width: tileSize,
+        height: tileSize,
+      ),
+      fit: BoxFit.cover,
+      gaplessPlayback: true,
+      filterQuality: FilterQuality.medium,
+      errorBuilder: errorBuilder,
       frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
         if (wasSynchronouslyLoaded || frame != null) {
           return child;

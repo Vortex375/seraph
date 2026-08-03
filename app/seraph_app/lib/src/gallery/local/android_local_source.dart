@@ -194,6 +194,48 @@ class AndroidLocalSource implements LocalSource {
     }
   }
 
+  @override
+  Future<Uint8List?> loadThumbnail({
+    required String relativePath,
+    required String displayName,
+    required int width,
+    required int height,
+  }) async {
+    try {
+      final bytes = await _channel.invokeMethod<Uint8List>('loadThumbnail', {
+        'relativePath': relativePath,
+        'displayName': displayName,
+        'width': width,
+        'height': height,
+      });
+      return bytes;
+    } on MissingPluginException {
+      // No native handler - nothing to render, same "quiet, per-item" shape
+      // as every other failure this method can report.
+      return null;
+    } on PlatformException {
+      return null;
+    }
+  }
+
+  @override
+  Future<Uint8List?> loadOriginal({
+    required String relativePath,
+    required String displayName,
+  }) async {
+    try {
+      final bytes = await _channel.invokeMethod<Uint8List>('loadOriginal', {
+        'relativePath': relativePath,
+        'displayName': displayName,
+      });
+      return bytes;
+    } on MissingPluginException {
+      return null;
+    } on PlatformException {
+      return null;
+    }
+  }
+
   LocalPermissionStatus _parseStatus(String? raw) {
     switch (raw) {
       case 'granted':

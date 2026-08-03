@@ -139,6 +139,71 @@ class FakeLocalSource implements LocalSource {
       generation: generation,
     );
   }
+
+  // --- Ticket 28: device photo previews ---
+
+  /// What [loadThumbnail] returns for a given (relativePath, displayName) -
+  /// unset (or returning null) is exactly the real contract's "cannot
+  /// currently be read" case, so a test drives both the decode-failure and
+  /// deleted-mid-render cases by simply leaving an identity out of this map,
+  /// or removing one between two calls.
+  final Map<String, Uint8List?> thumbnailBytes = {};
+
+  /// Same idea as [thumbnailBytes], for [loadOriginal].
+  final Map<String, Uint8List?> originalBytes = {};
+
+  /// Every (relativePath, displayName, width, height) [loadThumbnail] was
+  /// called with, in order - what a test asserts against to check a request
+  /// was made at tile size rather than some other size.
+  final List<(String, String, int, int)> thumbnailCalls = [];
+
+  /// Every (relativePath, displayName) [loadOriginal] was called with.
+  final List<(String, String)> originalCalls = [];
+
+  static String _localKey(String relativePath, String displayName) =>
+      '$relativePath\x00$displayName';
+
+  /// Sets what [loadThumbnail] and [loadOriginal] return for one photo -
+  /// the success case. A test simulating a photo that cannot be read simply
+  /// never calls this for that identity, or calls [forgetLocalBytes]
+  /// afterward to simulate it vanishing mid-render.
+  void setLocalBytes(
+      String relativePath, String displayName, Uint8List bytes) {
+    final key = _localKey(relativePath, displayName);
+    thumbnailBytes[key] = bytes;
+    originalBytes[key] = bytes;
+  }
+
+  /// Simulates a photo deleted (or otherwise made unreadable) between the
+  /// scan that found it and a later render: whatever [setLocalBytes] set
+  /// for this identity is withdrawn, and the next [loadThumbnail]/
+  /// [loadOriginal] call for it returns null exactly as the real
+  /// [AndroidLocalSource] would for a vanished file.
+  void forgetLocalBytes(String relativePath, String displayName) {
+    final key = _localKey(relativePath, displayName);
+    thumbnailBytes.remove(key);
+    originalBytes.remove(key);
+  }
+
+  @override
+  Future<Uint8List?> loadThumbnail({
+    required String relativePath,
+    required String displayName,
+    required int width,
+    required int height,
+  }) async {
+    thumbnailCalls.add((relativePath, displayName, width, height));
+    return thumbnailBytes[_localKey(relativePath, displayName)];
+  }
+
+  @override
+  Future<Uint8List?> loadOriginal({
+    required String relativePath,
+    required String displayName,
+  }) async {
+    originalCalls.add((relativePath, displayName));
+    return originalBytes[_localKey(relativePath, displayName)];
+  }
 }
 
 /// A [LocalMediaItem] with sensible defaults, for tests that only care about

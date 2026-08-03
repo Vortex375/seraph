@@ -9,6 +9,7 @@ import 'package:seraph_app/src/gallery/gallery_item_display.dart';
 import 'package:seraph_app/src/gallery/gallery_photo_viewer.dart';
 import 'package:seraph_app/src/gallery/gallery_source_folders_view.dart';
 import 'package:seraph_app/src/gallery/gallery_tile.dart';
+import 'package:seraph_app/src/gallery/local/local_image_loader.dart';
 import 'package:seraph_app/src/gallery/local/local_source.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 
@@ -45,6 +46,7 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
 
   final GalleryGridController controller = Get.find();
   final GalleryImageLoader loader = Get.find();
+  final LocalImageLoader localLoader = Get.find();
   final ScrollController _scroll = ScrollController();
 
   /// Index of the first tile in the topmost visible row - what the date
@@ -213,6 +215,7 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
                   child: GalleryTile(
                     item: item,
                     loader: loader,
+                    localLoader: localLoader,
                     decodeWidth: decodeWidth,
                   ),
                 );

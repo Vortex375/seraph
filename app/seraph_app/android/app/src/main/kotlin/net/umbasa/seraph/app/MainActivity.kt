@@ -1,19 +1,23 @@
 package net.umbasa.seraph.app
 
+import android.content.ContentUris
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.database.ContentObserver
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
 import android.provider.Settings
+import android.util.Size
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import java.io.ByteArrayOutputStream
 import java.util.concurrent.Executors
 
 /**
@@ -22,7 +26,9 @@ import java.util.concurrent.Executors
  * permission handling added by ticket 16,
  * .scratch/gallery-mode/issues/16-photo-permissions-and-partial-grant.md;
  * the incremental scan and content observer added by ticket 17,
- * .scratch/gallery-mode/issues/17-incremental-scan-and-observer.md).
+ * .scratch/gallery-mode/issues/17-incremental-scan-and-observer.md; device
+ * photo previews added by ticket 28,
+ * .scratch/gallery-mode/issues/28-device-photo-previews.md).
  *
  * MediaStore, and the permission it sits behind, are queried ONLY in this
  * file - everything above the `seraph/local_media` channel, starting with
@@ -72,6 +78,8 @@ class MainActivity : FlutterActivity() {
                     openAppSettingsScreen()
                     result.success(null)
                 }
+                "loadThumbnail" -> handleLoadThumbnail(call, result)
+                "loadOriginal" -> handleLoadOriginal(call, result)
                 else -> result.notImplemented()
             }
         }
@@ -338,5 +346,128 @@ class MainActivity : FlutterActivity() {
             }
         }
         return items
+    }
+
+    /**
+     * Ticket 28: re-resolves the content Uri for one photo from its durable
+     * local identity - [relativePath] plus [displayName], exactly the pair
+     * the mirror persists (`GalleryItems.localRelativePath`/
+     * `localDisplayName`) - rather than trusting a media-store row id
+     * carried from an earlier scan. That id is only a same-scan hint (see
+     * `LocalMediaItem`'s class doc on the Dart side): by the time a tile
+     * renders, it may already point at the wrong row, or none at all if the
+     * file was deleted and recreated. Resolving fresh on every call is what
+     * makes a stale id, a moved file, or a genuinely deleted file all
+     * resolve to "nothing to show" rather than the wrong photo.
+     *
+     * Returns null - never throws - when no row currently matches, which
+     * covers both "never existed under this id" and "deleted between scan
+     * and render" with the same, deliberately unremarkable, outcome.
+     */
+    private fun resolveUri(relativePath: String, displayName: String): Uri? {
+        val projection = arrayOf(MediaStore.Images.Media._ID)
+        val selection = "${MediaStore.Images.Media.RELATIVE_PATH} = ? AND " +
+            "${MediaStore.Images.Media.DISPLAY_NAME} = ?"
+        val selectionArgs = arrayOf(relativePath, displayName)
+        applicationContext.contentResolver.query(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            projection,
+            selection,
+            selectionArgs,
+            null,
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID))
+                return ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id)
+            }
+        }
+        return null
+    }
+
+    /**
+     * Ticket 28's grid thumbnail: `ContentResolver.loadThumbnail` hands back
+     * a size-appropriate bitmap using the system thumbnail cache, rather
+     * than this decoding a full-resolution JPEG itself just to shrink it -
+     * exactly what "requested at tile size" (the ticket's own wording)
+     * rules out. Re-encoded to JPEG bytes before crossing the channel,
+     * since a `Bitmap` itself cannot.
+     *
+     * Every failure mode - permission revoked since the scan, the file
+     * deleted between scan and render, a corrupt file the platform's own
+     * decoder rejects, the request cancelled mid-flight - reports `null`
+     * rather than a channel error: ticket 28's "failure is per-item and
+     * quiet", left for the Dart side to turn into a placeholder (or, for a
+     * Synced item, a fall back to the cloud thumbnail) for that one tile
+     * alone.
+     */
+    private fun handleLoadThumbnail(call: MethodCall, result: MethodChannel.Result) {
+        if (!hasFullImageAccess() && !hasPartialImageAccess()) {
+            result.success(null)
+            return
+        }
+        val relativePath = call.argument<String>("relativePath") ?: ""
+        val displayName = call.argument<String>("displayName") ?: ""
+        val width = (call.argument<Number>("width") ?: 0).toInt().coerceAtLeast(1)
+        val height = (call.argument<Number>("height") ?: 0).toInt().coerceAtLeast(1)
+
+        executor.execute {
+            try {
+                val uri = resolveUri(relativePath, displayName)
+                if (uri == null) {
+                    runOnUiThread { result.success(null) }
+                    return@execute
+                }
+                val bitmap = applicationContext.contentResolver.loadThumbnail(
+                    uri,
+                    Size(width, height),
+                    null,
+                )
+                val bytes = encodeJpeg(bitmap)
+                runOnUiThread { result.success(bytes) }
+            } catch (e: Exception) {
+                // Deliberately not result.error(): every cause here (a
+                // vanished file, a revoked grant, a file the decoder cannot
+                // read) is exactly the "per-item and quiet" failure ticket
+                // 28 asks for, not something the caller should treat as
+                // exceptional.
+                runOnUiThread { result.success(null) }
+            }
+        }
+    }
+
+    /**
+     * Ticket 28's full-screen viewer: the original file's bytes at full
+     * resolution, read straight through the resolved content Uri. Same
+     * identity, same quiet-failure contract as [handleLoadThumbnail].
+     */
+    private fun handleLoadOriginal(call: MethodCall, result: MethodChannel.Result) {
+        if (!hasFullImageAccess() && !hasPartialImageAccess()) {
+            result.success(null)
+            return
+        }
+        val relativePath = call.argument<String>("relativePath") ?: ""
+        val displayName = call.argument<String>("displayName") ?: ""
+
+        executor.execute {
+            try {
+                val uri = resolveUri(relativePath, displayName)
+                if (uri == null) {
+                    runOnUiThread { result.success(null) }
+                    return@execute
+                }
+                val bytes = applicationContext.contentResolver.openInputStream(uri)?.use {
+                    it.readBytes()
+                }
+                runOnUiThread { result.success(bytes) }
+            } catch (e: Exception) {
+                runOnUiThread { result.success(null) }
+            }
+        }
+    }
+
+    private fun encodeJpeg(bitmap: Bitmap): ByteArray {
+        val stream = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 90, stream)
+        return stream.toByteArray()
     }
 }

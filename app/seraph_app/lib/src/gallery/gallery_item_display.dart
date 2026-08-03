@@ -49,6 +49,19 @@ extension GalleryItemDisplay on GalleryItem {
   /// carrying [unsupportedReasonLabel].
   bool get isUnsupported => unsupported.isNotEmpty;
 
+  /// True when this row carries a device copy - [GalleryAvailability.
+  /// deviceOnly] or [GalleryAvailability.synced] - so the grid and the
+  /// viewer can ask the Local Source seam (ticket 28,
+  /// `.scratch/gallery-mode/issues/28-device-photo-previews.md`) for its
+  /// actual pixels via [localRelativePath]/[localDisplayName], rather than
+  /// falling straight to a placeholder or the cloud thumbnail.
+  ///
+  /// Read directly off the same two columns [GalleryMirror] populates
+  /// together for both origins (`_upsertLocalItem`), never off [origin]
+  /// itself, so this can never disagree with whether there is actually
+  /// something to ask the Local Source for.
+  bool get hasLocalCopy => localRelativePath != null && localDisplayName != null;
+
   /// A human-readable version of the server's `unsupported` reason code
   /// (`gallery/gallery/photo_entities.go`, `UnsupportedReason*`). An
   /// unrecognised code is surfaced verbatim rather than swallowed, so a

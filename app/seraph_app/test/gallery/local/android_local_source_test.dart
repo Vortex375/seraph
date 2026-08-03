@@ -278,6 +278,105 @@ void main() {
     });
   });
 
+  // Ticket 28: device photo previews.
+  group('loadThumbnail', () {
+    test('with no native handler registered, returns null rather than '
+        'throwing', () async {
+      final source = AndroidLocalSource(channel: channel);
+      final bytes = await source.loadThumbnail(
+        relativePath: 'DCIM/Camera/',
+        displayName: 'IMG_0001.jpg',
+        width: 128,
+        height: 128,
+      );
+      expect(bytes, isNull);
+    });
+
+    test('a PlatformException (deleted mid-render, revoked grant, a corrupt '
+        'file) yields null, not an error', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        throw PlatformException(code: 'SOMETHING_WRONG');
+      });
+      final source = AndroidLocalSource(channel: channel);
+      final bytes = await source.loadThumbnail(
+        relativePath: 'DCIM/Camera/',
+        displayName: 'IMG_0001.jpg',
+        width: 128,
+        height: 128,
+      );
+      expect(bytes, isNull);
+    });
+
+    test('passes identity and size through and returns the native bytes',
+        () async {
+      final expected = Uint8List.fromList([1, 2, 3, 4]);
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        expect(call.method, 'loadThumbnail');
+        expect(call.arguments, {
+          'relativePath': 'DCIM/Camera/',
+          'displayName': 'IMG_0001.jpg',
+          'width': 128,
+          'height': 96,
+        });
+        return expected;
+      });
+      final source = AndroidLocalSource(channel: channel);
+      final bytes = await source.loadThumbnail(
+        relativePath: 'DCIM/Camera/',
+        displayName: 'IMG_0001.jpg',
+        width: 128,
+        height: 96,
+      );
+      expect(bytes, expected);
+    });
+  });
+
+  group('loadOriginal', () {
+    test('with no native handler registered, returns null rather than '
+        'throwing', () async {
+      final source = AndroidLocalSource(channel: channel);
+      final bytes = await source.loadOriginal(
+        relativePath: 'DCIM/Camera/',
+        displayName: 'IMG_0001.jpg',
+      );
+      expect(bytes, isNull);
+    });
+
+    test('a PlatformException yields null, not an error', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        throw PlatformException(code: 'SOMETHING_WRONG');
+      });
+      final source = AndroidLocalSource(channel: channel);
+      final bytes = await source.loadOriginal(
+        relativePath: 'DCIM/Camera/',
+        displayName: 'IMG_0001.jpg',
+      );
+      expect(bytes, isNull);
+    });
+
+    test('passes identity through and returns the native bytes', () async {
+      final expected = Uint8List.fromList([9, 8, 7]);
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        expect(call.method, 'loadOriginal');
+        expect(call.arguments, {
+          'relativePath': 'DCIM/Camera/',
+          'displayName': 'IMG_0001.jpg',
+        });
+        return expected;
+      });
+      final source = AndroidLocalSource(channel: channel);
+      final bytes = await source.loadOriginal(
+        relativePath: 'DCIM/Camera/',
+        displayName: 'IMG_0001.jpg',
+      );
+      expect(bytes, expected);
+    });
+  });
+
   // The defect this covers: `setMethodCallHandler` is a single global slot
   // per channel name, so a second `AndroidLocalSource` constructed against
   // the same channel silently steals the first's handler - the first's

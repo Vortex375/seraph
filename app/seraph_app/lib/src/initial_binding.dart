@@ -7,6 +7,7 @@ import 'package:seraph_app/src/file_browser/selection_controller.dart';
 import 'package:seraph_app/src/gallery/gallery_grid_controller.dart';
 import 'package:seraph_app/src/gallery/gallery_image_loader.dart';
 import 'package:seraph_app/src/gallery/gallery_service.dart';
+import 'package:seraph_app/src/gallery/local/local_image_loader.dart';
 import 'package:seraph_app/src/gallery/local/local_scan_service.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
@@ -39,6 +40,11 @@ class InitialBinding extends Bindings {
     // ticket 15 on iOS, desktop and web.
     final localScanService = Get.put(LocalScanService(galleryMirror));
     Get.put(GalleryImageLoader(Get.find(), Get.find(), galleryMirrorDatabase));
+    // Ticket 28: loads device-photo pixels through the same Local Source the
+    // scan above uses. Null-safe on its own when localScanService.localSource
+    // is null (every platform without one), so this is registered
+    // unconditionally rather than only where a Local Source exists.
+    Get.put(LocalImageLoader(localScanService.localSource));
     // Lazily, because it reads the mirror on creation and nothing outside
     // Gallery Mode needs it - but registered here rather than in the gallery
     // route's binding, because the grid and the full-screen viewer are two

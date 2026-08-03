@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 /// One photo as the platform-specific local-media layer describes it - the
 /// platform-neutral shape the Local Source seam hands upward (ticket 15,
 /// `.scratch/gallery-mode/issues/15-local-source-scan-and-merged-gallery.md`,
@@ -189,6 +191,45 @@ abstract class LocalSource {
   /// since [requestPermission] re-shown after a partial grant offers more
   /// selection, not a way back to "allow all".
   Future<void> openAppSettings();
+
+  /// Ticket 28's grid thumbnail: the actual pixel bytes for the photo
+  /// identified by [relativePath]/[displayName], sized close to
+  /// [width]x[height] rather than decoded at full resolution and scaled
+  /// down - on Android this is exactly `ContentResolver.loadThumbnail`,
+  /// which also uses the system thumbnail cache.
+  ///
+  /// Identified by the same durable local identity fields the mirror
+  /// persists ([relativePath], [displayName]) rather than
+  /// [LocalMediaItem.mediaStoreId] - the id is only a same-scan hint (see
+  /// the class doc above) and is never persisted, so by render time - which
+  /// can be long after the scan that found this photo - it may already
+  /// point at the wrong row or none at all. Re-resolving from the durable
+  /// identity on every call is what makes a changed id, or a file moved and
+  /// recreated between scan and render, resolve correctly instead of
+  /// silently reading the wrong (or a deleted) file.
+  ///
+  /// Returns null - never throws - when the photo cannot currently be
+  /// produced: permission revoked since the scan, the file deleted between
+  /// scan and render, a corrupt file the platform's own decoder rejects, or
+  /// no Local Source at all. Ticket 28's "failure is per-item and quiet":
+  /// the caller's job is to fall back to a placeholder (or, for a Synced
+  /// item, the cloud thumbnail) for that one item, never to treat this as
+  /// an error that should propagate.
+  Future<Uint8List?> loadThumbnail({
+    required String relativePath,
+    required String displayName,
+    required int width,
+    required int height,
+  });
+
+  /// Ticket 28's full-screen viewer: the original file's bytes, at full
+  /// resolution. Same identity and the same quiet-failure contract as
+  /// [loadThumbnail] - null, never a thrown error, when the photo cannot
+  /// currently be read.
+  Future<Uint8List?> loadOriginal({
+    required String relativePath,
+    required String displayName,
+  });
 
   /// Releases whatever platform resources this instance holds - on Android,
   /// the method-channel handler backing [changes] and the [changes]
