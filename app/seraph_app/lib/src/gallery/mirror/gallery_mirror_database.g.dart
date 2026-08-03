@@ -1438,12 +1438,27 @@ abstract class _$GalleryMirrorDatabase extends GeneratedDatabase {
   late final $SyncCursorsTable syncCursors = $SyncCursorsTable(this);
   late final $CachedThumbnailsTable cachedThumbnails =
       $CachedThumbnailsTable(this);
+  late final Index idxGalleryItemsLocalIdentity = Index(
+      'idx_gallery_items_local_identity',
+      'CREATE INDEX idx_gallery_items_local_identity ON gallery_items (local_relative_path, local_display_name, local_size, local_date_taken)');
+  late final Index idxGalleryItemsOriginSizeCapturedAt = Index(
+      'idx_gallery_items_origin_size_captured_at',
+      'CREATE INDEX idx_gallery_items_origin_size_captured_at ON gallery_items (origin, size, captured_at)');
+  late final Index idxGalleryItemsCapturedAtId = Index(
+      'idx_gallery_items_captured_at_id',
+      'CREATE INDEX idx_gallery_items_captured_at_id ON gallery_items (captured_at, id)');
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
   @override
-  List<DatabaseSchemaEntity> get allSchemaEntities =>
-      [galleryItems, syncCursors, cachedThumbnails];
+  List<DatabaseSchemaEntity> get allSchemaEntities => [
+        galleryItems,
+        syncCursors,
+        cachedThumbnails,
+        idxGalleryItemsLocalIdentity,
+        idxGalleryItemsOriginSizeCapturedAt,
+        idxGalleryItemsCapturedAtId
+      ];
 }
 
 typedef $$GalleryItemsTableCreateCompanionBuilder = GalleryItemsCompanion

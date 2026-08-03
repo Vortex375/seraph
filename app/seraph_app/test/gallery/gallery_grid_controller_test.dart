@@ -64,8 +64,7 @@ void main() {
       expect(controller.syncError.value, isNull);
     });
 
-    test(
-        'a failing sync leaves the gallery working from what the mirror holds',
+    test('a failing sync leaves the gallery working from what the mirror holds',
         () async {
       await populateMirror(db, count: 3);
 
@@ -130,8 +129,7 @@ void main() {
     test('a page arriving does not change the item count', () async {
       await populateMirror(db, count: 500);
 
-      final controller =
-          GalleryGridController(mirror: mirror, pageSize: 100);
+      final controller = GalleryGridController(mirror: mirror, pageSize: 100);
       await controller.open();
 
       final countAtOpen = controller.totalCount.value;
@@ -140,8 +138,7 @@ void main() {
       // Deep in the collection: nothing is loaded there yet.
       expect(controller.itemAt(450), isNull);
       expect(controller.totalCount.value, countAtOpen,
-          reason:
-              'asking for an unloaded index must not move the list length');
+          reason: 'asking for an unloaded index must not move the list length');
 
       // Let the scheduled page read finish.
       await pumpEventQueue();
@@ -182,8 +179,7 @@ void main() {
       expect(controller.totalCount.value, 10);
     });
 
-    test('the scrubber can ask for a date without loading that page',
-        () async {
+    test('the scrubber can ask for a date without loading that page', () async {
       const day = 24 * 60 * 60;
       await populateMirror(db, count: 400, newestCapturedAt: 1770000000);
 
@@ -226,15 +222,15 @@ void main() {
       expect(await controller.dateAt(-1), isNull);
     });
 
-    test('a sync that adds items is picked up by an explicit reload',
-        () async {
+    test('a sync that adds items is picked up by an explicit reload', () async {
       await populateMirror(db, count: 2);
 
       final controller = GalleryGridController(mirror: mirror);
       await controller.open();
       expect(controller.totalCount.value, 2);
 
-      await insertMirrorItem(db, path: '/Photos/newest.jpg', capturedAt: 1 << 31);
+      await insertMirrorItem(db,
+          path: '/Photos/newest.jpg', capturedAt: 1 << 31);
 
       // Still 2 until asked - the count does not move under the user.
       expect(controller.totalCount.value, 2);
@@ -283,7 +279,8 @@ void main() {
 
       expect(source.scanCount, 1);
       expect(controller.totalCount.value, 1);
-      expect(controller.itemAt(0)!.availability, GalleryAvailability.deviceOnly);
+      expect(
+          controller.itemAt(0)!.availability, GalleryAvailability.deviceOnly);
     });
 
     test('a failing local scan does not stop the gallery or the cloud sync',
@@ -332,7 +329,8 @@ void main() {
         'photo without a manual reload', () async {
       final source = FakeLocalSource()
         ..incrementalItems = [
-          localMediaItem(displayName: 'just-taken.jpg', size: 7, dateTakenMillis: 20000),
+          localMediaItem(
+              displayName: 'just-taken.jpg', size: 7, dateTakenMillis: 20000),
         ];
       final controller = GalleryGridController(
         mirror: mirror,
@@ -354,7 +352,8 @@ void main() {
       expect(controller.totalCount.value, 1,
           reason: 'ticket 17: taking a photo makes it appear within seconds '
               'while the app is running');
-      expect(controller.itemAt(0)!.availability, GalleryAvailability.deviceOnly);
+      expect(
+          controller.itemAt(0)!.availability, GalleryAvailability.deviceOnly);
     });
 
     test('onClose releases the content-observer subscription', () async {
@@ -385,7 +384,8 @@ void main() {
     test('the filter restricts totalCount and itemAt without reordering',
         () async {
       final source = FakeLocalSource([
-        localMediaItem(displayName: 'device-only.jpg', size: 1, dateTakenMillis: 10000),
+        localMediaItem(
+            displayName: 'device-only.jpg', size: 1, dateTakenMillis: 10000),
       ]);
       final controller = GalleryGridController(
         mirror: mirror,
@@ -399,7 +399,8 @@ void main() {
 
       await controller.setFilter(GalleryAvailabilityFilter.notBackedUp);
       expect(controller.totalCount.value, 1);
-      expect(controller.itemAt(0)!.availability, GalleryAvailability.deviceOnly);
+      expect(
+          controller.itemAt(0)!.availability, GalleryAvailability.deviceOnly);
 
       await controller.setFilter(GalleryAvailabilityFilter.cloudOnly);
       expect(controller.totalCount.value, 1);
@@ -411,7 +412,8 @@ void main() {
 
     test('the summary reports backed-up and not-backed-up counts', () async {
       final source = FakeLocalSource([
-        localMediaItem(displayName: 'device-only.jpg', size: 1, dateTakenMillis: 10000),
+        localMediaItem(
+            displayName: 'device-only.jpg', size: 1, dateTakenMillis: 10000),
       ]);
       final controller = GalleryGridController(
         mirror: mirror,
@@ -436,12 +438,12 @@ void main() {
         final controller = GalleryGridController(mirror: mirror);
         await controller.open();
 
-        expect(controller.localPermission.value, LocalPermissionStatus.unsupported);
+        expect(controller.localPermission.value,
+            LocalPermissionStatus.unsupported);
       });
 
       test('a full grant is reported as granted', () async {
-        final source =
-            FakeLocalSource([], LocalPermissionStatus.granted);
+        final source = FakeLocalSource([], LocalPermissionStatus.granted);
         final controller = GalleryGridController(
           mirror: mirror,
           localScanService: LocalScanService(mirror, localSource: source),
@@ -489,7 +491,8 @@ void main() {
         expect(controller.localPermission.value, LocalPermissionStatus.denied);
         expect(controller.totalCount.value, 1,
             reason: 'the cloud item is unaffected by a denied device grant');
-        expect(controller.itemAt(0)!.availability, GalleryAvailability.cloudOnly);
+        expect(
+            controller.itemAt(0)!.availability, GalleryAvailability.cloudOnly);
       });
 
       test(
@@ -549,15 +552,174 @@ void main() {
 
         // The user left the app, granted full access in system Settings, and
         // came back - simulated here as the fake's state changing under the
-        // same running controller instance, then the same syncNow the app
-        // calls on resume.
+        // same running controller instance, then [syncOnResume] - what
+        // GalleryView's resume handler actually calls (ticket 29's throttle
+        // is why it is this and not [syncNow] directly; see the next group).
         source.setPermissionStatus(LocalPermissionStatus.granted);
         source.setItems([localMediaItem(displayName: 'was-restricted.jpg')]);
 
-        await controller.syncNow();
+        await controller.syncOnResume();
 
         expect(controller.localPermission.value, LocalPermissionStatus.granted);
         expect(controller.totalCount.value, 1);
+      });
+    });
+
+    // Ticket 29: opening/resuming the gallery no longer blocks on a full
+    // sync every time - a throttle skips a redundant re-sync entirely, and
+    // the interactive path runs the cheaper incremental scan except on a
+    // cold start, past a backstop interval, or when a caller forces one.
+    group('sync cadence (ticket 29)', () {
+      test(
+          'a second syncNow() within the throttle window is a no-op: no '
+          'HTTP request, no media-store call, no spinner', () async {
+        await populateMirror(db, count: 1);
+        var httpCalls = 0;
+        final dio = Dio();
+        dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+          httpCalls++;
+          handler.resolve(Response(
+            requestOptions: options,
+            statusCode: 200,
+            data: {
+              'items': <Map<String, dynamic>>[],
+              'nextCursor': '',
+              'hasMore': false,
+              'nextSince': 0,
+            },
+          ));
+        }));
+        final sync = GallerySyncService(
+          FakeSettingsController(),
+          FakeLoginController(),
+          mirror,
+          dio: dio,
+        );
+        final source = FakeLocalSource();
+        final clock = FakeClock();
+        final controller = GalleryGridController(
+          mirror: mirror,
+          syncService: sync,
+          localScanService: LocalScanService(mirror, localSource: source),
+          now: clock.call,
+        );
+
+        await controller.open();
+        await pumpEventQueue();
+        expect(httpCalls, 1);
+        expect(source.scanCount, 1);
+
+        // No time passed at all - well inside the 60-second throttle.
+        await controller.syncNow();
+
+        expect(httpCalls, 1, reason: 'throttled: no second HTTP request');
+        expect(source.scanCount, 1, reason: 'throttled: no second full scan');
+        expect(source.incrementalScanCount, 0,
+            reason: 'throttled: not even an incremental scan');
+        expect(controller.isSyncing.value, isFalse,
+            reason: 'throttled: the spinner never turns on');
+      });
+
+      test(
+          'an unforced syncNow() past the throttle window runs an '
+          'incremental scan, not a full one', () async {
+        final source = FakeLocalSource([localMediaItem(displayName: 'a.jpg')]);
+        final clock = FakeClock();
+        final controller = GalleryGridController(
+          mirror: mirror,
+          localScanService: LocalScanService(mirror, localSource: source),
+          now: clock.call,
+        );
+        await controller.open();
+        await pumpEventQueue();
+        expect(source.scanCount, 1,
+            reason: 'cold start always runs a full scan');
+
+        // Past the 60-second throttle, nowhere near the 6-hour backstop.
+        clock.advance(const Duration(minutes: 2));
+        await controller.syncNow();
+
+        expect(source.scanCount, 1,
+            reason: 'a recent full scan means this sync must be incremental');
+        expect(source.incrementalScanCount, 1);
+      });
+
+      test(
+          'a full scan runs again once the backstop interval has passed, '
+          'even without force', () async {
+        final source = FakeLocalSource([localMediaItem(displayName: 'a.jpg')]);
+        final clock = FakeClock();
+        final controller = GalleryGridController(
+          mirror: mirror,
+          localScanService: LocalScanService(mirror, localSource: source),
+          now: clock.call,
+        );
+        await controller.open();
+        await pumpEventQueue();
+        expect(source.scanCount, 1);
+
+        clock.advance(const Duration(hours: 6, minutes: 1));
+        await controller.syncNow();
+
+        expect(source.scanCount, 2,
+            reason: 'the backstop interval forces a full scan even when the '
+                'caller did not ask for one');
+      });
+
+      test('a permission change picked up on resume defeats the throttle',
+          () async {
+        final source = FakeLocalSource(const [], LocalPermissionStatus.denied);
+        final clock = FakeClock();
+        final controller = GalleryGridController(
+          mirror: mirror,
+          localScanService: LocalScanService(mirror, localSource: source),
+          now: clock.call,
+        );
+        await controller.open();
+        await pumpEventQueue();
+        expect(controller.localPermission.value, LocalPermissionStatus.denied);
+
+        // Well inside the throttle window - the user left the app, granted
+        // access in system Settings, and came straight back.
+        clock.advance(const Duration(seconds: 5));
+        source.setPermissionStatus(LocalPermissionStatus.granted);
+        source
+            .setItems([localMediaItem(displayName: 'granted-while-away.jpg')]);
+
+        await controller.syncOnResume();
+
+        expect(controller.localPermission.value, LocalPermissionStatus.granted);
+        expect(controller.totalCount.value, 1,
+            reason: 'a permission change on resume must defeat the throttle, '
+                'not be swallowed by it');
+        expect(source.scanCount, 2,
+            reason: 'a permission change on resume also forces a full scan, '
+                'not just bypasses the throttle');
+      });
+
+      test(
+          'a resume with no permission change is throttled exactly like any '
+          'other syncNow() call', () async {
+        final source = FakeLocalSource(const [], LocalPermissionStatus.granted);
+        final clock = FakeClock();
+        final controller = GalleryGridController(
+          mirror: mirror,
+          localScanService: LocalScanService(mirror, localSource: source),
+          now: clock.call,
+        );
+        await controller.open();
+        await pumpEventQueue();
+        expect(source.scanCount, 1);
+
+        clock.advance(const Duration(seconds: 5));
+        await controller.syncOnResume();
+
+        expect(source.scanCount, 1,
+            reason: 'no grant change: the throttle applies exactly as it '
+                'would to any other resume');
+        expect(source.incrementalScanCount, 0,
+            reason: 'the throttled call never even reaches the incremental '
+                'scan path');
       });
     });
   });
