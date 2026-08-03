@@ -2,6 +2,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:seraph_app/src/gallery/gallery_item_display.dart';
 import 'package:seraph_app/src/gallery/local/local_scan_service.dart';
+import 'package:seraph_app/src/gallery/local/local_source.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_delta_models.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
@@ -103,6 +104,54 @@ void main() {
 
       expect(await mirror.totalCount(), 1);
       expect(source.scanCount, 2);
+    });
+
+    // Ticket 16: the permission pass-through methods, at the same seam.
+    group('permission pass-through', () {
+      test('with no Local Source, permissionStatus is unsupported', () async {
+        final service = LocalScanService(mirror, localSource: null);
+        expect(
+            await service.permissionStatus(), LocalPermissionStatus.unsupported);
+      });
+
+      test('with no Local Source, requestPermission is unsupported and a '
+          'no-op', () async {
+        final service = LocalScanService(mirror, localSource: null);
+        expect(
+            await service.requestPermission(), LocalPermissionStatus.unsupported);
+      });
+
+      test('with no Local Source, openAppSettings is a no-op', () async {
+        final service = LocalScanService(mirror, localSource: null);
+        await service.openAppSettings(); // must not throw
+      });
+
+      test('permissionStatus reads straight through to the source', () async {
+        final source =
+            FakeLocalSource(const [], LocalPermissionStatus.partial);
+        final service = LocalScanService(mirror, localSource: source);
+
+        expect(await service.permissionStatus(), LocalPermissionStatus.partial);
+      });
+
+      test('requestPermission reads the source\'s answer straight through',
+          () async {
+        final source = FakeLocalSource(const [], LocalPermissionStatus.denied)
+          ..nextRequestResult = LocalPermissionStatus.granted;
+        final service = LocalScanService(mirror, localSource: source);
+
+        expect(await service.requestPermission(), LocalPermissionStatus.granted);
+        expect(source.requestCount, 1);
+      });
+
+      test('openAppSettings reaches the source', () async {
+        final source = FakeLocalSource();
+        final service = LocalScanService(mirror, localSource: source);
+
+        await service.openAppSettings();
+
+        expect(source.openSettingsCount, 1);
+      });
     });
   });
 }

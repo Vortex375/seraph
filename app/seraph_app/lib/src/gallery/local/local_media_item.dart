@@ -48,6 +48,36 @@ class LocalMediaItem {
   final int? mediaStoreId;
 }
 
+/// The device photo-access grant, as ticket 16 needs to reason about it -
+/// never richer than what the platform itself can tell apart.
+///
+/// Android's own permission API cannot distinguish "never asked" from
+/// "explicitly denied" - `checkSelfPermission` reports both as not granted.
+/// [denied] therefore covers both; the explanation-before-request UI
+/// (`GalleryView`) simply offers the request again each time the gallery
+/// opens rather than trying to remember which of the two it was, which
+/// keeps this seam honest about what the platform actually knows.
+enum LocalPermissionStatus {
+  /// No Local Source exists on this platform at all (iOS, desktop, web) -
+  /// there is no permission to ask about, and no warning to show either.
+  unsupported,
+
+  /// Full library access - the gallery behaves exactly as ticket 15 left it.
+  granted,
+
+  /// Android 14's partial grant (`READ_MEDIA_VISUAL_USER_SELECTED` without
+  /// `READ_MEDIA_IMAGES`): the app can see only the photos the user
+  /// hand-picked. A full scan still runs and still only returns that subset
+  /// - MediaStore itself filters the query, this seam does not have to.
+  partial,
+
+  /// No access at all - either never asked, or explicitly refused. The
+  /// cloud-only gallery must keep working exactly as if no Local Source
+  /// existed here (ticket 15's platform-neutrality criterion, extended by
+  /// ticket 16 to "declining one permission must not disable the feature").
+  denied,
+}
+
 /// The device-side half of a Sync Pair (see `CONTEXT.md`): wherever photos
 /// come from on this device, together with a relative path for each one. On
 /// Android that is external storage's shared media collection and the paths
@@ -75,6 +105,28 @@ abstract class LocalSource {
   /// currently produce photos - permission not granted, or no Local Source
   /// implementation exists here at all - so a scan that cannot run behaves
   /// exactly like a platform with no Local Source (ticket 15's platform-
-  /// neutrality criterion), never like an error.
+  /// neutrality criterion), never like an error. Under [LocalPermissionStatus.
+  /// partial] this still returns whatever subset the user selected - it is
+  /// not empty just because access is incomplete.
   Future<List<LocalMediaItem>> fullScan();
+
+  /// The current grant, without prompting for it. Ticket 16's degraded-mode
+  /// warning and its "everything is backed up" guard both read this rather
+  /// than inferring the grant from how many photos [fullScan] returned - an
+  /// empty selection under a partial grant must not be mistaken for denial.
+  Future<LocalPermissionStatus> permissionStatus();
+
+  /// Asks the platform for access, or - if a partial grant already exists -
+  /// re-opens whatever the platform offers for changing it (Android 14 shows
+  /// its selected-photos picker again rather than the original three-way
+  /// dialog once a partial grant is already in place). Resolves to the grant
+  /// that results, so the caller never has to poll [permissionStatus]
+  /// separately to find out what the user just did.
+  Future<LocalPermissionStatus> requestPermission();
+
+  /// Opens the platform's own settings screen for this app's permissions -
+  /// the only reliable route from a partial grant to full access on Android,
+  /// since [requestPermission] re-shown after a partial grant offers more
+  /// selection, not a way back to "allow all".
+  Future<void> openAppSettings();
 }

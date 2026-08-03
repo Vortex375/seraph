@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:get/get.dart';
 import 'package:seraph_app/src/gallery/local/local_scan_service.dart';
+import 'package:seraph_app/src/gallery/local/local_source.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_sync_service.dart';
@@ -79,6 +80,15 @@ class GalleryGridController extends GetxController {
     const GalleryAvailabilitySummary(deviceOnly: 0, synced: 0, cloudOnly: 0),
   );
 
+  /// The device photo-access grant, as of the last [reload] - ticket 16's
+  /// degraded-mode state. [LocalPermissionStatus.unsupported] when there is
+  /// no [localScanService] at all, which is every platform without a Local
+  /// Source and every test that has nothing to do with device photos; the
+  /// view shows no permission UI in that case, exactly as before this
+  /// ticket.
+  final Rx<LocalPermissionStatus> localPermission =
+      Rx<LocalPermissionStatus>(LocalPermissionStatus.unsupported);
+
   /// Bumped whenever loaded items change, so views can rebuild without the
   /// item map itself having to be observable.
   final RxInt revision = 0.obs;
@@ -117,6 +127,8 @@ class GalleryGridController extends GetxController {
     _dates.clear();
     totalCount.value = count;
     summary.value = await mirror.availabilitySummary();
+    localPermission.value = await localScanService?.permissionStatus() ??
+        LocalPermissionStatus.unsupported;
     revision.value++;
     await _loadPage(0);
   }
@@ -179,9 +191,40 @@ class GalleryGridController extends GetxController {
       await scanner.scan();
     } catch (_) {
       // Surfacing this to the user - e.g. "can't see the rest of your
-      // photos" under a partial permission grant - is ticket 16's job. Here
-      // the mirror simply keeps whatever the last successful scan produced.
+      // photos" under a partial permission grant - is ticket 16's job (see
+      // [localPermission]). Here the mirror simply keeps whatever the last
+      // successful scan produced.
     }
+  }
+
+  /// Asks for device photo access - or, under an existing partial grant,
+  /// for more of it (Android 14 re-opens its selected-photos picker rather
+  /// than the original dialog once some access already exists). A no-op on
+  /// a platform with no Local Source.
+  ///
+  /// The explanation the user is owed (ticket 16's first criterion) is
+  /// [GalleryView]'s job, shown before this is ever called - this method is
+  /// only the request itself. Always followed by [syncNow], so a newly
+  /// granted or widened selection shows up immediately rather than waiting
+  /// for the next sync.
+  Future<void> requestLocalPermission() async {
+    final scanner = localScanService;
+    if (scanner == null) {
+      return;
+    }
+    localPermission.value = await scanner.requestPermission();
+    await syncNow();
+  }
+
+  /// Opens the platform's settings screen for this app's permissions - the
+  /// only reliable route from a partial grant to full access on Android. A
+  /// no-op on a platform with no Local Source.
+  Future<void> openLocalPermissionSettings() async {
+    final scanner = localScanService;
+    if (scanner == null) {
+      return;
+    }
+    await scanner.openAppSettings();
   }
 
   /// The item at [index] in Capture Date order, newest first - or null if its

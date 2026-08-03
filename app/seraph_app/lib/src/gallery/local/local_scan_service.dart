@@ -36,4 +36,37 @@ class LocalScanService {
     final items = await source.fullScan();
     await mirror.applyLocalScan(items);
   }
+
+  /// The device photo-access grant right now, without prompting for it -
+  /// [LocalPermissionStatus.unsupported] on a platform with no Local Source,
+  /// exactly like [localSource] being null everywhere else in this class.
+  Future<LocalPermissionStatus> permissionStatus() async {
+    final source = localSource;
+    if (source == null) {
+      return LocalPermissionStatus.unsupported;
+    }
+    return source.permissionStatus();
+  }
+
+  /// Asks for access (or, under an existing partial grant, for more of it) -
+  /// a no-op that reports [LocalPermissionStatus.unsupported] on a platform
+  /// with no Local Source, so a caller never has to check for null first.
+  Future<LocalPermissionStatus> requestPermission() async {
+    final source = localSource;
+    if (source == null) {
+      return LocalPermissionStatus.unsupported;
+    }
+    return source.requestPermission();
+  }
+
+  /// Opens the platform's own settings screen for this app's permissions -
+  /// the route from a partial grant to full access. A no-op with no Local
+  /// Source.
+  Future<void> openAppSettings() async {
+    final source = localSource;
+    if (source == null) {
+      return;
+    }
+    await source.openAppSettings();
+  }
 }

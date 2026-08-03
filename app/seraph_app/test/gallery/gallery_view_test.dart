@@ -7,6 +7,8 @@ import 'package:seraph_app/src/gallery/gallery_image_loader.dart';
 import 'package:seraph_app/src/gallery/gallery_photo_viewer.dart';
 import 'package:seraph_app/src/gallery/gallery_tile.dart';
 import 'package:seraph_app/src/gallery/gallery_view.dart';
+import 'package:seraph_app/src/gallery/local/local_scan_service.dart';
+import 'package:seraph_app/src/gallery/local/local_source.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 import 'package:seraph_app/src/login/login_controller.dart';
@@ -26,7 +28,7 @@ void main() {
   late GalleryMirror mirror;
   late GalleryGridController controller;
 
-  Future<void> setUpGallery({int itemCount = 0}) async {
+  Future<void> setUpGallery({int itemCount = 0, FakeLocalSource? localSource}) async {
     Get.testMode = true;
     Get.reset();
 
@@ -51,7 +53,12 @@ void main() {
       dio: dio,
     ));
 
-    controller = GalleryGridController(mirror: mirror);
+    controller = GalleryGridController(
+      mirror: mirror,
+      localScanService: localSource == null
+          ? null
+          : LocalScanService(mirror, localSource: localSource),
+    );
     Get.put(controller);
     await controller.open();
   }
@@ -254,6 +261,126 @@ void main() {
     final delegate =
         grid.gridDelegate as SliverGridDelegateWithFixedCrossAxisCount;
     expect(delegate.crossAxisCount, greaterThan(4));
+  });
+
+  group('photo-access UI (ticket 16)', () {
+    testWidgets('with full access, no permission banner is shown',
+        (tester) async {
+      await setUpGallery(
+        itemCount: 3,
+        localSource: FakeLocalSource(const [], LocalPermissionStatus.granted),
+      );
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('gallery-partial-access-banner')),
+          findsNothing);
+      expect(find.textContaining('Limited photo access'), findsNothing);
+      expect(find.textContaining('everything is backed up'), findsNothing);
+    });
+
+    testWidgets('with no Local Source at all, no permission banner is shown',
+        (tester) async {
+      await setUpGallery(itemCount: 3);
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('gallery-partial-access-banner')),
+          findsNothing);
+      expect(find.textContaining('Allow access'), findsNothing);
+    });
+
+    testWidgets('a partial grant shows a persistent warning that cannot be '
+        'dismissed', (tester) async {
+      await setUpGallery(
+        itemCount: 2,
+        localSource: FakeLocalSource(const [], LocalPermissionStatus.partial),
+      );
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      final banner = find.byKey(const Key('gallery-partial-access-banner'));
+      expect(banner, findsOneWidget);
+      expect(find.textContaining("don't include the"), findsOneWidget);
+      // No close/dismiss affordance on the warning itself.
+      expect(
+          find.descendant(of: banner, matching: find.text('Not now')),
+          findsNothing);
+    });
+
+    testWidgets(
+        'a partial grant offers both extending the selection and full '
+        'access', (tester) async {
+      final source = FakeLocalSource(const [], LocalPermissionStatus.partial);
+      await setUpGallery(itemCount: 1, localSource: source);
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Choose more photos'));
+      await tester.pumpAndSettle();
+      expect(source.requestCount, 1);
+
+      await tester.tap(find.text('Allow full access'));
+      await tester.pumpAndSettle();
+      expect(source.openSettingsCount, 1);
+    });
+
+    testWidgets(
+        'a partial grant\'s summary states what it cannot see rather than '
+        'implying completeness', (tester) async {
+      await setUpGallery(
+        itemCount: 2,
+        localSource: FakeLocalSource(const [], LocalPermissionStatus.partial),
+      );
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      expect(
+          find.textContaining("Does not count device photos outside your "
+              "selection"),
+          findsOneWidget);
+    });
+
+    testWidgets(
+        'a denied grant explains itself before offering to request access '
+        'again', (tester) async {
+      await setUpGallery(
+        itemCount: 2,
+        localSource: FakeLocalSource(const [], LocalPermissionStatus.denied),
+      );
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      // The explanation is on screen before the request button is ever
+      // pressed - ticket 16's "preceded by an explanation" criterion.
+      expect(find.textContaining('back up photos on this device'),
+          findsOneWidget);
+      final requestButton = find.text('Allow access');
+      expect(requestButton, findsOneWidget);
+
+      await tester.tap(requestButton);
+      await tester.pumpAndSettle();
+      // The gallery is still fully usable either way.
+      expect(find.byType(GalleryTile), findsWidgets);
+    });
+
+    testWidgets('dismissing the denied-access prompt hides it for this open',
+        (tester) async {
+      await setUpGallery(
+        itemCount: 1,
+        localSource: FakeLocalSource(const [], LocalPermissionStatus.denied),
+      );
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      expect(find.text('Allow access'), findsOneWidget);
+      await tester.tap(find.text('Not now'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Allow access'), findsNothing);
+      // Cloud-only gallery keeps working regardless.
+      expect(find.byType(GalleryTile), findsWidgets);
+    });
   });
 
   testWidgets('a narrow phone window keeps a usable column count',

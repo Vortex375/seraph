@@ -369,6 +369,139 @@ void main() {
       expect(controller.summary.value.backedUp, 1);
       expect(controller.summary.value.notBackedUp, 1);
     });
+
+    // Ticket 16's mirror-seam criterion: drive a fake Local Source through
+    // each grant state and assert on what the gallery reports about
+    // coverage, rather than on any widget.
+    group('local photo-access grant (ticket 16)', () {
+      test('with no Local Source at all, the grant is unsupported', () async {
+        final controller = GalleryGridController(mirror: mirror);
+        await controller.open();
+
+        expect(controller.localPermission.value, LocalPermissionStatus.unsupported);
+      });
+
+      test('a full grant is reported as granted', () async {
+        final source =
+            FakeLocalSource([], LocalPermissionStatus.granted);
+        final controller = GalleryGridController(
+          mirror: mirror,
+          localScanService: LocalScanService(mirror, localSource: source),
+        );
+
+        await controller.open();
+        await pumpEventQueue();
+
+        expect(controller.localPermission.value, LocalPermissionStatus.granted);
+      });
+
+      test(
+          'a partial grant is reported as partial, distinct from an empty '
+          'selection meaning denied', () async {
+        final source = FakeLocalSource(
+          const [], // the user selected zero photos so far
+          LocalPermissionStatus.partial,
+        );
+        final controller = GalleryGridController(
+          mirror: mirror,
+          localScanService: LocalScanService(mirror, localSource: source),
+        );
+
+        await controller.open();
+        await pumpEventQueue();
+
+        expect(controller.localPermission.value, LocalPermissionStatus.partial,
+            reason: 'zero visible photos under a partial grant must not be '
+                'mistaken for denial - the grant, not the item count, is '
+                'the source of truth');
+      });
+
+      test('a denied grant leaves the cloud-only gallery fully intact',
+          () async {
+        await insertMirrorItem(db, path: '/Photos/cloud.jpg', capturedAt: 500);
+        final source = FakeLocalSource(const [], LocalPermissionStatus.denied);
+        final controller = GalleryGridController(
+          mirror: mirror,
+          localScanService: LocalScanService(mirror, localSource: source),
+        );
+
+        await controller.open();
+        await pumpEventQueue();
+
+        expect(controller.localPermission.value, LocalPermissionStatus.denied);
+        expect(controller.totalCount.value, 1,
+            reason: 'the cloud item is unaffected by a denied device grant');
+        expect(controller.itemAt(0)!.availability, GalleryAvailability.cloudOnly);
+      });
+
+      test(
+          'requestLocalPermission asks the source, applies the new grant and '
+          'syncs immediately', () async {
+        final source = FakeLocalSource(const [], LocalPermissionStatus.denied);
+        final controller = GalleryGridController(
+          mirror: mirror,
+          localScanService: LocalScanService(mirror, localSource: source),
+        );
+        await controller.open();
+        await pumpEventQueue();
+        expect(controller.localPermission.value, LocalPermissionStatus.denied);
+
+        source.setItems([localMediaItem(displayName: 'newly-granted.jpg')]);
+        source.nextRequestResult = LocalPermissionStatus.granted;
+
+        await controller.requestLocalPermission();
+
+        expect(source.requestCount, 1);
+        expect(controller.localPermission.value, LocalPermissionStatus.granted);
+        expect(controller.totalCount.value, 1,
+            reason: 'the newly visible photo is scanned in immediately, not '
+                'on the next unrelated sync');
+      });
+
+      test('openLocalPermissionSettings reaches the source', () async {
+        final source = FakeLocalSource(const [], LocalPermissionStatus.partial);
+        final controller = GalleryGridController(
+          mirror: mirror,
+          localScanService: LocalScanService(mirror, localSource: source),
+        );
+        await controller.open();
+        await pumpEventQueue();
+
+        await controller.openLocalPermissionSettings();
+
+        expect(source.openSettingsCount, 1);
+      });
+
+      test(
+          'a grant that widens between two syncs (picked up without a '
+          'restart) is reflected the moment the running controller re-syncs',
+          () async {
+        final source = FakeLocalSource(
+          const [], // nothing selected yet
+          LocalPermissionStatus.partial,
+        );
+        final controller = GalleryGridController(
+          mirror: mirror,
+          localScanService: LocalScanService(mirror, localSource: source),
+        );
+        await controller.open();
+        await pumpEventQueue();
+        expect(controller.localPermission.value, LocalPermissionStatus.partial);
+        expect(controller.totalCount.value, 0);
+
+        // The user left the app, granted full access in system Settings, and
+        // came back - simulated here as the fake's state changing under the
+        // same running controller instance, then the same syncNow the app
+        // calls on resume.
+        source.setPermissionStatus(LocalPermissionStatus.granted);
+        source.setItems([localMediaItem(displayName: 'was-restricted.jpg')]);
+
+        await controller.syncNow();
+
+        expect(controller.localPermission.value, LocalPermissionStatus.granted);
+        expect(controller.totalCount.value, 1);
+      });
+    });
   });
 }
 
@@ -377,4 +510,15 @@ class _ThrowingLocalSource implements LocalSource {
   Future<List<LocalMediaItem>> fullScan() {
     throw StateError('scan failed');
   }
+
+  @override
+  Future<LocalPermissionStatus> permissionStatus() async =>
+      LocalPermissionStatus.granted;
+
+  @override
+  Future<LocalPermissionStatus> requestPermission() async =>
+      LocalPermissionStatus.granted;
+
+  @override
+  Future<void> openAppSettings() async {}
 }

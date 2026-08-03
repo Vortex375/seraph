@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:seraph_app/src/app_bar/app_bar.dart';
@@ -7,6 +9,7 @@ import 'package:seraph_app/src/gallery/gallery_item_display.dart';
 import 'package:seraph_app/src/gallery/gallery_photo_viewer.dart';
 import 'package:seraph_app/src/gallery/gallery_source_folders_view.dart';
 import 'package:seraph_app/src/gallery/gallery_tile.dart';
+import 'package:seraph_app/src/gallery/local/local_source.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 
 /// Gallery Mode: the user's photos in Seraph, as a grid of thumbnails ordered
@@ -32,7 +35,7 @@ class GalleryView extends StatefulWidget {
   State<GalleryView> createState() => _GalleryViewState();
 }
 
-class _GalleryViewState extends State<GalleryView> {
+class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
   static const double _spacing = 2;
 
   /// Target tile size in logical pixels. The grid picks whatever column count
@@ -55,14 +58,29 @@ class _GalleryViewState extends State<GalleryView> {
   void initState() {
     super.initState();
     _scroll.addListener(_onScroll);
+    WidgetsBinding.instance.addObserver(this);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _scroll.removeListener(_onScroll);
     _scroll.dispose();
     _firstVisibleIndex.dispose();
     super.dispose();
+  }
+
+  /// Ticket 16's "changing the grant while the app is running is picked up
+  /// without requiring a restart": the only route to changing photo access
+  /// mid-session is leaving the app (system Settings, the extended-selection
+  /// picker) and coming back, which is exactly a resume. Re-running the same
+  /// sync [open] already runs re-checks the grant and re-scans under it,
+  /// with no special-casing needed at the call site.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(controller.syncNow());
+    }
   }
 
   void _onScroll() {
@@ -132,6 +150,7 @@ class _GalleryViewState extends State<GalleryView> {
       ),
       body: Column(
         children: [
+          _LocalPermissionBanner(controller: controller),
           _SummaryBar(controller: controller),
           Expanded(
             child: Obx(() {
@@ -504,6 +523,13 @@ class _EmptyGallery extends StatelessWidget {
 /// ticket 15's summary criterion. Always over the whole gallery, independent
 /// of any Availability filter currently narrowing what the grid shows below
 /// it - hidden entirely once there is nothing in the gallery at all.
+///
+/// Under a partial photo-access grant (ticket 16), this count can only ever
+/// be a count of the photos the app can see - a device photo outside the
+/// user's selection is invisible to the scan and cannot be reflected here
+/// at all, in either direction. The design's rule ("no summary... states or
+/// implies that everything is backed up") is met by saying so directly
+/// rather than by trusting the persistent warning banner above it alone.
 class _SummaryBar extends StatelessWidget {
   const _SummaryBar({required this.controller});
 
@@ -517,16 +543,153 @@ class _SummaryBar extends StatelessWidget {
       if (summary.total == 0) {
         return const SizedBox.shrink();
       }
+      final isPartial =
+          controller.localPermission.value == LocalPermissionStatus.partial;
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         color: theme.colorScheme.surfaceContainerHighest,
-        child: Text(
-          '${summary.backedUp} backed up · ${summary.notBackedUp} not backed up',
-          style: theme.textTheme.bodySmall,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '${summary.backedUp} backed up · ${summary.notBackedUp} not backed up',
+              style: theme.textTheme.bodySmall,
+            ),
+            if (isPartial)
+              Text(
+                'Does not count device photos outside your selection - they '
+                "are not visible to Seraph and aren't included here.",
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.error),
+              ),
+          ],
         ),
       );
     });
+  }
+}
+
+/// Ticket 16's photo-access UI: an explanation-first prompt before the very
+/// first request, and a persistent warning while access is only partial.
+/// Nothing is shown once access is granted in full, on a platform with no
+/// Local Source at all, or (deliberately - see the class body) once access
+/// has been explicitly refused, so the cloud-only gallery is never nagged at
+/// after an honest "no".
+class _LocalPermissionBanner extends StatefulWidget {
+  const _LocalPermissionBanner({required this.controller});
+
+  final GalleryGridController controller;
+
+  @override
+  State<_LocalPermissionBanner> createState() =>
+      _LocalPermissionBannerState();
+}
+
+class _LocalPermissionBannerState extends State<_LocalPermissionBanner> {
+  // Session-only: Android's permission API cannot tell "never asked" apart
+  // from "explicitly denied" (see LocalPermissionStatus.denied), so this
+  // banner cannot remember a refusal across a restart without guessing.
+  // Dismissing for this open of the gallery is enough to stop it competing
+  // with the grid without lying about a decision that never persisted.
+  bool _dismissed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Obx(() {
+      final status = widget.controller.localPermission.value;
+      switch (status) {
+        case LocalPermissionStatus.partial:
+          return _warningBanner(theme);
+        case LocalPermissionStatus.denied:
+          if (_dismissed) {
+            return const SizedBox.shrink();
+          }
+          return _promptBanner(theme);
+        case LocalPermissionStatus.granted:
+        case LocalPermissionStatus.unsupported:
+          return const SizedBox.shrink();
+      }
+    });
+  }
+
+  /// Shown before the very first request, and again after an explicit
+  /// refusal (until dismissed) so changing one's mind is always one tap
+  /// away. Ticket 16's first criterion: the explanation is the banner's own
+  /// text, shown before [GalleryGridController.requestLocalPermission] ever
+  /// fires the platform's own dialog.
+  Widget _promptBanner(ThemeData theme) {
+    return Container(
+      width: double.infinity,
+      color: theme.colorScheme.secondaryContainer,
+      padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+      child: Row(
+        children: [
+          Icon(Icons.photo_library_outlined,
+              color: theme.colorScheme.onSecondaryContainer),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Seraph can include and back up photos on this device, '
+              "alongside your Seraph photos. It only reads photos you're "
+              "asked about; nothing is uploaded unless you set up backup "
+              'separately.',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSecondaryContainer),
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: () => widget.controller.requestLocalPermission(),
+            child: const Text('Allow access'),
+          ),
+          TextButton(
+            onPressed: () => setState(() => _dismissed = true),
+            child: const Text('Not now'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Persistent while access is partial (ticket 16: "a persistent,
+  /// comprehensible warning that it cannot see the rest") - deliberately has
+  /// no dismiss button, unlike [_promptBanner]. Offers both routes out: the
+  /// picker for more photos, and Settings for full access.
+  Widget _warningBanner(ThemeData theme) {
+    return Container(
+      key: const Key('gallery-partial-access-banner'),
+      width: double.infinity,
+      color: theme.colorScheme.errorContainer,
+      padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+      child: Row(
+        children: [
+          Icon(Icons.warning_amber_outlined,
+              color: theme.colorScheme.onErrorContainer),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Limited photo access: Seraph can only see the photos you '
+              "selected. This gallery and its summary don't include the "
+              'rest of your device photos.',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onErrorContainer),
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: () => widget.controller.requestLocalPermission(),
+            child: const Text('Choose more photos'),
+          ),
+          TextButton(
+            onPressed: () => widget.controller.openLocalPermissionSettings(),
+            child: const Text('Allow full access'),
+          ),
+        ],
+      ),
+    );
   }
 }
 

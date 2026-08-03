@@ -17,19 +17,58 @@ import 'package:seraph_app/src/share/share_controller.dart';
 /// reassigned between scans, so a test can simulate a device photo appearing
 /// or disappearing across two calls to [LocalScanService.scan]
 /// (`local_scan_service.dart`).
+///
+/// [permissionStatus] can likewise be reassigned between reads, so a ticket
+/// 16 test can drive the same fake through granted, partial and denied
+/// without standing up three separate sources - see [setPermissionStatus].
 class FakeLocalSource implements LocalSource {
-  FakeLocalSource([List<LocalMediaItem> items = const []]) : _items = items;
+  FakeLocalSource([
+    List<LocalMediaItem> items = const [],
+    LocalPermissionStatus permissionStatus = LocalPermissionStatus.granted,
+  ])  : _items = items,
+        _permissionStatus = permissionStatus;
 
   List<LocalMediaItem> _items;
+  LocalPermissionStatus _permissionStatus;
   int scanCount = 0;
+  int requestCount = 0;
+  int openSettingsCount = 0;
+
+  /// What the next [requestPermission] resolves to. Defaults to whatever
+  /// [setPermissionStatus] last set, mirroring the real
+  /// `AndroidLocalSource`: asking again reports the grant the platform now
+  /// holds. A test can override this independently (e.g. "still partial
+  /// after the user adds one more photo") by setting it after
+  /// [setPermissionStatus].
+  LocalPermissionStatus? nextRequestResult;
 
   /// Replaces what the next [fullScan] returns.
   void setItems(List<LocalMediaItem> items) => _items = items;
+
+  /// Replaces what [permissionStatus] and, unless overridden by
+  /// [nextRequestResult], [requestPermission] report.
+  void setPermissionStatus(LocalPermissionStatus status) =>
+      _permissionStatus = status;
 
   @override
   Future<List<LocalMediaItem>> fullScan() async {
     scanCount++;
     return _items;
+  }
+
+  @override
+  Future<LocalPermissionStatus> permissionStatus() async => _permissionStatus;
+
+  @override
+  Future<LocalPermissionStatus> requestPermission() async {
+    requestCount++;
+    _permissionStatus = nextRequestResult ?? _permissionStatus;
+    return _permissionStatus;
+  }
+
+  @override
+  Future<void> openAppSettings() async {
+    openSettingsCount++;
   }
 }
 
