@@ -44,6 +44,20 @@ const warmConsumerName = "SERAPH_THUMBNAILER_WARM"
 // responsive while it runs. See TestWarmingDoesNotStarvePreviewPath.
 const warmParallel = 1
 
+// warmDispatchParallel bounds how many warm requests may be checked out of
+// the durable consumer at once - i.e. delivered but not yet acked. It is
+// deliberately larger than warmParallel so the cheap "does a Thumbnail
+// already exist" stat check (see handleMessage/handleRequest) can run ahead
+// of the single creation slot, but it must stay small: leaving this
+// ungated let JetStream's default MaxAckPending (1000) become the only
+// limit, which meant up to 1000 goroutines could pile up waiting for the
+// one creation slot, most of them blowing past AckWait and redelivering
+// before ever being serviced - the redelivery storm this bound exists to
+// prevent. Also set as the consumer's MaxAckPending (see
+// startWarmConsumer), so it is a hard, server-enforced cap too, not just a
+// client-side one.
+const warmDispatchParallel = 8
+
 // startWarmConsumer creates (or reattaches to) the durable warm-request
 // consumer and begins processing ThumbnailWarmRequest messages in the
 // background. It returns the running consumer so Stop() can drain it as
@@ -74,6 +88,10 @@ func (t *Thumbnailer) startWarmConsumer(ctx context.Context) (*warmConsumer, err
 		// warming has actually completed, or is determined to be
 		// permanently undecodable (see handleMessage).
 		AckPolicy: jetstream.AckExplicitPolicy,
+		// hard, server-enforced backstop matching wc.dispatch below - see
+		// warmDispatchParallel's docs for why this must not be left at the
+		// library default (1000).
+		MaxAckPending: warmDispatchParallel,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create/update %s consumer: %w", warmConsumerName, err)
@@ -85,9 +103,10 @@ func (t *Thumbnailer) startWarmConsumer(ctx context.Context) (*warmConsumer, err
 	}
 
 	wc := &warmConsumer{
-		t:       t,
-		iter:    iter,
-		limiter: util.NewLimiter(warmParallel),
+		t:        t,
+		iter:     iter,
+		limiter:  util.NewLimiter(warmParallel),
+		dispatch: util.NewLimiter(warmDispatchParallel),
 	}
 
 	t.wg.Add(1)
@@ -97,9 +116,20 @@ func (t *Thumbnailer) startWarmConsumer(ctx context.Context) (*warmConsumer, err
 }
 
 type warmConsumer struct {
-	t       *Thumbnailer
-	iter    jetstream.MessagesContext
+	t    *Thumbnailer
+	iter jetstream.MessagesContext
+	// limiter gates the actual (expensive) thumbnail creation work - passed
+	// into handleRequest, exactly like the interactive preview path's own
+	// limiter.
 	limiter util.Limiter
+	// dispatch gates how many messages are checked out of the consumer at
+	// once (see warmDispatchParallel). It is a separate Limiter instance
+	// from limiter, deliberately: loop acquires dispatch, then hands off to
+	// a goroutine that (via handleRequest) acquires limiter - reusing the
+	// same instance for both would double-acquire it per message and
+	// deadlock as soon as more messages are in flight than warmParallel
+	// allows.
+	dispatch util.Limiter
 }
 
 func (wc *warmConsumer) stop() {
@@ -110,23 +140,33 @@ func (wc *warmConsumer) stop() {
 }
 
 // loop pulls warm requests off the durable consumer and dispatches each to
-// its own goroutine. It deliberately does NOT itself acquire wc.limiter
-// before dispatching: handleMessage's call into handleRequest already
-// acquires/releases wc.limiter around the actual creation work (after the
-// cheap "does a Thumbnail already exist" stat check, exactly like the
-// interactive preview path's messageLoop/handleRequest split) - acquiring
-// here too would double-acquire the same capacity-warmParallel limiter per
-// message and deadlock once more messages are in flight than warmParallel
-// allows.
+// its own goroutine, bounded by wc.dispatch (see warmDispatchParallel) - it
+// blocks acquiring a dispatch slot *before* calling Next() for the next
+// message, rather than after, so the consumer never has more than
+// warmDispatchParallel messages checked out (delivered-but-unacked) at
+// once. handleMessage's call into handleRequest separately
+// acquires/releases wc.limiter (capacity warmParallel) around the actual
+// creation work, after the cheap "does a Thumbnail already exist" stat
+// check - exactly like the interactive preview path's messageLoop/
+// handleRequest split. wc.dispatch and wc.limiter are deliberately distinct
+// Limiter instances; see wc.dispatch's docs for why reusing one for both
+// would deadlock.
 func (wc *warmConsumer) loop(ctx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	for {
+		if !wc.dispatch.Begin(ctx) {
+			// shutting down
+			return
+		}
+
 		msg, err := wc.iter.Next()
 		if errors.Is(err, jetstream.ErrMsgIteratorClosed) {
+			wc.dispatch.End()
 			return
 		}
 		if err != nil {
+			wc.dispatch.End()
 			wc.t.log.Error("thumbnail warm consumer error", "error", err)
 			return
 		}
@@ -134,6 +174,7 @@ func (wc *warmConsumer) loop(ctx context.Context, wg *sync.WaitGroup) {
 		wc.t.wg.Add(1)
 		go func() {
 			defer wc.t.wg.Done()
+			defer wc.dispatch.End()
 			wc.handleMessage(ctx, msg)
 		}()
 	}

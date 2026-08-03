@@ -221,6 +221,66 @@ func TestBackfillWarmsManyPhotosWithNoSilentLosses(t *testing.T) {
 	assert.Equal(t, 0, missing, "every dispatched photo must eventually get a Thumbnail - no silent losses")
 }
 
+// TestWarmConsumerBoundsInFlightMessages covers the fix for a real
+// stuck-queue incident: with warmParallel=1 restricting actual creation to
+// one photo at a time, dispatching every delivered message to its own
+// unbounded goroutine (as this consumer used to) let JetStream's default
+// MaxAckPending (1000) become the only limit - up to 1000 goroutines piled
+// up waiting for the single creation slot, most blowing past AckWait and
+// redelivering before ever being serviced. NumAckPending (the durable
+// consumer's count of delivered-but-unacked messages, i.e. "Outstanding
+// Acks" in `nats consumer info`) must now stay capped at
+// warmDispatchParallel even when far more work than that is queued at
+// once.
+func TestWarmConsumerBoundsInFlightMessages(t *testing.T) {
+	thumb, _, js := getThumbnailerWithJetStream(t, nil)
+	defer thumb.Stop()
+	resetWarmStreams(t, js)
+
+	thumb.mu.Lock()
+	warm := thumb.warm
+	thumb.mu.Unlock()
+	require.NotNil(t, warm)
+
+	// Hold the sole creation-work slot hostage for the duration of the
+	// test, so every dispatched warm message blocks forever right after
+	// its cheap Stat check (see handleRequest), without needing any real
+	// image processing to be slower than message dispatch - racing real
+	// work against dispatch speed is exactly what made an earlier version
+	// of this test flaky (solid-color fixture JPEGs decode/encode fast
+	// enough that no backlog reliably builds up). This makes the backlog
+	// build up deterministically instead.
+	require.True(t, warm.limiter.Begin(context.Background()))
+	defer warm.limiter.End()
+
+	const count = 40
+	for i := 0; i < count; i++ {
+		name := writeFixtureJpeg(t, fmt.Sprintf("fixture_warm_bound_%d.jpg", i), 64, 64)
+		publishThumbnailWarm(t, js, events.ThumbnailWarmRequest{
+			ProviderID: "testinput",
+			Path:       name,
+		})
+	}
+
+	cons, err := js.Consumer(context.Background(), events.ThumbnailWarmStream, warmConsumerName)
+	require.NoError(t, err)
+
+	var lastInfo *jetstream.ConsumerInfo
+	ok := waitFor(t, 5*time.Second, func() bool {
+		info, err := cons.Info(context.Background())
+		require.NoError(t, err)
+		lastInfo = info
+		return info.NumAckPending == warmDispatchParallel
+	})
+	require.True(t, ok, "expected NumAckPending to reach warmDispatchParallel (%d) while the creation slot is held hostage; last observed %+v", warmDispatchParallel, lastInfo)
+
+	// give it a bit longer to make sure it plateaus rather than overshoots
+	time.Sleep(500 * time.Millisecond)
+	info, err := cons.Info(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, warmDispatchParallel, info.NumAckPending, "NumAckPending must never exceed warmDispatchParallel even with far more work queued at once")
+}
+
 // TestWarmingHasItsOwnSmallerConcurrencyBudget covers: the warm consumer's
 // concurrency budget is a distinct limiter instance from both the
 // interactive preview limiter and the invalidation limiter, and is smaller
