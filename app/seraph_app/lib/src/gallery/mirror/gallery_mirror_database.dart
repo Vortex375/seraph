@@ -259,15 +259,26 @@ class GalleryItems extends Table {
 
   /// Null when no upload is currently pending verification for this row -
   /// which is every row except a `device` one [GalleryMirror.recordUploaded]
-  /// has written to. Two non-null values:
+  /// has written to. Four non-null values, one of two pairs depending on
+  /// HOW the row got here (ticket 20's rework - the distinction matters
+  /// because only one of the two may ever have its remote file deleted):
   ///
-  /// - `'uploaded'` - the PUT (or the same-size "assume it's ours" shortcut)
-  ///   succeeded; [GalleryMirror.applyPage] is watching the feed for
-  ///   confirmation at ([uploadTargetProviderId], [uploadTargetPath]).
-  /// - `'mismatch'` - the feed reported a file there, but at a length that
-  ///   contradicts what this device believes it sent. The remote file cannot
-  ///   be trusted; [GalleryUploadService.retryMismatchedUpload] deletes it
-  ///   and retries.
+  /// - `'uploaded'` - a real PUT succeeded; [GalleryMirror.applyPage] is
+  ///   watching the feed for confirmation at ([uploadTargetProviderId],
+  ///   [uploadTargetPath]).
+  /// - `'assumed'` - the ticket-19 "same size, assume it's ours" shortcut
+  ///   fired instead: nothing was PUT, this device merely believes a
+  ///   pre-existing file at the target path is its own content.
+  /// - `'mismatch'` - a row that was `'uploaded'`, but the feed reported a
+  ///   length that contradicts what this device sent. The remote file IS
+  ///   this device's own upload, so it cannot be trusted and
+  ///   [GalleryUploadService.retryMismatchedUpload] deletes it and retries.
+  /// - `'assumedMismatch'` - a row that was `'assumed'`, but the feed
+  ///   contradicted it. This device never wrote that file, so the mismatch
+  ///   only disproves the assumption - it is never permission to delete
+  ///   someone else's content. [GalleryUploadService.retryMismatchedUpload]
+  ///   falls back to ticket 19's different-size collision rule instead:
+  ///   disambiguate to a new name, leaving the file exactly as it was.
   ///
   /// Cleared back to null the moment verification actually succeeds - at
   /// that point [origin] has already flipped to `both`, which is what makes

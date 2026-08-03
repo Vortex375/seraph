@@ -157,7 +157,9 @@ class GalleryUploadService {
         // server-side atomic PUT already makes this path either absent or
         // complete for every client).
         await backend.put(providerId, candidatePath, bytes);
-        final marked = await mirror.recordUploaded(item, providerId, candidatePath);
+        final marked = await mirror.recordUploaded(
+            item, providerId, candidatePath,
+            viaPut: true);
         return marked
             ? GalleryUploadResult.uploaded
             : GalleryUploadResult.deviceFileChanged;
@@ -166,8 +168,13 @@ class GalleryUploadService {
       if (existingSize == bytes.length) {
         // Occupied by content of the same size - assume it is ours (ticket
         // 19's rule; the one accepted false positive is a same-length edit,
-        // named explicitly in the ticket). No upload happens at all.
-        final marked = await mirror.recordUploaded(item, providerId, candidatePath);
+        // named explicitly in the ticket). No upload happens at all. Recorded
+        // with viaPut: false - this device never wrote that file, only
+        // assumed it, which matters if the feed later disagrees (ticket 20:
+        // see [retryMismatchedUpload]).
+        final marked = await mirror.recordUploaded(
+            item, providerId, candidatePath,
+            viaPut: false);
         return marked
             ? GalleryUploadResult.alreadyPresent
             : GalleryUploadResult.deviceFileChanged;
@@ -182,32 +189,119 @@ class GalleryUploadService {
     );
   }
 
-  /// Ticket 20's one case the app deletes something remotely on its own:
-  /// [item]'s most recent upload came back from [GalleryMirror.applyPage]
-  /// with a verification MISMATCH - the delta feed reported a length that
-  /// contradicts what this device believes it sent to [GalleryItem.
-  /// uploadTargetProviderId]/[GalleryItem.uploadTargetPath]. That remote
-  /// file cannot be trusted, so it is deleted first, then the upload is
-  /// retried from scratch through [upload] - which re-derives the target,
-  /// re-reads the device copy, and re-runs the full never-overwrite/
-  /// disambiguation logic, exactly as if this were the first attempt.
+  /// Works through one item [GalleryMirror.itemsNeedingUploadRetry] reported
+  /// - a device row whose verification came back CONTRADICTING what this
+  /// device expected - and reacts according to how that pending state got
+  /// there in the first place (ticket 20's rework; see the class doc on
+  /// [GalleryItems.uploadState] in `gallery_mirror_database.dart` for the
+  /// four states this reads):
   ///
-  /// Deleting before retrying matters: without it, a retry's own `PUT` would
-  /// find the (still-present, wrong-length) file occupying the target path
-  /// and treat it as an ordinary different-size collision, disambiguating
-  /// into a second file next to the untrusted one instead of replacing it.
+  /// - **A real PUT** ([GalleryItem.uploadState] `'mismatch'`): the remote
+  ///   file at [GalleryItem.uploadTargetProviderId]/[GalleryItem.
+  ///   uploadTargetPath] IS this device's own upload, so it is safe to
+  ///   delete - the one case the app deletes something remotely on its own -
+  ///   and the upload is retried from scratch through [upload], which
+  ///   re-derives the target, re-reads the device copy, and re-runs the full
+  ///   never-overwrite/disambiguation logic as if this were the first
+  ///   attempt. Deleting first matters: without it, the retry's own `PUT`
+  ///   would find the (still-present, wrong-length) file occupying the
+  ///   target path and disambiguate into a second file next to the
+  ///   untrusted one instead of replacing it.
+  /// - **The ticket-19 "assume it's ours" shortcut** ([GalleryItem.
+  ///   uploadState] `'assumedMismatch'`): this device never PUT anything to
+  ///   that path - it only assumed a pre-existing, same-size file was its
+  ///   own. A contradicting feed length disproves that assumption; it is
+  ///   never grounds to delete a file this device did not write. Nothing is
+  ///   deleted. Instead this falls back to ticket 19's different-size
+  ///   collision rule the shortcut skipped past the first time: disambiguate
+  ///   straight to the next candidate name (never retrying the same,
+  ///   now-distrusted path) and await verification of THAT path -
+  ///   [_retryAsDisambiguated].
   ///
   /// A caller works through [GalleryMirror.itemsNeedingUploadRetry] to find
   /// which items need this - not automatic, and not scheduled, from this
   /// class: ticket 20 is the verification mechanism, not the engine that
   /// decides when to run it (tickets 22/24).
   Future<GalleryUploadResult> retryMismatchedUpload(GalleryItem item) async {
+    if (item.uploadState == 'assumedMismatch') {
+      return _retryAsDisambiguated(item);
+    }
+
     final targetProviderId = item.uploadTargetProviderId;
     final targetPath = item.uploadTargetPath;
     if (targetProviderId != null && targetPath != null) {
       await backend.remove(targetProviderId, targetPath);
     }
     return upload(item);
+  }
+
+  /// The "assumed it's ours" recovery half of [retryMismatchedUpload]: same
+  /// device-read and validation steps as [upload], but the disambiguation
+  /// loop starts at attempt 1, never attempt 0 (the base candidate path).
+  /// Attempt 0 is exactly the path the feed just disproved this device's
+  /// claim to, so trying it again - same-size shortcut included - would
+  /// only repeat the wrong assumption; skipping straight to disambiguation
+  /// is ticket 19's ordinary different-size collision rule, applied here
+  /// because the feed has now supplied the "different size" evidence the
+  /// original stat-based check missed. The file at the base path is never
+  /// touched, read, or deleted.
+  Future<GalleryUploadResult> _retryAsDisambiguated(GalleryItem item) async {
+    final source = localSource;
+    final relativePath = item.localRelativePath;
+    final displayName = item.localDisplayName;
+    if (source == null || relativePath == null || displayName == null) {
+      return GalleryUploadResult.deviceFileUnavailable;
+    }
+
+    final target = await mirror.expectedUploadTarget(item);
+    if (target == null) {
+      return GalleryUploadResult.noSyncPair;
+    }
+
+    final bytes = await source.loadOriginal(
+      relativePath: relativePath,
+      displayName: displayName,
+    );
+    if (bytes == null) {
+      return GalleryUploadResult.deviceFileUnavailable;
+    }
+    if (item.localSize != null && bytes.length != item.localSize) {
+      return GalleryUploadResult.deviceFileChanged;
+    }
+
+    final providerId = target.$1;
+    final basePath = target.$2;
+
+    for (var attempt = 1; attempt <= maxDisambiguationAttempts; attempt++) {
+      final candidatePath = _disambiguatedPath(basePath, attempt);
+      final existingSize = await backend.statSize(providerId, candidatePath);
+
+      if (existingSize == null) {
+        await backend.put(providerId, candidatePath, bytes);
+        final marked = await mirror.recordUploaded(
+            item, providerId, candidatePath,
+            viaPut: true);
+        return marked
+            ? GalleryUploadResult.uploaded
+            : GalleryUploadResult.deviceFileChanged;
+      }
+
+      if (existingSize == bytes.length) {
+        final marked = await mirror.recordUploaded(
+            item, providerId, candidatePath,
+            viaPut: false);
+        return marked
+            ? GalleryUploadResult.alreadyPresent
+            : GalleryUploadResult.deviceFileChanged;
+      }
+
+      // Occupied by different content - never overwrite; try the next
+      // disambiguated name.
+    }
+
+    throw const GalleryUploadException(
+      'Could not find a free name for this photo after many attempts.',
+    );
   }
 
   /// `IMG_0001.jpg` -> `IMG_0001 (2).jpg` for [attempt] == 2 - inserted

@@ -20,11 +20,22 @@ const String _originBoth = 'both';
 /// [GalleryItems.uploadState] values (ticket 20) - named here for the same
 /// reason the origin values above are. See the column's own doc for what
 /// each one means; [GalleryItemDisplay.isAwaitingVerification] in
-/// `gallery_item_display.dart` reads these same two strings back (raw
-/// literals there too, matching how that file already reads [origin]'s raw
+/// `gallery_item_display.dart` and [GalleryUploadService.retryMismatchedUpload]
+/// in `gallery_upload_service.dart` read these same raw strings back (raw
+/// literals there too, matching how those files already read [origin]'s raw
 /// values rather than importing private constants across files).
+///
+/// Two pairs, not two values: which pending state a row is in when the
+/// upload succeeded is tracked separately from which pending state it moves
+/// to on a contradicting feed length, because the two require different
+/// recovery actions (ticket 20's rework) - a real PUT can safely have its
+/// remote file deleted and retried, but the "assume it is ours" shortcut
+/// must never delete a file this device did not write, only fall back to
+/// disambiguation.
 const String _uploadStateUploaded = 'uploaded';
+const String _uploadStateAssumed = 'assumed';
 const String _uploadStateMismatch = 'mismatch';
+const String _uploadStateAssumedMismatch = 'assumedMismatch';
 
 /// [SyncCursors.source] value for ticket 17's device-side incremental-scan
 /// watermark - the highest MediaStore generation already applied. Reuses the
@@ -389,17 +400,30 @@ class GalleryMirror {
               // existed keeps its timeline position.
             ));
           } else {
-            // Verification CONTRADICTS the upload: Seraph reports a
-            // different length than what this device believes it sent. The
-            // remote file cannot be trusted - flagged here for
-            // [GalleryUploadService.retryMismatchedUpload] to delete it and
-            // retry (this class makes no network calls itself - see the
-            // class doc). [origin] stays `device`: still visibly
-            // not-backed-up, the safe direction, until a retry succeeds.
+            // Verification CONTRADICTS what this device expected. [origin]
+            // stays `device` either way: still visibly not-backed-up, the
+            // safe direction, until a retry succeeds. Which pending state
+            // this row was in decides what "retry" is allowed to do
+            // (ticket 20's rework - see the class-level doc on the
+            // [_uploadStateUploaded]/[_uploadStateAssumed] constants):
+            //
+            // - `_uploadStateUploaded` (a real PUT): the remote file at
+            //   this exact path IS this device's own upload, so it can
+            //   safely be deleted and retried -
+            //   [GalleryUploadService.retryMismatchedUpload] does that.
+            // - `_uploadStateAssumed` (the ticket-19 "same size, assume it
+            //   is ours" shortcut): this device never wrote that file, so a
+            //   contradicting length only proves the ASSUMPTION was wrong,
+            //   never permission to delete someone else's content -
+            //   [GalleryUploadService.retryMismatchedUpload] falls back to
+            //   disambiguation instead, leaving the file exactly as it was.
+            final wasAssumed = pendingUpload.uploadState == _uploadStateAssumed;
             await (_db.update(_db.galleryItems)
                   ..where((t) => t.id.equals(pendingUpload.id)))
-                .write(const GalleryItemsCompanion(
-              uploadState: Value(_uploadStateMismatch),
+                .write(GalleryItemsCompanion(
+              uploadState: Value(wasAssumed
+                  ? _uploadStateAssumedMismatch
+                  : _uploadStateMismatch),
             ));
           }
           continue;
@@ -1069,11 +1093,19 @@ class GalleryMirror {
     return _expectedRemotePath(pair, relativePath, displayName);
   }
 
-  /// Records that [item]'s upload PUT to ([providerId], [path]) succeeded,
-  /// or that the target path turned out to already hold this device's own
-  /// content (ticket 19's "size matches - assume it is ours, do not upload"
-  /// rule) - either way, an upload attempt this device made, now awaiting
-  /// independent confirmation from the delta feed (ticket 20).
+  /// Records that [item]'s upload PUT to ([providerId], [path]) succeeded
+  /// ([viaPut] true), or that the target path turned out to already hold
+  /// this device's own content (ticket 19's "size matches - assume it is
+  /// ours, do not upload" rule - [viaPut] false) - either way, an upload
+  /// attempt this device made, now awaiting independent confirmation from
+  /// the delta feed (ticket 20).
+  ///
+  /// **[viaPut] decides what a later contradicting feed length is allowed to
+  /// do** (ticket 20's rework): [applyPage] only ever deletes a remote file
+  /// this device actually PUT ([viaPut] true); for the "assume it is ours"
+  /// shortcut ([viaPut] false), a contradicting length proves the assumption
+  /// wrong, not that the file is safe to delete - see
+  /// [GalleryUploadService.retryMismatchedUpload].
   ///
   /// **Deliberately does NOT mark the row Synced.** [origin] stays `device`
   /// - the item keeps showing as not backed up, "in progress" rather than
@@ -1099,8 +1131,9 @@ class GalleryMirror {
   Future<bool> recordUploaded(
     GalleryItem item,
     String providerId,
-    String path,
-  ) async {
+    String path, {
+    required bool viaPut,
+  }) async {
     final rows = await (_db.update(_db.galleryItems)
           ..where((t) =>
               t.id.equals(item.id) &
@@ -1111,24 +1144,26 @@ class GalleryMirror {
         .write(GalleryItemsCompanion(
       uploadTargetProviderId: Value(providerId),
       uploadTargetPath: Value(path),
-      uploadState: const Value(_uploadStateUploaded),
+      uploadState:
+          Value(viaPut ? _uploadStateUploaded : _uploadStateAssumed),
     ));
     return rows > 0;
   }
 
   /// Every Device only row whose most recent upload's verification came back
-  /// CONTRADICTING it - a length mismatch [applyPage] recorded as
-  /// [_uploadStateMismatch] - for [GalleryUploadService.
-  /// retryMismatchedUpload] to work through: delete the untrusted remote
-  /// file at [GalleryItem.uploadTargetProviderId]/[GalleryItem.
-  /// uploadTargetPath] and retry the upload. This class makes no network
-  /// calls itself (see the class doc), so it only surfaces which rows need
-  /// that done - it never attempts the deletion.
+  /// CONTRADICTING it - a length mismatch [applyPage] recorded as either
+  /// [_uploadStateMismatch] (a real PUT) or [_uploadStateAssumedMismatch]
+  /// (the ticket-19 "assume it is ours" shortcut) - for
+  /// [GalleryUploadService.retryMismatchedUpload] to work through. This
+  /// class makes no network calls itself (see the class doc), so it only
+  /// surfaces which rows need that done and which of the two flavours each
+  /// one is; it never attempts the deletion or the retry.
   Future<List<GalleryItem>> itemsNeedingUploadRetry() => (_db.select(
           _db.galleryItems)
         ..where((t) =>
             t.origin.equals(_originDevice) &
-            t.uploadState.equals(_uploadStateMismatch)))
+            (t.uploadState.equals(_uploadStateMismatch) |
+                t.uploadState.equals(_uploadStateAssumedMismatch))))
       .get();
 
   /// Retroactively merges [pair]'s Local Source against the mirror as it

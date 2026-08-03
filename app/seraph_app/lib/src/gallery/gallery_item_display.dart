@@ -57,14 +57,15 @@ extension GalleryItemDisplay on GalleryItem {
   /// "in progress" rather than a plain "on this device" - user story 18:
   /// "shown as still in progress rather than as backed up".
   ///
-  /// Reads [GalleryItems.uploadState]'s raw values directly (`'uploaded'`/
-  /// `'mismatch'`, both truthy here - even a mismatch pending retry is still
-  /// "in progress" from the user's point of view) rather than importing
-  /// `gallery_mirror.dart`'s private constants, the same convention
-  /// [availability] already follows for [origin]'s raw values.
-  bool get isAwaitingVerification =>
-      origin == 'device' &&
-      (uploadState == 'uploaded' || uploadState == 'mismatch');
+  /// [GalleryItems.uploadState] is non-null for exactly this lifecycle - set
+  /// by [GalleryMirror.recordUploaded], cleared back to null the moment
+  /// [GalleryMirror.applyPage] verifies the upload (at which point [origin]
+  /// has already flipped away from `'device'` too) - so a plain non-null
+  /// check covers every pending flavour (a real PUT or the "assume it's
+  /// ours" shortcut awaiting confirmation, or either kind of contradicting-
+  /// length mismatch awaiting retry) without this file needing to know the
+  /// individual state strings `gallery_mirror.dart` uses privately.
+  bool get isAwaitingVerification => origin == 'device' && uploadState != null;
 
   /// True when this row carries a device copy - [GalleryAvailability.
   /// deviceOnly] or [GalleryAvailability.synced] - so the grid and the

@@ -314,7 +314,8 @@ void main() {
       await mirror.applyLocalScan(const []);
       expect(await mirror.totalCount(), 0);
 
-      final marked = await mirror.recordUploaded(item, 'space-a', '/x.jpg');
+      final marked = await mirror.recordUploaded(item, 'space-a', '/x.jpg',
+          viaPut: true);
 
       expect(marked, isFalse);
       expect(await mirror.totalCount(), 0,
@@ -494,7 +495,7 @@ void main() {
     });
 
     test(
-        'a feed entry with a length that contradicts the upload causes the '
+        'a feed entry with a length that contradicts a REAL PUT causes the '
         'remote file to be deleted and the upload retried', () async {
       final pending = await uploadOnePhoto();
 
@@ -547,6 +548,87 @@ void main() {
           GalleryDeltaItem(
             providerId: 'space-a',
             path: '/Photos/Phone/2026/IMG_0001.jpg',
+            seq: 2,
+            tombstone: false,
+            capturedAt: 1000,
+            size: 4096,
+          ),
+        ],
+        nextCursor: '',
+        hasMore: false,
+        nextSince: 2,
+      ));
+      final verified = (await mirror.queryItems())
+          .firstWhere((i) => i.id == pending.id);
+      expect(verified.availability, GalleryAvailability.synced);
+    });
+
+    test(
+        'a feed entry contradicting the ticket-19 "assume it is ours" '
+        'shortcut must NOT delete the pre-existing file - it never belonged '
+        'to this device - and instead falls back to disambiguation',
+        () async {
+      // Seed a same-size collision so upload() takes the "assume it is
+      // ours" shortcut rather than a real PUT.
+      final preExisting = _bytesOfLength(4096, 0x77);
+      backend.seed(
+          'space-a', '/Photos/Phone/2026/IMG_0001.jpg', preExisting);
+      final pending = await uploadOnePhoto();
+      expect(backend.putCalls, isEmpty,
+          reason: 'the same-size shortcut never PUTs');
+
+      // The feed proves the assumption wrong: the file at that path is NOT
+      // this device's 4096-byte photo.
+      await mirror.applyPage(GalleryDeltaResponse(
+        items: [
+          GalleryDeltaItem(
+            providerId: 'space-a',
+            path: '/Photos/Phone/2026/IMG_0001.jpg',
+            seq: 1,
+            tombstone: false,
+            capturedAt: 1000,
+            size: 1,
+          ),
+        ],
+        nextCursor: '',
+        hasMore: false,
+        nextSince: 1,
+      ));
+
+      final needingRetry = await mirror.itemsNeedingUploadRetry();
+      expect(needingRetry.map((i) => i.id), [pending.id]);
+
+      final result = await service.retryMismatchedUpload(needingRetry.single);
+
+      expect(backend.removeCalls, isEmpty,
+          reason: 'this device never wrote that file - it must never be '
+              'deleted on the strength of a disproved assumption');
+      expect(
+        backend.contentAt('space-a', '/Photos/Phone/2026/IMG_0001.jpg'),
+        preExisting,
+        reason: 'the pre-existing file is left exactly as it was',
+      );
+      expect(result, GalleryUploadResult.uploaded);
+      expect(backend.putCalls, hasLength(1),
+          reason: 'ticket 19\'s different-size collision rule: a real PUT, '
+              'under a disambiguated name');
+      expect(backend.putCalls.single.$2,
+          '/Photos/Phone/2026/IMG_0001 (1).jpg');
+
+      final retried = (await mirror.queryItems())
+          .firstWhere((i) => i.id == pending.id);
+      expect(retried.uploadTargetPath, '/Photos/Phone/2026/IMG_0001 (1).jpg');
+      expect(retried.isAwaitingVerification, isTrue,
+          reason: 'the retried upload itself is not proof either - it too '
+              'awaits the feed');
+      expect(await mirror.itemsNeedingUploadRetry(), isEmpty);
+
+      // And the retried, disambiguated upload verifies normally.
+      await mirror.applyPage(GalleryDeltaResponse(
+        items: [
+          GalleryDeltaItem(
+            providerId: 'space-a',
+            path: '/Photos/Phone/2026/IMG_0001 (1).jpg',
             seq: 2,
             tombstone: false,
             capturedAt: 1000,
