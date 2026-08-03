@@ -26,7 +26,7 @@ remotely on its own.
 
 **Blocked by:** 10, 19
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] An uploaded photo becomes Synced only after the delta feed reports it at the expected path with the expected length
 - [ ] Between upload and verification the item shows as in progress, never as backed up
