@@ -37,7 +37,7 @@ should not grow separate notions of what counts as a match.
 
 **Blocked by:** 19
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] Removing a Sync Pair deletes nothing in Seraph and leaves its folder as a Gallery Source Folder
 - [ ] Removing a Sync Pair discards only items not yet uploaded
