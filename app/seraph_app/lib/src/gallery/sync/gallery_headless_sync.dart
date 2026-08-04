@@ -46,57 +46,154 @@ class HeadlessSyncSession {
   final webdav.Client client;
 }
 
-/// Runs one [GallerySyncEngine.run] against [db], from a cold start:
-/// obtains a non-interactive session ([loadHeadlessSyncSession]), builds the
-/// engine's dependencies from scratch (exactly what a headless isolate has
-/// to do - there is no `InitialBinding`-registered singleton to reuse here),
-/// runs it once, and returns the result.
+/// Ticket 24's `SyncRunLock` holder identity for ticket 22's foreground
+/// `dataSync` service.
+const String syncRunLockHolderForegroundService = 'foreground-service';
+
+/// Ticket 24's `SyncRunLock` holder identity for the WorkManager-triggered
+/// path (periodic, content-trigger, or fast-path task alike - all three run
+/// inside the same callback dispatcher isolate, one at a time, so they share
+/// one holder identity; the lock's job is only to keep THAT isolate class
+/// from overlapping with the foreground service, not to distinguish which
+/// of the three woke it).
+const String syncRunLockHolderWorkManager = 'workmanager';
+
+/// How long a [GalleryMirror.tryAcquireSyncRunLock] lease lasts before it is
+/// treated as free again if never renewed - the bound on how long a runner
+/// killed mid-lease can block the other path (ticket 23's same "does not
+/// deadlock" guarantee, see [SyncRunLock]'s own class doc). Short relative to
+/// a real run's total duration on purpose: [runHeadlessGallerySync] renews
+/// it well before this elapses (see [_syncRunLockRenewInterval]), so a lease
+/// this short only matters for how quickly a KILLED holder's lock frees up,
+/// not for how long a healthy run can hold it.
+const int _syncRunLockLeaseMillis = 5 * 60 * 1000;
+
+/// How often [runHeadlessGallerySync] renews its own lease while an engine
+/// run is in progress - comfortably inside [_syncRunLockLeaseMillis] so a
+/// slow renewal (a busy isolate, a slow SQLite write) never races the lease
+/// actually expiring out from under a still-healthy run.
+const Duration _syncRunLockRenewInterval = Duration(minutes: 2);
+
+/// What [runHeadlessGallerySync] did - distinguishes "the engine ran and
+/// produced [result]" from the two reasons it did not, which callers need to
+/// tell apart: a session failure is worth telling the user about (ticket
+/// 22's "not signed in" notification), while [lockBusy] means another
+/// runner already holds the engine and there is nothing wrong at all - the
+/// caller should simply stand down quietly, since whichever runner won is
+/// already the one writing [SyncRunState].
+class HeadlessSyncAttempt {
+  const HeadlessSyncAttempt._({this.result, this.lockBusy = false});
+
+  /// The engine actually ran to completion (or pause) and produced [result].
+  const HeadlessSyncAttempt.ran(GallerySyncEngineResult result)
+      : this._(result: result);
+
+  /// No session could be obtained - [SyncRunState.lastError] has already
+  /// been written by [loadHeadlessSyncSession]'s caller here, describing
+  /// why.
+  const HeadlessSyncAttempt.noSession() : this._();
+
+  /// Another runner already held [GalleryMirror.tryAcquireSyncRunLock] -
+  /// ticket 24's "background and foreground runs do not both process the
+  /// same photo" guarantee refusing this attempt outright, before it ever
+  /// touched a session or constructed an engine. [SyncRunState] is
+  /// deliberately untouched by this outcome - the winner is already writing
+  /// it.
+  const HeadlessSyncAttempt.lockBusy() : this._(lockBusy: true);
+
+  /// Non-null only for [HeadlessSyncAttempt.ran].
+  final GallerySyncEngineResult? result;
+
+  /// True only for [HeadlessSyncAttempt.lockBusy].
+  final bool lockBusy;
+}
+
+/// Runs one [GallerySyncEngine.run] against [db], from a cold start, guarded
+/// by ticket 24's [SyncRunLock] so this is the ONE place either headless
+/// entrypoint can ever construct a [GallerySyncEngine] - see
+/// [HeadlessSyncAttempt]'s own doc for why that guard has to live here
+/// rather than in each caller separately (both
+/// `gallery_sync_task_handler.dart` and `gallery_backup_scheduler_io.dart`
+/// call this function, and nothing else in either file touches
+/// [GallerySyncEngine] directly).
+///
+/// [lockHolder] identifies the caller for [GalleryMirror.tryAcquireSyncRunLock]
+/// - [syncRunLockHolderForegroundService] or [syncRunLockHolderWorkManager].
+///
+/// If the lock is free (or already held by [lockHolder] itself), acquires
+/// it, then obtains a non-interactive session ([loadHeadlessSyncSession}),
+/// builds the engine's dependencies from scratch (there is no
+/// `InitialBinding`-registered singleton to reuse in a cold isolate), runs
+/// it, and releases the lock in a `finally` - success, failure, or exception
+/// alike. While the engine runs, a timer renews the lease every
+/// [_syncRunLockRenewInterval] so a run that legitimately spans hours (an
+/// unattended overnight backlog, or a large user-initiated foreground batch)
+/// is never mistaken for a dead holder and preempted mid-flight; a holder
+/// that stops renewing (killed) simply lets the lease lapse, which is what
+/// keeps this from deadlocking the other path.
 ///
 /// [onEngineReady], if given, is called with the constructed engine before
-/// [GallerySyncEngine.run] starts - the foreground task handler
-/// (`gallery_sync_task_handler.dart`) uses this to keep a reference for its
-/// own notification button/`onReceiveData` pause wiring, something the
-/// simpler WorkManager callback (`gallery_backup_scheduler_io.dart`) has no
-/// need for and simply omits.
-///
-/// Returns null - never throws - when no session could be obtained (not
-/// signed in on this device, or a refresh that failed): the caller
-/// ([loadHeadlessSyncSession]'s own doc explains why this must never fall
-/// back to an interactive login) has nothing to run against, and this
-/// function writes [SyncRunState.lastError] itself so every caller reports
-/// the same message rather than each inventing its own.
-Future<GallerySyncEngineResult?> runHeadlessGallerySync(
+/// [GallerySyncEngine.run] starts - the foreground task handler uses this to
+/// keep a reference for its own notification button/`onReceiveData` pause
+/// wiring, something the simpler WorkManager callback has no need for and
+/// simply omits.
+Future<HeadlessSyncAttempt> runHeadlessGallerySync(
   GalleryMirrorDatabase db, {
+  required String lockHolder,
   void Function(GallerySyncEngine engine)? onEngineReady,
 }) async {
   final mirror = GalleryMirror(db);
 
-  final session = await loadHeadlessSyncSession(mirror);
-  if (session == null) {
-    await mirror.writeSyncRunState(
-      status: syncStatusError,
-      totalItems: 0,
-      completedItems: 0,
-      failedItems: 0,
-      totalBytes: 0,
-      completedBytes: 0,
-      lastError: 'Not signed in - open Seraph to sign in, then start '
-          'backup again.',
-      updatedAtMillis: DateTime.now().millisecondsSinceEpoch,
-    );
-    return null;
+  final acquired = await mirror.tryAcquireSyncRunLock(
+    holder: lockHolder,
+    nowMillis: DateTime.now().millisecondsSinceEpoch,
+    leaseMillis: _syncRunLockLeaseMillis,
+  );
+  if (!acquired) {
+    return const HeadlessSyncAttempt.lockBusy();
   }
 
-  final backend = HeadlessWebDavBackend(session.client);
-  final localSource = AndroidLocalSource();
-  final uploadService = GalleryUploadService(mirror, backend, localSource);
-  final engine = GallerySyncEngine(mirror, uploadService);
-  onEngineReady?.call(engine);
-
+  Timer? renewal;
   try {
-    return await engine.run();
+    renewal = Timer.periodic(_syncRunLockRenewInterval, (_) {
+      unawaited(mirror.tryAcquireSyncRunLock(
+        holder: lockHolder,
+        nowMillis: DateTime.now().millisecondsSinceEpoch,
+        leaseMillis: _syncRunLockLeaseMillis,
+      ));
+    });
+
+    final session = await loadHeadlessSyncSession(mirror);
+    if (session == null) {
+      await mirror.writeSyncRunState(
+        status: syncStatusError,
+        totalItems: 0,
+        completedItems: 0,
+        failedItems: 0,
+        totalBytes: 0,
+        completedBytes: 0,
+        lastError: 'Not signed in - open Seraph to sign in, then start '
+            'backup again.',
+        updatedAtMillis: DateTime.now().millisecondsSinceEpoch,
+      );
+      return const HeadlessSyncAttempt.noSession();
+    }
+
+    final backend = HeadlessWebDavBackend(session.client);
+    final localSource = AndroidLocalSource();
+    final uploadService = GalleryUploadService(mirror, backend, localSource);
+    final engine = GallerySyncEngine(mirror, uploadService);
+    onEngineReady?.call(engine);
+
+    try {
+      final result = await engine.run();
+      return HeadlessSyncAttempt.ran(result);
+    } finally {
+      localSource.dispose();
+    }
   } finally {
-    localSource.dispose();
+    renewal?.cancel();
+    await mirror.releaseSyncRunLock(holder: lockHolder);
   }
 }
 

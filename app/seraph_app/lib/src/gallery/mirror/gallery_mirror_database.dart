@@ -31,6 +31,7 @@ part 'gallery_mirror_database.g.dart';
   SyncPairs,
   SyncRunState,
   TokenRefreshLock,
+  SyncRunLock,
 ])
 class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
   GalleryMirrorDatabase(super.e);
@@ -44,7 +45,7 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
   }
 
   @override
-  int get schemaVersion => 11;
+  int get schemaVersion => 12;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -196,6 +197,18 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
               syncRunState,
               newColumns: [syncRunState.lastSuccessAt],
             ));
+          }
+          if (from < 12) {
+            // v12 (ticket 24 rework) added [SyncRunLock] - the mutual-
+            // exclusion lease preventing the WorkManager-triggered path and
+            // ticket 22's foreground-service path from running
+            // [GallerySyncEngine] at the same time ("background and
+            // foreground runs do not both process the same photo", this
+            // ticket's own criterion). A fresh, empty table - there is
+            // nothing to backfill, and an absent row already reads as
+            // "free" everywhere this table is consulted, the same shape
+            // [TokenRefreshLock] (v10) already established.
+            await m.createTable(syncRunLock);
           }
         },
         beforeOpen: (details) async {
@@ -723,6 +736,59 @@ class TokenRefreshLock extends Table {
   /// lock is free for another acquire regardless of whether
   /// [GalleryMirror.releaseTokenRefreshLock] was ever called (see the class
   /// doc's "lease-based" note).
+  IntColumn get expiresAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// Ticket 24's mutual-exclusion lock: the WorkManager-triggered path
+/// (`gallery_backup_scheduler_io.dart`) and ticket 22's foreground-service
+/// path (`gallery_sync_task_handler.dart`) both call
+/// [GallerySyncEngine.run] from their own cold headless isolate, and nothing
+/// about the engine itself (which rebuilds its queue from the mirror on
+/// every call, with no per-item claim) stops two of them running at once -
+/// the exact "background and foreground runs do not both process the same
+/// photo" failure this ticket's own criterion names. Guarded the same way
+/// ticket 23 guards concurrent token refresh: a lease-based lock in shared
+/// persistent storage, acquired via [GalleryMirror.tryAcquireSyncRunLock]
+/// before either path ever constructs a [GallerySyncEngine], never directly.
+///
+/// **A separate table from [TokenRefreshLock], not a repurposed row in it** -
+/// deliberately, even though the shape (single row, lease, atomic UPSERT) is
+/// identical: reusing the already-verified [TokenRefreshLock] table/methods
+/// for an unrelated resource would risk regressing ticket 23's approved
+/// behaviour for a change that has nothing to do with token refresh. This
+/// table and [GalleryMirror.tryAcquireSyncRunLock]/[releaseSyncRunLock] are
+/// self-contained, reusing the SAME lease-based atomic-UPSERT mechanism
+/// without touching the token-refresh code path at all.
+///
+/// **Self-renewing, unlike [TokenRefreshLock]**: a sync run can legitimately
+/// run far longer than one short refresh (an unattended overnight backlog,
+/// or a user-initiated foreground batch spanning hours), so
+/// [GalleryMirror.tryAcquireSyncRunLock]'s own WHERE clause lets the CURRENT
+/// holder re-acquire (extend) its own still-valid lease, which
+/// `runHeadlessGallerySync` (`gallery_headless_sync.dart`) does on a timer
+/// for as long as the engine is actually running. A holder that stops
+/// renewing - killed mid-run - still lets the lock expire and be reclaimed,
+/// the same "does not deadlock" guarantee ticket 23 established.
+class SyncRunLock extends Table {
+  TextColumn get id => text()();
+
+  /// Which entrypoint currently holds (or most recently held) the lock -
+  /// see `syncRunLockHolderForegroundService`/`syncRunLockHolderWorkManager`
+  /// in `../sync/gallery_headless_sync.dart`. Diagnostic only - acquisition
+  /// never depends on who is asking, only on whether the lease is free or
+  /// already held by that same holder.
+  TextColumn get holder => text()();
+
+  /// Epoch milliseconds the current holder (most recently) acquired or
+  /// renewed the lock at.
+  IntColumn get acquiredAt => integer()();
+
+  /// Epoch milliseconds the current lease expires at - past this point the
+  /// lock is free for another (different) holder to acquire, regardless of
+  /// whether [GalleryMirror.releaseSyncRunLock] was ever called.
   IntColumn get expiresAt => integer()();
 
   @override

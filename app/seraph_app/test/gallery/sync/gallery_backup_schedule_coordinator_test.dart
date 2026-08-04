@@ -21,6 +21,7 @@ class FakeGalleryBackupScheduler implements GalleryBackupScheduler {
         bool requireCharging,
         bool requireBatteryNotLow
       })> rescheduleCalls = [];
+  final List<bool> fastPathCalls = [];
   int cancelAllCalls = 0;
 
   @override
@@ -34,6 +35,11 @@ class FakeGalleryBackupScheduler implements GalleryBackupScheduler {
       requireCharging: requireCharging,
       requireBatteryNotLow: requireBatteryNotLow,
     ));
+  }
+
+  @override
+  Future<void> triggerFastPath({required bool requireUnmeteredNetwork}) async {
+    fastPathCalls.add(requireUnmeteredNetwork);
   }
 
   @override
@@ -158,6 +164,135 @@ void main() {
         path: '/Photos/Phone',
       );
       await coordinator.syncSchedule();
+    });
+  });
+
+  // Ticket 24 rework (defect 1 fix): the fast path is fired directly from
+  // the Local Source's own content-observer stream, not folded into
+  // reschedule()/an expedited variant of the content-trigger task (which is
+  // what threw on a real device - see gallery_backup_scheduler_io.dart's own
+  // doc). Covered here at the coordinator seam: does the right THING get
+  // called, with the right constraint and the right gating, in response to
+  // the stream - not the actual WorkManager registration itself, which is
+  // platform glue with no further decision left to test once this is
+  // covered (ticket 24's own "scheduling registration itself is verified by
+  // inspection of what is scheduled, not by waiting on the OS").
+  group('GalleryBackupScheduleCoordinator fast path', () {
+    late GalleryMirrorDatabase db;
+    late GalleryMirror mirror;
+    late FakeSettingsController settings;
+    late FakeGalleryBackupScheduler scheduler;
+    late FakeLocalSource localSource;
+
+    setUp(() {
+      db = GalleryMirrorDatabase(NativeDatabase.memory());
+      mirror = GalleryMirror(db);
+      settings = FakeSettingsController();
+      scheduler = FakeGalleryBackupScheduler();
+      localSource = FakeLocalSource();
+    });
+
+    tearDown(() async {
+      await db.close();
+    });
+
+    test('a Local Source change fires triggerFastPath, debounced, when a '
+        'Sync Pair is active', () async {
+      await mirror.createSyncPair(
+        localFolderPath: 'DCIM/Camera/',
+        spaceProviderId: 'space-a',
+        path: '/Photos/Phone',
+      );
+      settings.setBackupRequireUnmeteredNetwork(false);
+      final coordinator = GalleryBackupScheduleCoordinator(
+        mirror,
+        settings,
+        scheduler: scheduler,
+        localSource: localSource,
+        fastPathDebounce: const Duration(milliseconds: 5),
+      );
+      // GetX only calls onInit() through its own Get.put()/Bindings
+      // lifecycle, which this test deliberately bypasses (see the other
+      // group's tests, which call syncSchedule() explicitly for the same
+      // reason) - called directly here since it is what wires up the
+      // fast-path subscription under test.
+      coordinator.onInit();
+      addTearDown(coordinator.onClose);
+      // Let the initial syncSchedule() (periodic/content-trigger) settle so
+      // this test's assertions are only about the fast path.
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      scheduler.fastPathCalls.clear();
+
+      localSource.emitChange();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(scheduler.fastPathCalls, [false],
+          reason: 'the fast path still honours the user\'s network '
+              'preference - the one constraint kind expedited work can '
+              'carry');
+    });
+
+    test('a burst of Local Source changes coalesces into one triggerFastPath '
+        'call, not one per change', () async {
+      await mirror.createSyncPair(
+        localFolderPath: 'DCIM/Camera/',
+        spaceProviderId: 'space-a',
+        path: '/Photos/Phone',
+      );
+      final coordinator = GalleryBackupScheduleCoordinator(
+        mirror,
+        settings,
+        scheduler: scheduler,
+        localSource: localSource,
+        fastPathDebounce: const Duration(milliseconds: 20),
+      );
+      coordinator.onInit();
+      addTearDown(coordinator.onClose);
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      scheduler.fastPathCalls.clear();
+
+      for (var i = 0; i < 10; i++) {
+        localSource.emitChange();
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+
+      expect(scheduler.fastPathCalls, hasLength(1));
+    });
+
+    test('a Local Source change with no active Sync Pair never fires '
+        'triggerFastPath - nothing configured to back up to', () async {
+      final coordinator = GalleryBackupScheduleCoordinator(
+        mirror,
+        settings,
+        scheduler: scheduler,
+        localSource: localSource,
+        fastPathDebounce: const Duration(milliseconds: 5),
+      );
+      coordinator.onInit();
+      addTearDown(coordinator.onClose);
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+
+      localSource.emitChange();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(scheduler.fastPathCalls, isEmpty);
+    });
+
+    test('with no Local Source, the coordinator subscribes to nothing and '
+        'never throws', () async {
+      final coordinator = GalleryBackupScheduleCoordinator(
+        mirror,
+        settings,
+        scheduler: scheduler,
+        localSource: null,
+      );
+      await mirror.createSyncPair(
+        localFolderPath: 'DCIM/Camera/',
+        spaceProviderId: 'space-a',
+        path: '/Photos/Phone',
+      );
+      await coordinator.syncSchedule();
+      expect(scheduler.fastPathCalls, isEmpty);
     });
   });
 }

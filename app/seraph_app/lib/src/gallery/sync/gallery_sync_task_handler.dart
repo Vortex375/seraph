@@ -104,6 +104,17 @@ class _GallerySyncTaskHandler extends TaskHandler {
   /// rather than the one thing this isolate must never do: fall back to an
   /// interactive login flow with no UI to show it in. See
   /// [loadHeadlessSyncSession]'s doc.
+  ///
+  /// **Ticket 24**: [runHeadlessGallerySync] can also report [HeadlessSyncAttempt.lockBusy]
+  /// - a WorkManager-triggered run already holds ticket 24's [SyncRunLock]
+  /// (an unlikely but real race: a scheduled trigger fired in the seconds
+  /// before the user tapped "start backup"). This service simply stops
+  /// itself without touching [SyncRunState] - the WorkManager run is already
+  /// the one writing it, and the Backup card
+  /// (`GalleryDataSyncController`/`gallery_source_folders_view.dart`) is
+  /// already polling it independently, so the user still sees live progress,
+  /// just not attributed to a foreground service they can pause from a
+  /// notification.
   Future<void> _runOnce() async {
     if (_running) {
       return;
@@ -117,12 +128,20 @@ class _GallerySyncTaskHandler extends TaskHandler {
         unawaited(_updateNotification());
       });
 
-      final result = await runHeadlessGallerySync(
+      final attempt = await runHeadlessGallerySync(
         db,
+        lockHolder: syncRunLockHolderForegroundService,
         onEngineReady: (engine) => _engine = engine,
       );
+
+      if (attempt.lockBusy) {
+        await FlutterForegroundTask.stopService();
+        return;
+      }
+
       await _updateNotification();
 
+      final result = attempt.result;
       if (result == null) {
         await FlutterForegroundTask.updateService(
           notificationTitle: 'Backup could not start',

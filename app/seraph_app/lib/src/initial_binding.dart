@@ -68,17 +68,21 @@ class InitialBinding extends Bindings {
     // createGalleryDataSyncService() is (every platform without a Local
     // Source), so there is nothing to gate here either.
     Get.put(GalleryDataSyncController(galleryMirror));
-    // Ticket 24: keeps WorkManager's scheduled periodic/expedited backup
-    // triggers in sync with the active Sync Pairs and the user's constraint
-    // settings - see the coordinator's own doc for why "is there anything
-    // to schedule" and "under what constraints" are both re-evaluated here
-    // rather than assumed to stay whatever they were at app start.
-    // Registered unconditionally, like GalleryDataSyncController above -
-    // GalleryBackupScheduleCoordinator.isSupported is false wherever
+    // Ticket 24: keeps WorkManager's scheduled periodic/content-trigger
+    // backup tasks in sync with the active Sync Pairs and the user's
+    // constraint settings, and fires the genuinely expedited fast path in
+    // response to the SAME Local Source `changes` stream `localScanService`
+    // owns - see the coordinator's own doc for why "is there anything to
+    // schedule" and "under what constraints" are both re-evaluated here
+    // rather than assumed to stay whatever they were at app start, and why
+    // this reuses `localScanService.localSource` rather than constructing a
+    // second one. Registered unconditionally, like GalleryDataSyncController
+    // above - GalleryBackupScheduleCoordinator.isSupported is false wherever
     // createGalleryBackupScheduler() is (every platform without a Local
     // Source), so there is nothing to gate here either.
     Get.put(GalleryBackupScheduleCoordinator(
-        galleryMirror, Get.find<SettingsController>()));
+        galleryMirror, Get.find<SettingsController>(),
+        localSource: localScanService.localSource));
     Get.put(GalleryImageLoader(Get.find(), Get.find(), galleryMirrorDatabase));
     // Ticket 28: loads device-photo pixels through the same Local Source the
     // scan above uses. Null-safe on its own when localScanService.localSource

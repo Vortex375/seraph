@@ -63,6 +63,11 @@ const String syncStatusError = 'error';
 /// table's class doc for why there is only ever one.
 const String tokenRefreshLockId = 'default';
 
+/// Ticket 24: the fixed id of [SyncRunLock]'s single row - the same
+/// single-well-known-row shape [tokenRefreshLockId] uses, for the same
+/// reason: there is only ever one sync run worth serialising against.
+const String syncRunLockId = 'default';
+
 /// [SyncCursors.source] value for ticket 17's device-side incremental-scan
 /// watermark - the highest MediaStore generation already applied. Reuses the
 /// same tiny table the delta feed's [GalleryMirror.since]/[pendingCursor]
@@ -1477,6 +1482,64 @@ class GalleryMirror {
           ..where((t) => t.id.equals(tokenRefreshLockId)))
         .getSingleOrNull();
     return row != null && row.expiresAt > nowMillis;
+  }
+
+  // --- Ticket 24: sync-run mutual exclusion ---
+
+  /// Attempts to acquire (or, if [holder] already holds it, renew) the
+  /// single [SyncRunLock] row - `true` on success, `false` if a DIFFERENT
+  /// holder currently holds an unexpired lease. One atomic UPSERT, the same
+  /// "acquire-if-free-or-expired" shape [tryAcquireTokenRefreshLock] uses,
+  /// with one addition: the WHERE clause also matches when [holder] is
+  /// already the row's holder, so the SAME caller can extend its own lease
+  /// (`runHeadlessGallerySync` does this on a timer for as long as an engine
+  /// run is in progress) without first having to release and re-race for it -
+  /// something [TokenRefreshLock] never needed, since a token refresh is one
+  /// short call, not a run that can span hours.
+  ///
+  /// This is what makes "background and foreground runs do not both process
+  /// the same photo" (ticket 24's own criterion) true: whichever of the
+  /// WorkManager-triggered path or ticket 22's foreground-service path calls
+  /// this first gets to construct a [GallerySyncEngine] at all; the loser
+  /// gets `false` back and must not touch [GalleryMirror.writeSyncRunState]
+  /// itself - the winner is already the only thing writing it.
+  Future<bool> tryAcquireSyncRunLock({
+    required String holder,
+    required int nowMillis,
+    required int leaseMillis,
+  }) async {
+    final changed = await _db.customUpdate(
+      'INSERT INTO sync_run_lock (id, holder, acquired_at, expires_at) '
+      'VALUES (?1, ?2, ?3, ?4) '
+      'ON CONFLICT(id) DO UPDATE SET '
+      'holder = excluded.holder, '
+      'acquired_at = excluded.acquired_at, '
+      'expires_at = excluded.expires_at '
+      'WHERE sync_run_lock.expires_at <= ?3 OR sync_run_lock.holder = ?2',
+      variables: [
+        Variable<String>(syncRunLockId),
+        Variable<String>(holder),
+        Variable<int>(nowMillis),
+        Variable<int>(nowMillis + leaseMillis),
+      ],
+      updates: {_db.syncRunLock},
+    );
+    return changed > 0;
+  }
+
+  /// Releases the lock THIS [holder] currently holds - a no-op, not an
+  /// error, if [holder] is not (or is no longer) the row's holder, exactly
+  /// like [releaseTokenRefreshLock]'s own reasoning: this isolate's lease
+  /// may already have expired and been reclaimed by the other path before
+  /// this call runs, and releasing here must never touch a lock this isolate
+  /// no longer owns. Called from a `finally` around every engine run
+  /// [runHeadlessGallerySync] performs while holding the lock, success or
+  /// failure alike.
+  Future<void> releaseSyncRunLock({required String holder}) async {
+    await (_db.delete(_db.syncRunLock)
+          ..where(
+              (t) => t.id.equals(syncRunLockId) & t.holder.equals(holder)))
+        .go();
   }
 
   /// Retroactively merges [pair]'s Local Source against the mirror as it

@@ -3055,6 +3055,289 @@ class TokenRefreshLockCompanion extends UpdateCompanion<TokenRefreshLockData> {
   }
 }
 
+class $SyncRunLockTable extends SyncRunLock
+    with TableInfo<$SyncRunLockTable, SyncRunLockData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SyncRunLockTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+      'id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _holderMeta = const VerificationMeta('holder');
+  @override
+  late final GeneratedColumn<String> holder = GeneratedColumn<String>(
+      'holder', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _acquiredAtMeta =
+      const VerificationMeta('acquiredAt');
+  @override
+  late final GeneratedColumn<int> acquiredAt = GeneratedColumn<int>(
+      'acquired_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _expiresAtMeta =
+      const VerificationMeta('expiresAt');
+  @override
+  late final GeneratedColumn<int> expiresAt = GeneratedColumn<int>(
+      'expires_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [id, holder, acquiredAt, expiresAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'sync_run_lock';
+  @override
+  VerificationContext validateIntegrity(Insertable<SyncRunLockData> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('holder')) {
+      context.handle(_holderMeta,
+          holder.isAcceptableOrUnknown(data['holder']!, _holderMeta));
+    } else if (isInserting) {
+      context.missing(_holderMeta);
+    }
+    if (data.containsKey('acquired_at')) {
+      context.handle(
+          _acquiredAtMeta,
+          acquiredAt.isAcceptableOrUnknown(
+              data['acquired_at']!, _acquiredAtMeta));
+    } else if (isInserting) {
+      context.missing(_acquiredAtMeta);
+    }
+    if (data.containsKey('expires_at')) {
+      context.handle(_expiresAtMeta,
+          expiresAt.isAcceptableOrUnknown(data['expires_at']!, _expiresAtMeta));
+    } else if (isInserting) {
+      context.missing(_expiresAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  SyncRunLockData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SyncRunLockData(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}id'])!,
+      holder: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}holder'])!,
+      acquiredAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}acquired_at'])!,
+      expiresAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}expires_at'])!,
+    );
+  }
+
+  @override
+  $SyncRunLockTable createAlias(String alias) {
+    return $SyncRunLockTable(attachedDatabase, alias);
+  }
+}
+
+class SyncRunLockData extends DataClass implements Insertable<SyncRunLockData> {
+  final String id;
+
+  /// Which entrypoint currently holds (or most recently held) the lock -
+  /// see `syncRunLockHolderForegroundService`/`syncRunLockHolderWorkManager`
+  /// in `../sync/gallery_headless_sync.dart`. Diagnostic only - acquisition
+  /// never depends on who is asking, only on whether the lease is free or
+  /// already held by that same holder.
+  final String holder;
+
+  /// Epoch milliseconds the current holder (most recently) acquired or
+  /// renewed the lock at.
+  final int acquiredAt;
+
+  /// Epoch milliseconds the current lease expires at - past this point the
+  /// lock is free for another (different) holder to acquire, regardless of
+  /// whether [GalleryMirror.releaseSyncRunLock] was ever called.
+  final int expiresAt;
+  const SyncRunLockData(
+      {required this.id,
+      required this.holder,
+      required this.acquiredAt,
+      required this.expiresAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['holder'] = Variable<String>(holder);
+    map['acquired_at'] = Variable<int>(acquiredAt);
+    map['expires_at'] = Variable<int>(expiresAt);
+    return map;
+  }
+
+  SyncRunLockCompanion toCompanion(bool nullToAbsent) {
+    return SyncRunLockCompanion(
+      id: Value(id),
+      holder: Value(holder),
+      acquiredAt: Value(acquiredAt),
+      expiresAt: Value(expiresAt),
+    );
+  }
+
+  factory SyncRunLockData.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SyncRunLockData(
+      id: serializer.fromJson<String>(json['id']),
+      holder: serializer.fromJson<String>(json['holder']),
+      acquiredAt: serializer.fromJson<int>(json['acquiredAt']),
+      expiresAt: serializer.fromJson<int>(json['expiresAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'holder': serializer.toJson<String>(holder),
+      'acquiredAt': serializer.toJson<int>(acquiredAt),
+      'expiresAt': serializer.toJson<int>(expiresAt),
+    };
+  }
+
+  SyncRunLockData copyWith(
+          {String? id, String? holder, int? acquiredAt, int? expiresAt}) =>
+      SyncRunLockData(
+        id: id ?? this.id,
+        holder: holder ?? this.holder,
+        acquiredAt: acquiredAt ?? this.acquiredAt,
+        expiresAt: expiresAt ?? this.expiresAt,
+      );
+  SyncRunLockData copyWithCompanion(SyncRunLockCompanion data) {
+    return SyncRunLockData(
+      id: data.id.present ? data.id.value : this.id,
+      holder: data.holder.present ? data.holder.value : this.holder,
+      acquiredAt:
+          data.acquiredAt.present ? data.acquiredAt.value : this.acquiredAt,
+      expiresAt: data.expiresAt.present ? data.expiresAt.value : this.expiresAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncRunLockData(')
+          ..write('id: $id, ')
+          ..write('holder: $holder, ')
+          ..write('acquiredAt: $acquiredAt, ')
+          ..write('expiresAt: $expiresAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, holder, acquiredAt, expiresAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SyncRunLockData &&
+          other.id == this.id &&
+          other.holder == this.holder &&
+          other.acquiredAt == this.acquiredAt &&
+          other.expiresAt == this.expiresAt);
+}
+
+class SyncRunLockCompanion extends UpdateCompanion<SyncRunLockData> {
+  final Value<String> id;
+  final Value<String> holder;
+  final Value<int> acquiredAt;
+  final Value<int> expiresAt;
+  final Value<int> rowid;
+  const SyncRunLockCompanion({
+    this.id = const Value.absent(),
+    this.holder = const Value.absent(),
+    this.acquiredAt = const Value.absent(),
+    this.expiresAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SyncRunLockCompanion.insert({
+    required String id,
+    required String holder,
+    required int acquiredAt,
+    required int expiresAt,
+    this.rowid = const Value.absent(),
+  })  : id = Value(id),
+        holder = Value(holder),
+        acquiredAt = Value(acquiredAt),
+        expiresAt = Value(expiresAt);
+  static Insertable<SyncRunLockData> custom({
+    Expression<String>? id,
+    Expression<String>? holder,
+    Expression<int>? acquiredAt,
+    Expression<int>? expiresAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (holder != null) 'holder': holder,
+      if (acquiredAt != null) 'acquired_at': acquiredAt,
+      if (expiresAt != null) 'expires_at': expiresAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SyncRunLockCompanion copyWith(
+      {Value<String>? id,
+      Value<String>? holder,
+      Value<int>? acquiredAt,
+      Value<int>? expiresAt,
+      Value<int>? rowid}) {
+    return SyncRunLockCompanion(
+      id: id ?? this.id,
+      holder: holder ?? this.holder,
+      acquiredAt: acquiredAt ?? this.acquiredAt,
+      expiresAt: expiresAt ?? this.expiresAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (holder.present) {
+      map['holder'] = Variable<String>(holder.value);
+    }
+    if (acquiredAt.present) {
+      map['acquired_at'] = Variable<int>(acquiredAt.value);
+    }
+    if (expiresAt.present) {
+      map['expires_at'] = Variable<int>(expiresAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncRunLockCompanion(')
+          ..write('id: $id, ')
+          ..write('holder: $holder, ')
+          ..write('acquiredAt: $acquiredAt, ')
+          ..write('expiresAt: $expiresAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$GalleryMirrorDatabase extends GeneratedDatabase {
   _$GalleryMirrorDatabase(QueryExecutor e) : super(e);
   $GalleryMirrorDatabaseManager get managers =>
@@ -3069,6 +3352,7 @@ abstract class _$GalleryMirrorDatabase extends GeneratedDatabase {
   late final $SyncRunStateTable syncRunState = $SyncRunStateTable(this);
   late final $TokenRefreshLockTable tokenRefreshLock =
       $TokenRefreshLockTable(this);
+  late final $SyncRunLockTable syncRunLock = $SyncRunLockTable(this);
   late final Index idxGalleryItemsLocalIdentity = Index(
       'idx_gallery_items_local_identity',
       'CREATE INDEX idx_gallery_items_local_identity ON gallery_items (local_relative_path, local_display_name, local_size, local_date_taken)');
@@ -3093,6 +3377,7 @@ abstract class _$GalleryMirrorDatabase extends GeneratedDatabase {
         syncPairs,
         syncRunState,
         tokenRefreshLock,
+        syncRunLock,
         idxGalleryItemsLocalIdentity,
         idxGalleryItemsOriginSizeCapturedAt,
         idxGalleryItemsCapturedAtId,
@@ -4580,6 +4865,167 @@ typedef $$TokenRefreshLockTableProcessedTableManager = ProcessedTableManager<
     ),
     TokenRefreshLockData,
     PrefetchHooks Function()>;
+typedef $$SyncRunLockTableCreateCompanionBuilder = SyncRunLockCompanion
+    Function({
+  required String id,
+  required String holder,
+  required int acquiredAt,
+  required int expiresAt,
+  Value<int> rowid,
+});
+typedef $$SyncRunLockTableUpdateCompanionBuilder = SyncRunLockCompanion
+    Function({
+  Value<String> id,
+  Value<String> holder,
+  Value<int> acquiredAt,
+  Value<int> expiresAt,
+  Value<int> rowid,
+});
+
+class $$SyncRunLockTableFilterComposer
+    extends Composer<_$GalleryMirrorDatabase, $SyncRunLockTable> {
+  $$SyncRunLockTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get holder => $composableBuilder(
+      column: $table.holder, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get acquiredAt => $composableBuilder(
+      column: $table.acquiredAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get expiresAt => $composableBuilder(
+      column: $table.expiresAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$SyncRunLockTableOrderingComposer
+    extends Composer<_$GalleryMirrorDatabase, $SyncRunLockTable> {
+  $$SyncRunLockTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get holder => $composableBuilder(
+      column: $table.holder, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get acquiredAt => $composableBuilder(
+      column: $table.acquiredAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get expiresAt => $composableBuilder(
+      column: $table.expiresAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$SyncRunLockTableAnnotationComposer
+    extends Composer<_$GalleryMirrorDatabase, $SyncRunLockTable> {
+  $$SyncRunLockTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get holder =>
+      $composableBuilder(column: $table.holder, builder: (column) => column);
+
+  GeneratedColumn<int> get acquiredAt => $composableBuilder(
+      column: $table.acquiredAt, builder: (column) => column);
+
+  GeneratedColumn<int> get expiresAt =>
+      $composableBuilder(column: $table.expiresAt, builder: (column) => column);
+}
+
+class $$SyncRunLockTableTableManager extends RootTableManager<
+    _$GalleryMirrorDatabase,
+    $SyncRunLockTable,
+    SyncRunLockData,
+    $$SyncRunLockTableFilterComposer,
+    $$SyncRunLockTableOrderingComposer,
+    $$SyncRunLockTableAnnotationComposer,
+    $$SyncRunLockTableCreateCompanionBuilder,
+    $$SyncRunLockTableUpdateCompanionBuilder,
+    (
+      SyncRunLockData,
+      BaseReferences<_$GalleryMirrorDatabase, $SyncRunLockTable,
+          SyncRunLockData>
+    ),
+    SyncRunLockData,
+    PrefetchHooks Function()> {
+  $$SyncRunLockTableTableManager(
+      _$GalleryMirrorDatabase db, $SyncRunLockTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SyncRunLockTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SyncRunLockTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SyncRunLockTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> id = const Value.absent(),
+            Value<String> holder = const Value.absent(),
+            Value<int> acquiredAt = const Value.absent(),
+            Value<int> expiresAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              SyncRunLockCompanion(
+            id: id,
+            holder: holder,
+            acquiredAt: acquiredAt,
+            expiresAt: expiresAt,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String id,
+            required String holder,
+            required int acquiredAt,
+            required int expiresAt,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              SyncRunLockCompanion.insert(
+            id: id,
+            holder: holder,
+            acquiredAt: acquiredAt,
+            expiresAt: expiresAt,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$SyncRunLockTableProcessedTableManager = ProcessedTableManager<
+    _$GalleryMirrorDatabase,
+    $SyncRunLockTable,
+    SyncRunLockData,
+    $$SyncRunLockTableFilterComposer,
+    $$SyncRunLockTableOrderingComposer,
+    $$SyncRunLockTableAnnotationComposer,
+    $$SyncRunLockTableCreateCompanionBuilder,
+    $$SyncRunLockTableUpdateCompanionBuilder,
+    (
+      SyncRunLockData,
+      BaseReferences<_$GalleryMirrorDatabase, $SyncRunLockTable,
+          SyncRunLockData>
+    ),
+    SyncRunLockData,
+    PrefetchHooks Function()>;
 
 class $GalleryMirrorDatabaseManager {
   final _$GalleryMirrorDatabase _db;
@@ -4598,4 +5044,6 @@ class $GalleryMirrorDatabaseManager {
       $$SyncRunStateTableTableManager(_db, _db.syncRunState);
   $$TokenRefreshLockTableTableManager get tokenRefreshLock =>
       $$TokenRefreshLockTableTableManager(_db, _db.tokenRefreshLock);
+  $$SyncRunLockTableTableManager get syncRunLock =>
+      $$SyncRunLockTableTableManager(_db, _db.syncRunLock);
 }
