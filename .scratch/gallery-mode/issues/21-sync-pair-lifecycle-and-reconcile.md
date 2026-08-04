@@ -37,7 +37,7 @@ should not grow separate notions of what counts as a match.
 
 **Blocked by:** 19
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] Removing a Sync Pair deletes nothing in Seraph and leaves its folder as a Gallery Source Folder
 - [ ] Removing a Sync Pair discards only items not yet uploaded
@@ -52,3 +52,68 @@ should not grow separate notions of what counts as a match.
 - [ ] Gallery dedup and reconcile resolve a match over the same set of targets, rather than each carrying its own rule
 - [ ] Removing a Sync Pair leaves items that matched through it reading as Synced, since the remote copies are still there
 - [ ] Covered at the app's mirror seam, including a wipe-and-reconcile test with a retarget in the history, and an assertion on gallery Availability across that retarget
+
+## Comments
+
+### Implementer report
+
+`GalleryMirror.removeSyncPair` now soft-deletes (`SyncPairs.removedAt`) instead of deleting the row —
+a removed pair is kept forever as a historical target. Dedup and reconcile (`_upsertLocalItem`,
+`applyPage`) check every target a Local Source has ever had (`_allSyncPairs` /
+`_allCoveringSyncPairs`), while writes (`expectedUploadTarget`) and `createSyncPair`'s overlap check
+see only the active pair (`_activeSyncPairs`, filtered on `removedAt IS NULL`) — the spec's "current
+target for writes, all targets for lookups" rule. That is what makes a photo already backed up to an
+old target keep reading as Synced after a retarget or a reconcile pass, instead of duplicating or
+silently dropping to *Device only*.
+
+Files:
+
+- `lib/src/gallery/mirror/gallery_mirror_database.dart` (+`.g.dart`) — schema v7→v8:
+  `SyncPairs.removedAt`, and a table rebuild (`m.alterTable`) dropping the old
+  `UNIQUE(local_folder_path)` constraint, since a retargeted folder now legitimately has more than
+  one row.
+- `lib/src/gallery/mirror/gallery_mirror.dart` — the lookup/write split above.
+- `lib/src/gallery/gallery_source_folders_view.dart` — a *Retarget* action beside *Remove*: picks a
+  new Seraph folder, states plainly that old photos stay where they are and only new ones go to the
+  new target, then does add-folder → remove-pair → create-pair.
+- Tests: a new migration test; a new `gallery_sync_pair_retarget_test.dart` (retarget behaviour, a
+  wipe-and-reconcile test with a retarget in history asserting Availability stays Synced, and an
+  arrival-order variant); two `gallery_sync_pair_test.dart` cases rewritten because ticket 21
+  deliberately changes their contract. `flutter test` 281/281 (up from 275),
+  `flutter build web --release --base-href=/app/` succeeds.
+
+**Decisions the ticket did not settle:**
+
+1. "Reinstalling the app reconciles" is modelled and tested as wiping the mirror's `GalleryItems`
+   cache while the local-only `SyncPairs` configuration survives. A genuine full uninstall that also
+   wipes `SyncPairs` would lose historical-target knowledge for a retarget that happened before the
+   wipe — an accepted, pre-existing consequence of local-only Sync Pair storage (ticket 18's design),
+   not something this ticket can close.
+2. "Removing a Sync Pair discards only items not yet uploaded" is vacuous today: there is no persisted
+   upload queue yet (tickets 22/25), so nothing needs discarding.
+3. The retarget flow changes only the Seraph side, per the spec's own example; the Local Source side
+   is unchanged, so no local-folder picker appears in it.
+
+### Verifier verdict
+
+APPROVED — diff checked against every acceptance criterion.
+
+- **Write/lookup split holds with no crossover in either direction:** `expectedUploadTarget` and
+  `createSyncPair`'s overlap check use `_activeSyncPairs()` only; `applyPage`, `_upsertLocalItem`,
+  `applyLocalScan` and `applyLocalDelta` all use `_allSyncPairs()`.
+- **Migration is safe:** the migration test builds a raw-SQL v7 fixture holding a pre-existing row and
+  asserts it survives the table rebuild with `removedAt` defaulting to null — a real v7 fixture, not a
+  fresh v8 database.
+- **The two rewritten ticket-18 tests are a scheduled contract change, not a weakened guarantee.**
+  Ticket 18's "removing a Sync Pair returns its items to heuristic dedup" became "removing a Sync Pair
+  does *not* return them to the fuzzy `(size, capturedAt)` fallback"; a second test was added showing a
+  cloud item arriving at the removed pair's own historical path and size still merges
+  deterministically. The two cannot both hold literally, and the code now implements ticket 21's
+  version. That is correct: D18 in `docs/gallery-mode-design-notes.md` ("a Sync Pair keeps its
+  historical targets; existence checks consult all of them") already existed at the base SHA as a
+  documented correction to D2. Ticket 18 shipped before upload existed and could not implement it;
+  ticket 21 is the ticket assigned to.
+- Nothing from tickets 22/24/25/26/27 present.
+
+`flutter test` 281/281, `flutter build web --release --base-href=/app/` succeeds. Verified against
+base `3444edf`.

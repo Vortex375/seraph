@@ -133,6 +133,56 @@ class $GalleryItemsTable extends GalleryItems
       defaultConstraints: GeneratedColumn.constraintIsAlways(
           'CHECK ("metadata_pending" IN (0, 1))'),
       defaultValue: const Constant(false));
+  static const VerificationMeta _uploadStateMeta =
+      const VerificationMeta('uploadState');
+  @override
+  late final GeneratedColumn<String> uploadState = GeneratedColumn<String>(
+      'upload_state', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _uploadTargetProviderIdMeta =
+      const VerificationMeta('uploadTargetProviderId');
+  @override
+  late final GeneratedColumn<String> uploadTargetProviderId =
+      GeneratedColumn<String>('upload_target_provider_id', aliasedName, true,
+          type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _uploadTargetPathMeta =
+      const VerificationMeta('uploadTargetPath');
+  @override
+  late final GeneratedColumn<String> uploadTargetPath = GeneratedColumn<String>(
+      'upload_target_path', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _localFirstSeenAtMeta =
+      const VerificationMeta('localFirstSeenAt');
+  @override
+  late final GeneratedColumn<int> localFirstSeenAt = GeneratedColumn<int>(
+      'local_first_seen_at', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _uploadAttemptsMeta =
+      const VerificationMeta('uploadAttempts');
+  @override
+  late final GeneratedColumn<int> uploadAttempts = GeneratedColumn<int>(
+      'upload_attempts', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _uploadNextRetryAtMeta =
+      const VerificationMeta('uploadNextRetryAt');
+  @override
+  late final GeneratedColumn<int> uploadNextRetryAt = GeneratedColumn<int>(
+      'upload_next_retry_at', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _uploadFailureBucketMeta =
+      const VerificationMeta('uploadFailureBucket');
+  @override
+  late final GeneratedColumn<String> uploadFailureBucket =
+      GeneratedColumn<String>('upload_failure_bucket', aliasedName, true,
+          type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _uploadFailureReasonMeta =
+      const VerificationMeta('uploadFailureReason');
+  @override
+  late final GeneratedColumn<String> uploadFailureReason =
+      GeneratedColumn<String>('upload_failure_reason', aliasedName, true,
+          type: DriftSqlType.string, requiredDuringInsert: false);
   @override
   List<GeneratedColumn> get $columns => [
         id,
@@ -152,7 +202,15 @@ class $GalleryItemsTable extends GalleryItems
         size,
         mime,
         unsupported,
-        metadataPending
+        metadataPending,
+        uploadState,
+        uploadTargetProviderId,
+        uploadTargetPath,
+        localFirstSeenAt,
+        uploadAttempts,
+        uploadNextRetryAt,
+        uploadFailureBucket,
+        uploadFailureReason
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -255,6 +313,54 @@ class $GalleryItemsTable extends GalleryItems
           metadataPending.isAcceptableOrUnknown(
               data['metadata_pending']!, _metadataPendingMeta));
     }
+    if (data.containsKey('upload_state')) {
+      context.handle(
+          _uploadStateMeta,
+          uploadState.isAcceptableOrUnknown(
+              data['upload_state']!, _uploadStateMeta));
+    }
+    if (data.containsKey('upload_target_provider_id')) {
+      context.handle(
+          _uploadTargetProviderIdMeta,
+          uploadTargetProviderId.isAcceptableOrUnknown(
+              data['upload_target_provider_id']!, _uploadTargetProviderIdMeta));
+    }
+    if (data.containsKey('upload_target_path')) {
+      context.handle(
+          _uploadTargetPathMeta,
+          uploadTargetPath.isAcceptableOrUnknown(
+              data['upload_target_path']!, _uploadTargetPathMeta));
+    }
+    if (data.containsKey('local_first_seen_at')) {
+      context.handle(
+          _localFirstSeenAtMeta,
+          localFirstSeenAt.isAcceptableOrUnknown(
+              data['local_first_seen_at']!, _localFirstSeenAtMeta));
+    }
+    if (data.containsKey('upload_attempts')) {
+      context.handle(
+          _uploadAttemptsMeta,
+          uploadAttempts.isAcceptableOrUnknown(
+              data['upload_attempts']!, _uploadAttemptsMeta));
+    }
+    if (data.containsKey('upload_next_retry_at')) {
+      context.handle(
+          _uploadNextRetryAtMeta,
+          uploadNextRetryAt.isAcceptableOrUnknown(
+              data['upload_next_retry_at']!, _uploadNextRetryAtMeta));
+    }
+    if (data.containsKey('upload_failure_bucket')) {
+      context.handle(
+          _uploadFailureBucketMeta,
+          uploadFailureBucket.isAcceptableOrUnknown(
+              data['upload_failure_bucket']!, _uploadFailureBucketMeta));
+    }
+    if (data.containsKey('upload_failure_reason')) {
+      context.handle(
+          _uploadFailureReasonMeta,
+          uploadFailureReason.isAcceptableOrUnknown(
+              data['upload_failure_reason']!, _uploadFailureReasonMeta));
+    }
     return context;
   }
 
@@ -304,6 +410,23 @@ class $GalleryItemsTable extends GalleryItems
           .read(DriftSqlType.string, data['${effectivePrefix}unsupported'])!,
       metadataPending: attachedDatabase.typeMapping
           .read(DriftSqlType.bool, data['${effectivePrefix}metadata_pending'])!,
+      uploadState: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}upload_state']),
+      uploadTargetProviderId: attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}upload_target_provider_id']),
+      uploadTargetPath: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}upload_target_path']),
+      localFirstSeenAt: attachedDatabase.typeMapping.read(
+          DriftSqlType.int, data['${effectivePrefix}local_first_seen_at']),
+      uploadAttempts: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}upload_attempts'])!,
+      uploadNextRetryAt: attachedDatabase.typeMapping.read(
+          DriftSqlType.int, data['${effectivePrefix}upload_next_retry_at']),
+      uploadFailureBucket: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}upload_failure_bucket']),
+      uploadFailureReason: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}upload_failure_reason']),
     );
   }
 
@@ -356,6 +479,105 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
   final String mime;
   final String unsupported;
   final bool metadataPending;
+
+  /// Null when no upload is currently pending verification for this row -
+  /// which is every row except a `device` one [GalleryMirror.recordUploaded]
+  /// has written to. Four non-null values, one of two pairs depending on
+  /// HOW the row got here (ticket 20's rework - the distinction matters
+  /// because only one of the two may ever have its remote file deleted):
+  ///
+  /// - `'uploaded'` - a real PUT succeeded; [GalleryMirror.applyPage] is
+  ///   watching the feed for confirmation at ([uploadTargetProviderId],
+  ///   [uploadTargetPath]).
+  /// - `'assumed'` - the ticket-19 "same size, assume it's ours" shortcut
+  ///   fired instead: nothing was PUT, this device merely believes a
+  ///   pre-existing file at the target path is its own content.
+  /// - `'mismatch'` - a row that was `'uploaded'`, but the feed reported a
+  ///   length that contradicts what this device sent. The remote file IS
+  ///   this device's own upload, so it cannot be trusted and
+  ///   [GalleryUploadService.retryMismatchedUpload] deletes it and retries.
+  /// - `'assumedMismatch'` - a row that was `'assumed'`, but the feed
+  ///   contradicted it. This device never wrote that file, so the mismatch
+  ///   only disproves the assumption - it is never permission to delete
+  ///   someone else's content. [GalleryUploadService.retryMismatchedUpload]
+  ///   falls back to ticket 19's different-size collision rule instead:
+  ///   disambiguate to a new name, leaving the file exactly as it was.
+  ///
+  /// Cleared back to null the moment verification actually succeeds - at
+  /// that point [origin] has already flipped to `both`, which is what makes
+  /// "Synced" true; this column exists only to gate that flip on the feed
+  /// rather than on the upload response (CONTEXT.md's **Verified**, D10 in
+  /// `docs/gallery-mode-design-notes.md`). Plain text, not a Dart enum
+  /// column, for the same reason [origin] is.
+  final String? uploadState;
+
+  /// The exact (providerId, path) [GalleryUploadService.upload] PUT to, or
+  /// found already occupied by this device's own content - **the path the
+  /// photo actually went to, not a recipe for deriving it** (ticket 19),
+  /// which matters here specifically because a disambiguated upload's real
+  /// path cannot be recomputed from the Sync Pair alone. Set together with
+  /// [uploadState] by [GalleryMirror.recordUploaded]; read back by
+  /// [GalleryMirror.applyPage] to recognise the delta feed independently
+  /// reporting this exact file. Both null whenever [uploadState] is.
+  final String? uploadTargetProviderId;
+  final String? uploadTargetPath;
+
+  /// Epoch milliseconds this row was first written as a fresh Device only
+  /// row by [GalleryMirror._upsertLocalItem] - null for a row created before
+  /// this column existed, and for every cloud-origin row (a device row's
+  /// local identity columns are the only ones this ever gates on). This is
+  /// the spec's "observed" moment, deliberately NOT [capturedAt]: a photo
+  /// migrated onto a new phone (copied over, no reliable EXIF) can have an
+  /// old or missing capture date while only being SEEN by this device's
+  /// mirror for the first time today, and the priority split needs to tell
+  /// "newly discovered" apart from "long-owned" even when the two disagree
+  /// with when the picture was actually taken.
+  ///
+  /// [GalleryMirror.itemsPendingUpload] compares this against the queue
+  /// policy's priority-class baseline (the last completed pass, or - before
+  /// any pass has ever completed - "everything currently pending", since
+  /// there is no historical backlog yet to preempt) to split the queue into
+  /// the spec's two priority classes.
+  final int? localFirstSeenAt;
+
+  /// How many consecutive TRANSIENT upload failures (see
+  /// [GalleryUploadFailureBucket] in `gallery_upload_backend.dart`) this row
+  /// has had in a row, reset to 0 the moment an attempt succeeds. Drives
+  /// [uploadNextRetryAt]'s exponential per-item backoff - see
+  /// [GallerySyncEngine] (`../sync/gallery_sync_engine.dart`) for the
+  /// schedule. Never incremented for a PERMANENT failure - see
+  /// [uploadFailureBucket] - which stops retrying altogether rather than
+  /// backing off.
+  final int uploadAttempts;
+
+  /// Epoch milliseconds before which [GalleryMirror.itemsPendingUpload] must
+  /// not re-offer this row - the per-item half of the spec's "transient
+  /// failures retry with per-item exponential backoff". Null means no
+  /// backoff is currently in effect (the common case: never failed, or
+  /// failed and already past its window).
+  final int? uploadNextRetryAt;
+
+  /// Null for every row except one [GallerySyncEngine] gave up retrying -
+  /// `'permanent'` once a PERMANENT failure (read-only Space, out of
+  /// storage, or an upload-side error this engine cannot itself recover
+  /// from) stops it. A row with this set is excluded from
+  /// [GalleryMirror.itemsPendingUpload] entirely (never silently retried
+  /// forever) and appears instead in [GalleryMirror.failedUploadItems] - the
+  /// spec's "visible failure list" - until [GalleryMirror.retryFailedUpload]
+  /// clears it back to null, which is what "the failure list can be
+  /// retried... requires no reconfiguration" means in code: clearing this
+  /// column is the whole retry, no Sync Pair or setting is ever touched.
+  /// Plain text, not a Dart enum column, for the same forward-compatibility
+  /// reason [origin]/[uploadState]/[status] all are - only one value exists
+  /// today, but a future second failure bucket needing its own visible list
+  /// (there is no such thing planned) would not need a schema change.
+  final String? uploadFailureBucket;
+
+  /// A message fit to show the user directly alongside a
+  /// [uploadFailureBucket] `'permanent'` row in the failure list - whatever
+  /// [GalleryUploadException.message] the failing attempt carried. Null
+  /// whenever [uploadFailureBucket] is.
+  final String? uploadFailureReason;
   const GalleryItem(
       {required this.id,
       required this.origin,
@@ -374,7 +596,15 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
       required this.size,
       required this.mime,
       required this.unsupported,
-      required this.metadataPending});
+      required this.metadataPending,
+      this.uploadState,
+      this.uploadTargetProviderId,
+      this.uploadTargetPath,
+      this.localFirstSeenAt,
+      required this.uploadAttempts,
+      this.uploadNextRetryAt,
+      this.uploadFailureBucket,
+      this.uploadFailureReason});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -410,6 +640,29 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
     map['mime'] = Variable<String>(mime);
     map['unsupported'] = Variable<String>(unsupported);
     map['metadata_pending'] = Variable<bool>(metadataPending);
+    if (!nullToAbsent || uploadState != null) {
+      map['upload_state'] = Variable<String>(uploadState);
+    }
+    if (!nullToAbsent || uploadTargetProviderId != null) {
+      map['upload_target_provider_id'] =
+          Variable<String>(uploadTargetProviderId);
+    }
+    if (!nullToAbsent || uploadTargetPath != null) {
+      map['upload_target_path'] = Variable<String>(uploadTargetPath);
+    }
+    if (!nullToAbsent || localFirstSeenAt != null) {
+      map['local_first_seen_at'] = Variable<int>(localFirstSeenAt);
+    }
+    map['upload_attempts'] = Variable<int>(uploadAttempts);
+    if (!nullToAbsent || uploadNextRetryAt != null) {
+      map['upload_next_retry_at'] = Variable<int>(uploadNextRetryAt);
+    }
+    if (!nullToAbsent || uploadFailureBucket != null) {
+      map['upload_failure_bucket'] = Variable<String>(uploadFailureBucket);
+    }
+    if (!nullToAbsent || uploadFailureReason != null) {
+      map['upload_failure_reason'] = Variable<String>(uploadFailureReason);
+    }
     return map;
   }
 
@@ -443,6 +696,28 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
       mime: Value(mime),
       unsupported: Value(unsupported),
       metadataPending: Value(metadataPending),
+      uploadState: uploadState == null && nullToAbsent
+          ? const Value.absent()
+          : Value(uploadState),
+      uploadTargetProviderId: uploadTargetProviderId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(uploadTargetProviderId),
+      uploadTargetPath: uploadTargetPath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(uploadTargetPath),
+      localFirstSeenAt: localFirstSeenAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(localFirstSeenAt),
+      uploadAttempts: Value(uploadAttempts),
+      uploadNextRetryAt: uploadNextRetryAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(uploadNextRetryAt),
+      uploadFailureBucket: uploadFailureBucket == null && nullToAbsent
+          ? const Value.absent()
+          : Value(uploadFailureBucket),
+      uploadFailureReason: uploadFailureReason == null && nullToAbsent
+          ? const Value.absent()
+          : Value(uploadFailureReason),
     );
   }
 
@@ -469,6 +744,17 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
       mime: serializer.fromJson<String>(json['mime']),
       unsupported: serializer.fromJson<String>(json['unsupported']),
       metadataPending: serializer.fromJson<bool>(json['metadataPending']),
+      uploadState: serializer.fromJson<String?>(json['uploadState']),
+      uploadTargetProviderId:
+          serializer.fromJson<String?>(json['uploadTargetProviderId']),
+      uploadTargetPath: serializer.fromJson<String?>(json['uploadTargetPath']),
+      localFirstSeenAt: serializer.fromJson<int?>(json['localFirstSeenAt']),
+      uploadAttempts: serializer.fromJson<int>(json['uploadAttempts']),
+      uploadNextRetryAt: serializer.fromJson<int?>(json['uploadNextRetryAt']),
+      uploadFailureBucket:
+          serializer.fromJson<String?>(json['uploadFailureBucket']),
+      uploadFailureReason:
+          serializer.fromJson<String?>(json['uploadFailureReason']),
     );
   }
   @override
@@ -493,6 +779,15 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
       'mime': serializer.toJson<String>(mime),
       'unsupported': serializer.toJson<String>(unsupported),
       'metadataPending': serializer.toJson<bool>(metadataPending),
+      'uploadState': serializer.toJson<String?>(uploadState),
+      'uploadTargetProviderId':
+          serializer.toJson<String?>(uploadTargetProviderId),
+      'uploadTargetPath': serializer.toJson<String?>(uploadTargetPath),
+      'localFirstSeenAt': serializer.toJson<int?>(localFirstSeenAt),
+      'uploadAttempts': serializer.toJson<int>(uploadAttempts),
+      'uploadNextRetryAt': serializer.toJson<int?>(uploadNextRetryAt),
+      'uploadFailureBucket': serializer.toJson<String?>(uploadFailureBucket),
+      'uploadFailureReason': serializer.toJson<String?>(uploadFailureReason),
     };
   }
 
@@ -514,7 +809,15 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
           int? size,
           String? mime,
           String? unsupported,
-          bool? metadataPending}) =>
+          bool? metadataPending,
+          Value<String?> uploadState = const Value.absent(),
+          Value<String?> uploadTargetProviderId = const Value.absent(),
+          Value<String?> uploadTargetPath = const Value.absent(),
+          Value<int?> localFirstSeenAt = const Value.absent(),
+          int? uploadAttempts,
+          Value<int?> uploadNextRetryAt = const Value.absent(),
+          Value<String?> uploadFailureBucket = const Value.absent(),
+          Value<String?> uploadFailureReason = const Value.absent()}) =>
       GalleryItem(
         id: id ?? this.id,
         origin: origin ?? this.origin,
@@ -539,6 +842,26 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
         mime: mime ?? this.mime,
         unsupported: unsupported ?? this.unsupported,
         metadataPending: metadataPending ?? this.metadataPending,
+        uploadState: uploadState.present ? uploadState.value : this.uploadState,
+        uploadTargetProviderId: uploadTargetProviderId.present
+            ? uploadTargetProviderId.value
+            : this.uploadTargetProviderId,
+        uploadTargetPath: uploadTargetPath.present
+            ? uploadTargetPath.value
+            : this.uploadTargetPath,
+        localFirstSeenAt: localFirstSeenAt.present
+            ? localFirstSeenAt.value
+            : this.localFirstSeenAt,
+        uploadAttempts: uploadAttempts ?? this.uploadAttempts,
+        uploadNextRetryAt: uploadNextRetryAt.present
+            ? uploadNextRetryAt.value
+            : this.uploadNextRetryAt,
+        uploadFailureBucket: uploadFailureBucket.present
+            ? uploadFailureBucket.value
+            : this.uploadFailureBucket,
+        uploadFailureReason: uploadFailureReason.present
+            ? uploadFailureReason.value
+            : this.uploadFailureReason,
       );
   GalleryItem copyWithCompanion(GalleryItemsCompanion data) {
     return GalleryItem(
@@ -574,6 +897,29 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
       metadataPending: data.metadataPending.present
           ? data.metadataPending.value
           : this.metadataPending,
+      uploadState:
+          data.uploadState.present ? data.uploadState.value : this.uploadState,
+      uploadTargetProviderId: data.uploadTargetProviderId.present
+          ? data.uploadTargetProviderId.value
+          : this.uploadTargetProviderId,
+      uploadTargetPath: data.uploadTargetPath.present
+          ? data.uploadTargetPath.value
+          : this.uploadTargetPath,
+      localFirstSeenAt: data.localFirstSeenAt.present
+          ? data.localFirstSeenAt.value
+          : this.localFirstSeenAt,
+      uploadAttempts: data.uploadAttempts.present
+          ? data.uploadAttempts.value
+          : this.uploadAttempts,
+      uploadNextRetryAt: data.uploadNextRetryAt.present
+          ? data.uploadNextRetryAt.value
+          : this.uploadNextRetryAt,
+      uploadFailureBucket: data.uploadFailureBucket.present
+          ? data.uploadFailureBucket.value
+          : this.uploadFailureBucket,
+      uploadFailureReason: data.uploadFailureReason.present
+          ? data.uploadFailureReason.value
+          : this.uploadFailureReason,
     );
   }
 
@@ -597,31 +943,48 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
           ..write('size: $size, ')
           ..write('mime: $mime, ')
           ..write('unsupported: $unsupported, ')
-          ..write('metadataPending: $metadataPending')
+          ..write('metadataPending: $metadataPending, ')
+          ..write('uploadState: $uploadState, ')
+          ..write('uploadTargetProviderId: $uploadTargetProviderId, ')
+          ..write('uploadTargetPath: $uploadTargetPath, ')
+          ..write('localFirstSeenAt: $localFirstSeenAt, ')
+          ..write('uploadAttempts: $uploadAttempts, ')
+          ..write('uploadNextRetryAt: $uploadNextRetryAt, ')
+          ..write('uploadFailureBucket: $uploadFailureBucket, ')
+          ..write('uploadFailureReason: $uploadFailureReason')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(
-      id,
-      origin,
-      providerId,
-      path,
-      seq,
-      localRelativePath,
-      localDisplayName,
-      localSize,
-      localDateTaken,
-      capturedAt,
-      capturedAtSource,
-      width,
-      height,
-      orientation,
-      size,
-      mime,
-      unsupported,
-      metadataPending);
+  int get hashCode => Object.hashAll([
+        id,
+        origin,
+        providerId,
+        path,
+        seq,
+        localRelativePath,
+        localDisplayName,
+        localSize,
+        localDateTaken,
+        capturedAt,
+        capturedAtSource,
+        width,
+        height,
+        orientation,
+        size,
+        mime,
+        unsupported,
+        metadataPending,
+        uploadState,
+        uploadTargetProviderId,
+        uploadTargetPath,
+        localFirstSeenAt,
+        uploadAttempts,
+        uploadNextRetryAt,
+        uploadFailureBucket,
+        uploadFailureReason
+      ]);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -643,7 +1006,15 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
           other.size == this.size &&
           other.mime == this.mime &&
           other.unsupported == this.unsupported &&
-          other.metadataPending == this.metadataPending);
+          other.metadataPending == this.metadataPending &&
+          other.uploadState == this.uploadState &&
+          other.uploadTargetProviderId == this.uploadTargetProviderId &&
+          other.uploadTargetPath == this.uploadTargetPath &&
+          other.localFirstSeenAt == this.localFirstSeenAt &&
+          other.uploadAttempts == this.uploadAttempts &&
+          other.uploadNextRetryAt == this.uploadNextRetryAt &&
+          other.uploadFailureBucket == this.uploadFailureBucket &&
+          other.uploadFailureReason == this.uploadFailureReason);
 }
 
 class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
@@ -665,6 +1036,14 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
   final Value<String> mime;
   final Value<String> unsupported;
   final Value<bool> metadataPending;
+  final Value<String?> uploadState;
+  final Value<String?> uploadTargetProviderId;
+  final Value<String?> uploadTargetPath;
+  final Value<int?> localFirstSeenAt;
+  final Value<int> uploadAttempts;
+  final Value<int?> uploadNextRetryAt;
+  final Value<String?> uploadFailureBucket;
+  final Value<String?> uploadFailureReason;
   const GalleryItemsCompanion({
     this.id = const Value.absent(),
     this.origin = const Value.absent(),
@@ -684,6 +1063,14 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
     this.mime = const Value.absent(),
     this.unsupported = const Value.absent(),
     this.metadataPending = const Value.absent(),
+    this.uploadState = const Value.absent(),
+    this.uploadTargetProviderId = const Value.absent(),
+    this.uploadTargetPath = const Value.absent(),
+    this.localFirstSeenAt = const Value.absent(),
+    this.uploadAttempts = const Value.absent(),
+    this.uploadNextRetryAt = const Value.absent(),
+    this.uploadFailureBucket = const Value.absent(),
+    this.uploadFailureReason = const Value.absent(),
   });
   GalleryItemsCompanion.insert({
     this.id = const Value.absent(),
@@ -704,6 +1091,14 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
     this.mime = const Value.absent(),
     this.unsupported = const Value.absent(),
     this.metadataPending = const Value.absent(),
+    this.uploadState = const Value.absent(),
+    this.uploadTargetProviderId = const Value.absent(),
+    this.uploadTargetPath = const Value.absent(),
+    this.localFirstSeenAt = const Value.absent(),
+    this.uploadAttempts = const Value.absent(),
+    this.uploadNextRetryAt = const Value.absent(),
+    this.uploadFailureBucket = const Value.absent(),
+    this.uploadFailureReason = const Value.absent(),
   }) : capturedAt = Value(capturedAt);
   static Insertable<GalleryItem> custom({
     Expression<int>? id,
@@ -724,6 +1119,14 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
     Expression<String>? mime,
     Expression<String>? unsupported,
     Expression<bool>? metadataPending,
+    Expression<String>? uploadState,
+    Expression<String>? uploadTargetProviderId,
+    Expression<String>? uploadTargetPath,
+    Expression<int>? localFirstSeenAt,
+    Expression<int>? uploadAttempts,
+    Expression<int>? uploadNextRetryAt,
+    Expression<String>? uploadFailureBucket,
+    Expression<String>? uploadFailureReason,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -744,6 +1147,17 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
       if (mime != null) 'mime': mime,
       if (unsupported != null) 'unsupported': unsupported,
       if (metadataPending != null) 'metadata_pending': metadataPending,
+      if (uploadState != null) 'upload_state': uploadState,
+      if (uploadTargetProviderId != null)
+        'upload_target_provider_id': uploadTargetProviderId,
+      if (uploadTargetPath != null) 'upload_target_path': uploadTargetPath,
+      if (localFirstSeenAt != null) 'local_first_seen_at': localFirstSeenAt,
+      if (uploadAttempts != null) 'upload_attempts': uploadAttempts,
+      if (uploadNextRetryAt != null) 'upload_next_retry_at': uploadNextRetryAt,
+      if (uploadFailureBucket != null)
+        'upload_failure_bucket': uploadFailureBucket,
+      if (uploadFailureReason != null)
+        'upload_failure_reason': uploadFailureReason,
     });
   }
 
@@ -765,7 +1179,15 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
       Value<int>? size,
       Value<String>? mime,
       Value<String>? unsupported,
-      Value<bool>? metadataPending}) {
+      Value<bool>? metadataPending,
+      Value<String?>? uploadState,
+      Value<String?>? uploadTargetProviderId,
+      Value<String?>? uploadTargetPath,
+      Value<int?>? localFirstSeenAt,
+      Value<int>? uploadAttempts,
+      Value<int?>? uploadNextRetryAt,
+      Value<String?>? uploadFailureBucket,
+      Value<String?>? uploadFailureReason}) {
     return GalleryItemsCompanion(
       id: id ?? this.id,
       origin: origin ?? this.origin,
@@ -785,6 +1207,15 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
       mime: mime ?? this.mime,
       unsupported: unsupported ?? this.unsupported,
       metadataPending: metadataPending ?? this.metadataPending,
+      uploadState: uploadState ?? this.uploadState,
+      uploadTargetProviderId:
+          uploadTargetProviderId ?? this.uploadTargetProviderId,
+      uploadTargetPath: uploadTargetPath ?? this.uploadTargetPath,
+      localFirstSeenAt: localFirstSeenAt ?? this.localFirstSeenAt,
+      uploadAttempts: uploadAttempts ?? this.uploadAttempts,
+      uploadNextRetryAt: uploadNextRetryAt ?? this.uploadNextRetryAt,
+      uploadFailureBucket: uploadFailureBucket ?? this.uploadFailureBucket,
+      uploadFailureReason: uploadFailureReason ?? this.uploadFailureReason,
     );
   }
 
@@ -845,6 +1276,33 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
     if (metadataPending.present) {
       map['metadata_pending'] = Variable<bool>(metadataPending.value);
     }
+    if (uploadState.present) {
+      map['upload_state'] = Variable<String>(uploadState.value);
+    }
+    if (uploadTargetProviderId.present) {
+      map['upload_target_provider_id'] =
+          Variable<String>(uploadTargetProviderId.value);
+    }
+    if (uploadTargetPath.present) {
+      map['upload_target_path'] = Variable<String>(uploadTargetPath.value);
+    }
+    if (localFirstSeenAt.present) {
+      map['local_first_seen_at'] = Variable<int>(localFirstSeenAt.value);
+    }
+    if (uploadAttempts.present) {
+      map['upload_attempts'] = Variable<int>(uploadAttempts.value);
+    }
+    if (uploadNextRetryAt.present) {
+      map['upload_next_retry_at'] = Variable<int>(uploadNextRetryAt.value);
+    }
+    if (uploadFailureBucket.present) {
+      map['upload_failure_bucket'] =
+          Variable<String>(uploadFailureBucket.value);
+    }
+    if (uploadFailureReason.present) {
+      map['upload_failure_reason'] =
+          Variable<String>(uploadFailureReason.value);
+    }
     return map;
   }
 
@@ -868,7 +1326,15 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
           ..write('size: $size, ')
           ..write('mime: $mime, ')
           ..write('unsupported: $unsupported, ')
-          ..write('metadataPending: $metadataPending')
+          ..write('metadataPending: $metadataPending, ')
+          ..write('uploadState: $uploadState, ')
+          ..write('uploadTargetProviderId: $uploadTargetProviderId, ')
+          ..write('uploadTargetPath: $uploadTargetPath, ')
+          ..write('localFirstSeenAt: $localFirstSeenAt, ')
+          ..write('uploadAttempts: $uploadAttempts, ')
+          ..write('uploadNextRetryAt: $uploadNextRetryAt, ')
+          ..write('uploadFailureBucket: $uploadFailureBucket, ')
+          ..write('uploadFailureReason: $uploadFailureReason')
           ..write(')'))
         .toString();
   }
@@ -1637,6 +2103,1636 @@ class LocalFolderSelectionsCompanion
   }
 }
 
+class $SyncPairsTable extends SyncPairs
+    with TableInfo<$SyncPairsTable, SyncPairRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SyncPairsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+      'id', aliasedName, false,
+      hasAutoIncrement: true,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('PRIMARY KEY AUTOINCREMENT'));
+  static const VerificationMeta _localFolderPathMeta =
+      const VerificationMeta('localFolderPath');
+  @override
+  late final GeneratedColumn<String> localFolderPath = GeneratedColumn<String>(
+      'local_folder_path', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _spaceProviderIdMeta =
+      const VerificationMeta('spaceProviderId');
+  @override
+  late final GeneratedColumn<String> spaceProviderId = GeneratedColumn<String>(
+      'space_provider_id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _pathMeta = const VerificationMeta('path');
+  @override
+  late final GeneratedColumn<String> path = GeneratedColumn<String>(
+      'path', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _createdAtMeta =
+      const VerificationMeta('createdAt');
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+      'created_at', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _removedAtMeta =
+      const VerificationMeta('removedAt');
+  @override
+  late final GeneratedColumn<int> removedAt = GeneratedColumn<int>(
+      'removed_at', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  @override
+  List<GeneratedColumn> get $columns =>
+      [id, localFolderPath, spaceProviderId, path, createdAt, removedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'sync_pairs';
+  @override
+  VerificationContext validateIntegrity(Insertable<SyncPairRow> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('local_folder_path')) {
+      context.handle(
+          _localFolderPathMeta,
+          localFolderPath.isAcceptableOrUnknown(
+              data['local_folder_path']!, _localFolderPathMeta));
+    } else if (isInserting) {
+      context.missing(_localFolderPathMeta);
+    }
+    if (data.containsKey('space_provider_id')) {
+      context.handle(
+          _spaceProviderIdMeta,
+          spaceProviderId.isAcceptableOrUnknown(
+              data['space_provider_id']!, _spaceProviderIdMeta));
+    } else if (isInserting) {
+      context.missing(_spaceProviderIdMeta);
+    }
+    if (data.containsKey('path')) {
+      context.handle(
+          _pathMeta, path.isAcceptableOrUnknown(data['path']!, _pathMeta));
+    } else if (isInserting) {
+      context.missing(_pathMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(_createdAtMeta,
+          createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta));
+    }
+    if (data.containsKey('removed_at')) {
+      context.handle(_removedAtMeta,
+          removedAt.isAcceptableOrUnknown(data['removed_at']!, _removedAtMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  SyncPairRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SyncPairRow(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}id'])!,
+      localFolderPath: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}local_folder_path'])!,
+      spaceProviderId: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}space_provider_id'])!,
+      path: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}path'])!,
+      createdAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}created_at'])!,
+      removedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}removed_at']),
+    );
+  }
+
+  @override
+  $SyncPairsTable createAlias(String alias) {
+    return $SyncPairsTable(attachedDatabase, alias);
+  }
+}
+
+class SyncPairRow extends DataClass implements Insertable<SyncPairRow> {
+  final int id;
+
+  /// The device-side Local Source - on Android, MediaStore's `RELATIVE_PATH`
+  /// for the folder (e.g. `DCIM/Camera/`), exactly the string
+  /// [GalleryItems.localRelativePath] and [LocalFolderSelections.folderPath]
+  /// use, so "which folder" means the same thing everywhere in the mirror.
+  /// Coverage of a subfolder is a plain string-prefix test against this
+  /// value (both always trailing-slash-terminated, so `DCIM/Camera/` can
+  /// never falsely prefix-match `DCIM/Camera2/`).
+  final String localFolderPath;
+
+  /// The Seraph folder side, in Space terms - the same
+  /// (spaceProviderId, path) pair [GallerySourceFolder] uses, since this
+  /// folder IS one (ticket 18's rule: a Sync Pair's Seraph folder
+  /// automatically becomes a Gallery Source Folder). This is THIS row's
+  /// target - current if [removedAt] is null, historical otherwise; see the
+  /// class doc for how the two are used differently.
+  final String spaceProviderId;
+  final String path;
+
+  /// Epoch milliseconds this pair was created - used only to order
+  /// [GalleryMirror.listSyncPairs] (oldest first, so the list does not
+  /// reorder itself as photo counts change).
+  final int createdAt;
+
+  /// Null while this pair is active (the normal state for every row before
+  /// ticket 21). Set to the epoch milliseconds [GalleryMirror.removeSyncPair]
+  /// ran at otherwise - the row is kept, never deleted, purely as a
+  /// historical target for dedup/reconcile lookups (see the class doc).
+  /// [GalleryMirror.listSyncPairs] (the UI's list) and every "current
+  /// target" computation filter this to null; dedup/reconcile lookups do
+  /// not filter on it at all.
+  final int? removedAt;
+  const SyncPairRow(
+      {required this.id,
+      required this.localFolderPath,
+      required this.spaceProviderId,
+      required this.path,
+      required this.createdAt,
+      this.removedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['local_folder_path'] = Variable<String>(localFolderPath);
+    map['space_provider_id'] = Variable<String>(spaceProviderId);
+    map['path'] = Variable<String>(path);
+    map['created_at'] = Variable<int>(createdAt);
+    if (!nullToAbsent || removedAt != null) {
+      map['removed_at'] = Variable<int>(removedAt);
+    }
+    return map;
+  }
+
+  SyncPairsCompanion toCompanion(bool nullToAbsent) {
+    return SyncPairsCompanion(
+      id: Value(id),
+      localFolderPath: Value(localFolderPath),
+      spaceProviderId: Value(spaceProviderId),
+      path: Value(path),
+      createdAt: Value(createdAt),
+      removedAt: removedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(removedAt),
+    );
+  }
+
+  factory SyncPairRow.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SyncPairRow(
+      id: serializer.fromJson<int>(json['id']),
+      localFolderPath: serializer.fromJson<String>(json['localFolderPath']),
+      spaceProviderId: serializer.fromJson<String>(json['spaceProviderId']),
+      path: serializer.fromJson<String>(json['path']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+      removedAt: serializer.fromJson<int?>(json['removedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'localFolderPath': serializer.toJson<String>(localFolderPath),
+      'spaceProviderId': serializer.toJson<String>(spaceProviderId),
+      'path': serializer.toJson<String>(path),
+      'createdAt': serializer.toJson<int>(createdAt),
+      'removedAt': serializer.toJson<int?>(removedAt),
+    };
+  }
+
+  SyncPairRow copyWith(
+          {int? id,
+          String? localFolderPath,
+          String? spaceProviderId,
+          String? path,
+          int? createdAt,
+          Value<int?> removedAt = const Value.absent()}) =>
+      SyncPairRow(
+        id: id ?? this.id,
+        localFolderPath: localFolderPath ?? this.localFolderPath,
+        spaceProviderId: spaceProviderId ?? this.spaceProviderId,
+        path: path ?? this.path,
+        createdAt: createdAt ?? this.createdAt,
+        removedAt: removedAt.present ? removedAt.value : this.removedAt,
+      );
+  SyncPairRow copyWithCompanion(SyncPairsCompanion data) {
+    return SyncPairRow(
+      id: data.id.present ? data.id.value : this.id,
+      localFolderPath: data.localFolderPath.present
+          ? data.localFolderPath.value
+          : this.localFolderPath,
+      spaceProviderId: data.spaceProviderId.present
+          ? data.spaceProviderId.value
+          : this.spaceProviderId,
+      path: data.path.present ? data.path.value : this.path,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      removedAt: data.removedAt.present ? data.removedAt.value : this.removedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncPairRow(')
+          ..write('id: $id, ')
+          ..write('localFolderPath: $localFolderPath, ')
+          ..write('spaceProviderId: $spaceProviderId, ')
+          ..write('path: $path, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('removedAt: $removedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      id, localFolderPath, spaceProviderId, path, createdAt, removedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SyncPairRow &&
+          other.id == this.id &&
+          other.localFolderPath == this.localFolderPath &&
+          other.spaceProviderId == this.spaceProviderId &&
+          other.path == this.path &&
+          other.createdAt == this.createdAt &&
+          other.removedAt == this.removedAt);
+}
+
+class SyncPairsCompanion extends UpdateCompanion<SyncPairRow> {
+  final Value<int> id;
+  final Value<String> localFolderPath;
+  final Value<String> spaceProviderId;
+  final Value<String> path;
+  final Value<int> createdAt;
+  final Value<int?> removedAt;
+  const SyncPairsCompanion({
+    this.id = const Value.absent(),
+    this.localFolderPath = const Value.absent(),
+    this.spaceProviderId = const Value.absent(),
+    this.path = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.removedAt = const Value.absent(),
+  });
+  SyncPairsCompanion.insert({
+    this.id = const Value.absent(),
+    required String localFolderPath,
+    required String spaceProviderId,
+    required String path,
+    this.createdAt = const Value.absent(),
+    this.removedAt = const Value.absent(),
+  })  : localFolderPath = Value(localFolderPath),
+        spaceProviderId = Value(spaceProviderId),
+        path = Value(path);
+  static Insertable<SyncPairRow> custom({
+    Expression<int>? id,
+    Expression<String>? localFolderPath,
+    Expression<String>? spaceProviderId,
+    Expression<String>? path,
+    Expression<int>? createdAt,
+    Expression<int>? removedAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (localFolderPath != null) 'local_folder_path': localFolderPath,
+      if (spaceProviderId != null) 'space_provider_id': spaceProviderId,
+      if (path != null) 'path': path,
+      if (createdAt != null) 'created_at': createdAt,
+      if (removedAt != null) 'removed_at': removedAt,
+    });
+  }
+
+  SyncPairsCompanion copyWith(
+      {Value<int>? id,
+      Value<String>? localFolderPath,
+      Value<String>? spaceProviderId,
+      Value<String>? path,
+      Value<int>? createdAt,
+      Value<int?>? removedAt}) {
+    return SyncPairsCompanion(
+      id: id ?? this.id,
+      localFolderPath: localFolderPath ?? this.localFolderPath,
+      spaceProviderId: spaceProviderId ?? this.spaceProviderId,
+      path: path ?? this.path,
+      createdAt: createdAt ?? this.createdAt,
+      removedAt: removedAt ?? this.removedAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (localFolderPath.present) {
+      map['local_folder_path'] = Variable<String>(localFolderPath.value);
+    }
+    if (spaceProviderId.present) {
+      map['space_provider_id'] = Variable<String>(spaceProviderId.value);
+    }
+    if (path.present) {
+      map['path'] = Variable<String>(path.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (removedAt.present) {
+      map['removed_at'] = Variable<int>(removedAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncPairsCompanion(')
+          ..write('id: $id, ')
+          ..write('localFolderPath: $localFolderPath, ')
+          ..write('spaceProviderId: $spaceProviderId, ')
+          ..write('path: $path, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('removedAt: $removedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $SyncRunStateTable extends SyncRunState
+    with TableInfo<$SyncRunStateTable, SyncRunStateData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SyncRunStateTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+      'id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _statusMeta = const VerificationMeta('status');
+  @override
+  late final GeneratedColumn<String> status = GeneratedColumn<String>(
+      'status', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _totalItemsMeta =
+      const VerificationMeta('totalItems');
+  @override
+  late final GeneratedColumn<int> totalItems = GeneratedColumn<int>(
+      'total_items', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _completedItemsMeta =
+      const VerificationMeta('completedItems');
+  @override
+  late final GeneratedColumn<int> completedItems = GeneratedColumn<int>(
+      'completed_items', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _failedItemsMeta =
+      const VerificationMeta('failedItems');
+  @override
+  late final GeneratedColumn<int> failedItems = GeneratedColumn<int>(
+      'failed_items', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _totalBytesMeta =
+      const VerificationMeta('totalBytes');
+  @override
+  late final GeneratedColumn<int> totalBytes = GeneratedColumn<int>(
+      'total_bytes', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _completedBytesMeta =
+      const VerificationMeta('completedBytes');
+  @override
+  late final GeneratedColumn<int> completedBytes = GeneratedColumn<int>(
+      'completed_bytes', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _lastErrorMeta =
+      const VerificationMeta('lastError');
+  @override
+  late final GeneratedColumn<String> lastError = GeneratedColumn<String>(
+      'last_error', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _updatedAtMeta =
+      const VerificationMeta('updatedAt');
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+      'updated_at', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  static const VerificationMeta _lastSuccessAtMeta =
+      const VerificationMeta('lastSuccessAt');
+  @override
+  late final GeneratedColumn<int> lastSuccessAt = GeneratedColumn<int>(
+      'last_success_at', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _globalBackoffUntilMeta =
+      const VerificationMeta('globalBackoffUntil');
+  @override
+  late final GeneratedColumn<int> globalBackoffUntil = GeneratedColumn<int>(
+      'global_backoff_until', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _globalBackoffStreakMeta =
+      const VerificationMeta('globalBackoffStreak');
+  @override
+  late final GeneratedColumn<int> globalBackoffStreak = GeneratedColumn<int>(
+      'global_backoff_streak', aliasedName, false,
+      type: DriftSqlType.int,
+      requiredDuringInsert: false,
+      defaultValue: const Constant(0));
+  @override
+  List<GeneratedColumn> get $columns => [
+        id,
+        status,
+        totalItems,
+        completedItems,
+        failedItems,
+        totalBytes,
+        completedBytes,
+        lastError,
+        updatedAt,
+        lastSuccessAt,
+        globalBackoffUntil,
+        globalBackoffStreak
+      ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'sync_run_state';
+  @override
+  VerificationContext validateIntegrity(Insertable<SyncRunStateData> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('status')) {
+      context.handle(_statusMeta,
+          status.isAcceptableOrUnknown(data['status']!, _statusMeta));
+    } else if (isInserting) {
+      context.missing(_statusMeta);
+    }
+    if (data.containsKey('total_items')) {
+      context.handle(
+          _totalItemsMeta,
+          totalItems.isAcceptableOrUnknown(
+              data['total_items']!, _totalItemsMeta));
+    }
+    if (data.containsKey('completed_items')) {
+      context.handle(
+          _completedItemsMeta,
+          completedItems.isAcceptableOrUnknown(
+              data['completed_items']!, _completedItemsMeta));
+    }
+    if (data.containsKey('failed_items')) {
+      context.handle(
+          _failedItemsMeta,
+          failedItems.isAcceptableOrUnknown(
+              data['failed_items']!, _failedItemsMeta));
+    }
+    if (data.containsKey('total_bytes')) {
+      context.handle(
+          _totalBytesMeta,
+          totalBytes.isAcceptableOrUnknown(
+              data['total_bytes']!, _totalBytesMeta));
+    }
+    if (data.containsKey('completed_bytes')) {
+      context.handle(
+          _completedBytesMeta,
+          completedBytes.isAcceptableOrUnknown(
+              data['completed_bytes']!, _completedBytesMeta));
+    }
+    if (data.containsKey('last_error')) {
+      context.handle(_lastErrorMeta,
+          lastError.isAcceptableOrUnknown(data['last_error']!, _lastErrorMeta));
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(_updatedAtMeta,
+          updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta));
+    }
+    if (data.containsKey('last_success_at')) {
+      context.handle(
+          _lastSuccessAtMeta,
+          lastSuccessAt.isAcceptableOrUnknown(
+              data['last_success_at']!, _lastSuccessAtMeta));
+    }
+    if (data.containsKey('global_backoff_until')) {
+      context.handle(
+          _globalBackoffUntilMeta,
+          globalBackoffUntil.isAcceptableOrUnknown(
+              data['global_backoff_until']!, _globalBackoffUntilMeta));
+    }
+    if (data.containsKey('global_backoff_streak')) {
+      context.handle(
+          _globalBackoffStreakMeta,
+          globalBackoffStreak.isAcceptableOrUnknown(
+              data['global_backoff_streak']!, _globalBackoffStreakMeta));
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  SyncRunStateData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SyncRunStateData(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}id'])!,
+      status: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}status'])!,
+      totalItems: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}total_items'])!,
+      completedItems: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}completed_items'])!,
+      failedItems: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}failed_items'])!,
+      totalBytes: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}total_bytes'])!,
+      completedBytes: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}completed_bytes'])!,
+      lastError: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}last_error']),
+      updatedAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}updated_at'])!,
+      lastSuccessAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}last_success_at']),
+      globalBackoffUntil: attachedDatabase.typeMapping.read(
+          DriftSqlType.int, data['${effectivePrefix}global_backoff_until']),
+      globalBackoffStreak: attachedDatabase.typeMapping.read(
+          DriftSqlType.int, data['${effectivePrefix}global_backoff_streak'])!,
+    );
+  }
+
+  @override
+  $SyncRunStateTable createAlias(String alias) {
+    return $SyncRunStateTable(attachedDatabase, alias);
+  }
+}
+
+class SyncRunStateData extends DataClass
+    implements Insertable<SyncRunStateData> {
+  final String id;
+
+  /// One of [GalleryMirror.syncStatusIdle]/[syncStatusRunning]/
+  /// [syncStatusPaused]/[syncStatusCompleted]/[syncStatusError] - plain text,
+  /// not a Dart enum column, for the same forward-compatibility reason
+  /// [GalleryItems.origin] is.
+  final String status;
+
+  /// How many items [GallerySyncEngine.run] queued for this run in total -
+  /// retries (ticket 20's mismatched uploads) and fresh backlog alike. Fixed
+  /// for the run's lifetime; only [completedItems] and [failedItems] move.
+  final int totalItems;
+
+  /// How many of [totalItems] have been attempted (successfully or not) so
+  /// far - what "photos remaining" (this ticket's own progress criterion) is
+  /// `totalItems - completedItems - failedItems` from.
+  final int completedItems;
+
+  /// How many of [totalItems] threw rather than completing - counted
+  /// separately from [completedItems] so a run that hit failures does not
+  /// silently read as fully done. A visible, actionable failure list is
+  /// ticket 25's job; this is only the count.
+  final int failedItems;
+
+  /// The approximate total byte volume [totalItems] represents - "roughly
+  /// how much data" (this ticket's own progress criterion), summed from each
+  /// item's local file size once, up front, not re-measured per item.
+  final int totalBytes;
+
+  /// Bytes actually moved so far - only items that resulted in a real PUT or
+  /// the ticket-19 same-size short-circuit add to this; an item skipped for
+  /// any other reason (no Sync Pair, device file gone) advances
+  /// [completedItems] without moving this.
+  final int completedBytes;
+
+  /// The most recent per-item failure's message, or null - a single value,
+  /// not a log, because a real failure list (ticket 25) is out of this
+  /// ticket's scope; this exists only so the UI has something more useful to
+  /// show than a bare failure count while that ticket is still ahead.
+  final String? lastError;
+
+  /// Epoch milliseconds this row was last written - what
+  /// [GalleryDataSyncController] uses to notice a `running` row has gone
+  /// stale (see its own reconciliation doc) if it is ever extended to time
+  /// out a run whose process vanished without the courtesy of a final write.
+  final int updatedAt;
+
+  /// Ticket 24: epoch milliseconds the most recent run that reached
+  /// [GalleryMirror.syncStatusCompleted] finished at, or null if no run ever
+  /// has. **Never regresses** - [GalleryMirror.writeSyncRunState] carries the
+  /// previous value forward on every write that is not itself a completed
+  /// run, so a `running`/`paused`/`error` write never clears it. This is
+  /// what makes "silence distinguishable from success" (the ticket's own
+  /// wording) possible: an unattended scheduled run that silently stops
+  /// firing (a killed process, a revoked permission, a constraint that never
+  /// clears) leaves this timestamp visibly going stale in the UI, rather
+  /// than the UI having no way to tell "quietly up to date" from "quietly
+  /// not running at all".
+  final int? lastSuccessAt;
+
+  /// Ticket 25: epoch milliseconds before which [GallerySyncEngine] must not
+  /// attempt ANY network call at all - the queue policy's GLOBAL backoff, as
+  /// opposed to [GalleryItems.uploadNextRetryAt]'s per-item one. Set once a
+  /// run trips the breaker (several consecutive TRANSIENT failures in a
+  /// row - see [GallerySyncEngine.run]), so a downed server stops the whole
+  /// run from hammering every remaining item's connection instead of only
+  /// slowing down each one individually ("a downed server does not produce
+  /// thousands of independent retry storms", the spec's own wording). Null
+  /// means no global backoff is currently in effect. Carried forward by
+  /// [GalleryMirror.writeSyncRunState] on every write that does not itself
+  /// change it, the same convention [lastSuccessAt] uses, so an unrelated
+  /// write (the UI's stale-`running`-row reconciliation, in particular)
+  /// never accidentally clears an active backoff.
+  final int? globalBackoffUntil;
+
+  /// How many times in a row the global breaker has tripped - what
+  /// [globalBackoffUntil]'s exponential schedule is computed from. Reset to
+  /// 0 the moment a run either uploads something successfully or trips no
+  /// breaker at all (the server is reachable again), carried forward
+  /// otherwise - the same [lastSuccessAt]-style convention.
+  final int globalBackoffStreak;
+  const SyncRunStateData(
+      {required this.id,
+      required this.status,
+      required this.totalItems,
+      required this.completedItems,
+      required this.failedItems,
+      required this.totalBytes,
+      required this.completedBytes,
+      this.lastError,
+      required this.updatedAt,
+      this.lastSuccessAt,
+      this.globalBackoffUntil,
+      required this.globalBackoffStreak});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['status'] = Variable<String>(status);
+    map['total_items'] = Variable<int>(totalItems);
+    map['completed_items'] = Variable<int>(completedItems);
+    map['failed_items'] = Variable<int>(failedItems);
+    map['total_bytes'] = Variable<int>(totalBytes);
+    map['completed_bytes'] = Variable<int>(completedBytes);
+    if (!nullToAbsent || lastError != null) {
+      map['last_error'] = Variable<String>(lastError);
+    }
+    map['updated_at'] = Variable<int>(updatedAt);
+    if (!nullToAbsent || lastSuccessAt != null) {
+      map['last_success_at'] = Variable<int>(lastSuccessAt);
+    }
+    if (!nullToAbsent || globalBackoffUntil != null) {
+      map['global_backoff_until'] = Variable<int>(globalBackoffUntil);
+    }
+    map['global_backoff_streak'] = Variable<int>(globalBackoffStreak);
+    return map;
+  }
+
+  SyncRunStateCompanion toCompanion(bool nullToAbsent) {
+    return SyncRunStateCompanion(
+      id: Value(id),
+      status: Value(status),
+      totalItems: Value(totalItems),
+      completedItems: Value(completedItems),
+      failedItems: Value(failedItems),
+      totalBytes: Value(totalBytes),
+      completedBytes: Value(completedBytes),
+      lastError: lastError == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastError),
+      updatedAt: Value(updatedAt),
+      lastSuccessAt: lastSuccessAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastSuccessAt),
+      globalBackoffUntil: globalBackoffUntil == null && nullToAbsent
+          ? const Value.absent()
+          : Value(globalBackoffUntil),
+      globalBackoffStreak: Value(globalBackoffStreak),
+    );
+  }
+
+  factory SyncRunStateData.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SyncRunStateData(
+      id: serializer.fromJson<String>(json['id']),
+      status: serializer.fromJson<String>(json['status']),
+      totalItems: serializer.fromJson<int>(json['totalItems']),
+      completedItems: serializer.fromJson<int>(json['completedItems']),
+      failedItems: serializer.fromJson<int>(json['failedItems']),
+      totalBytes: serializer.fromJson<int>(json['totalBytes']),
+      completedBytes: serializer.fromJson<int>(json['completedBytes']),
+      lastError: serializer.fromJson<String?>(json['lastError']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+      lastSuccessAt: serializer.fromJson<int?>(json['lastSuccessAt']),
+      globalBackoffUntil: serializer.fromJson<int?>(json['globalBackoffUntil']),
+      globalBackoffStreak:
+          serializer.fromJson<int>(json['globalBackoffStreak']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'status': serializer.toJson<String>(status),
+      'totalItems': serializer.toJson<int>(totalItems),
+      'completedItems': serializer.toJson<int>(completedItems),
+      'failedItems': serializer.toJson<int>(failedItems),
+      'totalBytes': serializer.toJson<int>(totalBytes),
+      'completedBytes': serializer.toJson<int>(completedBytes),
+      'lastError': serializer.toJson<String?>(lastError),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+      'lastSuccessAt': serializer.toJson<int?>(lastSuccessAt),
+      'globalBackoffUntil': serializer.toJson<int?>(globalBackoffUntil),
+      'globalBackoffStreak': serializer.toJson<int>(globalBackoffStreak),
+    };
+  }
+
+  SyncRunStateData copyWith(
+          {String? id,
+          String? status,
+          int? totalItems,
+          int? completedItems,
+          int? failedItems,
+          int? totalBytes,
+          int? completedBytes,
+          Value<String?> lastError = const Value.absent(),
+          int? updatedAt,
+          Value<int?> lastSuccessAt = const Value.absent(),
+          Value<int?> globalBackoffUntil = const Value.absent(),
+          int? globalBackoffStreak}) =>
+      SyncRunStateData(
+        id: id ?? this.id,
+        status: status ?? this.status,
+        totalItems: totalItems ?? this.totalItems,
+        completedItems: completedItems ?? this.completedItems,
+        failedItems: failedItems ?? this.failedItems,
+        totalBytes: totalBytes ?? this.totalBytes,
+        completedBytes: completedBytes ?? this.completedBytes,
+        lastError: lastError.present ? lastError.value : this.lastError,
+        updatedAt: updatedAt ?? this.updatedAt,
+        lastSuccessAt:
+            lastSuccessAt.present ? lastSuccessAt.value : this.lastSuccessAt,
+        globalBackoffUntil: globalBackoffUntil.present
+            ? globalBackoffUntil.value
+            : this.globalBackoffUntil,
+        globalBackoffStreak: globalBackoffStreak ?? this.globalBackoffStreak,
+      );
+  SyncRunStateData copyWithCompanion(SyncRunStateCompanion data) {
+    return SyncRunStateData(
+      id: data.id.present ? data.id.value : this.id,
+      status: data.status.present ? data.status.value : this.status,
+      totalItems:
+          data.totalItems.present ? data.totalItems.value : this.totalItems,
+      completedItems: data.completedItems.present
+          ? data.completedItems.value
+          : this.completedItems,
+      failedItems:
+          data.failedItems.present ? data.failedItems.value : this.failedItems,
+      totalBytes:
+          data.totalBytes.present ? data.totalBytes.value : this.totalBytes,
+      completedBytes: data.completedBytes.present
+          ? data.completedBytes.value
+          : this.completedBytes,
+      lastError: data.lastError.present ? data.lastError.value : this.lastError,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      lastSuccessAt: data.lastSuccessAt.present
+          ? data.lastSuccessAt.value
+          : this.lastSuccessAt,
+      globalBackoffUntil: data.globalBackoffUntil.present
+          ? data.globalBackoffUntil.value
+          : this.globalBackoffUntil,
+      globalBackoffStreak: data.globalBackoffStreak.present
+          ? data.globalBackoffStreak.value
+          : this.globalBackoffStreak,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncRunStateData(')
+          ..write('id: $id, ')
+          ..write('status: $status, ')
+          ..write('totalItems: $totalItems, ')
+          ..write('completedItems: $completedItems, ')
+          ..write('failedItems: $failedItems, ')
+          ..write('totalBytes: $totalBytes, ')
+          ..write('completedBytes: $completedBytes, ')
+          ..write('lastError: $lastError, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('lastSuccessAt: $lastSuccessAt, ')
+          ..write('globalBackoffUntil: $globalBackoffUntil, ')
+          ..write('globalBackoffStreak: $globalBackoffStreak')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+      id,
+      status,
+      totalItems,
+      completedItems,
+      failedItems,
+      totalBytes,
+      completedBytes,
+      lastError,
+      updatedAt,
+      lastSuccessAt,
+      globalBackoffUntil,
+      globalBackoffStreak);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SyncRunStateData &&
+          other.id == this.id &&
+          other.status == this.status &&
+          other.totalItems == this.totalItems &&
+          other.completedItems == this.completedItems &&
+          other.failedItems == this.failedItems &&
+          other.totalBytes == this.totalBytes &&
+          other.completedBytes == this.completedBytes &&
+          other.lastError == this.lastError &&
+          other.updatedAt == this.updatedAt &&
+          other.lastSuccessAt == this.lastSuccessAt &&
+          other.globalBackoffUntil == this.globalBackoffUntil &&
+          other.globalBackoffStreak == this.globalBackoffStreak);
+}
+
+class SyncRunStateCompanion extends UpdateCompanion<SyncRunStateData> {
+  final Value<String> id;
+  final Value<String> status;
+  final Value<int> totalItems;
+  final Value<int> completedItems;
+  final Value<int> failedItems;
+  final Value<int> totalBytes;
+  final Value<int> completedBytes;
+  final Value<String?> lastError;
+  final Value<int> updatedAt;
+  final Value<int?> lastSuccessAt;
+  final Value<int?> globalBackoffUntil;
+  final Value<int> globalBackoffStreak;
+  final Value<int> rowid;
+  const SyncRunStateCompanion({
+    this.id = const Value.absent(),
+    this.status = const Value.absent(),
+    this.totalItems = const Value.absent(),
+    this.completedItems = const Value.absent(),
+    this.failedItems = const Value.absent(),
+    this.totalBytes = const Value.absent(),
+    this.completedBytes = const Value.absent(),
+    this.lastError = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.lastSuccessAt = const Value.absent(),
+    this.globalBackoffUntil = const Value.absent(),
+    this.globalBackoffStreak = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SyncRunStateCompanion.insert({
+    required String id,
+    required String status,
+    this.totalItems = const Value.absent(),
+    this.completedItems = const Value.absent(),
+    this.failedItems = const Value.absent(),
+    this.totalBytes = const Value.absent(),
+    this.completedBytes = const Value.absent(),
+    this.lastError = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.lastSuccessAt = const Value.absent(),
+    this.globalBackoffUntil = const Value.absent(),
+    this.globalBackoffStreak = const Value.absent(),
+    this.rowid = const Value.absent(),
+  })  : id = Value(id),
+        status = Value(status);
+  static Insertable<SyncRunStateData> custom({
+    Expression<String>? id,
+    Expression<String>? status,
+    Expression<int>? totalItems,
+    Expression<int>? completedItems,
+    Expression<int>? failedItems,
+    Expression<int>? totalBytes,
+    Expression<int>? completedBytes,
+    Expression<String>? lastError,
+    Expression<int>? updatedAt,
+    Expression<int>? lastSuccessAt,
+    Expression<int>? globalBackoffUntil,
+    Expression<int>? globalBackoffStreak,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (status != null) 'status': status,
+      if (totalItems != null) 'total_items': totalItems,
+      if (completedItems != null) 'completed_items': completedItems,
+      if (failedItems != null) 'failed_items': failedItems,
+      if (totalBytes != null) 'total_bytes': totalBytes,
+      if (completedBytes != null) 'completed_bytes': completedBytes,
+      if (lastError != null) 'last_error': lastError,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (lastSuccessAt != null) 'last_success_at': lastSuccessAt,
+      if (globalBackoffUntil != null)
+        'global_backoff_until': globalBackoffUntil,
+      if (globalBackoffStreak != null)
+        'global_backoff_streak': globalBackoffStreak,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SyncRunStateCompanion copyWith(
+      {Value<String>? id,
+      Value<String>? status,
+      Value<int>? totalItems,
+      Value<int>? completedItems,
+      Value<int>? failedItems,
+      Value<int>? totalBytes,
+      Value<int>? completedBytes,
+      Value<String?>? lastError,
+      Value<int>? updatedAt,
+      Value<int?>? lastSuccessAt,
+      Value<int?>? globalBackoffUntil,
+      Value<int>? globalBackoffStreak,
+      Value<int>? rowid}) {
+    return SyncRunStateCompanion(
+      id: id ?? this.id,
+      status: status ?? this.status,
+      totalItems: totalItems ?? this.totalItems,
+      completedItems: completedItems ?? this.completedItems,
+      failedItems: failedItems ?? this.failedItems,
+      totalBytes: totalBytes ?? this.totalBytes,
+      completedBytes: completedBytes ?? this.completedBytes,
+      lastError: lastError ?? this.lastError,
+      updatedAt: updatedAt ?? this.updatedAt,
+      lastSuccessAt: lastSuccessAt ?? this.lastSuccessAt,
+      globalBackoffUntil: globalBackoffUntil ?? this.globalBackoffUntil,
+      globalBackoffStreak: globalBackoffStreak ?? this.globalBackoffStreak,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (status.present) {
+      map['status'] = Variable<String>(status.value);
+    }
+    if (totalItems.present) {
+      map['total_items'] = Variable<int>(totalItems.value);
+    }
+    if (completedItems.present) {
+      map['completed_items'] = Variable<int>(completedItems.value);
+    }
+    if (failedItems.present) {
+      map['failed_items'] = Variable<int>(failedItems.value);
+    }
+    if (totalBytes.present) {
+      map['total_bytes'] = Variable<int>(totalBytes.value);
+    }
+    if (completedBytes.present) {
+      map['completed_bytes'] = Variable<int>(completedBytes.value);
+    }
+    if (lastError.present) {
+      map['last_error'] = Variable<String>(lastError.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (lastSuccessAt.present) {
+      map['last_success_at'] = Variable<int>(lastSuccessAt.value);
+    }
+    if (globalBackoffUntil.present) {
+      map['global_backoff_until'] = Variable<int>(globalBackoffUntil.value);
+    }
+    if (globalBackoffStreak.present) {
+      map['global_backoff_streak'] = Variable<int>(globalBackoffStreak.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncRunStateCompanion(')
+          ..write('id: $id, ')
+          ..write('status: $status, ')
+          ..write('totalItems: $totalItems, ')
+          ..write('completedItems: $completedItems, ')
+          ..write('failedItems: $failedItems, ')
+          ..write('totalBytes: $totalBytes, ')
+          ..write('completedBytes: $completedBytes, ')
+          ..write('lastError: $lastError, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('lastSuccessAt: $lastSuccessAt, ')
+          ..write('globalBackoffUntil: $globalBackoffUntil, ')
+          ..write('globalBackoffStreak: $globalBackoffStreak, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $TokenRefreshLockTable extends TokenRefreshLock
+    with TableInfo<$TokenRefreshLockTable, TokenRefreshLockData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $TokenRefreshLockTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+      'id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _holderMeta = const VerificationMeta('holder');
+  @override
+  late final GeneratedColumn<String> holder = GeneratedColumn<String>(
+      'holder', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _acquiredAtMeta =
+      const VerificationMeta('acquiredAt');
+  @override
+  late final GeneratedColumn<int> acquiredAt = GeneratedColumn<int>(
+      'acquired_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _expiresAtMeta =
+      const VerificationMeta('expiresAt');
+  @override
+  late final GeneratedColumn<int> expiresAt = GeneratedColumn<int>(
+      'expires_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [id, holder, acquiredAt, expiresAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'token_refresh_lock';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<TokenRefreshLockData> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('holder')) {
+      context.handle(_holderMeta,
+          holder.isAcceptableOrUnknown(data['holder']!, _holderMeta));
+    } else if (isInserting) {
+      context.missing(_holderMeta);
+    }
+    if (data.containsKey('acquired_at')) {
+      context.handle(
+          _acquiredAtMeta,
+          acquiredAt.isAcceptableOrUnknown(
+              data['acquired_at']!, _acquiredAtMeta));
+    } else if (isInserting) {
+      context.missing(_acquiredAtMeta);
+    }
+    if (data.containsKey('expires_at')) {
+      context.handle(_expiresAtMeta,
+          expiresAt.isAcceptableOrUnknown(data['expires_at']!, _expiresAtMeta));
+    } else if (isInserting) {
+      context.missing(_expiresAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  TokenRefreshLockData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return TokenRefreshLockData(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}id'])!,
+      holder: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}holder'])!,
+      acquiredAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}acquired_at'])!,
+      expiresAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}expires_at'])!,
+    );
+  }
+
+  @override
+  $TokenRefreshLockTable createAlias(String alias) {
+    return $TokenRefreshLockTable(attachedDatabase, alias);
+  }
+}
+
+class TokenRefreshLockData extends DataClass
+    implements Insertable<TokenRefreshLockData> {
+  final String id;
+
+  /// Which isolate currently holds (or most recently held) the lock -
+  /// `'ui'` or `'headless'`, see the constants next to `refreshTokenWithLock`
+  /// in `../sync/token_refresh_coordination.dart`. Diagnostic only, per the
+  /// class doc.
+  final String holder;
+
+  /// Epoch milliseconds the current holder acquired the lock at.
+  final int acquiredAt;
+
+  /// Epoch milliseconds the current lease expires at - past this point the
+  /// lock is free for another acquire regardless of whether
+  /// [GalleryMirror.releaseTokenRefreshLock] was ever called (see the class
+  /// doc's "lease-based" note).
+  final int expiresAt;
+  const TokenRefreshLockData(
+      {required this.id,
+      required this.holder,
+      required this.acquiredAt,
+      required this.expiresAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['holder'] = Variable<String>(holder);
+    map['acquired_at'] = Variable<int>(acquiredAt);
+    map['expires_at'] = Variable<int>(expiresAt);
+    return map;
+  }
+
+  TokenRefreshLockCompanion toCompanion(bool nullToAbsent) {
+    return TokenRefreshLockCompanion(
+      id: Value(id),
+      holder: Value(holder),
+      acquiredAt: Value(acquiredAt),
+      expiresAt: Value(expiresAt),
+    );
+  }
+
+  factory TokenRefreshLockData.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return TokenRefreshLockData(
+      id: serializer.fromJson<String>(json['id']),
+      holder: serializer.fromJson<String>(json['holder']),
+      acquiredAt: serializer.fromJson<int>(json['acquiredAt']),
+      expiresAt: serializer.fromJson<int>(json['expiresAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'holder': serializer.toJson<String>(holder),
+      'acquiredAt': serializer.toJson<int>(acquiredAt),
+      'expiresAt': serializer.toJson<int>(expiresAt),
+    };
+  }
+
+  TokenRefreshLockData copyWith(
+          {String? id, String? holder, int? acquiredAt, int? expiresAt}) =>
+      TokenRefreshLockData(
+        id: id ?? this.id,
+        holder: holder ?? this.holder,
+        acquiredAt: acquiredAt ?? this.acquiredAt,
+        expiresAt: expiresAt ?? this.expiresAt,
+      );
+  TokenRefreshLockData copyWithCompanion(TokenRefreshLockCompanion data) {
+    return TokenRefreshLockData(
+      id: data.id.present ? data.id.value : this.id,
+      holder: data.holder.present ? data.holder.value : this.holder,
+      acquiredAt:
+          data.acquiredAt.present ? data.acquiredAt.value : this.acquiredAt,
+      expiresAt: data.expiresAt.present ? data.expiresAt.value : this.expiresAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TokenRefreshLockData(')
+          ..write('id: $id, ')
+          ..write('holder: $holder, ')
+          ..write('acquiredAt: $acquiredAt, ')
+          ..write('expiresAt: $expiresAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, holder, acquiredAt, expiresAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is TokenRefreshLockData &&
+          other.id == this.id &&
+          other.holder == this.holder &&
+          other.acquiredAt == this.acquiredAt &&
+          other.expiresAt == this.expiresAt);
+}
+
+class TokenRefreshLockCompanion extends UpdateCompanion<TokenRefreshLockData> {
+  final Value<String> id;
+  final Value<String> holder;
+  final Value<int> acquiredAt;
+  final Value<int> expiresAt;
+  final Value<int> rowid;
+  const TokenRefreshLockCompanion({
+    this.id = const Value.absent(),
+    this.holder = const Value.absent(),
+    this.acquiredAt = const Value.absent(),
+    this.expiresAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  TokenRefreshLockCompanion.insert({
+    required String id,
+    required String holder,
+    required int acquiredAt,
+    required int expiresAt,
+    this.rowid = const Value.absent(),
+  })  : id = Value(id),
+        holder = Value(holder),
+        acquiredAt = Value(acquiredAt),
+        expiresAt = Value(expiresAt);
+  static Insertable<TokenRefreshLockData> custom({
+    Expression<String>? id,
+    Expression<String>? holder,
+    Expression<int>? acquiredAt,
+    Expression<int>? expiresAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (holder != null) 'holder': holder,
+      if (acquiredAt != null) 'acquired_at': acquiredAt,
+      if (expiresAt != null) 'expires_at': expiresAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  TokenRefreshLockCompanion copyWith(
+      {Value<String>? id,
+      Value<String>? holder,
+      Value<int>? acquiredAt,
+      Value<int>? expiresAt,
+      Value<int>? rowid}) {
+    return TokenRefreshLockCompanion(
+      id: id ?? this.id,
+      holder: holder ?? this.holder,
+      acquiredAt: acquiredAt ?? this.acquiredAt,
+      expiresAt: expiresAt ?? this.expiresAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (holder.present) {
+      map['holder'] = Variable<String>(holder.value);
+    }
+    if (acquiredAt.present) {
+      map['acquired_at'] = Variable<int>(acquiredAt.value);
+    }
+    if (expiresAt.present) {
+      map['expires_at'] = Variable<int>(expiresAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TokenRefreshLockCompanion(')
+          ..write('id: $id, ')
+          ..write('holder: $holder, ')
+          ..write('acquiredAt: $acquiredAt, ')
+          ..write('expiresAt: $expiresAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $SyncRunLockTable extends SyncRunLock
+    with TableInfo<$SyncRunLockTable, SyncRunLockData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SyncRunLockTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+      'id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _holderMeta = const VerificationMeta('holder');
+  @override
+  late final GeneratedColumn<String> holder = GeneratedColumn<String>(
+      'holder', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _acquiredAtMeta =
+      const VerificationMeta('acquiredAt');
+  @override
+  late final GeneratedColumn<int> acquiredAt = GeneratedColumn<int>(
+      'acquired_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _expiresAtMeta =
+      const VerificationMeta('expiresAt');
+  @override
+  late final GeneratedColumn<int> expiresAt = GeneratedColumn<int>(
+      'expires_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [id, holder, acquiredAt, expiresAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'sync_run_lock';
+  @override
+  VerificationContext validateIntegrity(Insertable<SyncRunLockData> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('holder')) {
+      context.handle(_holderMeta,
+          holder.isAcceptableOrUnknown(data['holder']!, _holderMeta));
+    } else if (isInserting) {
+      context.missing(_holderMeta);
+    }
+    if (data.containsKey('acquired_at')) {
+      context.handle(
+          _acquiredAtMeta,
+          acquiredAt.isAcceptableOrUnknown(
+              data['acquired_at']!, _acquiredAtMeta));
+    } else if (isInserting) {
+      context.missing(_acquiredAtMeta);
+    }
+    if (data.containsKey('expires_at')) {
+      context.handle(_expiresAtMeta,
+          expiresAt.isAcceptableOrUnknown(data['expires_at']!, _expiresAtMeta));
+    } else if (isInserting) {
+      context.missing(_expiresAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  SyncRunLockData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SyncRunLockData(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}id'])!,
+      holder: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}holder'])!,
+      acquiredAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}acquired_at'])!,
+      expiresAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}expires_at'])!,
+    );
+  }
+
+  @override
+  $SyncRunLockTable createAlias(String alias) {
+    return $SyncRunLockTable(attachedDatabase, alias);
+  }
+}
+
+class SyncRunLockData extends DataClass implements Insertable<SyncRunLockData> {
+  final String id;
+
+  /// Which entrypoint currently holds (or most recently held) the lock -
+  /// see `syncRunLockHolderForegroundService`/`syncRunLockHolderWorkManager`
+  /// in `../sync/gallery_headless_sync.dart`. Diagnostic only - acquisition
+  /// never depends on who is asking, only on whether the lease is free or
+  /// already held by that same holder.
+  final String holder;
+
+  /// Epoch milliseconds the current holder (most recently) acquired or
+  /// renewed the lock at.
+  final int acquiredAt;
+
+  /// Epoch milliseconds the current lease expires at - past this point the
+  /// lock is free for another (different) holder to acquire, regardless of
+  /// whether [GalleryMirror.releaseSyncRunLock] was ever called.
+  final int expiresAt;
+  const SyncRunLockData(
+      {required this.id,
+      required this.holder,
+      required this.acquiredAt,
+      required this.expiresAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['holder'] = Variable<String>(holder);
+    map['acquired_at'] = Variable<int>(acquiredAt);
+    map['expires_at'] = Variable<int>(expiresAt);
+    return map;
+  }
+
+  SyncRunLockCompanion toCompanion(bool nullToAbsent) {
+    return SyncRunLockCompanion(
+      id: Value(id),
+      holder: Value(holder),
+      acquiredAt: Value(acquiredAt),
+      expiresAt: Value(expiresAt),
+    );
+  }
+
+  factory SyncRunLockData.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SyncRunLockData(
+      id: serializer.fromJson<String>(json['id']),
+      holder: serializer.fromJson<String>(json['holder']),
+      acquiredAt: serializer.fromJson<int>(json['acquiredAt']),
+      expiresAt: serializer.fromJson<int>(json['expiresAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'holder': serializer.toJson<String>(holder),
+      'acquiredAt': serializer.toJson<int>(acquiredAt),
+      'expiresAt': serializer.toJson<int>(expiresAt),
+    };
+  }
+
+  SyncRunLockData copyWith(
+          {String? id, String? holder, int? acquiredAt, int? expiresAt}) =>
+      SyncRunLockData(
+        id: id ?? this.id,
+        holder: holder ?? this.holder,
+        acquiredAt: acquiredAt ?? this.acquiredAt,
+        expiresAt: expiresAt ?? this.expiresAt,
+      );
+  SyncRunLockData copyWithCompanion(SyncRunLockCompanion data) {
+    return SyncRunLockData(
+      id: data.id.present ? data.id.value : this.id,
+      holder: data.holder.present ? data.holder.value : this.holder,
+      acquiredAt:
+          data.acquiredAt.present ? data.acquiredAt.value : this.acquiredAt,
+      expiresAt: data.expiresAt.present ? data.expiresAt.value : this.expiresAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncRunLockData(')
+          ..write('id: $id, ')
+          ..write('holder: $holder, ')
+          ..write('acquiredAt: $acquiredAt, ')
+          ..write('expiresAt: $expiresAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, holder, acquiredAt, expiresAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SyncRunLockData &&
+          other.id == this.id &&
+          other.holder == this.holder &&
+          other.acquiredAt == this.acquiredAt &&
+          other.expiresAt == this.expiresAt);
+}
+
+class SyncRunLockCompanion extends UpdateCompanion<SyncRunLockData> {
+  final Value<String> id;
+  final Value<String> holder;
+  final Value<int> acquiredAt;
+  final Value<int> expiresAt;
+  final Value<int> rowid;
+  const SyncRunLockCompanion({
+    this.id = const Value.absent(),
+    this.holder = const Value.absent(),
+    this.acquiredAt = const Value.absent(),
+    this.expiresAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SyncRunLockCompanion.insert({
+    required String id,
+    required String holder,
+    required int acquiredAt,
+    required int expiresAt,
+    this.rowid = const Value.absent(),
+  })  : id = Value(id),
+        holder = Value(holder),
+        acquiredAt = Value(acquiredAt),
+        expiresAt = Value(expiresAt);
+  static Insertable<SyncRunLockData> custom({
+    Expression<String>? id,
+    Expression<String>? holder,
+    Expression<int>? acquiredAt,
+    Expression<int>? expiresAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (holder != null) 'holder': holder,
+      if (acquiredAt != null) 'acquired_at': acquiredAt,
+      if (expiresAt != null) 'expires_at': expiresAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SyncRunLockCompanion copyWith(
+      {Value<String>? id,
+      Value<String>? holder,
+      Value<int>? acquiredAt,
+      Value<int>? expiresAt,
+      Value<int>? rowid}) {
+    return SyncRunLockCompanion(
+      id: id ?? this.id,
+      holder: holder ?? this.holder,
+      acquiredAt: acquiredAt ?? this.acquiredAt,
+      expiresAt: expiresAt ?? this.expiresAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (holder.present) {
+      map['holder'] = Variable<String>(holder.value);
+    }
+    if (acquiredAt.present) {
+      map['acquired_at'] = Variable<int>(acquiredAt.value);
+    }
+    if (expiresAt.present) {
+      map['expires_at'] = Variable<int>(expiresAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncRunLockCompanion(')
+          ..write('id: $id, ')
+          ..write('holder: $holder, ')
+          ..write('acquiredAt: $acquiredAt, ')
+          ..write('expiresAt: $expiresAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$GalleryMirrorDatabase extends GeneratedDatabase {
   _$GalleryMirrorDatabase(QueryExecutor e) : super(e);
   $GalleryMirrorDatabaseManager get managers =>
@@ -1647,6 +3743,11 @@ abstract class _$GalleryMirrorDatabase extends GeneratedDatabase {
       $CachedThumbnailsTable(this);
   late final $LocalFolderSelectionsTable localFolderSelections =
       $LocalFolderSelectionsTable(this);
+  late final $SyncPairsTable syncPairs = $SyncPairsTable(this);
+  late final $SyncRunStateTable syncRunState = $SyncRunStateTable(this);
+  late final $TokenRefreshLockTable tokenRefreshLock =
+      $TokenRefreshLockTable(this);
+  late final $SyncRunLockTable syncRunLock = $SyncRunLockTable(this);
   late final Index idxGalleryItemsLocalIdentity = Index(
       'idx_gallery_items_local_identity',
       'CREATE INDEX idx_gallery_items_local_identity ON gallery_items (local_relative_path, local_display_name, local_size, local_date_taken)');
@@ -1656,6 +3757,9 @@ abstract class _$GalleryMirrorDatabase extends GeneratedDatabase {
   late final Index idxGalleryItemsCapturedAtId = Index(
       'idx_gallery_items_captured_at_id',
       'CREATE INDEX idx_gallery_items_captured_at_id ON gallery_items (captured_at, id)');
+  late final Index idxGalleryItemsUploadTarget = Index(
+      'idx_gallery_items_upload_target',
+      'CREATE INDEX idx_gallery_items_upload_target ON gallery_items (upload_target_provider_id, upload_target_path)');
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -1665,9 +3769,14 @@ abstract class _$GalleryMirrorDatabase extends GeneratedDatabase {
         syncCursors,
         cachedThumbnails,
         localFolderSelections,
+        syncPairs,
+        syncRunState,
+        tokenRefreshLock,
+        syncRunLock,
         idxGalleryItemsLocalIdentity,
         idxGalleryItemsOriginSizeCapturedAt,
-        idxGalleryItemsCapturedAtId
+        idxGalleryItemsCapturedAtId,
+        idxGalleryItemsUploadTarget
       ];
 }
 
@@ -1691,6 +3800,14 @@ typedef $$GalleryItemsTableCreateCompanionBuilder = GalleryItemsCompanion
   Value<String> mime,
   Value<String> unsupported,
   Value<bool> metadataPending,
+  Value<String?> uploadState,
+  Value<String?> uploadTargetProviderId,
+  Value<String?> uploadTargetPath,
+  Value<int?> localFirstSeenAt,
+  Value<int> uploadAttempts,
+  Value<int?> uploadNextRetryAt,
+  Value<String?> uploadFailureBucket,
+  Value<String?> uploadFailureReason,
 });
 typedef $$GalleryItemsTableUpdateCompanionBuilder = GalleryItemsCompanion
     Function({
@@ -1712,6 +3829,14 @@ typedef $$GalleryItemsTableUpdateCompanionBuilder = GalleryItemsCompanion
   Value<String> mime,
   Value<String> unsupported,
   Value<bool> metadataPending,
+  Value<String?> uploadState,
+  Value<String?> uploadTargetProviderId,
+  Value<String?> uploadTargetPath,
+  Value<int?> localFirstSeenAt,
+  Value<int> uploadAttempts,
+  Value<int?> uploadNextRetryAt,
+  Value<String?> uploadFailureBucket,
+  Value<String?> uploadFailureReason,
 });
 
 class $$GalleryItemsTableFilterComposer
@@ -1780,6 +3905,37 @@ class $$GalleryItemsTableFilterComposer
 
   ColumnFilters<bool> get metadataPending => $composableBuilder(
       column: $table.metadataPending,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get uploadState => $composableBuilder(
+      column: $table.uploadState, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get uploadTargetProviderId => $composableBuilder(
+      column: $table.uploadTargetProviderId,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get uploadTargetPath => $composableBuilder(
+      column: $table.uploadTargetPath,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get localFirstSeenAt => $composableBuilder(
+      column: $table.localFirstSeenAt,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get uploadAttempts => $composableBuilder(
+      column: $table.uploadAttempts,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get uploadNextRetryAt => $composableBuilder(
+      column: $table.uploadNextRetryAt,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get uploadFailureBucket => $composableBuilder(
+      column: $table.uploadFailureBucket,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get uploadFailureReason => $composableBuilder(
+      column: $table.uploadFailureReason,
       builder: (column) => ColumnFilters(column));
 }
 
@@ -1850,6 +4006,37 @@ class $$GalleryItemsTableOrderingComposer
   ColumnOrderings<bool> get metadataPending => $composableBuilder(
       column: $table.metadataPending,
       builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get uploadState => $composableBuilder(
+      column: $table.uploadState, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get uploadTargetProviderId => $composableBuilder(
+      column: $table.uploadTargetProviderId,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get uploadTargetPath => $composableBuilder(
+      column: $table.uploadTargetPath,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get localFirstSeenAt => $composableBuilder(
+      column: $table.localFirstSeenAt,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get uploadAttempts => $composableBuilder(
+      column: $table.uploadAttempts,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get uploadNextRetryAt => $composableBuilder(
+      column: $table.uploadNextRetryAt,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get uploadFailureBucket => $composableBuilder(
+      column: $table.uploadFailureBucket,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get uploadFailureReason => $composableBuilder(
+      column: $table.uploadFailureReason,
+      builder: (column) => ColumnOrderings(column));
 }
 
 class $$GalleryItemsTableAnnotationComposer
@@ -1914,6 +4101,30 @@ class $$GalleryItemsTableAnnotationComposer
 
   GeneratedColumn<bool> get metadataPending => $composableBuilder(
       column: $table.metadataPending, builder: (column) => column);
+
+  GeneratedColumn<String> get uploadState => $composableBuilder(
+      column: $table.uploadState, builder: (column) => column);
+
+  GeneratedColumn<String> get uploadTargetProviderId => $composableBuilder(
+      column: $table.uploadTargetProviderId, builder: (column) => column);
+
+  GeneratedColumn<String> get uploadTargetPath => $composableBuilder(
+      column: $table.uploadTargetPath, builder: (column) => column);
+
+  GeneratedColumn<int> get localFirstSeenAt => $composableBuilder(
+      column: $table.localFirstSeenAt, builder: (column) => column);
+
+  GeneratedColumn<int> get uploadAttempts => $composableBuilder(
+      column: $table.uploadAttempts, builder: (column) => column);
+
+  GeneratedColumn<int> get uploadNextRetryAt => $composableBuilder(
+      column: $table.uploadNextRetryAt, builder: (column) => column);
+
+  GeneratedColumn<String> get uploadFailureBucket => $composableBuilder(
+      column: $table.uploadFailureBucket, builder: (column) => column);
+
+  GeneratedColumn<String> get uploadFailureReason => $composableBuilder(
+      column: $table.uploadFailureReason, builder: (column) => column);
 }
 
 class $$GalleryItemsTableTableManager extends RootTableManager<
@@ -1961,6 +4172,14 @@ class $$GalleryItemsTableTableManager extends RootTableManager<
             Value<String> mime = const Value.absent(),
             Value<String> unsupported = const Value.absent(),
             Value<bool> metadataPending = const Value.absent(),
+            Value<String?> uploadState = const Value.absent(),
+            Value<String?> uploadTargetProviderId = const Value.absent(),
+            Value<String?> uploadTargetPath = const Value.absent(),
+            Value<int?> localFirstSeenAt = const Value.absent(),
+            Value<int> uploadAttempts = const Value.absent(),
+            Value<int?> uploadNextRetryAt = const Value.absent(),
+            Value<String?> uploadFailureBucket = const Value.absent(),
+            Value<String?> uploadFailureReason = const Value.absent(),
           }) =>
               GalleryItemsCompanion(
             id: id,
@@ -1981,6 +4200,14 @@ class $$GalleryItemsTableTableManager extends RootTableManager<
             mime: mime,
             unsupported: unsupported,
             metadataPending: metadataPending,
+            uploadState: uploadState,
+            uploadTargetProviderId: uploadTargetProviderId,
+            uploadTargetPath: uploadTargetPath,
+            localFirstSeenAt: localFirstSeenAt,
+            uploadAttempts: uploadAttempts,
+            uploadNextRetryAt: uploadNextRetryAt,
+            uploadFailureBucket: uploadFailureBucket,
+            uploadFailureReason: uploadFailureReason,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
@@ -2001,6 +4228,14 @@ class $$GalleryItemsTableTableManager extends RootTableManager<
             Value<String> mime = const Value.absent(),
             Value<String> unsupported = const Value.absent(),
             Value<bool> metadataPending = const Value.absent(),
+            Value<String?> uploadState = const Value.absent(),
+            Value<String?> uploadTargetProviderId = const Value.absent(),
+            Value<String?> uploadTargetPath = const Value.absent(),
+            Value<int?> localFirstSeenAt = const Value.absent(),
+            Value<int> uploadAttempts = const Value.absent(),
+            Value<int?> uploadNextRetryAt = const Value.absent(),
+            Value<String?> uploadFailureBucket = const Value.absent(),
+            Value<String?> uploadFailureReason = const Value.absent(),
           }) =>
               GalleryItemsCompanion.insert(
             id: id,
@@ -2021,6 +4256,14 @@ class $$GalleryItemsTableTableManager extends RootTableManager<
             mime: mime,
             unsupported: unsupported,
             metadataPending: metadataPending,
+            uploadState: uploadState,
+            uploadTargetProviderId: uploadTargetProviderId,
+            uploadTargetPath: uploadTargetPath,
+            localFirstSeenAt: localFirstSeenAt,
+            uploadAttempts: uploadAttempts,
+            uploadNextRetryAt: uploadNextRetryAt,
+            uploadFailureBucket: uploadFailureBucket,
+            uploadFailureReason: uploadFailureReason,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
@@ -2500,6 +4743,803 @@ typedef $$LocalFolderSelectionsTableProcessedTableManager
         ),
         LocalFolderSelection,
         PrefetchHooks Function()>;
+typedef $$SyncPairsTableCreateCompanionBuilder = SyncPairsCompanion Function({
+  Value<int> id,
+  required String localFolderPath,
+  required String spaceProviderId,
+  required String path,
+  Value<int> createdAt,
+  Value<int?> removedAt,
+});
+typedef $$SyncPairsTableUpdateCompanionBuilder = SyncPairsCompanion Function({
+  Value<int> id,
+  Value<String> localFolderPath,
+  Value<String> spaceProviderId,
+  Value<String> path,
+  Value<int> createdAt,
+  Value<int?> removedAt,
+});
+
+class $$SyncPairsTableFilterComposer
+    extends Composer<_$GalleryMirrorDatabase, $SyncPairsTable> {
+  $$SyncPairsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get localFolderPath => $composableBuilder(
+      column: $table.localFolderPath,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get spaceProviderId => $composableBuilder(
+      column: $table.spaceProviderId,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get path => $composableBuilder(
+      column: $table.path, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get removedAt => $composableBuilder(
+      column: $table.removedAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$SyncPairsTableOrderingComposer
+    extends Composer<_$GalleryMirrorDatabase, $SyncPairsTable> {
+  $$SyncPairsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get localFolderPath => $composableBuilder(
+      column: $table.localFolderPath,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get spaceProviderId => $composableBuilder(
+      column: $table.spaceProviderId,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get path => $composableBuilder(
+      column: $table.path, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+      column: $table.createdAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get removedAt => $composableBuilder(
+      column: $table.removedAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$SyncPairsTableAnnotationComposer
+    extends Composer<_$GalleryMirrorDatabase, $SyncPairsTable> {
+  $$SyncPairsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get localFolderPath => $composableBuilder(
+      column: $table.localFolderPath, builder: (column) => column);
+
+  GeneratedColumn<String> get spaceProviderId => $composableBuilder(
+      column: $table.spaceProviderId, builder: (column) => column);
+
+  GeneratedColumn<String> get path =>
+      $composableBuilder(column: $table.path, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<int> get removedAt =>
+      $composableBuilder(column: $table.removedAt, builder: (column) => column);
+}
+
+class $$SyncPairsTableTableManager extends RootTableManager<
+    _$GalleryMirrorDatabase,
+    $SyncPairsTable,
+    SyncPairRow,
+    $$SyncPairsTableFilterComposer,
+    $$SyncPairsTableOrderingComposer,
+    $$SyncPairsTableAnnotationComposer,
+    $$SyncPairsTableCreateCompanionBuilder,
+    $$SyncPairsTableUpdateCompanionBuilder,
+    (
+      SyncPairRow,
+      BaseReferences<_$GalleryMirrorDatabase, $SyncPairsTable, SyncPairRow>
+    ),
+    SyncPairRow,
+    PrefetchHooks Function()> {
+  $$SyncPairsTableTableManager(
+      _$GalleryMirrorDatabase db, $SyncPairsTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SyncPairsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SyncPairsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SyncPairsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            Value<String> localFolderPath = const Value.absent(),
+            Value<String> spaceProviderId = const Value.absent(),
+            Value<String> path = const Value.absent(),
+            Value<int> createdAt = const Value.absent(),
+            Value<int?> removedAt = const Value.absent(),
+          }) =>
+              SyncPairsCompanion(
+            id: id,
+            localFolderPath: localFolderPath,
+            spaceProviderId: spaceProviderId,
+            path: path,
+            createdAt: createdAt,
+            removedAt: removedAt,
+          ),
+          createCompanionCallback: ({
+            Value<int> id = const Value.absent(),
+            required String localFolderPath,
+            required String spaceProviderId,
+            required String path,
+            Value<int> createdAt = const Value.absent(),
+            Value<int?> removedAt = const Value.absent(),
+          }) =>
+              SyncPairsCompanion.insert(
+            id: id,
+            localFolderPath: localFolderPath,
+            spaceProviderId: spaceProviderId,
+            path: path,
+            createdAt: createdAt,
+            removedAt: removedAt,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$SyncPairsTableProcessedTableManager = ProcessedTableManager<
+    _$GalleryMirrorDatabase,
+    $SyncPairsTable,
+    SyncPairRow,
+    $$SyncPairsTableFilterComposer,
+    $$SyncPairsTableOrderingComposer,
+    $$SyncPairsTableAnnotationComposer,
+    $$SyncPairsTableCreateCompanionBuilder,
+    $$SyncPairsTableUpdateCompanionBuilder,
+    (
+      SyncPairRow,
+      BaseReferences<_$GalleryMirrorDatabase, $SyncPairsTable, SyncPairRow>
+    ),
+    SyncPairRow,
+    PrefetchHooks Function()>;
+typedef $$SyncRunStateTableCreateCompanionBuilder = SyncRunStateCompanion
+    Function({
+  required String id,
+  required String status,
+  Value<int> totalItems,
+  Value<int> completedItems,
+  Value<int> failedItems,
+  Value<int> totalBytes,
+  Value<int> completedBytes,
+  Value<String?> lastError,
+  Value<int> updatedAt,
+  Value<int?> lastSuccessAt,
+  Value<int?> globalBackoffUntil,
+  Value<int> globalBackoffStreak,
+  Value<int> rowid,
+});
+typedef $$SyncRunStateTableUpdateCompanionBuilder = SyncRunStateCompanion
+    Function({
+  Value<String> id,
+  Value<String> status,
+  Value<int> totalItems,
+  Value<int> completedItems,
+  Value<int> failedItems,
+  Value<int> totalBytes,
+  Value<int> completedBytes,
+  Value<String?> lastError,
+  Value<int> updatedAt,
+  Value<int?> lastSuccessAt,
+  Value<int?> globalBackoffUntil,
+  Value<int> globalBackoffStreak,
+  Value<int> rowid,
+});
+
+class $$SyncRunStateTableFilterComposer
+    extends Composer<_$GalleryMirrorDatabase, $SyncRunStateTable> {
+  $$SyncRunStateTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get status => $composableBuilder(
+      column: $table.status, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get totalItems => $composableBuilder(
+      column: $table.totalItems, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get completedItems => $composableBuilder(
+      column: $table.completedItems,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get failedItems => $composableBuilder(
+      column: $table.failedItems, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get totalBytes => $composableBuilder(
+      column: $table.totalBytes, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get completedBytes => $composableBuilder(
+      column: $table.completedBytes,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get lastError => $composableBuilder(
+      column: $table.lastError, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get lastSuccessAt => $composableBuilder(
+      column: $table.lastSuccessAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get globalBackoffUntil => $composableBuilder(
+      column: $table.globalBackoffUntil,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get globalBackoffStreak => $composableBuilder(
+      column: $table.globalBackoffStreak,
+      builder: (column) => ColumnFilters(column));
+}
+
+class $$SyncRunStateTableOrderingComposer
+    extends Composer<_$GalleryMirrorDatabase, $SyncRunStateTable> {
+  $$SyncRunStateTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get status => $composableBuilder(
+      column: $table.status, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get totalItems => $composableBuilder(
+      column: $table.totalItems, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get completedItems => $composableBuilder(
+      column: $table.completedItems,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get failedItems => $composableBuilder(
+      column: $table.failedItems, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get totalBytes => $composableBuilder(
+      column: $table.totalBytes, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get completedBytes => $composableBuilder(
+      column: $table.completedBytes,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get lastError => $composableBuilder(
+      column: $table.lastError, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+      column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get lastSuccessAt => $composableBuilder(
+      column: $table.lastSuccessAt,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get globalBackoffUntil => $composableBuilder(
+      column: $table.globalBackoffUntil,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get globalBackoffStreak => $composableBuilder(
+      column: $table.globalBackoffStreak,
+      builder: (column) => ColumnOrderings(column));
+}
+
+class $$SyncRunStateTableAnnotationComposer
+    extends Composer<_$GalleryMirrorDatabase, $SyncRunStateTable> {
+  $$SyncRunStateTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<int> get totalItems => $composableBuilder(
+      column: $table.totalItems, builder: (column) => column);
+
+  GeneratedColumn<int> get completedItems => $composableBuilder(
+      column: $table.completedItems, builder: (column) => column);
+
+  GeneratedColumn<int> get failedItems => $composableBuilder(
+      column: $table.failedItems, builder: (column) => column);
+
+  GeneratedColumn<int> get totalBytes => $composableBuilder(
+      column: $table.totalBytes, builder: (column) => column);
+
+  GeneratedColumn<int> get completedBytes => $composableBuilder(
+      column: $table.completedBytes, builder: (column) => column);
+
+  GeneratedColumn<String> get lastError =>
+      $composableBuilder(column: $table.lastError, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get lastSuccessAt => $composableBuilder(
+      column: $table.lastSuccessAt, builder: (column) => column);
+
+  GeneratedColumn<int> get globalBackoffUntil => $composableBuilder(
+      column: $table.globalBackoffUntil, builder: (column) => column);
+
+  GeneratedColumn<int> get globalBackoffStreak => $composableBuilder(
+      column: $table.globalBackoffStreak, builder: (column) => column);
+}
+
+class $$SyncRunStateTableTableManager extends RootTableManager<
+    _$GalleryMirrorDatabase,
+    $SyncRunStateTable,
+    SyncRunStateData,
+    $$SyncRunStateTableFilterComposer,
+    $$SyncRunStateTableOrderingComposer,
+    $$SyncRunStateTableAnnotationComposer,
+    $$SyncRunStateTableCreateCompanionBuilder,
+    $$SyncRunStateTableUpdateCompanionBuilder,
+    (
+      SyncRunStateData,
+      BaseReferences<_$GalleryMirrorDatabase, $SyncRunStateTable,
+          SyncRunStateData>
+    ),
+    SyncRunStateData,
+    PrefetchHooks Function()> {
+  $$SyncRunStateTableTableManager(
+      _$GalleryMirrorDatabase db, $SyncRunStateTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SyncRunStateTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SyncRunStateTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SyncRunStateTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> id = const Value.absent(),
+            Value<String> status = const Value.absent(),
+            Value<int> totalItems = const Value.absent(),
+            Value<int> completedItems = const Value.absent(),
+            Value<int> failedItems = const Value.absent(),
+            Value<int> totalBytes = const Value.absent(),
+            Value<int> completedBytes = const Value.absent(),
+            Value<String?> lastError = const Value.absent(),
+            Value<int> updatedAt = const Value.absent(),
+            Value<int?> lastSuccessAt = const Value.absent(),
+            Value<int?> globalBackoffUntil = const Value.absent(),
+            Value<int> globalBackoffStreak = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              SyncRunStateCompanion(
+            id: id,
+            status: status,
+            totalItems: totalItems,
+            completedItems: completedItems,
+            failedItems: failedItems,
+            totalBytes: totalBytes,
+            completedBytes: completedBytes,
+            lastError: lastError,
+            updatedAt: updatedAt,
+            lastSuccessAt: lastSuccessAt,
+            globalBackoffUntil: globalBackoffUntil,
+            globalBackoffStreak: globalBackoffStreak,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String id,
+            required String status,
+            Value<int> totalItems = const Value.absent(),
+            Value<int> completedItems = const Value.absent(),
+            Value<int> failedItems = const Value.absent(),
+            Value<int> totalBytes = const Value.absent(),
+            Value<int> completedBytes = const Value.absent(),
+            Value<String?> lastError = const Value.absent(),
+            Value<int> updatedAt = const Value.absent(),
+            Value<int?> lastSuccessAt = const Value.absent(),
+            Value<int?> globalBackoffUntil = const Value.absent(),
+            Value<int> globalBackoffStreak = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              SyncRunStateCompanion.insert(
+            id: id,
+            status: status,
+            totalItems: totalItems,
+            completedItems: completedItems,
+            failedItems: failedItems,
+            totalBytes: totalBytes,
+            completedBytes: completedBytes,
+            lastError: lastError,
+            updatedAt: updatedAt,
+            lastSuccessAt: lastSuccessAt,
+            globalBackoffUntil: globalBackoffUntil,
+            globalBackoffStreak: globalBackoffStreak,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$SyncRunStateTableProcessedTableManager = ProcessedTableManager<
+    _$GalleryMirrorDatabase,
+    $SyncRunStateTable,
+    SyncRunStateData,
+    $$SyncRunStateTableFilterComposer,
+    $$SyncRunStateTableOrderingComposer,
+    $$SyncRunStateTableAnnotationComposer,
+    $$SyncRunStateTableCreateCompanionBuilder,
+    $$SyncRunStateTableUpdateCompanionBuilder,
+    (
+      SyncRunStateData,
+      BaseReferences<_$GalleryMirrorDatabase, $SyncRunStateTable,
+          SyncRunStateData>
+    ),
+    SyncRunStateData,
+    PrefetchHooks Function()>;
+typedef $$TokenRefreshLockTableCreateCompanionBuilder
+    = TokenRefreshLockCompanion Function({
+  required String id,
+  required String holder,
+  required int acquiredAt,
+  required int expiresAt,
+  Value<int> rowid,
+});
+typedef $$TokenRefreshLockTableUpdateCompanionBuilder
+    = TokenRefreshLockCompanion Function({
+  Value<String> id,
+  Value<String> holder,
+  Value<int> acquiredAt,
+  Value<int> expiresAt,
+  Value<int> rowid,
+});
+
+class $$TokenRefreshLockTableFilterComposer
+    extends Composer<_$GalleryMirrorDatabase, $TokenRefreshLockTable> {
+  $$TokenRefreshLockTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get holder => $composableBuilder(
+      column: $table.holder, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get acquiredAt => $composableBuilder(
+      column: $table.acquiredAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get expiresAt => $composableBuilder(
+      column: $table.expiresAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$TokenRefreshLockTableOrderingComposer
+    extends Composer<_$GalleryMirrorDatabase, $TokenRefreshLockTable> {
+  $$TokenRefreshLockTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get holder => $composableBuilder(
+      column: $table.holder, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get acquiredAt => $composableBuilder(
+      column: $table.acquiredAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get expiresAt => $composableBuilder(
+      column: $table.expiresAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$TokenRefreshLockTableAnnotationComposer
+    extends Composer<_$GalleryMirrorDatabase, $TokenRefreshLockTable> {
+  $$TokenRefreshLockTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get holder =>
+      $composableBuilder(column: $table.holder, builder: (column) => column);
+
+  GeneratedColumn<int> get acquiredAt => $composableBuilder(
+      column: $table.acquiredAt, builder: (column) => column);
+
+  GeneratedColumn<int> get expiresAt =>
+      $composableBuilder(column: $table.expiresAt, builder: (column) => column);
+}
+
+class $$TokenRefreshLockTableTableManager extends RootTableManager<
+    _$GalleryMirrorDatabase,
+    $TokenRefreshLockTable,
+    TokenRefreshLockData,
+    $$TokenRefreshLockTableFilterComposer,
+    $$TokenRefreshLockTableOrderingComposer,
+    $$TokenRefreshLockTableAnnotationComposer,
+    $$TokenRefreshLockTableCreateCompanionBuilder,
+    $$TokenRefreshLockTableUpdateCompanionBuilder,
+    (
+      TokenRefreshLockData,
+      BaseReferences<_$GalleryMirrorDatabase, $TokenRefreshLockTable,
+          TokenRefreshLockData>
+    ),
+    TokenRefreshLockData,
+    PrefetchHooks Function()> {
+  $$TokenRefreshLockTableTableManager(
+      _$GalleryMirrorDatabase db, $TokenRefreshLockTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$TokenRefreshLockTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$TokenRefreshLockTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$TokenRefreshLockTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> id = const Value.absent(),
+            Value<String> holder = const Value.absent(),
+            Value<int> acquiredAt = const Value.absent(),
+            Value<int> expiresAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              TokenRefreshLockCompanion(
+            id: id,
+            holder: holder,
+            acquiredAt: acquiredAt,
+            expiresAt: expiresAt,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String id,
+            required String holder,
+            required int acquiredAt,
+            required int expiresAt,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              TokenRefreshLockCompanion.insert(
+            id: id,
+            holder: holder,
+            acquiredAt: acquiredAt,
+            expiresAt: expiresAt,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$TokenRefreshLockTableProcessedTableManager = ProcessedTableManager<
+    _$GalleryMirrorDatabase,
+    $TokenRefreshLockTable,
+    TokenRefreshLockData,
+    $$TokenRefreshLockTableFilterComposer,
+    $$TokenRefreshLockTableOrderingComposer,
+    $$TokenRefreshLockTableAnnotationComposer,
+    $$TokenRefreshLockTableCreateCompanionBuilder,
+    $$TokenRefreshLockTableUpdateCompanionBuilder,
+    (
+      TokenRefreshLockData,
+      BaseReferences<_$GalleryMirrorDatabase, $TokenRefreshLockTable,
+          TokenRefreshLockData>
+    ),
+    TokenRefreshLockData,
+    PrefetchHooks Function()>;
+typedef $$SyncRunLockTableCreateCompanionBuilder = SyncRunLockCompanion
+    Function({
+  required String id,
+  required String holder,
+  required int acquiredAt,
+  required int expiresAt,
+  Value<int> rowid,
+});
+typedef $$SyncRunLockTableUpdateCompanionBuilder = SyncRunLockCompanion
+    Function({
+  Value<String> id,
+  Value<String> holder,
+  Value<int> acquiredAt,
+  Value<int> expiresAt,
+  Value<int> rowid,
+});
+
+class $$SyncRunLockTableFilterComposer
+    extends Composer<_$GalleryMirrorDatabase, $SyncRunLockTable> {
+  $$SyncRunLockTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get holder => $composableBuilder(
+      column: $table.holder, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get acquiredAt => $composableBuilder(
+      column: $table.acquiredAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get expiresAt => $composableBuilder(
+      column: $table.expiresAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$SyncRunLockTableOrderingComposer
+    extends Composer<_$GalleryMirrorDatabase, $SyncRunLockTable> {
+  $$SyncRunLockTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get holder => $composableBuilder(
+      column: $table.holder, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get acquiredAt => $composableBuilder(
+      column: $table.acquiredAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get expiresAt => $composableBuilder(
+      column: $table.expiresAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$SyncRunLockTableAnnotationComposer
+    extends Composer<_$GalleryMirrorDatabase, $SyncRunLockTable> {
+  $$SyncRunLockTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get holder =>
+      $composableBuilder(column: $table.holder, builder: (column) => column);
+
+  GeneratedColumn<int> get acquiredAt => $composableBuilder(
+      column: $table.acquiredAt, builder: (column) => column);
+
+  GeneratedColumn<int> get expiresAt =>
+      $composableBuilder(column: $table.expiresAt, builder: (column) => column);
+}
+
+class $$SyncRunLockTableTableManager extends RootTableManager<
+    _$GalleryMirrorDatabase,
+    $SyncRunLockTable,
+    SyncRunLockData,
+    $$SyncRunLockTableFilterComposer,
+    $$SyncRunLockTableOrderingComposer,
+    $$SyncRunLockTableAnnotationComposer,
+    $$SyncRunLockTableCreateCompanionBuilder,
+    $$SyncRunLockTableUpdateCompanionBuilder,
+    (
+      SyncRunLockData,
+      BaseReferences<_$GalleryMirrorDatabase, $SyncRunLockTable,
+          SyncRunLockData>
+    ),
+    SyncRunLockData,
+    PrefetchHooks Function()> {
+  $$SyncRunLockTableTableManager(
+      _$GalleryMirrorDatabase db, $SyncRunLockTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SyncRunLockTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SyncRunLockTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SyncRunLockTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> id = const Value.absent(),
+            Value<String> holder = const Value.absent(),
+            Value<int> acquiredAt = const Value.absent(),
+            Value<int> expiresAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              SyncRunLockCompanion(
+            id: id,
+            holder: holder,
+            acquiredAt: acquiredAt,
+            expiresAt: expiresAt,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String id,
+            required String holder,
+            required int acquiredAt,
+            required int expiresAt,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              SyncRunLockCompanion.insert(
+            id: id,
+            holder: holder,
+            acquiredAt: acquiredAt,
+            expiresAt: expiresAt,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$SyncRunLockTableProcessedTableManager = ProcessedTableManager<
+    _$GalleryMirrorDatabase,
+    $SyncRunLockTable,
+    SyncRunLockData,
+    $$SyncRunLockTableFilterComposer,
+    $$SyncRunLockTableOrderingComposer,
+    $$SyncRunLockTableAnnotationComposer,
+    $$SyncRunLockTableCreateCompanionBuilder,
+    $$SyncRunLockTableUpdateCompanionBuilder,
+    (
+      SyncRunLockData,
+      BaseReferences<_$GalleryMirrorDatabase, $SyncRunLockTable,
+          SyncRunLockData>
+    ),
+    SyncRunLockData,
+    PrefetchHooks Function()>;
 
 class $GalleryMirrorDatabaseManager {
   final _$GalleryMirrorDatabase _db;
@@ -2512,4 +5552,12 @@ class $GalleryMirrorDatabaseManager {
       $$CachedThumbnailsTableTableManager(_db, _db.cachedThumbnails);
   $$LocalFolderSelectionsTableTableManager get localFolderSelections =>
       $$LocalFolderSelectionsTableTableManager(_db, _db.localFolderSelections);
+  $$SyncPairsTableTableManager get syncPairs =>
+      $$SyncPairsTableTableManager(_db, _db.syncPairs);
+  $$SyncRunStateTableTableManager get syncRunState =>
+      $$SyncRunStateTableTableManager(_db, _db.syncRunState);
+  $$TokenRefreshLockTableTableManager get tokenRefreshLock =>
+      $$TokenRefreshLockTableTableManager(_db, _db.tokenRefreshLock);
+  $$SyncRunLockTableTableManager get syncRunLock =>
+      $$SyncRunLockTableTableManager(_db, _db.syncRunLock);
 }

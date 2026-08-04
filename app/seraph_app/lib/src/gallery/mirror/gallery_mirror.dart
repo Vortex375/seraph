@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:drift/drift.dart';
 import 'package:seraph_app/src/gallery/local/local_media_item.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_delta_models.dart';
@@ -16,6 +18,98 @@ const String gallerySyncSource = 'server';
 const String _originCloud = 'cloud';
 const String _originDevice = 'device';
 const String _originBoth = 'both';
+
+/// [GalleryItems.uploadState] values (ticket 20) - named here for the same
+/// reason the origin values above are. See the column's own doc for what
+/// each one means; [GalleryItemDisplay.isAwaitingVerification] in
+/// `gallery_item_display.dart` and [GalleryUploadService.retryMismatchedUpload]
+/// in `gallery_upload_service.dart` read these same raw strings back (raw
+/// literals there too, matching how those files already read [origin]'s raw
+/// values rather than importing private constants across files).
+///
+/// Two pairs, not two values: which pending state a row is in when the
+/// upload succeeded is tracked separately from which pending state it moves
+/// to on a contradicting feed length, because the two require different
+/// recovery actions (ticket 20's rework) - a real PUT can safely have its
+/// remote file deleted and retried, but the "assume it is ours" shortcut
+/// must never delete a file this device did not write, only fall back to
+/// disambiguation.
+const String _uploadStateUploaded = 'uploaded';
+const String _uploadStateAssumed = 'assumed';
+const String _uploadStateMismatch = 'mismatch';
+const String _uploadStateAssumedMismatch = 'assumedMismatch';
+
+/// [GalleryItems.uploadFailureBucket] value (ticket 25) - named here for the
+/// same reason the [uploadState] values above are. Only one value exists
+/// today - see that column's own doc in `gallery_mirror_database.dart` for
+/// why it is still plain text rather than a bool.
+const String _uploadFailureBucketPermanent = 'permanent';
+
+/// `baseDelay * 2^(attempts-1)`, capped at [maxDelay] - ticket 25's
+/// exponential-backoff shape, shared by [GalleryMirror.
+/// recordTransientUploadFailure] (the per-item schedule) and
+/// [GallerySyncEngine]'s own global-backoff computation (`../sync/
+/// gallery_sync_engine.dart`, the per-run schedule), so both are the same
+/// formula with different constants rather than two independently-invented
+/// ones.
+int cappedExponentialBackoffMillis({
+  required int attempts,
+  required Duration baseDelay,
+  required Duration maxDelay,
+}) {
+  if (attempts <= 0) {
+    return 0;
+  }
+  // `attempts` is never large enough in practice to overflow a double via
+  // 2^(attempts-1) before the min() below caps it - the same "guarded
+  // against but never realistically hit" spirit as
+  // [GalleryUploadService.maxDisambiguationAttempts].
+  final raw = baseDelay.inMilliseconds * pow(2, attempts - 1);
+  final capped = min(raw, maxDelay.inMilliseconds.toDouble());
+  return capped.round();
+}
+
+/// Ticket 22: the fixed id of [SyncRunState]'s single row - see that table's
+/// class doc for why there is only ever one.
+const String syncRunStateId = 'default';
+
+/// [SyncRunState.status] values - named here for the same reason [origin]'s
+/// and [uploadState]'s values are (see those constants' own doc), and read
+/// back by [GallerySyncEngine] (`../sync/gallery_sync_engine.dart`) and
+/// [GalleryDataSyncController] (`../sync/gallery_data_sync_controller.dart`)
+/// as raw strings, matching how those files already read [origin] and
+/// [uploadState].
+///
+/// No `interrupted` value: a `running` row a process did not survive to
+/// clear reads back as [syncStatusPaused] once
+/// [GalleryDataSyncController]'s startup reconciliation corrects it (see
+/// that method's doc) - `paused` is already exactly "not running, but
+/// resumable", so a fifth status would only duplicate it.
+const String syncStatusIdle = 'idle';
+const String syncStatusRunning = 'running';
+const String syncStatusPaused = 'paused';
+const String syncStatusCompleted = 'completed';
+const String syncStatusError = 'error';
+
+/// Ticket 25: written instead of [syncStatusRunning]/[syncStatusCompleted]
+/// when [GallerySyncEngine.run] declines to attempt anything at all because
+/// [SyncRunState.globalBackoffUntil] has not passed yet - distinct from
+/// [syncStatusPaused] (a user asked to stop) and [syncStatusError] (an
+/// unrecoverable, one-off failure like "not signed in") because a backoff is
+/// neither: nothing is wrong with the configuration, and no one asked for
+/// this to stop - it is actively, automatically going to retry on its own,
+/// which is what the Backup card (`gallery_source_folders_view.dart`) tells
+/// the user rather than leaving them to guess from a generic "Paused".
+const String syncStatusBackoff = 'backoff';
+
+/// Ticket 23: the fixed id of [TokenRefreshLock]'s single row - see that
+/// table's class doc for why there is only ever one.
+const String tokenRefreshLockId = 'default';
+
+/// Ticket 24: the fixed id of [SyncRunLock]'s single row - the same
+/// single-well-known-row shape [tokenRefreshLockId] uses, for the same
+/// reason: there is only ever one sync run worth serialising against.
+const String syncRunLockId = 'default';
 
 /// [SyncCursors.source] value for ticket 17's device-side incremental-scan
 /// watermark - the highest MediaStore generation already applied. Reuses the
@@ -51,6 +145,72 @@ const String syncThrottleSource = 'sync-throttle';
 /// choice the user has already made).
 bool _defaultFolderSelected(String folderPath) =>
     folderPath == 'DCIM' || folderPath.startsWith('DCIM/');
+
+/// One configured Sync Pair (ticket 18), as the *Sync Pairs* section of the
+/// Gallery folders screen shows it - what it maps to and how many photos it
+/// currently covers (user story: "the pairs list shows what each pair maps
+/// to and how many photos it covers").
+///
+/// Deliberately a different, richer shape than the database's own
+/// `SyncPairRow` (see `@DataClassName` on `SyncPairs` in
+/// `gallery_mirror_database.dart`): this is the seam's public model, the raw
+/// row is a storage detail.
+class SyncPair {
+  const SyncPair({
+    required this.id,
+    required this.localFolderPath,
+    required this.spaceProviderId,
+    required this.path,
+    required this.photoCount,
+  });
+
+  final int id;
+
+  /// The device-side Local Source - on Android, MediaStore's `RELATIVE_PATH`
+  /// for the folder (e.g. `DCIM/Camera/`), exactly [LocalFolder.path]'s
+  /// format, so the same folder identifier means the same thing everywhere
+  /// in the mirror.
+  final String localFolderPath;
+
+  /// The Seraph folder side, in Space terms - the same
+  /// (spaceProviderId, path) pair `GallerySourceFolder` uses, since this
+  /// folder IS one (ticket 18's rule: a Sync Pair's Seraph folder
+  /// automatically becomes a Gallery Source Folder).
+  final String spaceProviderId;
+  final String path;
+
+  /// How many gallery items - Device only or Synced alike - currently sit
+  /// under [localFolderPath], regardless of whether creating this specific
+  /// pair is what matched any of them.
+  final int photoCount;
+
+  /// The Seraph side, spelled the way the file browser spells it - space
+  /// provider followed by the path inside it.
+  String get seraphDisplayPath =>
+      path == '/' ? '/$spaceProviderId' : '/$spaceProviderId$path';
+}
+
+/// Thrown by [GalleryMirror.createSyncPair] when [localFolderPath] overlaps
+/// an existing Sync Pair's Local Source - equal to, a parent of, or a child
+/// of it. Ticket 18's rule: **a Local Source may appear in at most one Sync
+/// Pair**, because otherwise a photo would have two remote paths and two
+/// verification states, and the remote path would stop being a pure function
+/// (CONTEXT.md, D18 in `docs/gallery-mode-design-notes.md`). Overlap, not
+/// just exact equality, is refused: a pair on `DCIM/` and a second on
+/// `DCIM/Camera/` would let the same file be covered by both.
+class SyncPairConflictException implements Exception {
+  const SyncPairConflictException(
+      this.localFolderPath, this.conflictingFolderPath);
+
+  final String localFolderPath;
+  final String conflictingFolderPath;
+
+  @override
+  String toString() =>
+      '"$localFolderPath" is already covered by the Sync Pair for '
+      '"$conflictingFolderPath" - a device folder can only be in one Sync '
+      'Pair.';
+}
 
 /// One folder on the device, as ticket 29's *On this device* section shows
 /// it.
@@ -193,11 +353,34 @@ class GalleryMirror {
   /// first - the local scan or the delta feed - never decides whether the
   /// merged gallery ends up with one row for a photo or two. See
   /// [applyLocalScan] for the mirror-image case.
+  ///
+  /// **Ticket 18 changes what "checked against" means.** A Sync Pair makes
+  /// the match deterministic: if [item]'s path falls under a pair's Seraph
+  /// folder, the Device only row it would have come from is computable by
+  /// path alone ([_localIdentityForRemotePath]), and a match there wins
+  /// outright - Capture Date is not even consulted, so a disagreeing one
+  /// (server-extracted EXIF vs. the device's own) never blocks the merge.
+  /// Only when no pair produces a match does the ticket 15 heuristic run,
+  /// and even then it skips any Device only row a *different* pair covers -
+  /// once a pair covers a device item, the heuristic never gets a vote on it
+  /// (see [_coveringSyncPair]'s callers).
+  ///
+  /// **Ticket 21: Rule 2 is checked against every Sync Pair a Local Source
+  /// has EVER had, not only its current one** ([_allSyncPairs], not
+  /// [_activeSyncPairs]) - the spec's "current target for writes, all
+  /// targets for lookups" rule. A cloud item arriving at an OLD target - a
+  /// folder that remains a Gallery Source Folder after a retarget, still
+  /// reported by the delta feed - inverts correctly through the (removed)
+  /// pair row that produced it, so the matching Device only row is still
+  /// found by path alone rather than falling through to the ticket 15
+  /// heuristic (or worse, never matching at all and reading as unprotected).
   Future<void> applyPage(
     GalleryDeltaResponse page, {
     String source = gallerySyncSource,
   }) async {
     await _db.transaction(() async {
+      final syncPairs = await _allSyncPairs();
+
       for (final item in page.items) {
         final existing = await (_db.select(_db.galleryItems)
               ..where((t) =>
@@ -253,23 +436,156 @@ class GalleryMirror {
           continue;
         }
 
-        // No row for this (providerId, path) yet. A Device only row matching
-        // by (size, capturedAt) is plausibly the same photo (see the class
-        // doc on [applyLocalScan] for why this heuristic and not something
-        // stronger) - merge onto it instead of inserting a second row, so a
-        // photo already on the device that the delta feed reports for the
-        // first time appears exactly once, at the position it already had.
-        final deviceMatch = await (_db.select(_db.galleryItems)
+        // No row for this (providerId, path) yet.
+        //
+        // Ticket 20 verification: is there a Device only row with an upload
+        // pending confirmation at EXACTLY this (providerId, path)? Checked
+        // before Rule 2/3 below because it is the strongest possible signal
+        // - the literal path [GalleryUploadService] recorded, not a path
+        // Rule 2 would have to re-derive from the Sync Pair (which gets a
+        // disambiguated upload's real path wrong - ticket 19's "record the
+        // path actually used, not a recipe for deriving it").
+        final pendingUpload = await (_db.select(_db.galleryItems)
               ..where((t) =>
                   t.origin.equals(_originDevice) &
-                  t.size.equals(item.size) &
-                  t.capturedAt.equals(item.capturedAt))
+                  t.uploadTargetProviderId.equals(item.providerId) &
+                  t.uploadTargetPath.equals(item.path))
               ..limit(1))
             .getSingleOrNull();
 
+        if (pendingUpload != null) {
+          if (item.size == (pendingUpload.localSize ?? -1)) {
+            // Verified: Seraph independently reports a file at the expected
+            // path with the expected length (CONTEXT.md's **Verified**).
+            // This is the ONLY place [origin] flips to `both` on the back of
+            // an upload - never [recordUploaded] itself (ticket 20's "no
+            // code path marks an item Verified on the basis of the upload
+            // response alone").
+            await (_db.update(_db.galleryItems)
+                  ..where((t) => t.id.equals(pendingUpload.id)))
+                .write(GalleryItemsCompanion(
+              origin: const Value(_originBoth),
+              providerId: Value(item.providerId),
+              path: Value(item.path),
+              seq: Value(item.seq),
+              capturedAtSource: Value(item.capturedAtSource),
+              width: Value(item.width),
+              height: Value(item.height),
+              orientation: Value(item.orientation),
+              size: Value(item.size),
+              mime: Value(item.mime),
+              unsupported: Value(item.unsupported),
+              metadataPending: Value(item.metadataPending),
+              uploadTargetProviderId: const Value(null),
+              uploadTargetPath: const Value(null),
+              uploadState: const Value(null),
+              // capturedAt deliberately NOT rewritten - same rule as every
+              // other merge in this class: the device row that already
+              // existed keeps its timeline position.
+            ));
+          } else {
+            // Verification CONTRADICTS what this device expected. [origin]
+            // stays `device` either way: still visibly not-backed-up, the
+            // safe direction, until a retry succeeds. Which pending state
+            // this row was in decides what "retry" is allowed to do
+            // (ticket 20's rework - see the class-level doc on the
+            // [_uploadStateUploaded]/[_uploadStateAssumed] constants):
+            //
+            // - `_uploadStateUploaded` (a real PUT): the remote file at
+            //   this exact path IS this device's own upload, so it can
+            //   safely be deleted and retried -
+            //   [GalleryUploadService.retryMismatchedUpload] does that.
+            // - `_uploadStateAssumed` (the ticket-19 "same size, assume it
+            //   is ours" shortcut): this device never wrote that file, so a
+            //   contradicting length only proves the ASSUMPTION was wrong,
+            //   never permission to delete someone else's content -
+            //   [GalleryUploadService.retryMismatchedUpload] falls back to
+            //   disambiguation instead, leaving the file exactly as it was.
+            final wasAssumed = pendingUpload.uploadState == _uploadStateAssumed;
+            await (_db.update(_db.galleryItems)
+                  ..where((t) => t.id.equals(pendingUpload.id)))
+                .write(GalleryItemsCompanion(
+              uploadState: Value(wasAssumed
+                  ? _uploadStateAssumedMismatch
+                  : _uploadStateMismatch),
+            ));
+          }
+          continue;
+        }
+
+        // Rule 2 (ticket 18): a Sync Pair whose Seraph folder covers
+        // [item.path] makes the matching Device only row computable by path
+        // alone - try every pair whose provider matches, first match wins
+        // (create-time overlap checking keeps this to at most one in
+        // practice).
+        GalleryItem? pairMatch;
+        for (final pair in syncPairs) {
+          if (pair.spaceProviderId != item.providerId) {
+            continue;
+          }
+          final identity = _localIdentityForRemotePath(pair, item.path);
+          if (identity == null) {
+            continue;
+          }
+          pairMatch = await (_db.select(_db.galleryItems)
+                ..where((t) =>
+                    t.origin.equals(_originDevice) &
+                    t.localRelativePath.equals(identity.$1) &
+                    t.localDisplayName.equals(identity.$2) &
+                    t.size.equals(item.size))
+                ..limit(1))
+              .getSingleOrNull();
+          if (pairMatch != null) {
+            break;
+          }
+        }
+
+        if (pairMatch != null) {
+          await (_db.update(_db.galleryItems)
+                ..where((t) => t.id.equals(pairMatch!.id)))
+              .write(GalleryItemsCompanion(
+            origin: const Value(_originBoth),
+            providerId: Value(item.providerId),
+            path: Value(item.path),
+            seq: Value(item.seq),
+            capturedAtSource: Value(item.capturedAtSource),
+            width: Value(item.width),
+            height: Value(item.height),
+            orientation: Value(item.orientation),
+            size: Value(item.size),
+            mime: Value(item.mime),
+            unsupported: Value(item.unsupported),
+            metadataPending: Value(item.metadataPending),
+            // capturedAt deliberately NOT rewritten - the path+size match is
+            // deterministic regardless of whether the two sides agree on
+            // Capture Date (ticket 18's disagreeing-date criterion), and the
+            // row must not move either way.
+          ));
+          continue;
+        }
+
+        // Rule 3: the ticket 15 heuristic, but only among Device only rows
+        // no Sync Pair covers - a covered row already had its one chance at
+        // rule 2 above and must not be handed a second, looser one.
+        final heuristicCandidates = await (_db.select(_db.galleryItems)
+              ..where((t) =>
+                  t.origin.equals(_originDevice) &
+                  t.size.equals(item.size) &
+                  t.capturedAt.equals(item.capturedAt)))
+            .get();
+        GalleryItem? deviceMatch;
+        for (final candidate in heuristicCandidates) {
+          if (_coveringSyncPair(
+                  syncPairs, candidate.localRelativePath ?? '') ==
+              null) {
+            deviceMatch = candidate;
+            break;
+          }
+        }
+
         if (deviceMatch != null) {
           await (_db.update(_db.galleryItems)
-                ..where((t) => t.id.equals(deviceMatch.id)))
+                ..where((t) => t.id.equals(deviceMatch!.id)))
               .write(GalleryItemsCompanion(
             origin: const Value(_originBoth),
             providerId: Value(item.providerId),
@@ -325,26 +641,41 @@ class GalleryMirror {
   /// identity, and any row previously backed by the device but absent from
   /// [items] is treated as removed from the device.
   ///
-  /// **Matching, in order:**
+  /// **Matching, in order (ticket 18 inserted the new rule 2; the others are
+  /// ticket 15's, renumbered):**
   /// 1. A row already carrying this exact local identity - `(relativePath,
   ///    displayName, size, dateTaken)` - is left alone. This is what makes a
   ///    changed (non-durable) media-store id a no-op: identity, not id,
   ///    decides "have we seen this file before".
-  /// 2. Otherwise, a Cloud only row matching by `(size, capturedAt)` is
-  ///    plausibly the same photo arriving from the other side - e.g. a photo
-  ///    already in Seraph (copied over SMB, uploaded from the web UI, from
-  ///    another phone) that also happens to sit on this device, with no Sync
-  ///    Pair ever having linked the two. Merging onto that row is what makes
-  ///    "a photo present both on the device and in Seraph appears exactly
-  ///    once" true even before Sync Pairs and Upload exist (phase 3) to
-  ///    record the link explicitly. `(size, capturedAt)` rather than a
-  ///    content hash: D19/the spec's "no content hashing anywhere" rule
-  ///    applies here too, and this ticket has even less to go on than the
-  ///    upload path's path+size reconcile, since a device item's path is
-  ///    never a Seraph path. The false-negative failure mode (two distinct
-  ///    photos of identical size taken in the same second) produces a
-  ///    harmless duplicate row, not a wrong merge.
-  /// 3. Otherwise, a new Device only row.
+  /// 2. Otherwise, if a Sync Pair covers [item]'s folder - **ticket 21:
+  ///    checked against every target that Local Source has EVER had, not
+  ///    only its current one** - each candidate target's expected remote
+  ///    path is a pure function of `(pair, relative path)`, and a Cloud only
+  ///    row at that exact path, matching size, is merged onto
+  ///    deterministically. This is the item's ONLY remaining chance to
+  ///    match: rule 3 below never runs for a covered item, matched or not
+  ///    (see [_upsertLocalItem]'s doc). Consulting historical targets too is
+  ///    what makes "already backed up" survive a retarget: a device photo
+  ///    already sitting at the OLD target must still be recognised as
+  ///    already-backed-up rather than merely as one no active pair happens
+  ///    to explain (which would both duplicate it and, worse, tell the user
+  ///    their library is unprotected when it is not).
+  /// 3. Otherwise (no pair covers this item), a Cloud only row matching by
+  ///    `(size, capturedAt)` is plausibly the same photo arriving from the
+  ///    other side - e.g. a photo already in Seraph (copied over SMB,
+  ///    uploaded from the web UI, from another phone) that also happens to
+  ///    sit on this device, with no Sync Pair covering it. Merging onto that
+  ///    row is what makes "a photo present both on the device and in Seraph
+  ///    appears exactly once" true even for photos no Sync Pair will ever
+  ///    cover. `(size, capturedAt)` rather than a content hash: D19/the
+  ///    spec's "no content hashing anywhere" rule applies here too, and this
+  ///    ticket has even less to go on than the upload path's path+size
+  ///    reconcile, since an uncovered device item's path is never a Seraph
+  ///    path. The false-negative failure mode (two distinct photos of
+  ///    identical size taken in the same second) produces a harmless
+  ///    duplicate row, not a wrong merge. This is explicitly best-effort -
+  ///    see [_upsertLocalItem]'s doc for why rule 2 always outranks it.
+  /// 4. Otherwise, a new Device only row.
   ///
   /// A row already known to have a device copy ([_originDevice] or
   /// [_originBoth]) whose identity does not appear in this scan has lost its
@@ -354,8 +685,17 @@ class GalleryMirror {
   /// its Capture Date position rather than disappearing and (if the same
   /// photo reappears later) reappearing as a new row elsewhere in scroll
   /// order.
-  Future<void> applyLocalScan(List<LocalMediaItem> items) async {
+  ///
+  /// [nowMillis], if given, is the timestamp a NEW device row's
+  /// [GalleryItems.localFirstSeenAt] (ticket 25's priority-class boundary)
+  /// is written with, instead of [DateTime.now]'s real value - a test's way
+  /// of controlling exactly when a device row was "observed" without racing
+  /// real wall-clock resolution between two scans it wants classified into
+  /// different priority classes.
+  Future<void> applyLocalScan(List<LocalMediaItem> items,
+      {int? nowMillis}) async {
     await _db.transaction(() async {
+      final syncPairs = await _allSyncPairs();
       final seenIdentities = <String>{};
 
       for (final item in items) {
@@ -365,7 +705,7 @@ class GalleryMirror {
           size: item.size,
           dateTakenMillis: item.dateTakenMillis,
         ));
-        await _upsertLocalItem(item);
+        await _upsertLocalItem(item, syncPairs, nowMillis: nowMillis);
       }
 
       final previouslyOnDevice = await (_db.select(_db.galleryItems)
@@ -414,13 +754,17 @@ class GalleryMirror {
   /// this batch" as "deleted" would be exactly the mistake the ticket's
   /// governing rule forbids: [applyLocalScan] (the correctness anchor) is
   /// the only place a device photo is ever removed from the mirror.
+  ///
+  /// [nowMillis]: see [applyLocalScan]'s doc on the same parameter.
   Future<void> applyLocalDelta(
     List<LocalMediaItem> items, {
     required int generation,
+    int? nowMillis,
   }) async {
     await _db.transaction(() async {
+      final syncPairs = await _allSyncPairs();
       for (final item in items) {
-        await _upsertLocalItem(item);
+        await _upsertLocalItem(item, syncPairs, nowMillis: nowMillis);
       }
       await _writeLocalGeneration(generation);
     });
@@ -482,13 +826,38 @@ class GalleryMirror {
   }
 
   /// The matching rules shared by [applyLocalScan] and [applyLocalDelta]:
-  /// a row already carrying [item]'s exact local identity is left alone: a
-  /// Cloud only row matching by `(size, capturedAt)` is merged onto
-  /// (Device+Cloud dedup, see [applyLocalScan]'s class doc for why this
-  /// heuristic); otherwise a new Device only row is inserted. Never deletes
-  /// or demotes anything - that determination needs the whole scan's result
-  /// set, which only [applyLocalScan] has.
-  Future<void> _upsertLocalItem(LocalMediaItem item) async {
+  /// a row already carrying [item]'s exact local identity is left alone.
+  /// Otherwise, ticket 18's rule order decides what happens next:
+  ///
+  /// - If a Sync Pair in [syncPairs] covers [item]'s folder
+  ///   ([_allCoveringSyncPairs]), each covering pair's expected remote path
+  ///   is computed ([_expectedRemotePath]) in turn - current target first,
+  ///   see that method's doc - and a Cloud only row there, matching size, is
+  ///   merged onto as soon as one is found. **Ticket 21: every target the
+  ///   folder has EVER had is tried, not only the current one** - a photo
+  ///   already sitting at an old, historical target (from before a
+  ///   retarget) still merges deterministically instead of silently
+  ///   becoming a second, unmatched Device only row. **Whether or not any
+  ///   target matches, this is the item's only chance** - a covered item
+  ///   never falls through to the heuristic below, so two burst-shot device
+  ///   photos of identical size and Capture Date, both covered by the same
+  ///   pair, stay two Device only rows rather than colliding onto one (the
+  ///   failure the heuristic was always liable to and ticket 18 exists to
+  ///   fix for covered items).
+  /// - Otherwise (no pair, current or historical, covers [item]), a Cloud
+  ///   only row matching by `(size, capturedAt)` is plausibly the same photo
+  ///   arriving from the other side - ticket 15's original best-effort
+  ///   heuristic, explicitly named as such and never treated as
+  ///   authoritative; merged onto if found.
+  /// - Otherwise, a new Device only row.
+  ///
+  /// Never deletes or demotes anything - that determination needs the whole
+  /// scan's result set, which only [applyLocalScan] has.
+  Future<void> _upsertLocalItem(
+    LocalMediaItem item,
+    List<SyncPairRow> syncPairs, {
+    int? nowMillis,
+  }) async {
     final existingByIdentity = await (_db.select(_db.galleryItems)
           ..where((t) =>
               t.localRelativePath.equals(item.relativePath) &
@@ -504,6 +873,65 @@ class GalleryMirror {
     final capturedAt = _capturedAtSeconds(item);
     final capturedAtSource = item.dateTakenMillis > 0 ? 'exif' : 'modTime';
 
+    final coveringPairs = _allCoveringSyncPairs(syncPairs, item.relativePath);
+
+    if (coveringPairs.isNotEmpty) {
+      for (final pair in coveringPairs) {
+        final expected =
+            _expectedRemotePath(pair, item.relativePath, item.displayName);
+        final pairMatch = await (_db.select(_db.galleryItems)
+              ..where((t) =>
+                  t.origin.equals(_originCloud) &
+                  t.providerId.equals(expected.$1) &
+                  t.path.equals(expected.$2) &
+                  t.size.equals(item.size))
+              ..limit(1))
+            .getSingleOrNull();
+
+        if (pairMatch != null) {
+          await (_db.update(_db.galleryItems)
+                ..where((t) => t.id.equals(pairMatch.id)))
+              .write(GalleryItemsCompanion(
+            origin: const Value(_originBoth),
+            localRelativePath: Value(item.relativePath),
+            localDisplayName: Value(item.displayName),
+            localSize: Value(item.size),
+            localDateTaken: Value(item.dateTakenMillis),
+            // capturedAt deliberately NOT rewritten - the match is on path
+            // plus size alone, so a disagreeing Capture Date (ticket 18's
+            // criterion) never blocks it, and the row must not move either
+            // way.
+          ));
+          return;
+        }
+      }
+
+      // Covered (currently or historically) but nothing uploaded to any of
+      // those targets yet - a new Device only row. The heuristic below is
+      // never reached: once a pair covers an item, it is the only vote
+      // (ticket 18, extended by ticket 21 to every target it has ever had).
+      await _db.into(_db.galleryItems).insert(
+            GalleryItemsCompanion.insert(
+              origin: const Value(_originDevice),
+              localRelativePath: Value(item.relativePath),
+              localDisplayName: Value(item.displayName),
+              localSize: Value(item.size),
+              localDateTaken: Value(item.dateTakenMillis),
+              capturedAt: capturedAt,
+              capturedAtSource: Value(capturedAtSource),
+              size: Value(item.size),
+              localFirstSeenAt: Value(
+                  nowMillis ?? DateTime.now().millisecondsSinceEpoch),
+            ),
+          );
+      return;
+    }
+
+    // No Sync Pair covers this item - ticket 15's original heuristic,
+    // unchanged, and still explicitly best-effort: two distinct photos of
+    // identical size taken in the same second can still collide here. That
+    // is accepted for items nothing will ever compute a deterministic path
+    // for.
     final cloudMatch = await (_db.select(_db.galleryItems)
           ..where((t) =>
               t.origin.equals(_originCloud) &
@@ -537,6 +965,8 @@ class GalleryMirror {
             capturedAt: capturedAt,
             capturedAtSource: Value(capturedAtSource),
             size: Value(item.size),
+            localFirstSeenAt:
+                Value(nowMillis ?? DateTime.now().millisecondsSinceEpoch),
           ),
         );
   }
@@ -558,6 +988,902 @@ class GalleryMirror {
         ? item.dateTakenMillis
         : item.dateModifiedMillis;
     return millis ~/ 1000;
+  }
+
+  // --- Ticket 18: Sync Pairs ---
+
+  /// Every currently ACTIVE Sync Pair ([SyncPairRow.removedAt] null),
+  /// unordered - the spec's "current target for writes" half. What decides
+  /// where a NEW upload goes ([expectedUploadTarget]), what [createSyncPair]
+  /// checks its overlap rule against, and what [listSyncPairs] shows. A
+  /// removed pair is never a candidate for any of these three, even though
+  /// its row is kept around (see [SyncPairs]' class doc) for
+  /// [_allSyncPairs]' sake.
+  Future<List<SyncPairRow>> _activeSyncPairs() =>
+      (_db.select(_db.syncPairs)..where((t) => t.removedAt.isNull())).get();
+
+  /// Every Sync Pair a Local Source has EVER had - active and removed alike
+  /// - the spec's "all targets for lookups" half (ticket 21). What
+  /// [_upsertLocalItem] and [applyPage] both check a device or cloud item
+  /// against before falling back to the ticket 15 heuristic: a photo already
+  /// sitting at an old, historical target must still be recognised as
+  /// already-backed-up, not just at whichever target happens to be active
+  /// right now. Fetched once per [applyLocalScan]/[applyLocalDelta]/
+  /// [applyPage] transaction rather than once per item, since the count is
+  /// small (a handful of pairs, plus however many times each has been
+  /// retargeted - nowhere near per-photo scale) and re-reading it per item
+  /// would only add one more query to every single photo for no benefit.
+  Future<List<SyncPairRow>> _allSyncPairs() => _db.select(_db.syncPairs).get();
+
+  /// The first Sync Pair in [pairs] covering [relativePath], or null if none
+  /// does - first match wins, though create-time overlap checking
+  /// ([createSyncPair], scoped to active pairs) is what actually keeps this
+  /// to at most one match when [pairs] is [_activeSyncPairs]. Coverage is a
+  /// plain string-prefix test: both a Local Folder's path and a
+  /// [LocalMediaItem.relativePath] are always trailing-slash-terminated (the
+  /// MediaStore `RELATIVE_PATH` convention this whole seam relies on), so
+  /// `DCIM/Camera/` can never falsely prefix-match `DCIM/Camera2/`.
+  SyncPairRow? _coveringSyncPair(
+    List<SyncPairRow> pairs,
+    String relativePath,
+  ) {
+    for (final pair in pairs) {
+      if (relativePath == pair.localFolderPath ||
+          relativePath.startsWith(pair.localFolderPath)) {
+        return pair;
+      }
+    }
+    return null;
+  }
+
+  /// Every Sync Pair in [pairs] covering [relativePath] - the ticket 21
+  /// counterpart of [_coveringSyncPair] for lookups over [_allSyncPairs]:
+  /// a retargeted Local Source can have more than one pair (one active, any
+  /// number removed) whose [SyncPairRow.localFolderPath] covers the same
+  /// [relativePath], each with a different target to check. Ordered most
+  /// recently created first, so the active pair - normally the most recent,
+  /// since retargeting is delete-then-create - is tried before older,
+  /// historical ones; this is only a tie-break for the vanishingly unlikely
+  /// case where more than one target happens to hold a same-size file at the
+  /// exact expected path, not a correctness requirement.
+  List<SyncPairRow> _allCoveringSyncPairs(
+    List<SyncPairRow> pairs,
+    String relativePath,
+  ) {
+    final matches = pairs
+        .where((pair) =>
+            relativePath == pair.localFolderPath ||
+            relativePath.startsWith(pair.localFolderPath))
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return matches;
+  }
+
+  /// The remote (providerId, path) a device item at [relativePath]/
+  /// [displayName] maps to under [pair] - the pure function ticket 18 (and
+  /// later ticket 19's actual upload) both rely on: `relativePath` with the
+  /// pair's local folder prefix stripped, appended to the pair's Seraph
+  /// folder. E.g. `DCIM/Camera/2026/` + `IMG_0001.jpg` under a pair
+  /// `DCIM/Camera/ -> /Photos/Phone` yields `/Photos/Phone/2026/IMG_0001.jpg`
+  /// - exactly the ticket's own worked example. [pair] may be active or
+  /// removed - the function only reads its `(localFolderPath,
+  /// spaceProviderId, path)`, so it computes an old, historical target's
+  /// expected path exactly as readily as the current one's.
+  (String providerId, String path) _expectedRemotePath(
+    SyncPairRow pair,
+    String relativePath,
+    String displayName,
+  ) {
+    final withinSource = relativePath.startsWith(pair.localFolderPath)
+        ? relativePath.substring(pair.localFolderPath.length)
+        : '';
+    return (pair.spaceProviderId, _joinSeraphPath(pair.path, '$withinSource$displayName'));
+  }
+
+  /// The inverse of [_expectedRemotePath]: given a cloud item's [remotePath],
+  /// the `(relativePath, displayName)` a device row would need to carry for
+  /// [pair] to have produced it - or null if [remotePath] does not fall
+  /// under [pair]'s Seraph folder at all. What [applyPage] uses to look up
+  /// the matching Device only row directly by its local identity, without
+  /// scanning every device row covered by every pair.
+  (String relativePath, String displayName)? _localIdentityForRemotePath(
+    SyncPairRow pair,
+    String remotePath,
+  ) {
+    final base = pair.path == '/' ? '' : pair.path;
+    final prefix = '$base/';
+    if (!remotePath.startsWith(prefix)) {
+      return null;
+    }
+    final withinSource = remotePath.substring(prefix.length);
+    if (withinSource.isEmpty) {
+      return null;
+    }
+    final slash = withinSource.lastIndexOf('/');
+    final displayName =
+        slash < 0 ? withinSource : withinSource.substring(slash + 1);
+    if (displayName.isEmpty) {
+      return null;
+    }
+    final subDir = slash < 0 ? '' : withinSource.substring(0, slash + 1);
+    return ('${pair.localFolderPath}$subDir', displayName);
+  }
+
+  /// Joins a Seraph folder [folderPath] (Space terms, e.g. `/Photos/Phone`,
+  /// or `/` for the space root) with a [relative] path beneath it, the same
+  /// convention [GallerySourceFolder.displayPath] uses for the root case.
+  String _joinSeraphPath(String folderPath, String relative) {
+    final base = folderPath == '/' ? '' : folderPath;
+    return '$base/$relative';
+  }
+
+  /// Creates a new Sync Pair mapping [localFolderPath] (a Local Source
+  /// identifier - on Android, a folder's MediaStore `RELATIVE_PATH`) to the
+  /// Seraph folder ([spaceProviderId], [path]).
+  ///
+  /// Throws [SyncPairConflictException] if [localFolderPath] overlaps an
+  /// existing ACTIVE pair's Local Source (ticket 18's "at most one Sync Pair
+  /// per Local Source" rule, scoped by ticket 21 to active pairs only -
+  /// [_activeSyncPairs] - so retargeting, a remove immediately followed by a
+  /// create for the same folder, is never blocked by the just-removed row it
+  /// intentionally leaves behind) - checked and inserted inside the same
+  /// transaction, so two concurrent creates can never both pass the check.
+  ///
+  /// **Does not add the Seraph folder to the user's Gallery Source
+  /// Folders.** That is a server-side call (`GalleryService.
+  /// addSourceFolder`) this class - which does no network access, see the
+  /// class doc - cannot make itself. The caller (the Gallery folders screen)
+  /// is responsible for both calls; ticket 18's acceptance criterion is that
+  /// the two together leave both true, not that this method alone does.
+  ///
+  /// **Merges existing counterparts immediately.** Any Device only row
+  /// already under [localFolderPath] whose expected remote path (computed
+  /// against the pair just created) matches an existing Cloud only row by
+  /// path and size is merged onto one Synced row right here - so a Seraph
+  /// folder that already held this device's photos, from another client or
+  /// a previous install, shows them correctly merged the moment the pair is
+  /// configured, without waiting for the next scan or delta poll, and
+  /// without any upload happening.
+  Future<SyncPair> createSyncPair({
+    required String localFolderPath,
+    required String spaceProviderId,
+    required String path,
+  }) async {
+    return _db.transaction(() async {
+      final existing = await _activeSyncPairs();
+      for (final pair in existing) {
+        if (localFolderPath == pair.localFolderPath ||
+            localFolderPath.startsWith(pair.localFolderPath) ||
+            pair.localFolderPath.startsWith(localFolderPath)) {
+          throw SyncPairConflictException(
+              localFolderPath, pair.localFolderPath);
+        }
+      }
+
+      final id = await _db.into(_db.syncPairs).insert(
+            SyncPairsCompanion.insert(
+              localFolderPath: localFolderPath,
+              spaceProviderId: spaceProviderId,
+              path: path,
+              createdAt: Value(DateTime.now().millisecondsSinceEpoch),
+            ),
+          );
+      final row = await (_db.select(_db.syncPairs)
+            ..where((t) => t.id.equals(id)))
+          .getSingle();
+
+      await _mergeExistingCounterparts(row);
+
+      final photoCount = await _countCoveredByLocalFolder(localFolderPath);
+      return SyncPair(
+        id: row.id,
+        localFolderPath: row.localFolderPath,
+        spaceProviderId: row.spaceProviderId,
+        path: row.path,
+        photoCount: photoCount,
+      );
+    });
+  }
+
+  /// Every currently ACTIVE Sync Pair, oldest first, with each one's current
+  /// [SyncPair.photoCount] - what the *Sync Pairs* section of the Gallery
+  /// folders screen lists. A removed pair (ticket 21: [removeSyncPair] keeps
+  /// its row rather than deleting it) never appears here - it is kept purely
+  /// as a historical target for dedup/reconcile, not as something the user
+  /// still configures.
+  Future<List<SyncPair>> listSyncPairs() async {
+    final rows = await (_db.select(_db.syncPairs)
+          ..where((t) => t.removedAt.isNull())
+          ..orderBy([(t) => OrderingTerm(expression: t.createdAt)]))
+        .get();
+    final pairs = <SyncPair>[];
+    for (final row in rows) {
+      final photoCount = await _countCoveredByLocalFolder(row.localFolderPath);
+      pairs.add(SyncPair(
+        id: row.id,
+        localFolderPath: row.localFolderPath,
+        spaceProviderId: row.spaceProviderId,
+        path: row.path,
+        photoCount: photoCount,
+      ));
+    }
+    return pairs;
+  }
+
+  /// Retires the Sync Pair with [id]. Ticket 18's lifecycle rule (D18 in
+  /// `docs/gallery-mode-design-notes.md`): this stops FUTURE dedup
+  /// consideration for NEW uploads through [SyncPairRow.localFolderPath] -
+  /// it never touches a [GalleryItems] row itself. Every row already merged
+  /// via this pair (Synced, `origin == 'both'`) stays exactly as it is.
+  ///
+  /// **Ticket 21: the row is kept, marked [SyncPairRow.removedAt], never
+  /// deleted.** [_activeSyncPairs] (what [expectedUploadTarget] and
+  /// [createSyncPair]'s overlap check read) stops finding it immediately -
+  /// no new upload targets this Local Source, and the same local folder can
+  /// be given a new active pair right away (retargeting). But [_allSyncPairs]
+  /// (what [_upsertLocalItem]/[applyPage]'s dedup and reconcile lookups
+  /// read) keeps finding it forever, as one more historical target - a photo
+  /// this pair already put in Seraph keeps reading as already-backed-up,
+  /// retarget or no retarget, reinstall or no reinstall, and a device item
+  /// this pair covered still gets its one deterministic path+size chance
+  /// against that historical target before anything falls back to the
+  /// ticket 15 (size, capturedAt) heuristic. No row is duplicated or dropped
+  /// by the removal itself.
+  /// **Never removes the Gallery Source Folder** this pair created - that is
+  /// separate, server-side configuration the caller does not touch just
+  /// because the pair is gone (D18: "the cloud folder remains a Gallery
+  /// Source Folder").
+  Future<void> removeSyncPair(int id) async {
+    await (_db.update(_db.syncPairs)..where((t) => t.id.equals(id))).write(
+      SyncPairsCompanion(
+        removedAt: Value(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
+  }
+
+  // --- Ticket 19: upload ---
+
+  /// The remote (providerId, path) [GalleryUploadService](gallery_upload_service.dart)
+  /// would upload [item] to - the exact same pure function
+  /// ([_coveringSyncPair] + [_expectedRemotePath]) [applyLocalScan] already
+  /// uses to dedup a device item against an existing cloud row, reused here
+  /// rather than re-derived, so "the path a photo dedups onto" and "the path
+  /// it uploads to" can never disagree.
+  ///
+  /// Null when [item] carries no local identity (a Cloud only row - nothing
+  /// to upload) or no Sync Pair covers its folder. The latter is not an
+  /// error: this ticket is the manual, one-photo tracer bullet through the
+  /// upload path, not the decision of which items are eligible for it -
+  /// deciding whether an uncovered item should ever be offered upload UI at
+  /// all is ticket 22's (the engine's) job, not this method's.
+  Future<(String providerId, String path)?> expectedUploadTarget(
+    GalleryItem item,
+  ) async {
+    final relativePath = item.localRelativePath;
+    final displayName = item.localDisplayName;
+    if (relativePath == null || displayName == null) {
+      return null;
+    }
+    final pairs = await _activeSyncPairs();
+    final pair = _coveringSyncPair(pairs, relativePath);
+    if (pair == null) {
+      return null;
+    }
+    return _expectedRemotePath(pair, relativePath, displayName);
+  }
+
+  /// Records that [item]'s upload PUT to ([providerId], [path]) succeeded
+  /// ([viaPut] true), or that the target path turned out to already hold
+  /// this device's own content (ticket 19's "size matches - assume it is
+  /// ours, do not upload" rule - [viaPut] false) - either way, an upload
+  /// attempt this device made, now awaiting independent confirmation from
+  /// the delta feed (ticket 20).
+  ///
+  /// **[viaPut] decides what a later contradicting feed length is allowed to
+  /// do** (ticket 20's rework): [applyPage] only ever deletes a remote file
+  /// this device actually PUT ([viaPut] true); for the "assume it is ours"
+  /// shortcut ([viaPut] false), a contradicting length proves the assumption
+  /// wrong, not that the file is safe to delete - see
+  /// [GalleryUploadService.retryMismatchedUpload].
+  ///
+  /// **Deliberately does NOT mark the row Synced.** [origin] stays `device`
+  /// - the item keeps showing as not backed up, "in progress" rather than
+  /// done, until [applyPage] sees this exact (providerId, path) come back
+  /// through the feed with a matching length. This is ticket 20's central
+  /// rule: "no code path marks an item Verified on the basis of the upload
+  /// response alone." What this method DOES do is **is** the "record the
+  /// remote path the photo actually went to" criterion from ticket 19:
+  /// [path] is whatever path the caller actually used - the original target
+  /// or a disambiguated one - stored in [GalleryItems.uploadTargetPath] so
+  /// [applyPage] can recognise the feed reporting exactly this file, not a
+  /// path re-derived from the Sync Pair (which would get a disambiguated
+  /// upload wrong).
+  ///
+  /// The write is conditioned on [item]'s id AND its local identity still
+  /// matching exactly what it was when the caller started - not on the id
+  /// alone - so a device row deleted or changed by a full scan that raced
+  /// this upload (ticket 19's "deleted or modified on the device mid-upload
+  /// is not marked synced" criterion) leaves this a no-op: the identity in
+  /// the WHERE clause no longer matches the (deleted, or now-different) row,
+  /// zero rows are affected, and the return value tells the caller so.
+  /// Returns whether the row was actually updated.
+  Future<bool> recordUploaded(
+    GalleryItem item,
+    String providerId,
+    String path, {
+    required bool viaPut,
+  }) async {
+    final rows = await (_db.update(_db.galleryItems)
+          ..where((t) =>
+              t.id.equals(item.id) &
+              t.origin.equals(_originDevice) &
+              t.localRelativePath.equals(item.localRelativePath ?? '') &
+              t.localDisplayName.equals(item.localDisplayName ?? '') &
+              t.localSize.equals(item.localSize ?? -1)))
+        .write(GalleryItemsCompanion(
+      uploadTargetProviderId: Value(providerId),
+      uploadTargetPath: Value(path),
+      uploadState:
+          Value(viaPut ? _uploadStateUploaded : _uploadStateAssumed),
+    ));
+    return rows > 0;
+  }
+
+  /// Every Device only row whose most recent upload's verification came back
+  /// CONTRADICTING it - a length mismatch [applyPage] recorded as either
+  /// [_uploadStateMismatch] (a real PUT) or [_uploadStateAssumedMismatch]
+  /// (the ticket-19 "assume it is ours" shortcut) - for
+  /// [GalleryUploadService.retryMismatchedUpload] to work through. This
+  /// class makes no network calls itself (see the class doc), so it only
+  /// surfaces which rows need that done and which of the two flavours each
+  /// one is; it never attempts the deletion or the retry.
+  ///
+  /// **Filtered to rows still covered by an ACTIVE Sync Pair** (ticket 25's
+  /// second rework) - the same [_activeSyncPairs] "current target for
+  /// writes" rule [itemsPendingUpload]/[expectedUploadTarget] already apply.
+  /// This IS a write path (the retry re-derives a target and re-PUTs), so
+  /// ticket 21's rule ("current target for writes, all historical targets
+  /// for lookups") means active coverage, not [_allSyncPairs], is correct
+  /// here - unlike, say, [applyPage]'s verification lookup. Without this, a
+  /// row parked here awaiting retry whose Sync Pair was then removed through
+  /// the ordinary UI ([removeSyncPair]) would be re-selected forever:
+  /// [GalleryUploadService.retryMismatchedUpload]/[upload] would call
+  /// [expectedUploadTarget], which correctly returns null for an uncovered
+  /// row, giving [GalleryUploadResult.noSyncPair] - a result nothing ever
+  /// wrote [uploadState] for, so the row stayed stuck in this query on every
+  /// subsequent run.
+  Future<List<GalleryItem>> itemsNeedingUploadRetry() async {
+    final pairs = await _activeSyncPairs();
+    if (pairs.isEmpty) {
+      return const [];
+    }
+    final rows = await (_db.select(_db.galleryItems)
+          ..where((t) =>
+              t.origin.equals(_originDevice) &
+              (t.uploadState.equals(_uploadStateMismatch) |
+                  t.uploadState.equals(_uploadStateAssumedMismatch))))
+        .get();
+    return [
+      for (final row in rows)
+        if (_coveringSyncPair(pairs, row.localRelativePath ?? '') != null)
+          row,
+    ];
+  }
+
+  // --- Ticket 22: headless sync engine ---
+
+  /// Every Device only row [GallerySyncEngine] (`../sync/gallery_sync_engine.dart`)
+  /// should attempt to upload right now: no verification already pending
+  /// ([uploadState] null - a row [itemsNeedingUploadRetry] would return, or
+  /// one already awaiting the delta feed's confirmation, is never a second
+  /// upload candidate), and covered by an ACTIVE Sync Pair - the same
+  /// [_activeSyncPairs] "current target for writes" rule
+  /// [expectedUploadTarget] itself applies, reused here rather than
+  /// re-derived so "what the engine will attempt" and "what a single upload
+  /// call would actually do" can never disagree. A row covered only by a
+  /// removed, historical pair is correctly excluded: [expectedUploadTarget]
+  /// would return null for it too (nothing NEW should ever be written to a
+  /// retired target), so queuing it here would only produce a queue entry
+  /// [GalleryUploadService.upload] immediately reports [GalleryUploadResult.
+  /// noSyncPair] for.
+  ///
+  /// **Ticket 25's two priority classes**, newest first within each: every
+  /// row whose [GalleryItems.localFirstSeenAt] is more recent than
+  /// [_priorityBaselineMillis] (the spec's "observed after setup, or after
+  /// the last completed pass") sorts entirely ahead of every row that is
+  /// not, so a photo taken during a large backlog run - or discovered by the
+  /// next incremental scan - is never stuck behind thousands of older ones.
+  /// Excludes a row currently in the failure list ([uploadFailureBucket] set
+  /// - "stop retrying" means exactly that: never silently re-offered) and a
+  /// row still inside its own per-item backoff window ([uploadNextRetryAt]
+  /// in the future relative to [nowMillis]).
+  ///
+  /// Filtered in Dart against a fetched row set, the same style
+  /// [_countCoveredByLocalFolder]/[_unselectedFolders] already use for a
+  /// small, bounded set of Sync Pairs against a larger row set - a purpose-
+  /// built SQL `OR` of per-pair prefix conditions would only duplicate what
+  /// [_coveringSyncPair] already expresses correctly in Dart. This is a
+  /// queue REBUILD, not a per-item probe (D12/the spec's "the queue is
+  /// derived state... rebuildable at any time"), so it is expected to run
+  /// once per engine run, not once per photo.
+  ///
+  /// **Why the priority split needs no separate sort pass:** the underlying
+  /// SQL query already orders by [GalleryItem.capturedAt] descending, and
+  /// class membership here is a threshold on a DIFFERENT, monotonic-in-scan-
+  /// order column ([localFirstSeenAt] against a fixed baseline) - so
+  /// partitioning that single descending stream into "fresh" and "backlog"
+  /// while preserving each sub-list's relative order, then concatenating
+  /// fresh-then-backlog, is exactly "newest first within each class" with no
+  /// extra ordering logic needed.
+  Future<List<GalleryItem>> itemsPendingUpload({
+    int? limit,
+    int? nowMillis,
+  }) async {
+    final pairs = await _activeSyncPairs();
+    if (pairs.isEmpty) {
+      return const [];
+    }
+    final now = nowMillis ?? DateTime.now().millisecondsSinceEpoch;
+    final baseline = await _priorityBaselineMillis();
+
+    final rows = await (_db.select(_db.galleryItems)
+          ..where((t) =>
+              t.origin.equals(_originDevice) &
+              t.uploadState.isNull() &
+              t.uploadFailureBucket.isNull() &
+              (t.uploadNextRetryAt.isNull() |
+                  t.uploadNextRetryAt.isSmallerOrEqualValue(now)))
+          ..orderBy([
+            (t) =>
+                OrderingTerm(expression: t.capturedAt, mode: OrderingMode.desc)
+          ]))
+        .get();
+
+    final fresh = <GalleryItem>[];
+    final backlog = <GalleryItem>[];
+    for (final row in rows) {
+      if (_coveringSyncPair(pairs, row.localRelativePath ?? '') == null) {
+        continue;
+      }
+      final seenAt = row.localFirstSeenAt;
+      (seenAt != null && seenAt > baseline ? fresh : backlog).add(row);
+    }
+
+    final ordered = [...fresh, ...backlog];
+    if (limit != null && ordered.length > limit) {
+      return ordered.sublist(0, limit);
+    }
+    return ordered;
+  }
+
+  /// The moving boundary [itemsPendingUpload] classifies
+  /// [GalleryItems.localFirstSeenAt] against: [SyncRunState.lastSuccessAt]
+  /// once at least one pass has ever completed - "after the last completed
+  /// pass" advances the boundary forward every time a run finishes, so
+  /// whatever backlog remains from an interrupted or still-in-progress
+  /// catch-up stays behind anything discovered since. Before any pass has
+  /// EVER completed, there is no historical backlog to preempt yet - the
+  /// entire pending set (including a first-ever 9,000-photo scan) is, by
+  /// definition, everything "observed since setup", so `0` (before every
+  /// real [localFirstSeenAt] value) puts it all in one undifferentiated
+  /// class rather than arbitrarily splitting a backlog that has never been
+  /// touched.
+  Future<int> _priorityBaselineMillis() async {
+    final state = await syncRunState();
+    return state.lastSuccessAt ?? 0;
+  }
+
+  /// Ticket 25's visible failure list: every Device only row
+  /// [GallerySyncEngine] gave up retrying after a PERMANENT failure -
+  /// [GalleryItems.uploadFailureBucket] set - newest [GalleryItem.
+  /// capturedAt] first, the same ordering convention every other list in
+  /// this seam uses. Never silently dropped (this IS the list that makes it
+  /// visible) and never retried automatically ([itemsPendingUpload] excludes
+  /// these rows outright) - only [retryFailedUpload] moves a row out of it.
+  Future<List<GalleryItem>> failedUploadItems() => (_db.select(
+          _db.galleryItems)
+        ..where((t) =>
+            t.origin.equals(_originDevice) &
+            t.uploadFailureBucket.equals(_uploadFailureBucketPermanent))
+        ..orderBy([
+          (t) =>
+              OrderingTerm(expression: t.capturedAt, mode: OrderingMode.desc)
+        ]))
+      .get();
+
+  /// The user's retry action on one [failedUploadItems] entry - clears
+  /// [GalleryItems.uploadFailureBucket]/[uploadFailureReason] and resets the
+  /// per-item backoff bookkeeping, so [itemId] is a completely ordinary
+  /// [itemsPendingUpload] candidate again on the very next engine run. This
+  /// IS the whole retry - "fixing the underlying cause requires no
+  /// reconfiguration" (the ticket's own criterion) because nothing here
+  /// touches a Sync Pair, a setting, or anything other than this one row's
+  /// own bookkeeping.
+  Future<void> retryFailedUpload(int itemId) async {
+    await (_db.update(_db.galleryItems)
+          ..where((t) =>
+              t.id.equals(itemId) &
+              t.uploadFailureBucket.equals(_uploadFailureBucketPermanent)))
+        .write(const GalleryItemsCompanion(
+      uploadFailureBucket: Value(null),
+      uploadFailureReason: Value(null),
+      uploadAttempts: Value(0),
+      uploadNextRetryAt: Value(null),
+    ));
+  }
+
+  /// Parks [item] in the visible failure list after a PERMANENT failure -
+  /// [GallerySyncEngine] calls this instead of leaving the row to be
+  /// silently re-offered forever. Conditioned on [item]'s id AND local
+  /// identity still matching, the same guard [recordUploaded] uses, so a row
+  /// deleted or changed by a racing scan is left alone rather than recording
+  /// a failure for content that no longer exists as this engine last saw it.
+  Future<void> recordUploadFailure(GalleryItem item, String reason) async {
+    await (_db.update(_db.galleryItems)
+          ..where((t) =>
+              t.id.equals(item.id) &
+              t.origin.equals(_originDevice) &
+              t.localRelativePath.equals(item.localRelativePath ?? '') &
+              t.localDisplayName.equals(item.localDisplayName ?? '') &
+              t.localSize.equals(item.localSize ?? -1)))
+        .write(GalleryItemsCompanion(
+      uploadFailureBucket: const Value(_uploadFailureBucketPermanent),
+      uploadFailureReason: Value(reason),
+      uploadAttempts: const Value(0),
+      uploadNextRetryAt: const Value(null),
+    ));
+  }
+
+  /// Records one TRANSIENT failure against [item] - increments
+  /// [GalleryItems.uploadAttempts] and sets [uploadNextRetryAt] to an
+  /// exponentially growing delay from [nowMillis], capped at
+  /// [maxPerItemBackoff] - the spec's "transient failures retry with
+  /// increasing per-item delays". Same identity-matching guard as
+  /// [recordUploadFailure]/[recordUploaded]. Returns the resulting attempt
+  /// count, so a caller (currently only [GallerySyncEngine]'s own tests) can
+  /// assert on the schedule without re-deriving it.
+  Future<int> recordTransientUploadFailure(
+    GalleryItem item, {
+    required int nowMillis,
+    Duration baseDelay = const Duration(seconds: 30),
+    Duration maxDelay = const Duration(hours: 1),
+  }) async {
+    final attempts = (item.uploadAttempts) + 1;
+    final delayMillis = cappedExponentialBackoffMillis(
+      attempts: attempts,
+      baseDelay: baseDelay,
+      maxDelay: maxDelay,
+    );
+    await (_db.update(_db.galleryItems)
+          ..where((t) =>
+              t.id.equals(item.id) &
+              t.origin.equals(_originDevice) &
+              t.localRelativePath.equals(item.localRelativePath ?? '') &
+              t.localDisplayName.equals(item.localDisplayName ?? '') &
+              t.localSize.equals(item.localSize ?? -1)))
+        .write(GalleryItemsCompanion(
+      uploadAttempts: Value(attempts),
+      uploadNextRetryAt: Value(nowMillis + delayMillis),
+    ));
+    return attempts;
+  }
+
+
+  /// The single [SyncRunState] row - [GallerySyncEngine]'s only channel to
+  /// the UI (see that table's class doc). An idle, all-zero snapshot when no
+  /// run has ever happened, so a fresh install and "nothing to report" read
+  /// identically rather than the caller having to null-check.
+  Future<SyncRunStateData> syncRunState() async {
+    final row = await (_db.select(_db.syncRunState)
+          ..where((t) => t.id.equals(syncRunStateId)))
+        .getSingleOrNull();
+    return row ??
+        const SyncRunStateData(
+          id: syncRunStateId,
+          status: syncStatusIdle,
+          totalItems: 0,
+          completedItems: 0,
+          failedItems: 0,
+          totalBytes: 0,
+          completedBytes: 0,
+          lastError: null,
+          updatedAt: 0,
+          lastSuccessAt: null,
+          globalBackoffUntil: null,
+          globalBackoffStreak: 0,
+        );
+  }
+
+  /// Overwrites the single [SyncRunState] row - a snapshot, not a log, per
+  /// that table's own doc. Called by [GallerySyncEngine] after every item it
+  /// processes (so a kill mid-run leaves the last-known-good progress behind,
+  /// never a half-written one - the write itself is a single-row upsert,
+  /// atomic by construction) and by [GalleryDataSyncController]'s startup
+  /// reconciliation to correct a `running` row the process that wrote it did
+  /// not survive to clear.
+  ///
+  /// [globalBackoffUntilMillis]/[globalBackoffStreak] (ticket 25): when both
+  /// are omitted, the previous row's values carry forward untouched - the
+  /// same convention [lastSuccessAt] uses below, so a write that has nothing
+  /// to do with the global backoff (the UI's stale-`running`-row
+  /// reconciliation, in particular) never accidentally clears one in
+  /// progress. [clearGlobalBackoff] is the explicit opposite: set true once
+  /// a run recovers, to reset both back to "no backoff in effect" - `null`
+  /// cannot itself mean that here, since [GallerySyncEngine] also needs to
+  /// EXPLICITLY set [globalBackoffUntilMillis] to a real value while leaving
+  /// [globalBackoffStreak] to whatever it was, so a bare "pass null to
+  /// clear" convention would be ambiguous between the two.
+  Future<void> writeSyncRunState({
+    required String status,
+    required int totalItems,
+    required int completedItems,
+    required int failedItems,
+    required int totalBytes,
+    required int completedBytes,
+    String? lastError,
+    required int updatedAtMillis,
+    int? globalBackoffUntilMillis,
+    int? globalBackoffStreak,
+    bool clearGlobalBackoff = false,
+  }) async {
+    // Ticket 24: [SyncRunState.lastSuccessAt] only ever moves forward, and
+    // only on a write that itself reaches [syncStatusCompleted] - never
+    // cleared by a `running`/`paused`/`error` write in between, which is
+    // what makes it a record of "the last time backup finished", not "the
+    // last time backup was attempted". Read-modify-write rather than a SQL
+    // `COALESCE` against the previous row: this table has at most one row
+    // ([syncRunStateId]), so the extra read is one indexed lookup, not a
+    // scan.
+    final previous = await syncRunState();
+    final lastSuccessAt = status == syncStatusCompleted
+        ? updatedAtMillis
+        : previous.lastSuccessAt;
+    final resolvedBackoffUntil = clearGlobalBackoff
+        ? null
+        : (globalBackoffUntilMillis ?? previous.globalBackoffUntil);
+    final resolvedBackoffStreak = clearGlobalBackoff
+        ? 0
+        : (globalBackoffStreak ?? previous.globalBackoffStreak);
+    await _db.into(_db.syncRunState).insertOnConflictUpdate(
+          SyncRunStateCompanion(
+            id: const Value(syncRunStateId),
+            status: Value(status),
+            totalItems: Value(totalItems),
+            completedItems: Value(completedItems),
+            failedItems: Value(failedItems),
+            totalBytes: Value(totalBytes),
+            completedBytes: Value(completedBytes),
+            lastError: Value(lastError),
+            updatedAt: Value(updatedAtMillis),
+            lastSuccessAt: Value(lastSuccessAt),
+            globalBackoffUntil: Value(resolvedBackoffUntil),
+            globalBackoffStreak: Value(resolvedBackoffStreak),
+          ),
+        );
+  }
+
+  /// Ticket 23: attempts to acquire the cross-isolate token-refresh lock via
+  /// a single atomic UPSERT - see [TokenRefreshLock]'s class doc for why a
+  /// lease, not an explicit release, is what actually bounds how long a lock
+  /// can be held. The UPSERT's own `WHERE` clause (`expires_at <= ?`) is what
+  /// makes "check whether the current holder's lease has expired, then take
+  /// the lock if it is free or expired" atomic against a concurrent acquire
+  /// from the OTHER isolate's own connection to the same file: SQLite
+  /// executes the conflict check and the conditional update as one
+  /// indivisible statement, so there is no read-then-write window a second
+  /// connection's own UPSERT could land inside and win a lock this call
+  /// already believes it holds.
+  ///
+  /// Returns whether THIS call is the one that (now) holds the lock -
+  /// `false` means another isolate's unexpired lease is still standing, and
+  /// the caller must not run its own refresh (see `refreshTokenWithLock` in
+  /// `../sync/token_refresh_coordination.dart`, the only intended caller of
+  /// this method and [releaseTokenRefreshLock] together).
+  Future<bool> tryAcquireTokenRefreshLock({
+    required String holder,
+    required int nowMillis,
+    required int leaseMillis,
+  }) async {
+    final changed = await _db.customUpdate(
+      'INSERT INTO token_refresh_lock (id, holder, acquired_at, expires_at) '
+      'VALUES (?1, ?2, ?3, ?4) '
+      'ON CONFLICT(id) DO UPDATE SET '
+      'holder = excluded.holder, '
+      'acquired_at = excluded.acquired_at, '
+      'expires_at = excluded.expires_at '
+      'WHERE token_refresh_lock.expires_at <= ?3',
+      variables: [
+        Variable<String>(tokenRefreshLockId),
+        Variable<String>(holder),
+        Variable<int>(nowMillis),
+        Variable<int>(nowMillis + leaseMillis),
+      ],
+      updates: {_db.tokenRefreshLock},
+    );
+    return changed > 0;
+  }
+
+  /// Releases the lock THIS [holder] currently holds - a no-op, not an
+  /// error, if [holder] is not (or is no longer) the row's holder, which is
+  /// exactly what happens when this isolate's own lease already expired and
+  /// the other isolate reclaimed the lock before this call ran: releasing
+  /// here must never touch a lock this isolate no longer owns. Called from a
+  /// `finally` around every refresh an isolate performs while holding the
+  /// lock, success or failure alike, so a failed refresh frees the lock
+  /// immediately rather than leaving the next attempt to wait out the whole
+  /// lease (this ticket's own "a refresh that fails releases the lock, and
+  /// the next attempt is not blocked forever" criterion).
+  Future<void> releaseTokenRefreshLock({required String holder}) async {
+    await (_db.delete(_db.tokenRefreshLock)
+          ..where((t) =>
+              t.id.equals(tokenRefreshLockId) & t.holder.equals(holder)))
+        .go();
+  }
+
+  /// Whether the lock is currently held by an unexpired lease - what a
+  /// caller that lost [tryAcquireTokenRefreshLock]'s race polls while
+  /// waiting for the winner to finish (see `refreshTokenWithLock` in
+  /// `../sync/token_refresh_coordination.dart`). `false` covers both "no one
+  /// has ever taken the lock" and "the holder's lease has lapsed" - the two
+  /// read identically here, matching [tryAcquireTokenRefreshLock]'s own
+  /// treatment of an expired row as free.
+  Future<bool> tokenRefreshLockHeld({required int nowMillis}) async {
+    final row = await (_db.select(_db.tokenRefreshLock)
+          ..where((t) => t.id.equals(tokenRefreshLockId)))
+        .getSingleOrNull();
+    return row != null && row.expiresAt > nowMillis;
+  }
+
+  // --- Ticket 24: sync-run mutual exclusion ---
+
+  /// Attempts to acquire (or, if [holder] already holds it, renew) the
+  /// single [SyncRunLock] row - `true` on success, `false` if a DIFFERENT
+  /// holder currently holds an unexpired lease. One atomic UPSERT, the same
+  /// "acquire-if-free-or-expired" shape [tryAcquireTokenRefreshLock] uses,
+  /// with one addition: the WHERE clause also matches when [holder] is
+  /// already the row's holder, so the SAME caller can extend its own lease
+  /// (`runHeadlessGallerySync` does this on a timer for as long as an engine
+  /// run is in progress) without first having to release and re-race for it -
+  /// something [TokenRefreshLock] never needed, since a token refresh is one
+  /// short call, not a run that can span hours.
+  ///
+  /// This is what makes "background and foreground runs do not both process
+  /// the same photo" (ticket 24's own criterion) true: whichever of the
+  /// WorkManager-triggered path or ticket 22's foreground-service path calls
+  /// this first gets to construct a [GallerySyncEngine] at all; the loser
+  /// gets `false` back and must not touch [GalleryMirror.writeSyncRunState]
+  /// itself - the winner is already the only thing writing it.
+  Future<bool> tryAcquireSyncRunLock({
+    required String holder,
+    required int nowMillis,
+    required int leaseMillis,
+  }) async {
+    final changed = await _db.customUpdate(
+      'INSERT INTO sync_run_lock (id, holder, acquired_at, expires_at) '
+      'VALUES (?1, ?2, ?3, ?4) '
+      'ON CONFLICT(id) DO UPDATE SET '
+      'holder = excluded.holder, '
+      'acquired_at = excluded.acquired_at, '
+      'expires_at = excluded.expires_at '
+      'WHERE sync_run_lock.expires_at <= ?3 OR sync_run_lock.holder = ?2',
+      variables: [
+        Variable<String>(syncRunLockId),
+        Variable<String>(holder),
+        Variable<int>(nowMillis),
+        Variable<int>(nowMillis + leaseMillis),
+      ],
+      updates: {_db.syncRunLock},
+    );
+    return changed > 0;
+  }
+
+  /// Releases the lock THIS [holder] currently holds - a no-op, not an
+  /// error, if [holder] is not (or is no longer) the row's holder, exactly
+  /// like [releaseTokenRefreshLock]'s own reasoning: this isolate's lease
+  /// may already have expired and been reclaimed by the other path before
+  /// this call runs, and releasing here must never touch a lock this isolate
+  /// no longer owns. Called from a `finally` around every engine run
+  /// [runHeadlessGallerySync] performs while holding the lock, success or
+  /// failure alike.
+  Future<void> releaseSyncRunLock({required String holder}) async {
+    await (_db.delete(_db.syncRunLock)
+          ..where(
+              (t) => t.id.equals(syncRunLockId) & t.holder.equals(holder)))
+        .go();
+  }
+
+  /// Retroactively merges [pair]'s Local Source against the mirror as it
+  /// stands right now - called once, from [createSyncPair], never from the
+  /// ongoing scan/delta-feed paths (those apply [pair] to items they see
+  /// going forward; this applies it to what is already sitting in the
+  /// mirror from before the pair existed).
+  ///
+  /// Walks every Device only row, skips any not under [pair]'s local folder,
+  /// and for the rest, merges onto a Cloud only row at the expected remote
+  /// path (matching size) if one exists - deleting that Cloud only row and
+  /// promoting the device row to Synced. The device row's id and Capture
+  /// Date are kept (never the cloud row's) - the same "the row that already
+  /// existed keeps its timeline position" rule every other merge in this
+  /// class follows.
+  Future<void> _mergeExistingCounterparts(SyncPairRow pair) async {
+    final deviceRows = await (_db.select(_db.galleryItems)
+          ..where((t) => t.origin.equals(_originDevice)))
+        .get();
+
+    for (final row in deviceRows) {
+      final relativePath = row.localRelativePath ?? '';
+      if (relativePath != pair.localFolderPath &&
+          !relativePath.startsWith(pair.localFolderPath)) {
+        continue;
+      }
+
+      final expected = _expectedRemotePath(
+          pair, relativePath, row.localDisplayName ?? '');
+      final cloudMatch = await (_db.select(_db.galleryItems)
+            ..where((t) =>
+                t.origin.equals(_originCloud) &
+                t.providerId.equals(expected.$1) &
+                t.path.equals(expected.$2) &
+                t.size.equals(row.localSize ?? -1))
+            ..limit(1))
+          .getSingleOrNull();
+      if (cloudMatch == null) {
+        continue;
+      }
+
+      // The delete MUST run before the update: [GalleryItems.uniqueKeys]
+      // enforces (providerId, path) as a pair, and the update below gives
+      // the device row exactly the (providerId, path) [cloudMatch] still
+      // holds - doing it the other way round trips that very constraint
+      // against a row not yet gone.
+      await (_db.delete(_db.galleryItems)
+            ..where((t) => t.id.equals(cloudMatch.id)))
+          .go();
+      await (_db.update(_db.galleryItems)..where((t) => t.id.equals(row.id)))
+          .write(GalleryItemsCompanion(
+        origin: const Value(_originBoth),
+        providerId: Value(cloudMatch.providerId),
+        path: Value(cloudMatch.path),
+        seq: Value(cloudMatch.seq),
+        capturedAtSource: Value(cloudMatch.capturedAtSource),
+        width: Value(cloudMatch.width),
+        height: Value(cloudMatch.height),
+        orientation: Value(cloudMatch.orientation),
+        size: Value(cloudMatch.size),
+        mime: Value(cloudMatch.mime),
+        unsupported: Value(cloudMatch.unsupported),
+        metadataPending: Value(cloudMatch.metadataPending),
+        // capturedAt deliberately NOT rewritten - the device row (which
+        // already existed) keeps its timeline position.
+      ));
+    }
+  }
+
+  /// How many gallery items - Device only or Synced alike - currently sit
+  /// under [localFolderPath], for [SyncPair.photoCount]. Computed the same
+  /// way [_unselectedFolders] computes its own prefix-matched set: distinct
+  /// local folder paths already in the mirror, filtered in Dart by prefix,
+  /// then counted with [_countMatching] - bounded by how many distinct
+  /// folders actually exist on the device, not by total photo count.
+  Future<int> _countCoveredByLocalFolder(String localFolderPath) async {
+    final pathColumn = _db.galleryItems.localRelativePath;
+    final distinctQuery = _db.selectOnly(_db.galleryItems, distinct: true)
+      ..addColumns([pathColumn])
+      ..where(pathColumn.isNotNull());
+    final rows = await distinctQuery.get();
+
+    final covered = <String>{};
+    for (final r in rows) {
+      final path = r.read(pathColumn);
+      if (path != null &&
+          (path == localFolderPath || path.startsWith(localFolderPath))) {
+        covered.add(path);
+      }
+    }
+    if (covered.isEmpty) {
+      return 0;
+    }
+    return _countMatching((t) => t.localRelativePath.isIn(covered));
   }
 
   /// One page of the mirror, Capture Date descending (newest first, matching

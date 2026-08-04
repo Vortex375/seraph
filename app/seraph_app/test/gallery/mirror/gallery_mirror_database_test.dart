@@ -4,6 +4,7 @@ import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
+import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite3;
 
@@ -213,6 +214,725 @@ void main() {
       final written = await db.select(db.localFolderSelections).get();
       expect(written, hasLength(1));
       expect(written.single.selected, isFalse);
+    });
+
+    test(
+        'an app upgrade from v5 creates the ticket-18 Sync Pairs table '
+        'without losing existing rows, the sync cursor, or the Local Folder '
+        'selection table', () async {
+      final file = File(p.join(tempDir.path, 'mirror.sqlite'));
+
+      // A v5 database - everything through ticket 29's Local Folder
+      // selection table exists, but ticket 18's Sync Pairs table does not.
+      final v5Raw = sqlite3.sqlite3.open(file.path);
+      v5Raw.execute('''
+        CREATE TABLE gallery_items (
+          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+          origin TEXT NOT NULL DEFAULT 'cloud',
+          provider_id TEXT NULL,
+          path TEXT NULL,
+          seq INTEGER NULL,
+          local_relative_path TEXT NULL,
+          local_display_name TEXT NULL,
+          local_size INTEGER NULL,
+          local_date_taken INTEGER NULL,
+          captured_at INTEGER NOT NULL,
+          captured_at_source TEXT NOT NULL DEFAULT '',
+          width INTEGER NOT NULL DEFAULT 0,
+          height INTEGER NOT NULL DEFAULT 0,
+          orientation INTEGER NOT NULL DEFAULT 0,
+          size INTEGER NOT NULL DEFAULT 0,
+          mime TEXT NOT NULL DEFAULT '',
+          unsupported TEXT NOT NULL DEFAULT '',
+          metadata_pending INTEGER NOT NULL DEFAULT 0,
+          UNIQUE(provider_id, path)
+        );
+      ''');
+      v5Raw.execute('''
+        CREATE TABLE sync_cursors (
+          source TEXT NOT NULL PRIMARY KEY,
+          since INTEGER NOT NULL DEFAULT 0,
+          pending_cursor TEXT NULL
+        );
+      ''');
+      v5Raw.execute('''
+        CREATE TABLE cached_thumbnails (
+          provider_id TEXT NOT NULL,
+          path TEXT NOT NULL,
+          size INTEGER NOT NULL,
+          bytes BLOB NOT NULL,
+          fetched_at INTEGER NOT NULL,
+          PRIMARY KEY (provider_id, path, size)
+        );
+      ''');
+      v5Raw.execute('''
+        CREATE TABLE local_folder_selections (
+          folder_path TEXT NOT NULL PRIMARY KEY,
+          selected INTEGER NOT NULL
+        );
+      ''');
+      v5Raw.execute(
+        "INSERT INTO gallery_items (origin, provider_id, path, seq, captured_at) "
+        "VALUES ('cloud', 'space-a', '/Photos/a.jpg', 5, 1000);",
+      );
+      v5Raw.execute(
+        "INSERT INTO sync_cursors (source, since) VALUES ('server', 5);",
+      );
+      v5Raw.execute(
+        "INSERT INTO local_folder_selections (folder_path, selected) "
+        "VALUES ('DCIM/Camera/', 1);",
+      );
+      v5Raw.execute('PRAGMA user_version = 5;');
+      v5Raw.close();
+
+      final db = GalleryMirrorDatabase(NativeDatabase(file));
+      addTearDown(db.close);
+
+      // Everything that existed before the upgrade survived.
+      final items = await db.select(db.galleryItems).get();
+      expect(items, hasLength(1));
+      expect(items.single.path, '/Photos/a.jpg');
+      final cursor = await (db.select(db.syncCursors)
+            ..where((t) => t.source.equals('server')))
+          .getSingle();
+      expect(cursor.since, 5);
+      final selections = await db.select(db.localFolderSelections).get();
+      expect(selections, hasLength(1));
+      expect(selections.single.selected, isTrue);
+
+      // The new Sync Pairs table exists and is usable.
+      final pairs = await db.select(db.syncPairs).get();
+      expect(pairs, isEmpty);
+      await db.into(db.syncPairs).insert(
+            SyncPairsCompanion.insert(
+              localFolderPath: 'DCIM/Camera/',
+              spaceProviderId: 'space-a',
+              path: '/Photos/Phone',
+            ),
+          );
+      final written = await db.select(db.syncPairs).get();
+      expect(written, hasLength(1));
+      expect(written.single.localFolderPath, 'DCIM/Camera/');
+      expect(written.single.path, '/Photos/Phone');
+    });
+
+    test(
+        'an app upgrade from v6 adds the ticket-20 verification columns and '
+        'index without losing existing rows, the sync cursor, or the Sync '
+        'Pairs table', () async {
+      final file = File(p.join(tempDir.path, 'mirror.sqlite'));
+
+      // A v6 database - everything through ticket 18's Sync Pairs table
+      // exists, but ticket 20's upload_state/upload_target_* columns do not.
+      final v6Raw = sqlite3.sqlite3.open(file.path);
+      v6Raw.execute('''
+        CREATE TABLE gallery_items (
+          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+          origin TEXT NOT NULL DEFAULT 'cloud',
+          provider_id TEXT NULL,
+          path TEXT NULL,
+          seq INTEGER NULL,
+          local_relative_path TEXT NULL,
+          local_display_name TEXT NULL,
+          local_size INTEGER NULL,
+          local_date_taken INTEGER NULL,
+          captured_at INTEGER NOT NULL,
+          captured_at_source TEXT NOT NULL DEFAULT '',
+          width INTEGER NOT NULL DEFAULT 0,
+          height INTEGER NOT NULL DEFAULT 0,
+          orientation INTEGER NOT NULL DEFAULT 0,
+          size INTEGER NOT NULL DEFAULT 0,
+          mime TEXT NOT NULL DEFAULT '',
+          unsupported TEXT NOT NULL DEFAULT '',
+          metadata_pending INTEGER NOT NULL DEFAULT 0,
+          UNIQUE(provider_id, path)
+        );
+      ''');
+      v6Raw.execute('''
+        CREATE TABLE sync_cursors (
+          source TEXT NOT NULL PRIMARY KEY,
+          since INTEGER NOT NULL DEFAULT 0,
+          pending_cursor TEXT NULL
+        );
+      ''');
+      v6Raw.execute('''
+        CREATE TABLE cached_thumbnails (
+          provider_id TEXT NOT NULL,
+          path TEXT NOT NULL,
+          size INTEGER NOT NULL,
+          bytes BLOB NOT NULL,
+          fetched_at INTEGER NOT NULL,
+          PRIMARY KEY (provider_id, path, size)
+        );
+      ''');
+      v6Raw.execute('''
+        CREATE TABLE local_folder_selections (
+          folder_path TEXT NOT NULL PRIMARY KEY,
+          selected INTEGER NOT NULL
+        );
+      ''');
+      v6Raw.execute('''
+        CREATE TABLE sync_pairs (
+          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+          local_folder_path TEXT NOT NULL,
+          space_provider_id TEXT NOT NULL,
+          path TEXT NOT NULL,
+          created_at INTEGER NOT NULL DEFAULT 0,
+          UNIQUE(local_folder_path)
+        );
+      ''');
+      v6Raw.execute(
+        "INSERT INTO gallery_items (origin, provider_id, path, seq, captured_at) "
+        "VALUES ('cloud', 'space-a', '/Photos/a.jpg', 5, 1000);",
+      );
+      v6Raw.execute(
+        "INSERT INTO sync_cursors (source, since) VALUES ('server', 5);",
+      );
+      v6Raw.execute(
+        "INSERT INTO sync_pairs (local_folder_path, space_provider_id, path) "
+        "VALUES ('DCIM/Camera/', 'space-a', '/Photos/Phone');",
+      );
+      v6Raw.execute('PRAGMA user_version = 6;');
+      v6Raw.close();
+
+      final db = GalleryMirrorDatabase(NativeDatabase(file));
+      addTearDown(db.close);
+
+      // Everything that existed before the upgrade survived.
+      final items = await db.select(db.galleryItems).get();
+      expect(items, hasLength(1));
+      expect(items.single.path, '/Photos/a.jpg');
+      // ...and the new columns are there, defaulting to null - "no upload
+      // pending verification" for every pre-existing row.
+      expect(items.single.uploadState, null);
+      expect(items.single.uploadTargetProviderId, null);
+      expect(items.single.uploadTargetPath, null);
+
+      final cursor = await (db.select(db.syncCursors)
+            ..where((t) => t.source.equals('server')))
+          .getSingle();
+      expect(cursor.since, 5);
+      final pairs = await db.select(db.syncPairs).get();
+      expect(pairs, hasLength(1));
+      expect(pairs.single.localFolderPath, 'DCIM/Camera/');
+
+      // The new index exists.
+      final indexNames = (await db
+              .customSelect(
+                  "SELECT name FROM sqlite_master WHERE type = 'index' "
+                  "AND tbl_name = 'gallery_items'")
+              .get())
+          .map((row) => row.data['name'] as String)
+          .toSet();
+      expect(indexNames, contains('idx_gallery_items_upload_target'));
+
+      // The upgraded schema accepts writes to the new columns.
+      await (db.update(db.galleryItems)
+            ..where((t) => t.path.equals('/Photos/a.jpg')))
+          .write(const GalleryItemsCompanion(
+        uploadState: Value('uploaded'),
+        uploadTargetProviderId: Value('space-b'),
+        uploadTargetPath: Value('/Photos/b.jpg'),
+      ));
+      final updated = await (db.select(db.galleryItems)
+            ..where((t) => t.path.equals('/Photos/a.jpg')))
+          .getSingle();
+      expect(updated.uploadState, 'uploaded');
+      expect(updated.uploadTargetPath, '/Photos/b.jpg');
+    });
+
+    test(
+        'an app upgrade from v7 adds the ticket-21 removedAt column and '
+        'drops the old UNIQUE(local_folder_path) constraint, without losing '
+        'the existing Sync Pair', () async {
+      final file = File(p.join(tempDir.path, 'mirror.sqlite'));
+
+      // A v7 database - everything through ticket 20's verification
+      // columns exists, but sync_pairs still has ticket 18's original
+      // UNIQUE(local_folder_path) constraint and no removed_at column.
+      final v7Raw = sqlite3.sqlite3.open(file.path);
+      v7Raw.execute('''
+        CREATE TABLE gallery_items (
+          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+          origin TEXT NOT NULL DEFAULT 'cloud',
+          provider_id TEXT NULL,
+          path TEXT NULL,
+          seq INTEGER NULL,
+          local_relative_path TEXT NULL,
+          local_display_name TEXT NULL,
+          local_size INTEGER NULL,
+          local_date_taken INTEGER NULL,
+          captured_at INTEGER NOT NULL,
+          captured_at_source TEXT NOT NULL DEFAULT '',
+          width INTEGER NOT NULL DEFAULT 0,
+          height INTEGER NOT NULL DEFAULT 0,
+          orientation INTEGER NOT NULL DEFAULT 0,
+          size INTEGER NOT NULL DEFAULT 0,
+          mime TEXT NOT NULL DEFAULT '',
+          unsupported TEXT NOT NULL DEFAULT '',
+          metadata_pending INTEGER NOT NULL DEFAULT 0,
+          upload_state TEXT NULL,
+          upload_target_provider_id TEXT NULL,
+          upload_target_path TEXT NULL,
+          UNIQUE(provider_id, path)
+        );
+      ''');
+      v7Raw.execute('''
+        CREATE TABLE sync_cursors (
+          source TEXT NOT NULL PRIMARY KEY,
+          since INTEGER NOT NULL DEFAULT 0,
+          pending_cursor TEXT NULL
+        );
+      ''');
+      v7Raw.execute('''
+        CREATE TABLE cached_thumbnails (
+          provider_id TEXT NOT NULL,
+          path TEXT NOT NULL,
+          size INTEGER NOT NULL,
+          bytes BLOB NOT NULL,
+          fetched_at INTEGER NOT NULL,
+          PRIMARY KEY (provider_id, path, size)
+        );
+      ''');
+      v7Raw.execute('''
+        CREATE TABLE local_folder_selections (
+          folder_path TEXT NOT NULL PRIMARY KEY,
+          selected INTEGER NOT NULL
+        );
+      ''');
+      v7Raw.execute('''
+        CREATE TABLE sync_pairs (
+          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+          local_folder_path TEXT NOT NULL,
+          space_provider_id TEXT NOT NULL,
+          path TEXT NOT NULL,
+          created_at INTEGER NOT NULL DEFAULT 0,
+          UNIQUE(local_folder_path)
+        );
+      ''');
+      v7Raw.execute('''
+        CREATE INDEX idx_gallery_items_upload_target
+          ON gallery_items (upload_target_provider_id, upload_target_path);
+      ''');
+      v7Raw.execute(
+        "INSERT INTO gallery_items (origin, provider_id, path, seq, captured_at) "
+        "VALUES ('cloud', 'space-a', '/Photos/a.jpg', 5, 1000);",
+      );
+      v7Raw.execute(
+        "INSERT INTO sync_cursors (source, since) VALUES ('server', 5);",
+      );
+      v7Raw.execute(
+        "INSERT INTO sync_pairs (local_folder_path, space_provider_id, path) "
+        "VALUES ('DCIM/Camera/', 'space-a', '/Photos/Phone');",
+      );
+      v7Raw.execute('PRAGMA user_version = 7;');
+      v7Raw.close();
+
+      final db = GalleryMirrorDatabase(NativeDatabase(file));
+      addTearDown(db.close);
+
+      // Everything that existed before the upgrade survived, and the
+      // pre-existing pair defaults to active (removedAt null).
+      final pairs = await db.select(db.syncPairs).get();
+      expect(pairs, hasLength(1));
+      expect(pairs.single.localFolderPath, 'DCIM/Camera/');
+      expect(pairs.single.path, '/Photos/Phone');
+      expect(pairs.single.removedAt, null);
+
+      final items = await db.select(db.galleryItems).get();
+      expect(items, hasLength(1));
+      expect(items.single.path, '/Photos/a.jpg');
+
+      final cursor = await (db.select(db.syncCursors)
+            ..where((t) => t.source.equals('server')))
+          .getSingle();
+      expect(cursor.since, 5);
+
+      // The old UNIQUE(local_folder_path) constraint is gone: a second row
+      // for the SAME local folder - what a retarget produces, an old
+      // removed pair plus a newly created active one - is now accepted
+      // rather than rejected.
+      await (db.update(db.syncPairs)
+            ..where((t) => t.localFolderPath.equals('DCIM/Camera/')))
+          .write(SyncPairsCompanion(removedAt: Value(DateTime.now()
+              .millisecondsSinceEpoch)));
+      await db.into(db.syncPairs).insert(
+            SyncPairsCompanion.insert(
+              localFolderPath: 'DCIM/Camera/',
+              spaceProviderId: 'space-b',
+              path: '/Photos/PhoneNew',
+              createdAt: Value(DateTime.now().millisecondsSinceEpoch),
+            ),
+          );
+      final afterRetarget = await (db.select(db.syncPairs)
+            ..orderBy([(t) => OrderingTerm(expression: t.id)]))
+          .get();
+      expect(afterRetarget, hasLength(2));
+      expect(afterRetarget.every((p) => p.localFolderPath == 'DCIM/Camera/'),
+          isTrue);
+      expect(afterRetarget[0].removedAt != null, isTrue);
+      expect(afterRetarget[1].removedAt, null);
+      expect(afterRetarget[1].path, '/Photos/PhoneNew');
+    });
+
+    test(
+        'an app upgrade from v8 adds the ticket-22 sync_run_state table '
+        'without losing existing rows, and GalleryMirror.syncRunState reads '
+        'an idle default from the new, empty table', () async {
+      final file = File(p.join(tempDir.path, 'mirror.sqlite'));
+
+      // A v8 database - everything through ticket 21's Sync Pair lifecycle
+      // exists (removed_at and no more UNIQUE(local_folder_path)), but there
+      // is no sync_run_state table yet.
+      final v8Raw = sqlite3.sqlite3.open(file.path);
+      v8Raw.execute('''
+        CREATE TABLE gallery_items (
+          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+          origin TEXT NOT NULL DEFAULT 'cloud',
+          provider_id TEXT NULL,
+          path TEXT NULL,
+          seq INTEGER NULL,
+          local_relative_path TEXT NULL,
+          local_display_name TEXT NULL,
+          local_size INTEGER NULL,
+          local_date_taken INTEGER NULL,
+          captured_at INTEGER NOT NULL,
+          captured_at_source TEXT NOT NULL DEFAULT '',
+          width INTEGER NOT NULL DEFAULT 0,
+          height INTEGER NOT NULL DEFAULT 0,
+          orientation INTEGER NOT NULL DEFAULT 0,
+          size INTEGER NOT NULL DEFAULT 0,
+          mime TEXT NOT NULL DEFAULT '',
+          unsupported TEXT NOT NULL DEFAULT '',
+          metadata_pending INTEGER NOT NULL DEFAULT 0,
+          upload_state TEXT NULL,
+          upload_target_provider_id TEXT NULL,
+          upload_target_path TEXT NULL,
+          UNIQUE(provider_id, path)
+        );
+      ''');
+      v8Raw.execute('''
+        CREATE TABLE sync_cursors (
+          source TEXT NOT NULL PRIMARY KEY,
+          since INTEGER NOT NULL DEFAULT 0,
+          pending_cursor TEXT NULL
+        );
+      ''');
+      v8Raw.execute('''
+        CREATE TABLE cached_thumbnails (
+          provider_id TEXT NOT NULL,
+          path TEXT NOT NULL,
+          size INTEGER NOT NULL,
+          bytes BLOB NOT NULL,
+          fetched_at INTEGER NOT NULL,
+          PRIMARY KEY (provider_id, path, size)
+        );
+      ''');
+      v8Raw.execute('''
+        CREATE TABLE local_folder_selections (
+          folder_path TEXT NOT NULL PRIMARY KEY,
+          selected INTEGER NOT NULL
+        );
+      ''');
+      v8Raw.execute('''
+        CREATE TABLE sync_pairs (
+          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+          local_folder_path TEXT NOT NULL,
+          space_provider_id TEXT NOT NULL,
+          path TEXT NOT NULL,
+          created_at INTEGER NOT NULL DEFAULT 0,
+          removed_at INTEGER NULL
+        );
+      ''');
+      v8Raw.execute('''
+        CREATE INDEX idx_gallery_items_upload_target
+          ON gallery_items (upload_target_provider_id, upload_target_path);
+      ''');
+      v8Raw.execute(
+        "INSERT INTO gallery_items (origin, provider_id, path, seq, captured_at) "
+        "VALUES ('cloud', 'space-a', '/Photos/a.jpg', 5, 1000);",
+      );
+      v8Raw.execute(
+        "INSERT INTO sync_pairs (local_folder_path, space_provider_id, path) "
+        "VALUES ('DCIM/Camera/', 'space-a', '/Photos/Phone');",
+      );
+      v8Raw.execute('PRAGMA user_version = 8;');
+      v8Raw.close();
+
+      final db = GalleryMirrorDatabase(NativeDatabase(file));
+      addTearDown(db.close);
+
+      // Everything that existed before the upgrade survived.
+      final items = await db.select(db.galleryItems).get();
+      expect(items, hasLength(1));
+      expect(items.single.path, '/Photos/a.jpg');
+      final pairs = await db.select(db.syncPairs).get();
+      expect(pairs, hasLength(1));
+      expect(pairs.single.localFolderPath, 'DCIM/Camera/');
+
+      // The new table exists and is empty - GalleryMirror.syncRunState
+      // reads an idle, all-zero default from it rather than erroring, so an
+      // upgraded device with no run in progress reads exactly as a fresh
+      // install would.
+      final rows = await db.select(db.syncRunState).get();
+      expect(rows, isEmpty);
+      final state = await GalleryMirror(db).syncRunState();
+      expect(state.status, syncStatusIdle);
+      expect(state.totalItems, 0);
+    });
+
+    test(
+        'an app upgrade from v9 creates the ticket-23 token_refresh_lock '
+        'table without losing existing rows or the sync_run_state row',
+        () async {
+      final file = File(p.join(tempDir.path, 'mirror.sqlite'));
+
+      // A v9 database - everything through ticket 22's SyncRunState exists,
+      // but there is no token_refresh_lock table yet.
+      final v9Raw = sqlite3.sqlite3.open(file.path);
+      v9Raw.execute('''
+        CREATE TABLE gallery_items (
+          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+          origin TEXT NOT NULL DEFAULT 'cloud',
+          provider_id TEXT NULL,
+          path TEXT NULL,
+          seq INTEGER NULL,
+          local_relative_path TEXT NULL,
+          local_display_name TEXT NULL,
+          local_size INTEGER NULL,
+          local_date_taken INTEGER NULL,
+          captured_at INTEGER NOT NULL,
+          captured_at_source TEXT NOT NULL DEFAULT '',
+          width INTEGER NOT NULL DEFAULT 0,
+          height INTEGER NOT NULL DEFAULT 0,
+          orientation INTEGER NOT NULL DEFAULT 0,
+          size INTEGER NOT NULL DEFAULT 0,
+          mime TEXT NOT NULL DEFAULT '',
+          unsupported TEXT NOT NULL DEFAULT '',
+          metadata_pending INTEGER NOT NULL DEFAULT 0,
+          upload_state TEXT NULL,
+          upload_target_provider_id TEXT NULL,
+          upload_target_path TEXT NULL,
+          UNIQUE(provider_id, path)
+        );
+      ''');
+      v9Raw.execute('''
+        CREATE TABLE sync_cursors (
+          source TEXT NOT NULL PRIMARY KEY,
+          since INTEGER NOT NULL DEFAULT 0,
+          pending_cursor TEXT NULL
+        );
+      ''');
+      v9Raw.execute('''
+        CREATE TABLE cached_thumbnails (
+          provider_id TEXT NOT NULL,
+          path TEXT NOT NULL,
+          size INTEGER NOT NULL,
+          bytes BLOB NOT NULL,
+          fetched_at INTEGER NOT NULL,
+          PRIMARY KEY (provider_id, path, size)
+        );
+      ''');
+      v9Raw.execute('''
+        CREATE TABLE local_folder_selections (
+          folder_path TEXT NOT NULL PRIMARY KEY,
+          selected INTEGER NOT NULL
+        );
+      ''');
+      v9Raw.execute('''
+        CREATE TABLE sync_pairs (
+          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+          local_folder_path TEXT NOT NULL,
+          space_provider_id TEXT NOT NULL,
+          path TEXT NOT NULL,
+          created_at INTEGER NOT NULL DEFAULT 0,
+          removed_at INTEGER NULL
+        );
+      ''');
+      v9Raw.execute('''
+        CREATE INDEX idx_gallery_items_upload_target
+          ON gallery_items (upload_target_provider_id, upload_target_path);
+      ''');
+      v9Raw.execute('''
+        CREATE TABLE sync_run_state (
+          id TEXT NOT NULL PRIMARY KEY,
+          status TEXT NOT NULL,
+          total_items INTEGER NOT NULL DEFAULT 0,
+          completed_items INTEGER NOT NULL DEFAULT 0,
+          failed_items INTEGER NOT NULL DEFAULT 0,
+          total_bytes INTEGER NOT NULL DEFAULT 0,
+          completed_bytes INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT NULL,
+          updated_at INTEGER NOT NULL DEFAULT 0
+        );
+      ''');
+      v9Raw.execute(
+        "INSERT INTO gallery_items (origin, provider_id, path, seq, captured_at) "
+        "VALUES ('cloud', 'space-a', '/Photos/a.jpg', 5, 1000);",
+      );
+      v9Raw.execute(
+        "INSERT INTO sync_run_state (id, status, total_items) "
+        "VALUES ('default', 'paused', 7);",
+      );
+      v9Raw.execute('PRAGMA user_version = 9;');
+      v9Raw.close();
+
+      final db = GalleryMirrorDatabase(NativeDatabase(file));
+      addTearDown(db.close);
+
+      // Everything that existed before the upgrade survived.
+      final items = await db.select(db.galleryItems).get();
+      expect(items, hasLength(1));
+      expect(items.single.path, '/Photos/a.jpg');
+      final runState = await GalleryMirror(db).syncRunState();
+      expect(runState.status, 'paused');
+      expect(runState.totalItems, 7);
+
+      // The new table exists, starts empty (the lock reads as free), and
+      // accepts the atomic acquire GalleryMirror.tryAcquireTokenRefreshLock
+      // relies on.
+      final rows = await db.select(db.tokenRefreshLock).get();
+      expect(rows, isEmpty);
+      final mirror = GalleryMirror(db);
+      final now = DateTime.now().millisecondsSinceEpoch;
+      expect(
+        await mirror.tryAcquireTokenRefreshLock(
+          holder: 'ui',
+          nowMillis: now,
+          leaseMillis: 30000,
+        ),
+        isTrue,
+      );
+    });
+
+    test(
+        'an app upgrade from v10 adds the ticket-24 last_success_at column '
+        'without losing existing rows, the sync_run_state row, or the '
+        'token_refresh_lock table', () async {
+      final file = File(p.join(tempDir.path, 'mirror.sqlite'));
+
+      // A v10 database - everything through ticket 23's TokenRefreshLock
+      // exists, but sync_run_state has no last_success_at column yet.
+      final v10Raw = sqlite3.sqlite3.open(file.path);
+      v10Raw.execute('''
+        CREATE TABLE gallery_items (
+          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+          origin TEXT NOT NULL DEFAULT 'cloud',
+          provider_id TEXT NULL,
+          path TEXT NULL,
+          seq INTEGER NULL,
+          local_relative_path TEXT NULL,
+          local_display_name TEXT NULL,
+          local_size INTEGER NULL,
+          local_date_taken INTEGER NULL,
+          captured_at INTEGER NOT NULL,
+          captured_at_source TEXT NOT NULL DEFAULT '',
+          width INTEGER NOT NULL DEFAULT 0,
+          height INTEGER NOT NULL DEFAULT 0,
+          orientation INTEGER NOT NULL DEFAULT 0,
+          size INTEGER NOT NULL DEFAULT 0,
+          mime TEXT NOT NULL DEFAULT '',
+          unsupported TEXT NOT NULL DEFAULT '',
+          metadata_pending INTEGER NOT NULL DEFAULT 0,
+          upload_state TEXT NULL,
+          upload_target_provider_id TEXT NULL,
+          upload_target_path TEXT NULL,
+          UNIQUE(provider_id, path)
+        );
+      ''');
+      v10Raw.execute('''
+        CREATE TABLE sync_cursors (
+          source TEXT NOT NULL PRIMARY KEY,
+          since INTEGER NOT NULL DEFAULT 0,
+          pending_cursor TEXT NULL
+        );
+      ''');
+      v10Raw.execute('''
+        CREATE TABLE cached_thumbnails (
+          provider_id TEXT NOT NULL,
+          path TEXT NOT NULL,
+          size INTEGER NOT NULL,
+          bytes BLOB NOT NULL,
+          fetched_at INTEGER NOT NULL,
+          PRIMARY KEY (provider_id, path, size)
+        );
+      ''');
+      v10Raw.execute('''
+        CREATE TABLE local_folder_selections (
+          folder_path TEXT NOT NULL PRIMARY KEY,
+          selected INTEGER NOT NULL
+        );
+      ''');
+      v10Raw.execute('''
+        CREATE TABLE sync_pairs (
+          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+          local_folder_path TEXT NOT NULL,
+          space_provider_id TEXT NOT NULL,
+          path TEXT NOT NULL,
+          created_at INTEGER NOT NULL DEFAULT 0,
+          removed_at INTEGER NULL
+        );
+      ''');
+      v10Raw.execute('''
+        CREATE INDEX idx_gallery_items_upload_target
+          ON gallery_items (upload_target_provider_id, upload_target_path);
+      ''');
+      v10Raw.execute('''
+        CREATE TABLE sync_run_state (
+          id TEXT NOT NULL PRIMARY KEY,
+          status TEXT NOT NULL,
+          total_items INTEGER NOT NULL DEFAULT 0,
+          completed_items INTEGER NOT NULL DEFAULT 0,
+          failed_items INTEGER NOT NULL DEFAULT 0,
+          total_bytes INTEGER NOT NULL DEFAULT 0,
+          completed_bytes INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT NULL,
+          updated_at INTEGER NOT NULL DEFAULT 0
+        );
+      ''');
+      v10Raw.execute('''
+        CREATE TABLE token_refresh_lock (
+          id TEXT NOT NULL PRIMARY KEY,
+          holder TEXT NOT NULL,
+          acquired_at INTEGER NOT NULL,
+          expires_at INTEGER NOT NULL
+        );
+      ''');
+      v10Raw.execute(
+        "INSERT INTO gallery_items (origin, provider_id, path, seq, captured_at) "
+        "VALUES ('cloud', 'space-a', '/Photos/a.jpg', 5, 1000);",
+      );
+      v10Raw.execute(
+        "INSERT INTO sync_run_state (id, status, total_items, completed_items, updated_at) "
+        "VALUES ('default', 'completed', 3, 3, 5000);",
+      );
+      v10Raw.execute('PRAGMA user_version = 10;');
+      v10Raw.close();
+
+      final db = GalleryMirrorDatabase(NativeDatabase(file));
+      addTearDown(db.close);
+
+      // Everything that existed before the upgrade survived.
+      final items = await db.select(db.galleryItems).get();
+      expect(items, hasLength(1));
+      expect(items.single.path, '/Photos/a.jpg');
+
+      // The pre-existing sync_run_state row survived the table rebuild,
+      // with last_success_at defaulting to null - a device that upgrades
+      // straight to this version has no recorded "last successful pass"
+      // until its next run actually completes, even if an old row happens
+      // to already read `completed`; GalleryMirror.writeSyncRunState is the
+      // only thing that ever sets it, never the migration itself.
+      final mirror = GalleryMirror(db);
+      final runState = await mirror.syncRunState();
+      expect(runState.status, 'completed');
+      expect(runState.totalItems, 3);
+      expect(runState.completedItems, 3);
+      expect(runState.lastSuccessAt, null);
+
+      // token_refresh_lock (ticket 23) is untouched by this migration step.
+      final lockRows = await db.select(db.tokenRefreshLock).get();
+      expect(lockRows, isEmpty);
     });
 
     test('a fresh install creates the current schema directly via onCreate',

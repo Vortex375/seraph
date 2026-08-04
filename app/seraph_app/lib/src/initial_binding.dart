@@ -12,8 +12,13 @@ import 'package:seraph_app/src/gallery/local/local_scan_service.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_sync_service.dart';
+import 'package:seraph_app/src/gallery/mirror/webdav_gallery_upload_backend.dart';
+import 'package:seraph_app/src/gallery/mirror/gallery_upload_service.dart';
+import 'package:seraph_app/src/gallery/sync/gallery_backup_schedule_coordinator.dart';
+import 'package:seraph_app/src/gallery/sync/gallery_data_sync_controller.dart';
 import 'package:seraph_app/src/media_player/audio_player_controller.dart';
 import 'package:seraph_app/src/search/search_service.dart';
+import 'package:seraph_app/src/settings/settings_controller.dart';
 import 'package:seraph_app/src/spaces_admin/spaces_list_controller.dart';
 import 'package:seraph_app/src/spaces_admin/spaces_service.dart';
 
@@ -30,8 +35,13 @@ class InitialBinding extends Bindings {
     Get.put(SpacesService(Get.find(), Get.find()));
     Get.put(SpacesListController(Get.find()));
     Get.put(GalleryService(Get.find(), Get.find()));
-    final galleryMirrorDatabase = Get.put(GalleryMirrorDatabase.open());
-    final galleryMirror = Get.put(GalleryMirror(galleryMirrorDatabase));
+    // Both already opened and registered in main.dart, ahead of
+    // LoginController - see that file's comment for why (ticket 23's
+    // cross-isolate token-refresh lock). Reused here via Get.find rather
+    // than a second GalleryMirrorDatabase.open() call, which would open a
+    // second, redundant connection to the same file from this same isolate.
+    final galleryMirrorDatabase = Get.find<GalleryMirrorDatabase>();
+    final galleryMirror = Get.find<GalleryMirror>();
     final gallerySyncService =
         Get.put(GallerySyncService(Get.find(), Get.find(), galleryMirror));
     // Local Source defaults to the platform's own (Android only, in this
@@ -39,6 +49,40 @@ class InitialBinding extends Bindings {
     // makes scanning a no-op and leaves the gallery exactly as it was before
     // ticket 15 on iOS, desktop and web.
     final localScanService = Get.put(LocalScanService(galleryMirror));
+    // Ticket 19: uploads one photo end to end, over the same WebDAV client
+    // the file browser already uses (see WebDavGalleryUploadBackend's doc).
+    // Registered unconditionally, like LocalImageLoader below - on a
+    // platform with no Local Source, localScanService.localSource is null
+    // and GalleryUploadService.upload simply reports deviceFileUnavailable
+    // for every call, so there is nothing to gate here.
+    Get.put(GalleryUploadService(
+      galleryMirror,
+      WebDavGalleryUploadBackend(Get.find<FileService>()),
+      localScanService.localSource,
+    ));
+    // Ticket 22: the UI's only window onto the headless engine - reads
+    // GalleryMirror.syncRunState on a timer (see the controller's own doc
+    // for why that, and not a callback from the engine, is the whole
+    // channel). Registered unconditionally, like GalleryUploadService above
+    // - GalleryDataSyncController.isSupported is false wherever
+    // createGalleryDataSyncService() is (every platform without a Local
+    // Source), so there is nothing to gate here either.
+    Get.put(GalleryDataSyncController(galleryMirror));
+    // Ticket 24: keeps WorkManager's scheduled periodic/content-trigger
+    // backup tasks in sync with the active Sync Pairs and the user's
+    // constraint settings, and fires the genuinely expedited fast path in
+    // response to the SAME Local Source `changes` stream `localScanService`
+    // owns - see the coordinator's own doc for why "is there anything to
+    // schedule" and "under what constraints" are both re-evaluated here
+    // rather than assumed to stay whatever they were at app start, and why
+    // this reuses `localScanService.localSource` rather than constructing a
+    // second one. Registered unconditionally, like GalleryDataSyncController
+    // above - GalleryBackupScheduleCoordinator.isSupported is false wherever
+    // createGalleryBackupScheduler() is (every platform without a Local
+    // Source), so there is nothing to gate here either.
+    Get.put(GalleryBackupScheduleCoordinator(
+        galleryMirror, Get.find<SettingsController>(),
+        localSource: localScanService.localSource));
     Get.put(GalleryImageLoader(Get.find(), Get.find(), galleryMirrorDatabase));
     // Ticket 28: loads device-photo pixels through the same Local Source the
     // scan above uses. Null-safe on its own when localScanService.localSource

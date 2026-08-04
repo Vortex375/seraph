@@ -23,8 +23,16 @@ part 'gallery_mirror_database.g.dart';
 /// opened with no network still shows the thumbnails it has already seen.
 /// Neither is a second source of gallery items - the one-table constraint is
 /// about what the UI list is built from, and that is [GalleryItems] alone.
-@DriftDatabase(
-    tables: [GalleryItems, SyncCursors, CachedThumbnails, LocalFolderSelections])
+@DriftDatabase(tables: [
+  GalleryItems,
+  SyncCursors,
+  CachedThumbnails,
+  LocalFolderSelections,
+  SyncPairs,
+  SyncRunState,
+  TokenRefreshLock,
+  SyncRunLock,
+])
 class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
   GalleryMirrorDatabase(super.e);
 
@@ -37,7 +45,7 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
   }
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 13;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -88,9 +96,211 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
             // have silently denied it.
             await m.createTable(localFolderSelections);
           }
+          if (from < 6) {
+            // v6 (ticket 18) added Sync Pairs. A fresh, empty table - a
+            // device that already has Device only or Cloud only rows keeps
+            // them exactly as they are; only a subsequent
+            // [GalleryMirror.createSyncPair] call (never this migration
+            // itself) ever merges or re-labels anything. See the class doc
+            // on [SyncPairs] for why the table is the local-only half of
+            // Sync Pair configuration.
+            await m.createTable(syncPairs);
+          }
+          if (from < 7) {
+            // v7 (ticket 20) added verification-through-the-delta-feed
+            // tracking: which (providerId, path) an upload actually targeted,
+            // pending independent confirmation from the feed. Three nullable
+            // columns on an existing table, plus their index - no data to
+            // backfill, since a pre-upgrade device has no upload in flight
+            // that this table did not already know about some other way (a
+            // row either never attempted an upload, in which case these stay
+            // null forever until one does, or ticket 19's old behaviour had
+            // already flipped it to `both` - which this migration leaves
+            // alone; only NEW uploads after the upgrade go through the
+            // verification-gated path).
+            await m.addColumn(galleryItems, galleryItems.uploadState);
+            await m.addColumn(
+                galleryItems, galleryItems.uploadTargetProviderId);
+            await m.addColumn(galleryItems, galleryItems.uploadTargetPath);
+            await m.createIndex(idxGalleryItemsUploadTarget);
+          }
+          if (from < 8) {
+            // v8 (ticket 21) added [SyncPairs.removedAt] and dropped the
+            // table's UNIQUE(local_folder_path) constraint - a retargeted
+            // Local Source now has more than one row (an old, removed one
+            // and a new, active one) sharing the same [SyncPairs.
+            // localFolderPath], which the old column-level UNIQUE constraint
+            // would have rejected outright. SQLite cannot alter or drop a
+            // table-level constraint in place, so this is a full rebuild via
+            // [alterTable]'s 12-step procedure rather than a plain
+            // `addColumn` - it recreates the table from the CURRENT (already
+            // constraint-free) Dart definition and copies every existing row
+            // across untouched, [removedAt] defaulting to null (still
+            // active) for all of them. See the class doc on [SyncPairs] for
+            // why keeping every past target, not just the current one, is
+            // what makes reconcile survive a retarget.
+            await m.alterTable(TableMigration(
+              syncPairs,
+              newColumns: [syncPairs.removedAt],
+            ));
+          }
+          if (from < 9) {
+            // v9 (ticket 22) added [SyncRunState] - the headless sync
+            // engine's one channel to the UI (spec: "the local database is
+            // the interface between the engine and the UI"). A fresh, empty
+            // table; [GalleryMirror.syncRunState] already reports an idle,
+            // all-zero snapshot when no row exists yet, so an upgraded
+            // device with no run in progress reads exactly as a fresh
+            // install would.
+            await m.createTable(syncRunState);
+          }
+          if (from < 10) {
+            // v10 (ticket 23) added [TokenRefreshLock] - the cross-isolate
+            // guard around the UI isolate's and the headless engine's own
+            // non-interactive OIDC refresh (see that table's class doc). A
+            // fresh, empty table - there is nothing to backfill, since a
+            // pre-upgrade device has never had a lock row to begin with, and
+            // an absent row already reads as "free" everywhere this table is
+            // consulted.
+            await m.createTable(tokenRefreshLock);
+          }
+          if (from < 11) {
+            // v11 (ticket 24) added [SyncRunState.lastSuccessAt] - "the time
+            // of the last successful pass is visible in the app, so silence
+            // is distinguishable from success" (this ticket's own
+            // criterion). [GalleryMirror.writeSyncRunState] backfills it
+            // itself the next time a run actually completes, so an upgraded
+            // device with a pre-existing `completed` row simply reads "no
+            // successful pass known yet" (null) until its next run, rather
+            // than needing a data migration to infer a historical value that
+            // was never recorded.
+            //
+            // A table rebuild ([alterTable]), not a plain [addColumn]:
+            // [syncRunState] is itself created mid-ladder (`if (from < 9)`
+            // above, not part of the v1 baseline `onCreate` creates), and
+            // [createTable] always builds a table from the CURRENT Dart
+            // definition - which, from this version on, already includes
+            // [SyncRunState.lastSuccessAt]. A device upgrading from below v9
+            // straight to v11+ therefore runs BOTH steps in the same
+            // `onUpgrade` call; a plain `addColumn` here would then try to
+            // add a column the v9 step's `createTable` already created,
+            // failing with "duplicate column name" - exactly the failure a
+            // multi-version jump (installing after months away, not every
+            // intermediate release) makes routine, not exotic. [alterTable]
+            // recreates the table from the current schema and copies
+            // whatever rows existed under the old name regardless of
+            // whether they already happened to have this column, so it is
+            // correct on every upgrade path: a single-version v10->v11
+            // step, and a multi-version jump that never had a "before this
+            // column existed" moment to begin with.
+            //
+            // **Ticket 25 revised [newColumns] here**, even though this
+            // step is still nominally ticket 24's: [alterTable] rebuilds
+            // toward the table's CURRENT Dart definition regardless of
+            // which ladder step invokes it, so on a multi-version jump
+            // starting below v11 (this step and the `from < 13` step below
+            // both run in the same `onUpgrade` call), THIS rebuild is the
+            // first one to touch a table that also lacks
+            // [SyncRunState.globalBackoffUntil]/[globalBackoffStreak] -
+            // omitting them here made this step try to copy those two
+            // columns from an old table that does not have them yet
+            // (`no such column: global_backoff_until`). Listing them as new
+            // here too is harmless for a device already at v11 or v12 (that
+            // device skips this `if` entirely) and harmless for the
+            // multi-version-jump case (this rebuild leaves them at their
+            // default, then the `from < 13` step below rebuilds again and
+            // leaves them at that same default a second time - no data is
+            // ever lost, since neither column has existed anywhere before
+            // now).
+            await m.alterTable(TableMigration(
+              syncRunState,
+              newColumns: [
+                syncRunState.lastSuccessAt,
+                syncRunState.globalBackoffUntil,
+                syncRunState.globalBackoffStreak,
+              ],
+            ));
+          }
+          if (from < 12) {
+            // v12 (ticket 24 rework) added [SyncRunLock] - the mutual-
+            // exclusion lease preventing the WorkManager-triggered path and
+            // ticket 22's foreground-service path from running
+            // [GallerySyncEngine] at the same time ("background and
+            // foreground runs do not both process the same photo", this
+            // ticket's own criterion). A fresh, empty table - there is
+            // nothing to backfill, and an absent row already reads as
+            // "free" everywhere this table is consulted, the same shape
+            // [TokenRefreshLock] (v10) already established.
+            await m.createTable(syncRunLock);
+          }
+          if (from < 13) {
+            // v13 (ticket 25) added the queue-policy/failure-list columns.
+            //
+            // On [GalleryItems]: [localFirstSeenAt] (the priority-class
+            // boundary - "observed after setup or the last completed pass"),
+            // [uploadAttempts]/[uploadNextRetryAt] (per-item transient
+            // backoff) and [uploadFailureBucket]/[uploadFailureReason] (the
+            // permanent failure list). [GalleryItems] has been part of the
+            // base schema since v1 - never re-created mid-ladder the way
+            // [SyncRunState] was (see the `from < 7` step above for the same
+            // reasoning applied to [uploadState] et al.) - so a plain
+            // `addColumn` per column is safe on every upgrade path,
+            // including a multi-version jump.
+            await m.addColumn(galleryItems, galleryItems.localFirstSeenAt);
+            await m.addColumn(galleryItems, galleryItems.uploadAttempts);
+            await m.addColumn(galleryItems, galleryItems.uploadNextRetryAt);
+            await m.addColumn(galleryItems, galleryItems.uploadFailureBucket);
+            await m.addColumn(galleryItems, galleryItems.uploadFailureReason);
+
+            // [SyncRunState], by contrast, IS created mid-ladder (`if (from
+            // < 9)` above via `createTable`, which always builds from the
+            // CURRENT Dart definition) - so a multi-version jump from below
+            // v9 straight past v13 would already have these two columns
+            // from that step, and a plain `addColumn` here would then fail
+            // with "duplicate column name" - exactly ticket 24's
+            // [lastSuccessAt] bug, same root cause. Table rebuild via
+            // [alterTable], matching that precedent (see the `from < 11`
+            // step above).
+            await m.alterTable(TableMigration(
+              syncRunState,
+              newColumns: [
+                syncRunState.globalBackoffUntil,
+                syncRunState.globalBackoffStreak,
+              ],
+            ));
+          }
         },
         beforeOpen: (details) async {
           await customStatement('PRAGMA foreign_keys = ON');
+          // Ticket 22: the sync engine runs in its own headless isolate -
+          // its own OS process, for all SQLite's locking cares, given how
+          // `flutter_foreground_task` spins up a second `FlutterEngine` for
+          // it - with its own [GalleryMirrorDatabase] connection to this
+          // SAME file the UI isolate has open. WAL lets one writer and any
+          // number of readers proceed concurrently instead of a writer
+          // blocking every reader for the duration of its transaction, and
+          // the busy timeout makes a writer-vs-writer collision (both
+          // isolates committing at once) wait and retry instead of failing
+          // outright with SQLITE_BUSY - together, "the engine and the UI can
+          // both touch the database without corrupting it" (this ticket's
+          // own acceptance criterion) rather than merely "without crashing
+          // most of the time".
+          //
+          // Both are wrapped: an in-memory database (every test in this
+          // suite) silently keeps its "memory" journal mode rather than
+          // erroring on the WAL request, but the web build's sqlite3-over-
+          // WebAssembly executor is a different SQLite VFS entirely and
+          // nothing here should risk the gallery failing to open on a
+          // platform this pair of pragmas was never meant to change
+          // behaviour on in the first place - Sync Pairs, and therefore a
+          // second isolate ever touching this database at all, are Android-
+          // only (D7).
+          try {
+            await customStatement('PRAGMA journal_mode = WAL');
+          } catch (_) {}
+          try {
+            await customStatement('PRAGMA busy_timeout = 5000');
+          } catch (_) {}
         },
       );
 }
@@ -139,6 +349,13 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
 ///   walk an ascending index backwards to satisfy a `DESC` query directly;
 ///   a second, descending-only index here would exist purely to save SQLite
 ///   a reverse traversal it already knows how to do for free.
+/// - [idxGalleryItemsUploadTarget] (ticket 20) on `(uploadTargetProviderId,
+///   uploadTargetPath)` - the probe [GalleryMirror.applyPage] runs for every
+///   non-tombstone feed item to recognise "this is the exact file I uploaded,
+///   pending verification" before falling back to the ordinary dedup rules.
+///   Without it, every delta page item costs a full table scan looking for a
+///   row awaiting verification, on top of the dedup work the page already
+///   does.
 @TableIndex(
   name: 'idx_gallery_items_local_identity',
   columns: {
@@ -155,6 +372,10 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
 @TableIndex(
   name: 'idx_gallery_items_captured_at_id',
   columns: {#capturedAt, #id},
+)
+@TableIndex(
+  name: 'idx_gallery_items_upload_target',
+  columns: {#uploadTargetProviderId, #uploadTargetPath},
 )
 class GalleryItems extends Table {
   IntColumn get id => integer().autoIncrement()();
@@ -210,6 +431,109 @@ class GalleryItems extends Table {
   TextColumn get unsupported => text().withDefault(const Constant(''))();
   BoolColumn get metadataPending =>
       boolean().withDefault(const Constant(false))();
+
+  // --- Ticket 20: verification through the delta feed ---
+
+  /// Null when no upload is currently pending verification for this row -
+  /// which is every row except a `device` one [GalleryMirror.recordUploaded]
+  /// has written to. Four non-null values, one of two pairs depending on
+  /// HOW the row got here (ticket 20's rework - the distinction matters
+  /// because only one of the two may ever have its remote file deleted):
+  ///
+  /// - `'uploaded'` - a real PUT succeeded; [GalleryMirror.applyPage] is
+  ///   watching the feed for confirmation at ([uploadTargetProviderId],
+  ///   [uploadTargetPath]).
+  /// - `'assumed'` - the ticket-19 "same size, assume it's ours" shortcut
+  ///   fired instead: nothing was PUT, this device merely believes a
+  ///   pre-existing file at the target path is its own content.
+  /// - `'mismatch'` - a row that was `'uploaded'`, but the feed reported a
+  ///   length that contradicts what this device sent. The remote file IS
+  ///   this device's own upload, so it cannot be trusted and
+  ///   [GalleryUploadService.retryMismatchedUpload] deletes it and retries.
+  /// - `'assumedMismatch'` - a row that was `'assumed'`, but the feed
+  ///   contradicted it. This device never wrote that file, so the mismatch
+  ///   only disproves the assumption - it is never permission to delete
+  ///   someone else's content. [GalleryUploadService.retryMismatchedUpload]
+  ///   falls back to ticket 19's different-size collision rule instead:
+  ///   disambiguate to a new name, leaving the file exactly as it was.
+  ///
+  /// Cleared back to null the moment verification actually succeeds - at
+  /// that point [origin] has already flipped to `both`, which is what makes
+  /// "Synced" true; this column exists only to gate that flip on the feed
+  /// rather than on the upload response (CONTEXT.md's **Verified**, D10 in
+  /// `docs/gallery-mode-design-notes.md`). Plain text, not a Dart enum
+  /// column, for the same reason [origin] is.
+  TextColumn get uploadState => text().nullable()();
+
+  /// The exact (providerId, path) [GalleryUploadService.upload] PUT to, or
+  /// found already occupied by this device's own content - **the path the
+  /// photo actually went to, not a recipe for deriving it** (ticket 19),
+  /// which matters here specifically because a disambiguated upload's real
+  /// path cannot be recomputed from the Sync Pair alone. Set together with
+  /// [uploadState] by [GalleryMirror.recordUploaded]; read back by
+  /// [GalleryMirror.applyPage] to recognise the delta feed independently
+  /// reporting this exact file. Both null whenever [uploadState] is.
+  TextColumn get uploadTargetProviderId => text().nullable()();
+  TextColumn get uploadTargetPath => text().nullable()();
+
+  // --- Ticket 25: queue policy and failure buckets ---
+
+  /// Epoch milliseconds this row was first written as a fresh Device only
+  /// row by [GalleryMirror._upsertLocalItem] - null for a row created before
+  /// this column existed, and for every cloud-origin row (a device row's
+  /// local identity columns are the only ones this ever gates on). This is
+  /// the spec's "observed" moment, deliberately NOT [capturedAt]: a photo
+  /// migrated onto a new phone (copied over, no reliable EXIF) can have an
+  /// old or missing capture date while only being SEEN by this device's
+  /// mirror for the first time today, and the priority split needs to tell
+  /// "newly discovered" apart from "long-owned" even when the two disagree
+  /// with when the picture was actually taken.
+  ///
+  /// [GalleryMirror.itemsPendingUpload] compares this against the queue
+  /// policy's priority-class baseline (the last completed pass, or - before
+  /// any pass has ever completed - "everything currently pending", since
+  /// there is no historical backlog yet to preempt) to split the queue into
+  /// the spec's two priority classes.
+  IntColumn get localFirstSeenAt => integer().nullable()();
+
+  /// How many consecutive TRANSIENT upload failures (see
+  /// [GalleryUploadFailureBucket] in `gallery_upload_backend.dart`) this row
+  /// has had in a row, reset to 0 the moment an attempt succeeds. Drives
+  /// [uploadNextRetryAt]'s exponential per-item backoff - see
+  /// [GallerySyncEngine] (`../sync/gallery_sync_engine.dart`) for the
+  /// schedule. Never incremented for a PERMANENT failure - see
+  /// [uploadFailureBucket] - which stops retrying altogether rather than
+  /// backing off.
+  IntColumn get uploadAttempts => integer().withDefault(const Constant(0))();
+
+  /// Epoch milliseconds before which [GalleryMirror.itemsPendingUpload] must
+  /// not re-offer this row - the per-item half of the spec's "transient
+  /// failures retry with per-item exponential backoff". Null means no
+  /// backoff is currently in effect (the common case: never failed, or
+  /// failed and already past its window).
+  IntColumn get uploadNextRetryAt => integer().nullable()();
+
+  /// Null for every row except one [GallerySyncEngine] gave up retrying -
+  /// `'permanent'` once a PERMANENT failure (read-only Space, out of
+  /// storage, or an upload-side error this engine cannot itself recover
+  /// from) stops it. A row with this set is excluded from
+  /// [GalleryMirror.itemsPendingUpload] entirely (never silently retried
+  /// forever) and appears instead in [GalleryMirror.failedUploadItems] - the
+  /// spec's "visible failure list" - until [GalleryMirror.retryFailedUpload]
+  /// clears it back to null, which is what "the failure list can be
+  /// retried... requires no reconfiguration" means in code: clearing this
+  /// column is the whole retry, no Sync Pair or setting is ever touched.
+  /// Plain text, not a Dart enum column, for the same forward-compatibility
+  /// reason [origin]/[uploadState]/[status] all are - only one value exists
+  /// today, but a future second failure bucket needing its own visible list
+  /// (there is no such thing planned) would not need a schema change.
+  TextColumn get uploadFailureBucket => text().nullable()();
+
+  /// A message fit to show the user directly alongside a
+  /// [uploadFailureBucket] `'permanent'` row in the failure list - whatever
+  /// [GalleryUploadException.message] the failing attempt carried. Null
+  /// whenever [uploadFailureBucket] is.
+  TextColumn get uploadFailureReason => text().nullable()();
 
   @override
   List<Set<Column>> get uniqueKeys => [
@@ -304,4 +628,310 @@ class LocalFolderSelections extends Table {
 
   @override
   Set<Column> get primaryKey => {folderPath};
+}
+
+/// Ticket 18's Sync Pairs: one row per configured mapping from a Local
+/// Source on this device to a folder in Seraph. Everything under the local
+/// folder is meant to be uploaded there, relative path preserved (ticket 19,
+/// not this one - see [GalleryMirror.createSyncPair]'s "no network" note).
+///
+/// **Local, not server-side** (CONTEXT.md's Sync Pair entry, D4/D18 in
+/// `docs/gallery-mode-design-notes.md`): a Sync Pair references a Local
+/// Source that exists on exactly one device, so losing this table to a data
+/// wipe costs a reconfiguration, never data - unlike Gallery Source Folders,
+/// which live server-side because the thumbnail pre-generator needs to read
+/// them and cannot reach into a phone's local database.
+///
+/// **Ticket 21 revised what "one row per Local Source" means.** A Sync Pair
+/// is no longer deleted on removal - [GalleryMirror.removeSyncPair] sets
+/// [removedAt] instead - and [localFolderPath] is consequently no longer a
+/// unique column: a retargeted Local Source (delete-pair-plus-create-pair)
+/// leaves an old, removed row and a new, active one both carrying the same
+/// [localFolderPath]. **A Local Source may still appear in at most one
+/// ACTIVE Sync Pair** ([removedAt] null), enforced the same way ticket 18's
+/// overlap rule always was - [GalleryMirror.createSyncPair] checking before
+/// insert, scoped to active rows only - so retargeting the same folder is
+/// exactly the "delete then create" the spec calls for, not blocked by a
+/// leftover historical row.
+///
+/// **Why keep the old rows at all, rather than truly deleting them:** the
+/// spec's rule for the remote path function surviving a retarget is *current
+/// target for writes, all targets for lookups*. [GalleryMirror.
+/// expectedUploadTarget] (a write) reads only the active row for a Local
+/// Source. Dedup and reconcile ([GalleryMirror._upsertLocalItem],
+/// [GalleryMirror.applyPage]) are lookups - they consult every row a Local
+/// Source has EVER had, active or not, because a photo already sitting at an
+/// old target does not stop being backed up just because the pair that put
+/// it there was replaced. Without this, a reinstall (or any reconcile pass)
+/// after a retarget would only know about the new target, find nothing at
+/// the old one, and duplicate every photo already there - the exact failure
+/// `.scratch/gallery-mode/spec.md`'s "Remote path is a pure function"
+/// section warns about.
+///
+/// Named `SyncPairRow` rather than drift's default `SyncPair` (see
+/// [DataClassName] below) because `SyncPair` is already
+/// [GalleryMirror]'s own public, richer model - id plus both sides plus
+/// [SyncPair.photoCount] - which callers outside the mirror actually use.
+@DataClassName('SyncPairRow')
+class SyncPairs extends Table {
+  IntColumn get id => integer().autoIncrement()();
+
+  /// The device-side Local Source - on Android, MediaStore's `RELATIVE_PATH`
+  /// for the folder (e.g. `DCIM/Camera/`), exactly the string
+  /// [GalleryItems.localRelativePath] and [LocalFolderSelections.folderPath]
+  /// use, so "which folder" means the same thing everywhere in the mirror.
+  /// Coverage of a subfolder is a plain string-prefix test against this
+  /// value (both always trailing-slash-terminated, so `DCIM/Camera/` can
+  /// never falsely prefix-match `DCIM/Camera2/`).
+  TextColumn get localFolderPath => text()();
+
+  /// The Seraph folder side, in Space terms - the same
+  /// (spaceProviderId, path) pair [GallerySourceFolder] uses, since this
+  /// folder IS one (ticket 18's rule: a Sync Pair's Seraph folder
+  /// automatically becomes a Gallery Source Folder). This is THIS row's
+  /// target - current if [removedAt] is null, historical otherwise; see the
+  /// class doc for how the two are used differently.
+  TextColumn get spaceProviderId => text()();
+  TextColumn get path => text()();
+
+  /// Epoch milliseconds this pair was created - used only to order
+  /// [GalleryMirror.listSyncPairs] (oldest first, so the list does not
+  /// reorder itself as photo counts change).
+  IntColumn get createdAt => integer().withDefault(const Constant(0))();
+
+  /// Null while this pair is active (the normal state for every row before
+  /// ticket 21). Set to the epoch milliseconds [GalleryMirror.removeSyncPair]
+  /// ran at otherwise - the row is kept, never deleted, purely as a
+  /// historical target for dedup/reconcile lookups (see the class doc).
+  /// [GalleryMirror.listSyncPairs] (the UI's list) and every "current
+  /// target" computation filter this to null; dedup/reconcile lookups do
+  /// not filter on it at all.
+  IntColumn get removedAt => integer().nullable()();
+}
+
+/// Ticket 22's headless sync engine progress: the engine's ONLY channel to
+/// the UI (spec/`docs/gallery-mode-design-notes.md` D11: "the local database
+/// is the interface between the engine and the UI - the engine writes state,
+/// the UI observes and renders"). [GallerySyncEngine]
+/// (`../sync/gallery_sync_engine.dart`) writes this after every item it
+/// processes; [GalleryDataSyncController] (`../sync/gallery_data_sync_controller.dart`)
+/// polls it to drive the in-app progress UI, and the foreground service's own
+/// notification text is updated from the very same row - so the notification
+/// and the app can never disagree about how a run is going, because there is
+/// only one row either of them could be reading.
+///
+/// **Always exactly one row** ([id] is always [GalleryMirror.syncRunStateId])
+/// - there is only ever one backup run at a time (one foreground service, one
+/// engine instance), so this is a snapshot, not a log.
+///
+/// **Why a row survives the app/engine that wrote it dying mid-run:** on
+/// restart, nothing here is treated as proof a run is still active - see
+/// [GalleryMirror.syncRunState]'s doc and [GalleryDataSyncController]'s
+/// reconciliation - so a `running` row left behind by a killed process is
+/// read as "was running, is not now" (correctable to `paused`) rather than as
+/// a stuck state.
+class SyncRunState extends Table {
+  TextColumn get id => text()();
+
+  /// One of [GalleryMirror.syncStatusIdle]/[syncStatusRunning]/
+  /// [syncStatusPaused]/[syncStatusCompleted]/[syncStatusError] - plain text,
+  /// not a Dart enum column, for the same forward-compatibility reason
+  /// [GalleryItems.origin] is.
+  TextColumn get status => text()();
+
+  /// How many items [GallerySyncEngine.run] queued for this run in total -
+  /// retries (ticket 20's mismatched uploads) and fresh backlog alike. Fixed
+  /// for the run's lifetime; only [completedItems] and [failedItems] move.
+  IntColumn get totalItems => integer().withDefault(const Constant(0))();
+
+  /// How many of [totalItems] have been attempted (successfully or not) so
+  /// far - what "photos remaining" (this ticket's own progress criterion) is
+  /// `totalItems - completedItems - failedItems` from.
+  IntColumn get completedItems => integer().withDefault(const Constant(0))();
+
+  /// How many of [totalItems] threw rather than completing - counted
+  /// separately from [completedItems] so a run that hit failures does not
+  /// silently read as fully done. A visible, actionable failure list is
+  /// ticket 25's job; this is only the count.
+  IntColumn get failedItems => integer().withDefault(const Constant(0))();
+
+  /// The approximate total byte volume [totalItems] represents - "roughly
+  /// how much data" (this ticket's own progress criterion), summed from each
+  /// item's local file size once, up front, not re-measured per item.
+  IntColumn get totalBytes => integer().withDefault(const Constant(0))();
+
+  /// Bytes actually moved so far - only items that resulted in a real PUT or
+  /// the ticket-19 same-size short-circuit add to this; an item skipped for
+  /// any other reason (no Sync Pair, device file gone) advances
+  /// [completedItems] without moving this.
+  IntColumn get completedBytes => integer().withDefault(const Constant(0))();
+
+  /// The most recent per-item failure's message, or null - a single value,
+  /// not a log, because a real failure list (ticket 25) is out of this
+  /// ticket's scope; this exists only so the UI has something more useful to
+  /// show than a bare failure count while that ticket is still ahead.
+  TextColumn get lastError => text().nullable()();
+
+  /// Epoch milliseconds this row was last written - what
+  /// [GalleryDataSyncController] uses to notice a `running` row has gone
+  /// stale (see its own reconciliation doc) if it is ever extended to time
+  /// out a run whose process vanished without the courtesy of a final write.
+  IntColumn get updatedAt => integer().withDefault(const Constant(0))();
+
+  /// Ticket 24: epoch milliseconds the most recent run that reached
+  /// [GalleryMirror.syncStatusCompleted] finished at, or null if no run ever
+  /// has. **Never regresses** - [GalleryMirror.writeSyncRunState] carries the
+  /// previous value forward on every write that is not itself a completed
+  /// run, so a `running`/`paused`/`error` write never clears it. This is
+  /// what makes "silence distinguishable from success" (the ticket's own
+  /// wording) possible: an unattended scheduled run that silently stops
+  /// firing (a killed process, a revoked permission, a constraint that never
+  /// clears) leaves this timestamp visibly going stale in the UI, rather
+  /// than the UI having no way to tell "quietly up to date" from "quietly
+  /// not running at all".
+  IntColumn get lastSuccessAt => integer().nullable()();
+
+  /// Ticket 25: epoch milliseconds before which [GallerySyncEngine] must not
+  /// attempt ANY network call at all - the queue policy's GLOBAL backoff, as
+  /// opposed to [GalleryItems.uploadNextRetryAt]'s per-item one. Set once a
+  /// run trips the breaker (several consecutive TRANSIENT failures in a
+  /// row - see [GallerySyncEngine.run]), so a downed server stops the whole
+  /// run from hammering every remaining item's connection instead of only
+  /// slowing down each one individually ("a downed server does not produce
+  /// thousands of independent retry storms", the spec's own wording). Null
+  /// means no global backoff is currently in effect. Carried forward by
+  /// [GalleryMirror.writeSyncRunState] on every write that does not itself
+  /// change it, the same convention [lastSuccessAt] uses, so an unrelated
+  /// write (the UI's stale-`running`-row reconciliation, in particular)
+  /// never accidentally clears an active backoff.
+  IntColumn get globalBackoffUntil => integer().nullable()();
+
+  /// How many times in a row the global breaker has tripped - what
+  /// [globalBackoffUntil]'s exponential schedule is computed from. Reset to
+  /// 0 the moment a run either uploads something successfully or trips no
+  /// breaker at all (the server is reachable again), carried forward
+  /// otherwise - the same [lastSuccessAt]-style convention.
+  IntColumn get globalBackoffStreak =>
+      integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// Ticket 23's cross-isolate token-refresh lock: a DB-backed mutex so the UI
+/// isolate ([LoginController], `../../login/login_controller.dart`) and the
+/// headless sync engine's own isolate (`_loadHeadlessSession` in
+/// `../sync/gallery_sync_task_handler.dart`) never both call the OIDC token
+/// endpoint's refresh grant at the same time. This matters specifically
+/// because the app's refresh token ROTATES on every use: a second, truly
+/// concurrent refresh presents a refresh token the first refresh has already
+/// invalidated server-side, and the whole session dies silently - during an
+/// unattended overnight backup, the worst possible moment to find out (spec:
+/// "Token refresh is guarded by a database-backed cross-isolate lock").
+///
+/// Read and written through [GalleryMirror.tryAcquireTokenRefreshLock] /
+/// [GalleryMirror.releaseTokenRefreshLock] / [GalleryMirror.
+/// tokenRefreshLockHeld] - never directly - and the actual refresh callers on
+/// both isolates go through `refreshTokenWithLock` in
+/// `../sync/token_refresh_coordination.dart`, which is what turns "one
+/// isolate holds the lock" into "the loser reads the persisted token instead
+/// of refreshing again" (ticket 23's own acceptance criterion).
+///
+/// Lives under `gallery/mirror/` alongside every other mirror table even
+/// though [LoginController] is not gallery-specific, because
+/// [GalleryMirrorDatabase] is the only storage this app has that is already
+/// open, as the SAME on-disk file, from both isolates - exactly what "the
+/// lock must live in shared persistent storage, since isolates share no
+/// memory" (this ticket's own text) requires. A second, auth-specific
+/// database would only duplicate that property for no benefit.
+///
+/// **Always at most one row** ([id] is always [tokenRefreshLockId]) - the
+/// same single-well-known-row shape [SyncRunState] uses, for the same reason:
+/// there is only ever one refresh worth serialising against.
+///
+/// **Lease-based, not held until explicitly released.** [expiresAt] is what
+/// bounds how long a holder may keep the lock even if it is killed before it
+/// ever calls [GalleryMirror.releaseTokenRefreshLock] - an isolate reaped by
+/// the OS mid-refresh (the headless service's process, or the app itself)
+/// leaves a row behind that [GalleryMirror.tryAcquireTokenRefreshLock]'s own
+/// UPSERT `WHERE` clause treats as free again once [expiresAt] has passed,
+/// rather than a lock nothing could ever clear - this is what makes "An
+/// isolate killed while holding the lock does not deadlock the other" true
+/// without any process-liveness check, which neither isolate has any way to
+/// perform on the other. [holder] is diagnostic only - an isolate-identifying
+/// string recorded at acquisition - and plays no part in the acquisition
+/// decision itself: an unexpired lease is honoured regardless of who asks.
+class TokenRefreshLock extends Table {
+  TextColumn get id => text()();
+
+  /// Which isolate currently holds (or most recently held) the lock -
+  /// `'ui'` or `'headless'`, see the constants next to `refreshTokenWithLock`
+  /// in `../sync/token_refresh_coordination.dart`. Diagnostic only, per the
+  /// class doc.
+  TextColumn get holder => text()();
+
+  /// Epoch milliseconds the current holder acquired the lock at.
+  IntColumn get acquiredAt => integer()();
+
+  /// Epoch milliseconds the current lease expires at - past this point the
+  /// lock is free for another acquire regardless of whether
+  /// [GalleryMirror.releaseTokenRefreshLock] was ever called (see the class
+  /// doc's "lease-based" note).
+  IntColumn get expiresAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// Ticket 24's mutual-exclusion lock: the WorkManager-triggered path
+/// (`gallery_backup_scheduler_io.dart`) and ticket 22's foreground-service
+/// path (`gallery_sync_task_handler.dart`) both call
+/// [GallerySyncEngine.run] from their own cold headless isolate, and nothing
+/// about the engine itself (which rebuilds its queue from the mirror on
+/// every call, with no per-item claim) stops two of them running at once -
+/// the exact "background and foreground runs do not both process the same
+/// photo" failure this ticket's own criterion names. Guarded the same way
+/// ticket 23 guards concurrent token refresh: a lease-based lock in shared
+/// persistent storage, acquired via [GalleryMirror.tryAcquireSyncRunLock]
+/// before either path ever constructs a [GallerySyncEngine], never directly.
+///
+/// **A separate table from [TokenRefreshLock], not a repurposed row in it** -
+/// deliberately, even though the shape (single row, lease, atomic UPSERT) is
+/// identical: reusing the already-verified [TokenRefreshLock] table/methods
+/// for an unrelated resource would risk regressing ticket 23's approved
+/// behaviour for a change that has nothing to do with token refresh. This
+/// table and [GalleryMirror.tryAcquireSyncRunLock]/[releaseSyncRunLock] are
+/// self-contained, reusing the SAME lease-based atomic-UPSERT mechanism
+/// without touching the token-refresh code path at all.
+///
+/// **Self-renewing, unlike [TokenRefreshLock]**: a sync run can legitimately
+/// run far longer than one short refresh (an unattended overnight backlog,
+/// or a user-initiated foreground batch spanning hours), so
+/// [GalleryMirror.tryAcquireSyncRunLock]'s own WHERE clause lets the CURRENT
+/// holder re-acquire (extend) its own still-valid lease, which
+/// `runHeadlessGallerySync` (`gallery_headless_sync.dart`) does on a timer
+/// for as long as the engine is actually running. A holder that stops
+/// renewing - killed mid-run - still lets the lock expire and be reclaimed,
+/// the same "does not deadlock" guarantee ticket 23 established.
+class SyncRunLock extends Table {
+  TextColumn get id => text()();
+
+  /// Which entrypoint currently holds (or most recently held) the lock -
+  /// see `syncRunLockHolderForegroundService`/`syncRunLockHolderWorkManager`
+  /// in `../sync/gallery_headless_sync.dart`. Diagnostic only - acquisition
+  /// never depends on who is asking, only on whether the lease is free or
+  /// already held by that same holder.
+  TextColumn get holder => text()();
+
+  /// Epoch milliseconds the current holder (most recently) acquired or
+  /// renewed the lock at.
+  IntColumn get acquiredAt => integer()();
+
+  /// Epoch milliseconds the current lease expires at - past this point the
+  /// lock is free for another (different) holder to acquire, regardless of
+  /// whether [GalleryMirror.releaseSyncRunLock] was ever called.
+  IntColumn get expiresAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => {id};
 }

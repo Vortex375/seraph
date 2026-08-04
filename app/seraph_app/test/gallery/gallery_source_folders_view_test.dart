@@ -222,4 +222,95 @@ void main() {
               'the merged gallery right away');
     });
   });
+
+  // Ticket 18: the *Sync Pairs* section.
+  group('Sync Pairs', () {
+    testWidgets(
+        'the Sync Pairs section is absent entirely where there is no Local '
+        'Source, exactly like the device section it lives beside',
+        (tester) async {
+      setUpService();
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      expect(find.text('Sync Pairs'), findsNothing);
+    });
+
+    testWidgets(
+        'lists what each pair maps to and how many photos it covers',
+        (tester) async {
+      setUpServiceWithLocalSource();
+      await mirror.applyLocalScan([
+        localMediaItem(
+            relativePath: 'DCIM/Camera/', displayName: 'a.jpg', size: 1),
+        localMediaItem(
+            relativePath: 'DCIM/Camera/', displayName: 'b.jpg', size: 2),
+      ]);
+      await mirror.createSyncPair(
+        localFolderPath: 'DCIM/Camera/',
+        spaceProviderId: 'space-a',
+        path: '/Photos/Phone',
+      );
+
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      expect(find.text('Sync Pairs'), findsOneWidget);
+      expect(find.text('DCIM/Camera/ -> /space-a/Photos/Phone'),
+          findsOneWidget);
+      expect(find.text('2 photos covered'), findsOneWidget);
+    });
+
+    testWidgets(
+        'removing a Sync Pair takes it out of the list and the mirror, '
+        'without touching Gallery Source Folders', (tester) async {
+      setUpServiceWithLocalSource();
+      await mirror.createSyncPair(
+        localFolderPath: 'DCIM/Camera/',
+        spaceProviderId: 'space-a',
+        path: '/Photos/Phone',
+      );
+
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+      expect(find.text('DCIM/Camera/ -> /space-a/Photos/Phone'),
+          findsOneWidget);
+
+      await tester.tap(find.byTooltip('Remove Sync Pair'));
+      await tester.pumpAndSettle();
+      // Confirmation dialog.
+      await tester.tap(find.widgetWithText(FilledButton, 'Remove'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('DCIM/Camera/ -> /space-a/Photos/Phone'),
+          findsNothing);
+      expect(await mirror.listSyncPairs(), isEmpty);
+      // The In Seraph folder list is untouched - removing a pair never
+      // removes the Gallery Source Folder it created (D18).
+      expect(posted, isEmpty);
+    });
+
+    // Ticket 21: retargeting. Like the add-Sync-Pair flow (ticket 18's own
+    // note on this file), the nested FolderPickerDialog-then-confirm flow is
+    // not driven end to end here - it would need a stubbed WebDAV
+    // FileService, which nothing in this file sets up. Retarget's actual
+    // effect on the mirror (old target kept as history, new target used for
+    // new uploads) is covered at the mirror seam instead
+    // (`gallery_sync_pair_retarget_test.dart`); this just checks the action
+    // is wired into the tile.
+    testWidgets('a Sync Pair tile offers Retarget alongside Remove',
+        (tester) async {
+      setUpServiceWithLocalSource();
+      await mirror.createSyncPair(
+        localFolderPath: 'DCIM/Camera/',
+        spaceProviderId: 'space-a',
+        path: '/Photos/Phone',
+      );
+
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      expect(find.byTooltip('Retarget Sync Pair'), findsOneWidget);
+    });
+  });
 }

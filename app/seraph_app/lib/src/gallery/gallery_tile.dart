@@ -59,7 +59,16 @@ class GalleryTile extends StatelessWidget {
         Positioned(
           left: 3,
           bottom: 3,
-          child: _AvailabilityBadge(availability: current.availability),
+          child: _AvailabilityBadge(
+            availability: current.availability,
+            // Ticket 20, user story 18: an item this device has uploaded but
+            // the delta feed has not yet confirmed reads as still in
+            // progress, never as backed up - [current.availability] is
+            // already [GalleryAvailability.deviceOnly] here (it has to be),
+            // so this is purely which icon the badge shows, not a fourth
+            // Availability value.
+            awaitingVerification: current.isAwaitingVerification,
+          ),
         ),
       ],
     );
@@ -207,12 +216,36 @@ class _DeviceOnlyTile extends StatelessWidget {
 /// (ticket 15: "shown discreetly on the tile") - present but never
 /// competing with the photo for attention.
 class _AvailabilityBadge extends StatelessWidget {
-  const _AvailabilityBadge({required this.availability});
+  const _AvailabilityBadge({
+    required this.availability,
+    this.awaitingVerification = false,
+  });
 
   final GalleryAvailability availability;
 
+  /// Ticket 20: overrides the plain Device only icon with an in-progress one
+  /// - never applies to [GalleryAvailability.synced]/[GalleryAvailability.
+  /// cloudOnly], since only an unverified Device only item can be mid-upload.
+  final bool awaitingVerification;
+
   @override
   Widget build(BuildContext context) {
+    if (availability == GalleryAvailability.deviceOnly &&
+        awaitingVerification) {
+      return ExcludeSemantics(
+        child: Container(
+          key: const ValueKey('gallery-availability-badge-uploading'),
+          padding: const EdgeInsets.all(2),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.45),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: const Icon(Icons.cloud_sync_outlined,
+              size: 11, color: Colors.white),
+        ),
+      );
+    }
+
     final IconData icon;
     switch (availability) {
       case GalleryAvailability.deviceOnly:

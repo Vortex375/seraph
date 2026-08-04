@@ -29,6 +29,33 @@ class SettingsController extends GetxController {
   static const _keyOidcClientId = 'oidcClientId';
   late Rx<String?> _oidcClientId;
 
+  // Ticket 24: the three constraints spec user story 54 asks for - "choose
+  // whether uploads run only on unmetered networks, only while charging, and
+  // above a battery threshold". Read fresh by a plain `SettingsController()`
+  // instance from WHICHEVER isolate needs them - the UI isolate (to show the
+  // toggles and to reschedule when they change) and the WorkManager callback
+  // isolate (`gallery_backup_scheduler_io.dart`, to build that run's
+  // `Constraints` and to re-arm the content-uri trigger with the current
+  // values) - the same "read the same GetStorage box fresh from a cold
+  // isolate" pattern `loadHeadlessSyncSession` already uses for the server
+  // URL and OIDC settings (`gallery_headless_sync.dart`).
+  //
+  // Defaults lean conservative - a first run should never surprise a user
+  // with a mobile-data bill or a drained battery: unmetered-only and
+  // battery-not-low both default on, charging-required defaults off (it
+  // would make backup wait for a plug-in far more often than most users
+  // would want, given the other two already guard the resources people
+  // actually worry about).
+  static const _keyBackupRequireUnmeteredNetwork =
+      'backupRequireUnmeteredNetwork';
+  late Rx<bool> _backupRequireUnmeteredNetwork;
+
+  static const _keyBackupRequireCharging = 'backupRequireCharging';
+  late Rx<bool> _backupRequireCharging;
+
+  static const _keyBackupRequireBatteryNotLow = 'backupRequireBatteryNotLow';
+  late Rx<bool> _backupRequireBatteryNotLow;
+
   // getters
 
   Rx<ThemeMode> get themeMode => _themeMode;
@@ -37,6 +64,9 @@ class SettingsController extends GetxController {
   Rx<String> get fileBrowserViewMode => _fileBrowserViewMode;
   Rx<String?> get oidcIssuer => _oidcIssuer;
   Rx<String?> get oidcClientId => _oidcClientId;
+  Rx<bool> get backupRequireUnmeteredNetwork => _backupRequireUnmeteredNetwork;
+  Rx<bool> get backupRequireCharging => _backupRequireCharging;
+  Rx<bool> get backupRequireBatteryNotLow => _backupRequireBatteryNotLow;
 
    Future<void> init() async {
     _box = GetStorage('SeraphSettings', kIsWeb ? null : (await getApplicationSupportDirectory()).path);
@@ -44,6 +74,12 @@ class SettingsController extends GetxController {
 
     _themeMode = ThemeMode.values.byName(_box.read(_keyThemeMode) ?? ThemeMode.system.name).obs;
     _fileBrowserViewMode = Rx<String>(_box.read(_keyFileBrowserViewMode) ?? 'list');
+    _backupRequireUnmeteredNetwork =
+        Rx<bool>(_box.read(_keyBackupRequireUnmeteredNetwork) ?? true);
+    _backupRequireCharging =
+        Rx<bool>(_box.read(_keyBackupRequireCharging) ?? false);
+    _backupRequireBatteryNotLow =
+        Rx<bool>(_box.read(_keyBackupRequireBatteryNotLow) ?? true);
     if (kIsWeb) {
       if (kDebugMode) {
         _serverUrl = 'http://localhost:8080'.obs;
@@ -97,5 +133,20 @@ class SettingsController extends GetxController {
     _oidcIssuer.value = issuer;
     _box.write(_keyOidcIssuer, issuer);
     _box.write(_keyOidcClientId, clientId);
+  }
+
+  void setBackupRequireUnmeteredNetwork(bool value) {
+    _backupRequireUnmeteredNetwork.value = value;
+    _box.write(_keyBackupRequireUnmeteredNetwork, value);
+  }
+
+  void setBackupRequireCharging(bool value) {
+    _backupRequireCharging.value = value;
+    _box.write(_keyBackupRequireCharging, value);
+  }
+
+  void setBackupRequireBatteryNotLow(bool value) {
+    _backupRequireBatteryNotLow.value = value;
+    _box.write(_keyBackupRequireBatteryNotLow, value);
   }
 }
