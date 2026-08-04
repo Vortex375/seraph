@@ -16,7 +16,7 @@ apply.
 
 **Blocked by:** 17, 23
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] Photos back up with the app closed, without the user starting anything
 - [ ] A newly taken photo triggers an expedited run and starts uploading within seconds
