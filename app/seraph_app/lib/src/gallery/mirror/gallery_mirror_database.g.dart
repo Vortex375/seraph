@@ -2260,6 +2260,12 @@ class $SyncRunStateTable extends SyncRunState
       type: DriftSqlType.int,
       requiredDuringInsert: false,
       defaultValue: const Constant(0));
+  static const VerificationMeta _lastSuccessAtMeta =
+      const VerificationMeta('lastSuccessAt');
+  @override
+  late final GeneratedColumn<int> lastSuccessAt = GeneratedColumn<int>(
+      'last_success_at', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
   @override
   List<GeneratedColumn> get $columns => [
         id,
@@ -2270,7 +2276,8 @@ class $SyncRunStateTable extends SyncRunState
         totalBytes,
         completedBytes,
         lastError,
-        updatedAt
+        updatedAt,
+        lastSuccessAt
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -2331,6 +2338,12 @@ class $SyncRunStateTable extends SyncRunState
       context.handle(_updatedAtMeta,
           updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta));
     }
+    if (data.containsKey('last_success_at')) {
+      context.handle(
+          _lastSuccessAtMeta,
+          lastSuccessAt.isAcceptableOrUnknown(
+              data['last_success_at']!, _lastSuccessAtMeta));
+    }
     return context;
   }
 
@@ -2358,6 +2371,8 @@ class $SyncRunStateTable extends SyncRunState
           .read(DriftSqlType.string, data['${effectivePrefix}last_error']),
       updatedAt: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}updated_at'])!,
+      lastSuccessAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}last_success_at']),
     );
   }
 
@@ -2415,6 +2430,19 @@ class SyncRunStateData extends DataClass
   /// stale (see its own reconciliation doc) if it is ever extended to time
   /// out a run whose process vanished without the courtesy of a final write.
   final int updatedAt;
+
+  /// Ticket 24: epoch milliseconds the most recent run that reached
+  /// [GalleryMirror.syncStatusCompleted] finished at, or null if no run ever
+  /// has. **Never regresses** - [GalleryMirror.writeSyncRunState] carries the
+  /// previous value forward on every write that is not itself a completed
+  /// run, so a `running`/`paused`/`error` write never clears it. This is
+  /// what makes "silence distinguishable from success" (the ticket's own
+  /// wording) possible: an unattended scheduled run that silently stops
+  /// firing (a killed process, a revoked permission, a constraint that never
+  /// clears) leaves this timestamp visibly going stale in the UI, rather
+  /// than the UI having no way to tell "quietly up to date" from "quietly
+  /// not running at all".
+  final int? lastSuccessAt;
   const SyncRunStateData(
       {required this.id,
       required this.status,
@@ -2424,7 +2452,8 @@ class SyncRunStateData extends DataClass
       required this.totalBytes,
       required this.completedBytes,
       this.lastError,
-      required this.updatedAt});
+      required this.updatedAt,
+      this.lastSuccessAt});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -2439,6 +2468,9 @@ class SyncRunStateData extends DataClass
       map['last_error'] = Variable<String>(lastError);
     }
     map['updated_at'] = Variable<int>(updatedAt);
+    if (!nullToAbsent || lastSuccessAt != null) {
+      map['last_success_at'] = Variable<int>(lastSuccessAt);
+    }
     return map;
   }
 
@@ -2455,6 +2487,9 @@ class SyncRunStateData extends DataClass
           ? const Value.absent()
           : Value(lastError),
       updatedAt: Value(updatedAt),
+      lastSuccessAt: lastSuccessAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastSuccessAt),
     );
   }
 
@@ -2471,6 +2506,7 @@ class SyncRunStateData extends DataClass
       completedBytes: serializer.fromJson<int>(json['completedBytes']),
       lastError: serializer.fromJson<String?>(json['lastError']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
+      lastSuccessAt: serializer.fromJson<int?>(json['lastSuccessAt']),
     );
   }
   @override
@@ -2486,6 +2522,7 @@ class SyncRunStateData extends DataClass
       'completedBytes': serializer.toJson<int>(completedBytes),
       'lastError': serializer.toJson<String?>(lastError),
       'updatedAt': serializer.toJson<int>(updatedAt),
+      'lastSuccessAt': serializer.toJson<int?>(lastSuccessAt),
     };
   }
 
@@ -2498,7 +2535,8 @@ class SyncRunStateData extends DataClass
           int? totalBytes,
           int? completedBytes,
           Value<String?> lastError = const Value.absent(),
-          int? updatedAt}) =>
+          int? updatedAt,
+          Value<int?> lastSuccessAt = const Value.absent()}) =>
       SyncRunStateData(
         id: id ?? this.id,
         status: status ?? this.status,
@@ -2509,6 +2547,8 @@ class SyncRunStateData extends DataClass
         completedBytes: completedBytes ?? this.completedBytes,
         lastError: lastError.present ? lastError.value : this.lastError,
         updatedAt: updatedAt ?? this.updatedAt,
+        lastSuccessAt:
+            lastSuccessAt.present ? lastSuccessAt.value : this.lastSuccessAt,
       );
   SyncRunStateData copyWithCompanion(SyncRunStateCompanion data) {
     return SyncRunStateData(
@@ -2528,6 +2568,9 @@ class SyncRunStateData extends DataClass
           : this.completedBytes,
       lastError: data.lastError.present ? data.lastError.value : this.lastError,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      lastSuccessAt: data.lastSuccessAt.present
+          ? data.lastSuccessAt.value
+          : this.lastSuccessAt,
     );
   }
 
@@ -2542,14 +2585,24 @@ class SyncRunStateData extends DataClass
           ..write('totalBytes: $totalBytes, ')
           ..write('completedBytes: $completedBytes, ')
           ..write('lastError: $lastError, ')
-          ..write('updatedAt: $updatedAt')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('lastSuccessAt: $lastSuccessAt')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, status, totalItems, completedItems,
-      failedItems, totalBytes, completedBytes, lastError, updatedAt);
+  int get hashCode => Object.hash(
+      id,
+      status,
+      totalItems,
+      completedItems,
+      failedItems,
+      totalBytes,
+      completedBytes,
+      lastError,
+      updatedAt,
+      lastSuccessAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -2562,7 +2615,8 @@ class SyncRunStateData extends DataClass
           other.totalBytes == this.totalBytes &&
           other.completedBytes == this.completedBytes &&
           other.lastError == this.lastError &&
-          other.updatedAt == this.updatedAt);
+          other.updatedAt == this.updatedAt &&
+          other.lastSuccessAt == this.lastSuccessAt);
 }
 
 class SyncRunStateCompanion extends UpdateCompanion<SyncRunStateData> {
@@ -2575,6 +2629,7 @@ class SyncRunStateCompanion extends UpdateCompanion<SyncRunStateData> {
   final Value<int> completedBytes;
   final Value<String?> lastError;
   final Value<int> updatedAt;
+  final Value<int?> lastSuccessAt;
   final Value<int> rowid;
   const SyncRunStateCompanion({
     this.id = const Value.absent(),
@@ -2586,6 +2641,7 @@ class SyncRunStateCompanion extends UpdateCompanion<SyncRunStateData> {
     this.completedBytes = const Value.absent(),
     this.lastError = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.lastSuccessAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   SyncRunStateCompanion.insert({
@@ -2598,6 +2654,7 @@ class SyncRunStateCompanion extends UpdateCompanion<SyncRunStateData> {
     this.completedBytes = const Value.absent(),
     this.lastError = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.lastSuccessAt = const Value.absent(),
     this.rowid = const Value.absent(),
   })  : id = Value(id),
         status = Value(status);
@@ -2611,6 +2668,7 @@ class SyncRunStateCompanion extends UpdateCompanion<SyncRunStateData> {
     Expression<int>? completedBytes,
     Expression<String>? lastError,
     Expression<int>? updatedAt,
+    Expression<int>? lastSuccessAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -2623,6 +2681,7 @@ class SyncRunStateCompanion extends UpdateCompanion<SyncRunStateData> {
       if (completedBytes != null) 'completed_bytes': completedBytes,
       if (lastError != null) 'last_error': lastError,
       if (updatedAt != null) 'updated_at': updatedAt,
+      if (lastSuccessAt != null) 'last_success_at': lastSuccessAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -2637,6 +2696,7 @@ class SyncRunStateCompanion extends UpdateCompanion<SyncRunStateData> {
       Value<int>? completedBytes,
       Value<String?>? lastError,
       Value<int>? updatedAt,
+      Value<int?>? lastSuccessAt,
       Value<int>? rowid}) {
     return SyncRunStateCompanion(
       id: id ?? this.id,
@@ -2648,6 +2708,7 @@ class SyncRunStateCompanion extends UpdateCompanion<SyncRunStateData> {
       completedBytes: completedBytes ?? this.completedBytes,
       lastError: lastError ?? this.lastError,
       updatedAt: updatedAt ?? this.updatedAt,
+      lastSuccessAt: lastSuccessAt ?? this.lastSuccessAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -2682,6 +2743,9 @@ class SyncRunStateCompanion extends UpdateCompanion<SyncRunStateData> {
     if (updatedAt.present) {
       map['updated_at'] = Variable<int>(updatedAt.value);
     }
+    if (lastSuccessAt.present) {
+      map['last_success_at'] = Variable<int>(lastSuccessAt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -2700,6 +2764,7 @@ class SyncRunStateCompanion extends UpdateCompanion<SyncRunStateData> {
           ..write('completedBytes: $completedBytes, ')
           ..write('lastError: $lastError, ')
           ..write('updatedAt: $updatedAt, ')
+          ..write('lastSuccessAt: $lastSuccessAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -4109,6 +4174,7 @@ typedef $$SyncRunStateTableCreateCompanionBuilder = SyncRunStateCompanion
   Value<int> completedBytes,
   Value<String?> lastError,
   Value<int> updatedAt,
+  Value<int?> lastSuccessAt,
   Value<int> rowid,
 });
 typedef $$SyncRunStateTableUpdateCompanionBuilder = SyncRunStateCompanion
@@ -4122,6 +4188,7 @@ typedef $$SyncRunStateTableUpdateCompanionBuilder = SyncRunStateCompanion
   Value<int> completedBytes,
   Value<String?> lastError,
   Value<int> updatedAt,
+  Value<int?> lastSuccessAt,
   Value<int> rowid,
 });
 
@@ -4162,6 +4229,9 @@ class $$SyncRunStateTableFilterComposer
 
   ColumnFilters<int> get updatedAt => $composableBuilder(
       column: $table.updatedAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get lastSuccessAt => $composableBuilder(
+      column: $table.lastSuccessAt, builder: (column) => ColumnFilters(column));
 }
 
 class $$SyncRunStateTableOrderingComposer
@@ -4201,6 +4271,10 @@ class $$SyncRunStateTableOrderingComposer
 
   ColumnOrderings<int> get updatedAt => $composableBuilder(
       column: $table.updatedAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get lastSuccessAt => $composableBuilder(
+      column: $table.lastSuccessAt,
+      builder: (column) => ColumnOrderings(column));
 }
 
 class $$SyncRunStateTableAnnotationComposer
@@ -4238,6 +4312,9 @@ class $$SyncRunStateTableAnnotationComposer
 
   GeneratedColumn<int> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get lastSuccessAt => $composableBuilder(
+      column: $table.lastSuccessAt, builder: (column) => column);
 }
 
 class $$SyncRunStateTableTableManager extends RootTableManager<
@@ -4277,6 +4354,7 @@ class $$SyncRunStateTableTableManager extends RootTableManager<
             Value<int> completedBytes = const Value.absent(),
             Value<String?> lastError = const Value.absent(),
             Value<int> updatedAt = const Value.absent(),
+            Value<int?> lastSuccessAt = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               SyncRunStateCompanion(
@@ -4289,6 +4367,7 @@ class $$SyncRunStateTableTableManager extends RootTableManager<
             completedBytes: completedBytes,
             lastError: lastError,
             updatedAt: updatedAt,
+            lastSuccessAt: lastSuccessAt,
             rowid: rowid,
           ),
           createCompanionCallback: ({
@@ -4301,6 +4380,7 @@ class $$SyncRunStateTableTableManager extends RootTableManager<
             Value<int> completedBytes = const Value.absent(),
             Value<String?> lastError = const Value.absent(),
             Value<int> updatedAt = const Value.absent(),
+            Value<int?> lastSuccessAt = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
               SyncRunStateCompanion.insert(
@@ -4313,6 +4393,7 @@ class $$SyncRunStateTableTableManager extends RootTableManager<
             completedBytes: completedBytes,
             lastError: lastError,
             updatedAt: updatedAt,
+            lastSuccessAt: lastSuccessAt,
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0

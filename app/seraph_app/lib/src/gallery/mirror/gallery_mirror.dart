@@ -1358,6 +1358,7 @@ class GalleryMirror {
           completedBytes: 0,
           lastError: null,
           updatedAt: 0,
+          lastSuccessAt: null,
         );
   }
 
@@ -1378,6 +1379,18 @@ class GalleryMirror {
     String? lastError,
     required int updatedAtMillis,
   }) async {
+    // Ticket 24: [SyncRunState.lastSuccessAt] only ever moves forward, and
+    // only on a write that itself reaches [syncStatusCompleted] - never
+    // cleared by a `running`/`paused`/`error` write in between, which is
+    // what makes it a record of "the last time backup finished", not "the
+    // last time backup was attempted". Read-modify-write rather than a SQL
+    // `COALESCE` against the previous row: this table has at most one row
+    // ([syncRunStateId]), so the extra read is one indexed lookup, not a
+    // scan.
+    final previous = await syncRunState();
+    final lastSuccessAt = status == syncStatusCompleted
+        ? updatedAtMillis
+        : previous.lastSuccessAt;
     await _db.into(_db.syncRunState).insertOnConflictUpdate(
           SyncRunStateCompanion(
             id: const Value(syncRunStateId),
@@ -1389,6 +1402,7 @@ class GalleryMirror {
             completedBytes: Value(completedBytes),
             lastError: Value(lastError),
             updatedAt: Value(updatedAtMillis),
+            lastSuccessAt: Value(lastSuccessAt),
           ),
         );
   }

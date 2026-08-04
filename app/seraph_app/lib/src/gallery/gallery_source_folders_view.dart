@@ -9,7 +9,9 @@ import 'package:seraph_app/src/gallery/gallery_service.dart';
 import 'package:seraph_app/src/gallery/local/local_scan_service.dart';
 import 'package:seraph_app/src/gallery/local_folder_picker_dialog.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
+import 'package:seraph_app/src/gallery/sync/gallery_backup_schedule_coordinator.dart';
 import 'package:seraph_app/src/gallery/sync/gallery_data_sync_controller.dart';
+import 'package:seraph_app/src/settings/settings_controller.dart';
 
 /// Which folders feed Gallery Mode - *In Seraph* (what this screen has always
 /// shown), on a device with a Local Source, *On this device* (ticket 29):
@@ -51,6 +53,21 @@ class _GallerySourceFoldersViewState extends State<GallerySourceFoldersView> {
   final GalleryDataSyncController? _dataSyncController =
       Get.isRegistered<GalleryDataSyncController>()
           ? Get.find<GalleryDataSyncController>()
+          : null;
+
+  /// Ticket 24: null in exactly the same tests/builds [_dataSyncController]
+  /// is null in - used both to keep WorkManager's scheduled triggers current
+  /// after a Sync Pair changes ([_syncBackupSchedule]) and, together with
+  /// [_settingsController], to show the constraint toggles in
+  /// [_BackupConstraintsSection].
+  final GalleryBackupScheduleCoordinator? _scheduleCoordinator =
+      Get.isRegistered<GalleryBackupScheduleCoordinator>()
+          ? Get.find<GalleryBackupScheduleCoordinator>()
+          : null;
+
+  final SettingsController? _settingsController =
+      Get.isRegistered<SettingsController>()
+          ? Get.find<SettingsController>()
           : null;
 
   /// Whether this platform has a Local Source at all (Android, with the
@@ -248,6 +265,17 @@ class _GallerySourceFoldersViewState extends State<GallerySourceFoldersView> {
 
     await _loadFolders();
     _resyncGallery();
+    unawaited(_syncBackupSchedule());
+  }
+
+  /// Ticket 24: re-evaluates what WorkManager has scheduled after anything
+  /// that can change the answer - a Sync Pair created, removed or
+  /// retargeted. Never awaited by its callers: rescheduling talks to the
+  /// platform's WorkManager plugin, which this screen's own responsiveness
+  /// should never wait on, and a failure here has no useful UI action to
+  /// take beyond what the next call already retries.
+  Future<void> _syncBackupSchedule() async {
+    await _scheduleCoordinator?.syncSchedule();
   }
 
   Future<void> _removeSyncPair(SyncPair pair) async {
@@ -282,6 +310,7 @@ class _GallerySourceFoldersViewState extends State<GallerySourceFoldersView> {
 
     await mirror.removeSyncPair(pair.id);
     await _loadFolders();
+    unawaited(_syncBackupSchedule());
   }
 
   /// Ticket 21: retargeting, spelled out in the UI exactly as the spec
@@ -362,6 +391,7 @@ class _GallerySourceFoldersViewState extends State<GallerySourceFoldersView> {
 
     await _loadFolders();
     _resyncGallery();
+    unawaited(_syncBackupSchedule());
   }
 
   /// Triggers a genuine File Provider re-scan of [folder] and starts polling
@@ -542,6 +572,21 @@ class _GallerySourceFoldersViewState extends State<GallerySourceFoldersView> {
           if (_dataSyncController != null) ...[
             const Divider(height: 32),
             _BackupSection(controller: _dataSyncController),
+          ],
+          // Ticket 24: the constraints governing the SCHEDULED (unattended)
+          // runs WorkManager triggers - distinct from the manual start/pause
+          // above, which the user is looking at the screen for anyway. Shown
+          // alongside it under the same "no Local Source, no section" rule,
+          // gated on the settings controller being registered rather than on
+          // the coordinator, since the toggles themselves only write
+          // settings - [_syncBackupSchedule] is what actually needs the
+          // coordinator, and is a no-op without one.
+          if (_dataSyncController != null && _settingsController != null) ...[
+            const SizedBox(height: 8),
+            _BackupConstraintsSection(
+              settings: _settingsController,
+              onChanged: _syncBackupSchedule,
+            ),
           ],
         ],
       ],
@@ -728,6 +773,18 @@ class _BackupSection extends StatelessWidget {
                       Text('Backup', style: theme.textTheme.titleSmall),
                       const SizedBox(height: 4),
                       Text(statusText, style: theme.textTheme.bodySmall),
+                      // Ticket 24: "the time of the last successful pass is
+                      // visible in the app, so silence is distinguishable
+                      // from success" - shown regardless of [state.status],
+                      // since the whole point is to still say something
+                      // useful while a scheduled run is silently NOT
+                      // happening (a constraint that never clears, a killed
+                      // process) rather than only while one is in progress.
+                      Text(
+                        _lastBackupText(state.lastSuccessAt),
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: theme.hintColor),
+                      ),
                       if (state.totalItems > 0)
                         Padding(
                           padding: const EdgeInsets.only(top: 8),
@@ -759,6 +816,95 @@ class _BackupSection extends StatelessWidget {
           ),
         );
       }),
+    );
+  }
+}
+
+/// "Never" for a fresh install/pair that has never once finished a run,
+/// otherwise a short relative-time rendering of [lastSuccessAt] - deliberately
+/// not just "since the app was last opened", because the whole point (ticket
+/// 24's own criterion) is that this stays accurate for a run that happened
+/// with the app closed.
+String _lastBackupText(int? lastSuccessAt) {
+  if (lastSuccessAt == null) {
+    return 'Last backup: never';
+  }
+  final when = DateTime.fromMillisecondsSinceEpoch(lastSuccessAt);
+  final age = DateTime.now().difference(when);
+  final String relative;
+  if (age.inMinutes < 1) {
+    relative = 'just now';
+  } else if (age.inMinutes < 60) {
+    relative = '${age.inMinutes} min ago';
+  } else if (age.inHours < 24) {
+    relative = '${age.inHours} h ago';
+  } else {
+    relative = '${age.inDays} d ago';
+  }
+  return 'Last backup: $relative';
+}
+
+/// Ticket 24's constraint toggles: "the user can require unmetered network,
+/// charging, and a battery threshold, and those choices are honoured" (this
+/// ticket's own criterion). Purely a settings editor - it writes
+/// [SettingsController] and calls [onChanged], never talks to
+/// [GalleryBackupScheduler] itself, which is what keeps this widget testable
+/// without a real WorkManager and keeps "what gets scheduled" in exactly one
+/// place ([GalleryBackupScheduleCoordinator]).
+class _BackupConstraintsSection extends StatelessWidget {
+  const _BackupConstraintsSection({
+    required this.settings,
+    required this.onChanged,
+  });
+
+  final SettingsController settings;
+  final Future<void> Function() onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+              child: Text('Scheduled backup', style: theme.textTheme.titleSmall),
+            ),
+            Obx(() => SwitchListTile(
+                  dense: true,
+                  title: const Text('Wi-Fi / unmetered only'),
+                  subtitle: const Text('Never use mobile data'),
+                  value: settings.backupRequireUnmeteredNetwork.value,
+                  onChanged: (value) {
+                    settings.setBackupRequireUnmeteredNetwork(value);
+                    unawaited(onChanged());
+                  },
+                )),
+            Obx(() => SwitchListTile(
+                  dense: true,
+                  title: const Text('Only while charging'),
+                  value: settings.backupRequireCharging.value,
+                  onChanged: (value) {
+                    settings.setBackupRequireCharging(value);
+                    unawaited(onChanged());
+                  },
+                )),
+            Obx(() => SwitchListTile(
+                  dense: true,
+                  title: const Text('Pause when battery is low'),
+                  value: settings.backupRequireBatteryNotLow.value,
+                  onChanged: (value) {
+                    settings.setBackupRequireBatteryNotLow(value);
+                    unawaited(onChanged());
+                  },
+                )),
+          ],
+        ),
+      ),
     );
   }
 }

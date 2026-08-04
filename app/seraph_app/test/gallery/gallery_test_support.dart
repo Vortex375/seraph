@@ -448,6 +448,14 @@ class FakeSettingsController extends GetxController
   final Rx<ThemeMode> _themeMode = Rx<ThemeMode>(ThemeMode.light);
   final Rx<String> _fileBrowserViewMode = 'list'.obs;
 
+  // Ticket 24's three backup constraint settings - defaults mirror
+  // SettingsController's own (unmetered-only and battery-not-low on,
+  // charging off), overridable per-test via the setters below rather than
+  // the constructor, since most tests that use this fake do not care.
+  final Rx<bool> _backupRequireUnmeteredNetwork = true.obs;
+  final Rx<bool> _backupRequireCharging = false.obs;
+  final Rx<bool> _backupRequireBatteryNotLow = true.obs;
+
   @override
   Rx<String> get serverUrl => _serverUrl;
 
@@ -465,6 +473,27 @@ class FakeSettingsController extends GetxController
 
   @override
   Rx<String> get fileBrowserViewMode => _fileBrowserViewMode;
+
+  @override
+  Rx<bool> get backupRequireUnmeteredNetwork => _backupRequireUnmeteredNetwork;
+
+  @override
+  Rx<bool> get backupRequireCharging => _backupRequireCharging;
+
+  @override
+  Rx<bool> get backupRequireBatteryNotLow => _backupRequireBatteryNotLow;
+
+  @override
+  void setBackupRequireUnmeteredNetwork(bool value) =>
+      _backupRequireUnmeteredNetwork.value = value;
+
+  @override
+  void setBackupRequireCharging(bool value) =>
+      _backupRequireCharging.value = value;
+
+  @override
+  void setBackupRequireBatteryNotLow(bool value) =>
+      _backupRequireBatteryNotLow.value = value;
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

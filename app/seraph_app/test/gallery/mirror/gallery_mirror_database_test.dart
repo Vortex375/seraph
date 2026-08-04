@@ -805,6 +805,136 @@ void main() {
       );
     });
 
+    test(
+        'an app upgrade from v10 adds the ticket-24 last_success_at column '
+        'without losing existing rows, the sync_run_state row, or the '
+        'token_refresh_lock table', () async {
+      final file = File(p.join(tempDir.path, 'mirror.sqlite'));
+
+      // A v10 database - everything through ticket 23's TokenRefreshLock
+      // exists, but sync_run_state has no last_success_at column yet.
+      final v10Raw = sqlite3.sqlite3.open(file.path);
+      v10Raw.execute('''
+        CREATE TABLE gallery_items (
+          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+          origin TEXT NOT NULL DEFAULT 'cloud',
+          provider_id TEXT NULL,
+          path TEXT NULL,
+          seq INTEGER NULL,
+          local_relative_path TEXT NULL,
+          local_display_name TEXT NULL,
+          local_size INTEGER NULL,
+          local_date_taken INTEGER NULL,
+          captured_at INTEGER NOT NULL,
+          captured_at_source TEXT NOT NULL DEFAULT '',
+          width INTEGER NOT NULL DEFAULT 0,
+          height INTEGER NOT NULL DEFAULT 0,
+          orientation INTEGER NOT NULL DEFAULT 0,
+          size INTEGER NOT NULL DEFAULT 0,
+          mime TEXT NOT NULL DEFAULT '',
+          unsupported TEXT NOT NULL DEFAULT '',
+          metadata_pending INTEGER NOT NULL DEFAULT 0,
+          upload_state TEXT NULL,
+          upload_target_provider_id TEXT NULL,
+          upload_target_path TEXT NULL,
+          UNIQUE(provider_id, path)
+        );
+      ''');
+      v10Raw.execute('''
+        CREATE TABLE sync_cursors (
+          source TEXT NOT NULL PRIMARY KEY,
+          since INTEGER NOT NULL DEFAULT 0,
+          pending_cursor TEXT NULL
+        );
+      ''');
+      v10Raw.execute('''
+        CREATE TABLE cached_thumbnails (
+          provider_id TEXT NOT NULL,
+          path TEXT NOT NULL,
+          size INTEGER NOT NULL,
+          bytes BLOB NOT NULL,
+          fetched_at INTEGER NOT NULL,
+          PRIMARY KEY (provider_id, path, size)
+        );
+      ''');
+      v10Raw.execute('''
+        CREATE TABLE local_folder_selections (
+          folder_path TEXT NOT NULL PRIMARY KEY,
+          selected INTEGER NOT NULL
+        );
+      ''');
+      v10Raw.execute('''
+        CREATE TABLE sync_pairs (
+          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+          local_folder_path TEXT NOT NULL,
+          space_provider_id TEXT NOT NULL,
+          path TEXT NOT NULL,
+          created_at INTEGER NOT NULL DEFAULT 0,
+          removed_at INTEGER NULL
+        );
+      ''');
+      v10Raw.execute('''
+        CREATE INDEX idx_gallery_items_upload_target
+          ON gallery_items (upload_target_provider_id, upload_target_path);
+      ''');
+      v10Raw.execute('''
+        CREATE TABLE sync_run_state (
+          id TEXT NOT NULL PRIMARY KEY,
+          status TEXT NOT NULL,
+          total_items INTEGER NOT NULL DEFAULT 0,
+          completed_items INTEGER NOT NULL DEFAULT 0,
+          failed_items INTEGER NOT NULL DEFAULT 0,
+          total_bytes INTEGER NOT NULL DEFAULT 0,
+          completed_bytes INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT NULL,
+          updated_at INTEGER NOT NULL DEFAULT 0
+        );
+      ''');
+      v10Raw.execute('''
+        CREATE TABLE token_refresh_lock (
+          id TEXT NOT NULL PRIMARY KEY,
+          holder TEXT NOT NULL,
+          acquired_at INTEGER NOT NULL,
+          expires_at INTEGER NOT NULL
+        );
+      ''');
+      v10Raw.execute(
+        "INSERT INTO gallery_items (origin, provider_id, path, seq, captured_at) "
+        "VALUES ('cloud', 'space-a', '/Photos/a.jpg', 5, 1000);",
+      );
+      v10Raw.execute(
+        "INSERT INTO sync_run_state (id, status, total_items, completed_items, updated_at) "
+        "VALUES ('default', 'completed', 3, 3, 5000);",
+      );
+      v10Raw.execute('PRAGMA user_version = 10;');
+      v10Raw.close();
+
+      final db = GalleryMirrorDatabase(NativeDatabase(file));
+      addTearDown(db.close);
+
+      // Everything that existed before the upgrade survived.
+      final items = await db.select(db.galleryItems).get();
+      expect(items, hasLength(1));
+      expect(items.single.path, '/Photos/a.jpg');
+
+      // The pre-existing sync_run_state row survived the table rebuild,
+      // with last_success_at defaulting to null - a device that upgrades
+      // straight to this version has no recorded "last successful pass"
+      // until its next run actually completes, even if an old row happens
+      // to already read `completed`; GalleryMirror.writeSyncRunState is the
+      // only thing that ever sets it, never the migration itself.
+      final mirror = GalleryMirror(db);
+      final runState = await mirror.syncRunState();
+      expect(runState.status, 'completed');
+      expect(runState.totalItems, 3);
+      expect(runState.completedItems, 3);
+      expect(runState.lastSuccessAt, null);
+
+      // token_refresh_lock (ticket 23) is untouched by this migration step.
+      final lockRows = await db.select(db.tokenRefreshLock).get();
+      expect(lockRows, isEmpty);
+    });
+
     test('a fresh install creates the current schema directly via onCreate',
         () async {
       final db = GalleryMirrorDatabase(NativeDatabase.memory());

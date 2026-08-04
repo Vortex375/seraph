@@ -14,9 +14,11 @@ import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_sync_service.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_upload_backend.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_upload_service.dart';
+import 'package:seraph_app/src/gallery/sync/gallery_backup_schedule_coordinator.dart';
 import 'package:seraph_app/src/gallery/sync/gallery_data_sync_controller.dart';
 import 'package:seraph_app/src/media_player/audio_player_controller.dart';
 import 'package:seraph_app/src/search/search_service.dart';
+import 'package:seraph_app/src/settings/settings_controller.dart';
 import 'package:seraph_app/src/spaces_admin/spaces_list_controller.dart';
 import 'package:seraph_app/src/spaces_admin/spaces_service.dart';
 
@@ -66,6 +68,17 @@ class InitialBinding extends Bindings {
     // createGalleryDataSyncService() is (every platform without a Local
     // Source), so there is nothing to gate here either.
     Get.put(GalleryDataSyncController(galleryMirror));
+    // Ticket 24: keeps WorkManager's scheduled periodic/expedited backup
+    // triggers in sync with the active Sync Pairs and the user's constraint
+    // settings - see the coordinator's own doc for why "is there anything
+    // to schedule" and "under what constraints" are both re-evaluated here
+    // rather than assumed to stay whatever they were at app start.
+    // Registered unconditionally, like GalleryDataSyncController above -
+    // GalleryBackupScheduleCoordinator.isSupported is false wherever
+    // createGalleryBackupScheduler() is (every platform without a Local
+    // Source), so there is nothing to gate here either.
+    Get.put(GalleryBackupScheduleCoordinator(
+        galleryMirror, Get.find<SettingsController>()));
     Get.put(GalleryImageLoader(Get.find(), Get.find(), galleryMirrorDatabase));
     // Ticket 28: loads device-photo pixels through the same Local Source the
     // scan above uses. Null-safe on its own when localScanService.localSource

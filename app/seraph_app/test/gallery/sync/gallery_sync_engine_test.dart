@@ -272,6 +272,9 @@ void main() {
               'requestPause() was called completes');
       final pausedState = await mirror.syncRunState();
       expect(pausedState.status, syncStatusPaused);
+      expect(pausedState.lastSuccessAt, isNull,
+          reason: 'ticket 24: a paused run has not completed, so there is '
+              'no successful pass to record yet');
 
       final resumed = await engine.run();
       expect(resumed.outcome, GallerySyncOutcome.completed);
@@ -282,6 +285,67 @@ void main() {
       final finalState = await mirror.syncRunState();
       expect(finalState.status, syncStatusCompleted);
       expect(finalState.completedItems, finalState.totalItems);
+      expect(finalState.lastSuccessAt, isNotNull,
+          reason: 'ticket 24: the run that actually finished must record '
+              'when it did');
+    });
+
+    // Ticket 24's own criterion: "the time of the last successful pass is
+    // visible in the app, so silence is distinguishable from success" -
+    // covered at the mirror seam directly against
+    // [GalleryMirror.writeSyncRunState], the single place [lastSuccessAt] is
+    // computed, rather than only indirectly through the engine.
+    test('SyncRunState.lastSuccessAt is set only when a run completes, and '
+        'never regresses on a later write that does not', () async {
+      var now = DateTime.fromMillisecondsSinceEpoch(1000000);
+      final engine = GallerySyncEngine(mirror, uploadService, now: () => now);
+
+      // An empty queue still writes syncStatusCompleted (see
+      // GallerySyncEngine.run's own "nothingToDo" doc) - lastSuccessAt must
+      // be set even though nothing was uploaded, since "successful pass"
+      // means the run finished, not that it moved bytes.
+      await engine.run();
+      final afterFirst = await mirror.syncRunState();
+      expect(afterFirst.status, syncStatusCompleted);
+      expect(afterFirst.lastSuccessAt, now.millisecondsSinceEpoch);
+
+      // A later write that does NOT complete (paused, or - as here, driven
+      // directly to also cover the error case a real run's failed session
+      // load produces) must carry the earlier timestamp forward untouched,
+      // not clear it or move it.
+      now = now.add(const Duration(hours: 1));
+      await mirror.writeSyncRunState(
+        status: syncStatusError,
+        totalItems: 0,
+        completedItems: 0,
+        failedItems: 0,
+        totalBytes: 0,
+        completedBytes: 0,
+        lastError: 'Not signed in',
+        updatedAtMillis: now.millisecondsSinceEpoch,
+      );
+      final afterError = await mirror.syncRunState();
+      expect(afterError.status, syncStatusError);
+      expect(afterError.lastSuccessAt, afterFirst.lastSuccessAt,
+          reason: 'a run that never even started must not erase the record '
+              'of the last time one actually finished - that is exactly '
+              'what makes silence distinguishable from success');
+
+      // A later write that DOES complete moves it forward again.
+      now = now.add(const Duration(hours: 1));
+      await mirror.writeSyncRunState(
+        status: syncStatusCompleted,
+        totalItems: 1,
+        completedItems: 1,
+        failedItems: 0,
+        totalBytes: 10,
+        completedBytes: 10,
+        updatedAtMillis: now.millisecondsSinceEpoch,
+      );
+      final afterSecondSuccess = await mirror.syncRunState();
+      expect(afterSecondSuccess.lastSuccessAt, now.millisecondsSinceEpoch);
+      expect(afterSecondSuccess.lastSuccessAt,
+          greaterThan(afterFirst.lastSuccessAt!));
     });
   });
 }

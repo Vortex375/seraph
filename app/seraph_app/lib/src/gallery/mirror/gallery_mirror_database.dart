@@ -44,7 +44,7 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
   }
 
   @override
-  int get schemaVersion => 10;
+  int get schemaVersion => 11;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -162,6 +162,40 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
             // an absent row already reads as "free" everywhere this table is
             // consulted.
             await m.createTable(tokenRefreshLock);
+          }
+          if (from < 11) {
+            // v11 (ticket 24) added [SyncRunState.lastSuccessAt] - "the time
+            // of the last successful pass is visible in the app, so silence
+            // is distinguishable from success" (this ticket's own
+            // criterion). [GalleryMirror.writeSyncRunState] backfills it
+            // itself the next time a run actually completes, so an upgraded
+            // device with a pre-existing `completed` row simply reads "no
+            // successful pass known yet" (null) until its next run, rather
+            // than needing a data migration to infer a historical value that
+            // was never recorded.
+            //
+            // A table rebuild ([alterTable]), not a plain [addColumn]:
+            // [syncRunState] is itself created mid-ladder (`if (from < 9)`
+            // above, not part of the v1 baseline `onCreate` creates), and
+            // [createTable] always builds a table from the CURRENT Dart
+            // definition - which, from this version on, already includes
+            // [SyncRunState.lastSuccessAt]. A device upgrading from below v9
+            // straight to v11+ therefore runs BOTH steps in the same
+            // `onUpgrade` call; a plain `addColumn` here would then try to
+            // add a column the v9 step's `createTable` already created,
+            // failing with "duplicate column name" - exactly the failure a
+            // multi-version jump (installing after months away, not every
+            // intermediate release) makes routine, not exotic. [alterTable]
+            // recreates the table from the current schema and copies
+            // whatever rows existed under the old name regardless of
+            // whether they already happened to have this column, so it is
+            // correct on every upgrade path: a single-version v10->v11
+            // step, and a multi-version jump that never had a "before this
+            // column existed" moment to begin with.
+            await m.alterTable(TableMigration(
+              syncRunState,
+              newColumns: [syncRunState.lastSuccessAt],
+            ));
           }
         },
         beforeOpen: (details) async {
@@ -612,6 +646,19 @@ class SyncRunState extends Table {
   /// stale (see its own reconciliation doc) if it is ever extended to time
   /// out a run whose process vanished without the courtesy of a final write.
   IntColumn get updatedAt => integer().withDefault(const Constant(0))();
+
+  /// Ticket 24: epoch milliseconds the most recent run that reached
+  /// [GalleryMirror.syncStatusCompleted] finished at, or null if no run ever
+  /// has. **Never regresses** - [GalleryMirror.writeSyncRunState] carries the
+  /// previous value forward on every write that is not itself a completed
+  /// run, so a `running`/`paused`/`error` write never clears it. This is
+  /// what makes "silence distinguishable from success" (the ticket's own
+  /// wording) possible: an unattended scheduled run that silently stops
+  /// firing (a killed process, a revoked permission, a constraint that never
+  /// clears) leaves this timestamp visibly going stale in the UI, rather
+  /// than the UI having no way to tell "quietly up to date" from "quietly
+  /// not running at all".
+  IntColumn get lastSuccessAt => integer().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
