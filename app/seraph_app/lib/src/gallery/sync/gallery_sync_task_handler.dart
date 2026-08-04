@@ -273,13 +273,20 @@ Future<_HeadlessSession?> _loadHeadlessSession(GalleryMirror mirror) async {
     await manager.init();
     // Ticket 23: guarded rather than a bare `manager.refreshToken()` - see
     // this function's own doc. The loser reads via a throwaway probe
-    // manager's `init()` ([_readPersistedHeadlessUser]) rather than
-    // reaching for the package's protected `loadCachedTokens()` internals.
+    // manager's `init()` ([_readPersistedHeadlessUser]), which also adopts
+    // that result into [manager] itself (`LockedOidcUserManager.
+    // adoptPersistedUser`) so it never keeps holding a rotated-away token -
+    // required here even more than in `LoginController`, since this isolate
+    // can run for hours during an overnight backup, spanning several token
+    // lifetimes. [manager] is built via [_buildHeadlessManager] as a
+    // [LockedOidcUserManager], whose own internal expiry-driven auto-refresh
+    // is disabled - this call is the ONLY path to the token endpoint this
+    // manager ever takes.
     final user = await refreshTokenWithLock<OidcUser?>(
       mirror: mirror,
       holder: headlessTokenRefreshLockHolder,
       refresh: () => manager.refreshToken(),
-      readPersisted: () => _readPersistedHeadlessUser(issuer, clientId),
+      readPersisted: () => _readPersistedHeadlessUser(manager, issuer, clientId),
     );
     if (user == null) {
       return null;
@@ -294,17 +301,29 @@ Future<_HeadlessSession?> _loadHeadlessSession(GalleryMirror mirror) async {
   }
 }
 
-/// Builds a fresh [OidcUserManager] against [issuer]/[clientId] - the exact
-/// construction [_loadHeadlessSession] already did inline before ticket 23,
-/// now shared with [_readPersistedHeadlessUser]'s throwaway probe manager
-/// below, so the two never drift apart on redirect URI, scope or store.
-OidcUserManager _buildHeadlessManager(String issuer, String clientId) {
+/// Builds a fresh [LockedOidcUserManager] against [issuer]/[clientId] - the
+/// exact construction [_loadHeadlessSession] already did inline before
+/// ticket 23, now shared with [_readPersistedHeadlessUser]'s throwaway probe
+/// manager below, so the two never drift apart on redirect URI, scope or
+/// store.
+///
+/// Always [LockedOidcUserManager], never the plain package
+/// `OidcUserManager` - ticket 23's rule (set by the foreman after the first
+/// review round) is that NO call to the token endpoint may happen outside
+/// [refreshTokenWithLock], including ones the `oidc` package itself makes
+/// internally. This is the headless isolate, which can run unattended for
+/// hours during an overnight backup - the worst place to leave either of
+/// the package's own internal refresh paths armed. [LockedOidcUserManager]
+/// closes the expiry-timer path; [lockedOidcSettings] (used for `settings`,
+/// below) closes `init()`'s own cached-token revalidation path. See both
+/// their class docs (`token_refresh_coordination.dart`).
+LockedOidcUserManager _buildHeadlessManager(String issuer, String clientId) {
   const secureStorage = FlutterSecureStorage();
-  return OidcUserManager.lazy(
+  return LockedOidcUserManager.lazy(
     discoveryDocumentUri: OidcUtils.getOpenIdConfigWellKnownUri(Uri.parse(issuer)),
     clientCredentials: OidcClientAuthentication.none(clientId: clientId),
     store: OidcDefaultStore(secureStorageInstance: secureStorage),
-    settings: OidcUserManagerSettings(
+    settings: lockedOidcSettings(
       redirectUri: Uri.parse('net.umbasa.seraph.app:/oaut2redirect'),
       scope: const ['openid', 'profile', 'email', 'offline_access'],
     ),
@@ -314,18 +333,29 @@ OidcUserManager _buildHeadlessManager(String issuer, String clientId) {
 /// Ticket 23's "re-reads the persisted token" side of the lock, for the
 /// headless isolate - mirrors [LoginController]'s own
 /// `_readPersistedUser` (`../../login/login_controller.dart`): a throwaway
-/// manager, built fresh and `init()`'d then disposed, never reused, so the
-/// read goes through the package's public cold-start restore path rather
-/// than its protected `loadCachedTokens()`/`createUserFromToken()`
-/// internals. Never calls `.refreshToken()` itself - whatever `.init()`
-/// restores from secure storage (already updated by the lock's winner, by
-/// the time this runs) is authoritative.
+/// [LockedOidcUserManager], built fresh and `init()`'d then disposed, never
+/// reused for anything else, so the read goes through the package's public
+/// cold-start restore path rather than its protected `loadCachedTokens()`/
+/// `createUserFromToken()` internals. Never calls `.refreshToken()` itself -
+/// whatever `.init()` restores from secure storage (already updated by the
+/// lock's winner, by the time this runs) is authoritative.
+///
+/// Critically, this also feeds the result into [liveManager] via
+/// [LockedOidcUserManager.adoptPersistedUser] - without that, [liveManager]
+/// (the manager [_loadHeadlessSession] goes on to use for the rest of this
+/// run) would keep holding the PRE-refresh token in memory even though the
+/// lock's winner already rotated it away, so this isolate would present an
+/// already-invalidated refresh token the next time IT thinks a refresh is
+/// due - the exact overnight-backup logout ticket 23 exists to prevent, and
+/// the isolate most likely to actually hit it, since it can run for hours.
 Future<OidcUser?> _readPersistedHeadlessUser(
-    String issuer, String clientId) async {
+    LockedOidcUserManager liveManager, String issuer, String clientId) async {
   final probe = _buildHeadlessManager(issuer, clientId);
   try {
     await probe.init();
-    return probe.currentUser;
+    final user = probe.currentUser;
+    await liveManager.adoptPersistedUser(user);
+    return user;
   } finally {
     await probe.dispose();
   }

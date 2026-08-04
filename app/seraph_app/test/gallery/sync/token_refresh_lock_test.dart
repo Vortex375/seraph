@@ -1,12 +1,57 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:oidc/oidc.dart';
 import 'package:path/path.dart' as p;
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 import 'package:seraph_app/src/gallery/sync/token_refresh_coordination.dart';
+
+/// Base64url-encodes [value] the JWT way: no `=` padding (`dart:convert`'s
+/// `base64Url` codec pads by default; `decodeBase64EncodedBytes` on the
+/// `jose_plus` decode side re-adds it, but the encode side must strip it to
+/// look like a real token).
+String _b64(Object value) =>
+    base64Url.encode(utf8.encode(jsonEncode(value))).replaceAll('=', '');
+
+/// Builds a syntactically-valid but unsigned (`alg: none`) id_token JWT -
+/// enough for [OidcUser.fromIdToken] to parse with no `keystore` (the
+/// unverified path every call site in this app already uses for a manager
+/// it never asked to verify signatures itself), without any real OIDC
+/// provider to sign a real one against.
+String _fakeIdToken({required String sub}) {
+  final header = _b64({'alg': 'none', 'typ': 'JWT'});
+  final payload = _b64({
+    'sub': sub,
+    'iss': 'https://example.test',
+    'aud': 'test-client',
+    'iat': 0,
+    'exp': 9999999999,
+  });
+  return '$header.$payload.';
+}
+
+/// Builds an [OidcUser] carrying [refreshToken] as its current refresh
+/// token - standing in for "whatever a real token endpoint handed back",
+/// since this test never talks to one. [sub] varies the id_token subject so
+/// two users built by this helper are trivially distinguishable if needed.
+Future<OidcUser> _buildTestUser({
+  required String refreshToken,
+  String sub = 'user-1',
+}) {
+  return OidcUser.fromIdToken(
+    token: OidcToken(
+      creationTime: DateTime.now(),
+      accessToken: 'access-for-$refreshToken',
+      refreshToken: refreshToken,
+      idToken: _fakeIdToken(sub: sub),
+      expiresIn: const Duration(hours: 1),
+    ),
+  );
+}
 
 /// Ticket 23's cross-isolate token-refresh lock. Two Dart isolates never
 /// share memory (the ticket's own premise), so "two isolates" here is
@@ -249,6 +294,95 @@ void main() {
       // interval, not by the much larger waitTimeout - the lease expiring
       // is what actually ended the wait.
       expect(stopwatch.elapsedMilliseconds, lessThan(2000));
+    });
+  });
+
+  group('LockedOidcUserManager.adoptPersistedUser', () {
+    LockedOidcUserManager buildManager() => LockedOidcUserManager.lazy(
+          discoveryDocumentUri:
+              Uri.parse('https://example.test/.well-known/openid-configuration'),
+          clientCredentials: OidcClientAuthentication.none(
+            clientId: 'test-client',
+          ),
+          store: OidcMemoryStore(),
+          settings: lockedOidcSettings(
+            redirectUri: Uri.parse('http://localhost:0'),
+            scope: const ['openid'],
+          ),
+        );
+
+    // This is the ticket 23 (second review round) regression: a manager
+    // that LOSES the cross-isolate lock race must end up presenting the
+    // WINNER's refreshed token on its next `refreshToken()` call, not the
+    // stale pre-refresh token it still had in memory. `refreshToken()`
+    // itself needs a live token endpoint to drive in a unit test, so this
+    // asserts the actual mechanism `_readPersistedUser`/
+    // `_readPersistedHeadlessUser` rely on instead: after
+    // `adoptPersistedUser` runs, the manager's OWN `currentUser` (which is
+    // exactly what a later `refreshToken()` call reads to find the refresh
+    // token to present) and `userChanges()` both reflect the newly-adopted
+    // user, not the one the manager held before.
+    //
+    // Against the pre-rework code, this fails: `LockedOidcUserManager` (and
+    // its `adoptPersistedUser` method) did not exist at all - the loser's
+    // long-lived manager was never told about the winner's refresh, so it
+    // would keep reporting the stale, pre-refresh token forever.
+    test(
+        'adopting a fresh persisted user updates currentUser and '
+        'userChanges() to the winner\'s refreshed token, not the stale '
+        'pre-refresh one a loser\'s long-lived manager still held', () async {
+      final manager = buildManager();
+      addTearDown(manager.dispose);
+
+      expect(manager.currentUser, isNull);
+
+      // Models the loser's long-lived manager BEFORE this round's lock
+      // contention: it already holds SOME user, from whatever `init()` or
+      // an earlier successful refresh restored - the pre-refresh token the
+      // winner is about to rotate away on the server.
+      final staleUser = await _buildTestUser(refreshToken: 'stale-refresh-token');
+      await manager.adoptPersistedUser(staleUser);
+      expect(manager.currentUser?.token.refreshToken, 'stale-refresh-token');
+
+      final observed = <OidcUser?>[];
+      final sub = manager.userChanges().listen(observed.add);
+      // The value-caching stream replays the current value to a new
+      // listener synchronously - wait one microtask turn so that replay is
+      // observed before asserting on it below.
+      await pumpEventQueue();
+      expect(observed.single?.token.refreshToken, 'stale-refresh-token');
+
+      // The lock's winner already refreshed and persisted a NEW token on
+      // the server - this is what `_readPersistedUser`/
+      // `_readPersistedHeadlessUser` feed back into THIS SAME manager via
+      // `adoptPersistedUser`, rather than leaving it to find out on its
+      // own (it never will - its own expiry-driven auto-refresh is
+      // disabled; see `LockedOidcUserManager`'s class doc).
+      final freshUser = await _buildTestUser(refreshToken: 'fresh-refresh-token');
+      await manager.adoptPersistedUser(freshUser);
+
+      // What any LATER `manager.refreshToken()` call on this manager would
+      // present as the refresh token now reflects the winner's fresh one.
+      expect(manager.currentUser?.token.refreshToken, 'fresh-refresh-token');
+
+      await pumpEventQueue();
+      expect(observed.last?.token.refreshToken, 'fresh-refresh-token');
+      expect(observed.length, greaterThanOrEqualTo(2));
+
+      await sub.cancel();
+    });
+
+    test('adopting a null persisted user clears currentUser without '
+        'attempting to persist it', () async {
+      final manager = buildManager();
+      addTearDown(manager.dispose);
+
+      final user = await _buildTestUser(refreshToken: 'some-refresh-token');
+      await manager.adoptPersistedUser(user);
+      expect(manager.currentUser, isNotNull);
+
+      await manager.adoptPersistedUser(null);
+      expect(manager.currentUser, isNull);
     });
   });
 }
