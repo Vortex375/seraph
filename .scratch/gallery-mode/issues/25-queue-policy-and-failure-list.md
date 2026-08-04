@@ -26,15 +26,15 @@ than silently.
 
 **Blocked by:** 22
 
-**Status:** claimed
+**Status:** resolved
 
-- [ ] A photo taken during a large backlog run uploads before the remaining backlog
-- [ ] Within each priority class, newer photos upload first
-- [ ] Uploads run with a tunable parallelism, defaulting within three to four
-- [ ] Transient failures retry with increasing per-item delays
-- [ ] A server that is down triggers a global backoff rather than per-item retry storms
-- [ ] Permanent failures stop retrying and appear in a visible failure list with a comprehensible reason
-- [ ] The failure list can be retried by the user, and fixing the underlying cause requires no reconfiguration
-- [ ] A photo that changed or vanished mid-upload is re-queued or discarded and never marked synced
-- [ ] Deleting the queue entirely leaves the next run rebuilding it from a scan, with nothing re-uploaded that is already Verified
-- [ ] Covered at the app's mirror seam, including a deleted-queue rebuild test and a global-backoff test with a permanently failing backend
+- [x] A photo taken during a large backlog run uploads before the remaining backlog
+- [x] Within each priority class, newer photos upload first
+- [x] Uploads run with a tunable parallelism, defaulting within three to four
+- [x] Transient failures retry with increasing per-item delays
+- [x] A server that is down triggers a global backoff rather than per-item retry storms
+- [x] Permanent failures stop retrying and appear in a visible failure list with a comprehensible reason
+- [x] The failure list can be retried by the user, and fixing the underlying cause requires no reconfiguration
+- [x] A photo that changed or vanished mid-upload is re-queued or discarded and never marked synced
+- [x] Deleting the queue entirely leaves the next run rebuilding it from a scan, with nothing re-uploaded that is already Verified
+- [x] Covered at the app's mirror seam, including a deleted-queue rebuild test and a global-backoff test with a permanently failing backend

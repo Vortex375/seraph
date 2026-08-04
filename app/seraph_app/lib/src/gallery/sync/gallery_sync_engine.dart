@@ -47,11 +47,17 @@ class GallerySyncEngineResult {
 
   final GallerySyncOutcome outcome;
 
-  /// How many items [run] attempted without an exception - this counts every
-  /// [GalleryUploadResult], not only [GalleryUploadResult.uploaded]/
-  /// [GalleryUploadResult.alreadyPresent]: an item skipped for a reason that
-  /// is not this engine's job to police (no Sync Pair, device file gone) is
-  /// still "attempted", not "failed".
+  /// How many items [run] genuinely got into Seraph - only
+  /// [GalleryUploadResult.uploaded] and [GalleryUploadResult.alreadyPresent].
+  ///
+  /// Ticket 25 narrowed this deliberately. It used to count every
+  /// [GalleryUploadResult] that did not throw, on the reasoning that an item
+  /// skipped for a reason outside this engine's remit was still "attempted";
+  /// two review rounds established that reporting such an item as sent is a
+  /// silent-success bug, since nothing else ever surfaces it. Now
+  /// [GalleryUploadResult.deviceFileUnavailable] goes to the failure list, and
+  /// [GalleryUploadResult.noSyncPair]/[GalleryUploadResult.notApplicable] are
+  /// skipped without touching this counter at all.
   final int uploaded;
 
   /// How many items threw rather than completing.
