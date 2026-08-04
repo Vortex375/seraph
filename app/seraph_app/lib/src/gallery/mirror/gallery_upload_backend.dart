@@ -4,13 +4,17 @@ import 'package:dio/dio.dart';
 import 'package:seraph_app/src/file_browser/file_service.dart';
 
 /// Ticket 25's queue policy: which of the spec's two THROWN failure buckets
-/// a [GalleryUploadException] belongs to (the third bucket, "moved target" -
-/// the local file changed or vanished mid-upload - never throws at all; see
-/// [GalleryUploadResult.deviceFileChanged]/[GalleryUploadResult.
-/// deviceFileUnavailable] in `gallery_upload_service.dart` instead).
-/// [GallerySyncEngine] (`../sync/gallery_sync_engine.dart`) branches on this
-/// to decide per-item exponential backoff versus parking a row in the
-/// visible failure list - see that class's own doc for the schedule.
+/// a [GalleryUploadException] belongs to. The third bucket, "moved target" -
+/// a local file changed mid-upload - never throws at all; see
+/// [GalleryUploadResult.deviceFileChanged] in `gallery_upload_service.dart`
+/// instead. [GalleryUploadResult.deviceFileUnavailable] (an unreadable local
+/// file) also never throws, but is NOT "moved target" - [GallerySyncEngine]
+/// (`../sync/gallery_sync_engine.dart`) routes it to [permanent] by hand,
+/// since the ticket names "unreadable local file" as its own PERMANENT
+/// example and nothing would otherwise ever re-offer it usefully.
+/// [GallerySyncEngine] branches on THIS enum to decide per-item exponential
+/// backoff versus parking a row in the visible failure list - see that
+/// class's own doc for the schedule.
 enum GalleryUploadFailureBucket {
   /// Network gone, a 5xx, a timeout, "not connected" - anything that says
   /// nothing about THIS upload in particular and may well succeed on retry

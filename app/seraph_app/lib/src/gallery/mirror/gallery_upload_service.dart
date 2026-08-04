@@ -25,14 +25,23 @@ enum GalleryUploadResult {
   noSyncPair,
 
   /// The device copy could not be read - deleted, permission revoked, or no
-  /// Local Source on this platform at all.
+  /// Local Source on this platform at all. **Ticket 25 routes this to the
+  /// visible failure list as a PERMANENT failure** ([GallerySyncEngine.run],
+  /// `../sync/gallery_sync_engine.dart`) rather than counting it as
+  /// attempted-and-done: unlike [deviceFileChanged] below, nothing else ever
+  /// re-offers this item usefully on its own, so leaving it silently
+  /// uncounted would mean a photo this device can no longer read reads as
+  /// backed up forever.
   deviceFileUnavailable,
 
   /// The device copy changed size between being scanned and being read for
   /// upload, or the mirror row was no longer the same device item by the
   /// time the upload finished (deleted or replaced by a racing scan). Either
   /// way, ticket 19's "deleted or modified mid-upload is not marked synced"
-  /// criterion: nothing here is marked Synced.
+  /// criterion: nothing here is marked Synced. **Deliberately left alone by
+  /// ticket 25** - the row's [GalleryItems.uploadState] stays null, so the
+  /// very next scan/run offers it again on its own; a racing scan or a
+  /// same-second edit resolves itself without any failure-bucket bookkeeping.
   deviceFileChanged,
 
   /// [item] was not a Device only row to begin with - nothing for this

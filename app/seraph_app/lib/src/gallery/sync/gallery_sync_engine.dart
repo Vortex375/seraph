@@ -103,12 +103,21 @@ class GallerySyncEngineResult {
 ///   or [GalleryUploadFailureBucket.permanent] ([GalleryMirror.
 ///   recordUploadFailure] parks the row in the visible failure list,
 ///   [GalleryMirror.failedUploadItems]). The third bucket - "moved target",
-///   a local file changed or vanished mid-upload - never throws at all:
-///   [GalleryUploadResult.deviceFileChanged]/[GalleryUploadResult.
-///   deviceFileUnavailable] already leave [GalleryItems.uploadState] null,
-///   so the row is simply offered again by [GalleryMirror.itemsPendingUpload]
-///   on the very next run with no bookkeeping of its own needed - exactly
-///   "re-queue... never mark synced".
+///   a local file changed mid-upload - never throws at all:
+///   [GalleryUploadResult.deviceFileChanged] leaves [GalleryItems.uploadState]
+///   null, so the row is simply offered again by [GalleryMirror.
+///   itemsPendingUpload] on the very next run with no bookkeeping of its own
+///   needed - exactly "re-queue... never mark synced". [GalleryUploadResult.
+///   deviceFileUnavailable] is NOT this bucket, despite also never throwing:
+///   an unreadable local file (permission revoked, or gone in a way
+///   [LocalSource] cannot even confirm) is the ticket's own PERMANENT
+///   example, so [run] routes it to [GalleryMirror.recordUploadFailure] by
+///   hand - see the `deviceFileUnavailable` branch in the worker loop below.
+///   Every [GalleryUploadResult] the worker loop can see is accounted for
+///   one of these three ways, or as a genuine success ([uploaded]/
+///   [alreadyPresent]/[noSyncPair]/[notApplicable] - the last two mean "nothing
+///   for this engine to do", never "silently failed"); none is simply
+///   dropped.
 class GallerySyncEngine {
   GallerySyncEngine(
     this.mirror,
@@ -304,10 +313,30 @@ class GallerySyncEngine {
           final result = isRetry
               ? await uploadService.retryMismatchedUpload(item)
               : await uploadService.upload(item);
-          completedItems++;
-          consecutiveTransientFailures = 0;
-          if (_movedBytes(result)) {
-            completedBytes += _approximateBytes(item);
+          if (result == GalleryUploadResult.deviceFileUnavailable) {
+            // Ticket 25 (post-verification fix): the ticket's own PERMANENT
+            // example - "unreadable local file" - and unlike
+            // [GalleryUploadResult.deviceFileChanged] below, nothing re-offers
+            // this usefully on its own: the row would otherwise stay a
+            // silent, invisible "Device only" forever (permission revoked,
+            // or the file genuinely gone in a way [LocalSource] cannot even
+            // confirm), read by the user as "not backed up yet" rather than
+            // "backup is stuck and needs attention". [GalleryUploadService.
+            // upload]/[retryMismatchedUpload] never throw for this - it is a
+            // return value, not an exception - so it is routed to the same
+            // [GalleryMirror.recordUploadFailure] a thrown PERMANENT
+            // [GalleryUploadException] uses, by hand, right here.
+            failedItems++;
+            const reason = 'Seraph could not read this photo from the '
+                'device - check that photo access is still granted.';
+            lastError = reason;
+            await mirror.recordUploadFailure(item, reason);
+          } else {
+            completedItems++;
+            consecutiveTransientFailures = 0;
+            if (_movedBytes(result)) {
+              completedBytes += _approximateBytes(item);
+            }
           }
         } on GalleryUploadException catch (e) {
           failedItems++;

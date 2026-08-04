@@ -581,9 +581,11 @@ void main() {
       });
 
       test(
-          'a device file that vanished mid-upload is simply offered again '
-          'next run - never marked synced, never added to the failure '
-          'list', () async {
+          'a device copy this engine cannot read (permission revoked, or '
+          'the file genuinely gone) is a PERMANENT failure - parked in the '
+          'visible failure list, never silently counted as completed - and '
+          'retrying it re-attempts for real once the file is readable '
+          'again', () async {
         final photo = await scanDevicePhoto(
           displayName: 'IMG_0001.jpg',
           capturedAtSeconds: 1000,
@@ -594,20 +596,76 @@ void main() {
         final engine = GallerySyncEngine(mirror, uploadService);
         final first = await engine.run();
         expect(first.outcome, GallerySyncOutcome.completed);
-        expect(first.uploaded, 1,
-            reason: 'attempted, not failed - deviceFileUnavailable is not '
-                'this engine\'s job to police (ticket 22)');
-        expect(first.failed, 0);
-        expect(backend.putCalls, isEmpty);
-        expect(await mirror.failedUploadItems(), isEmpty);
+        expect(first.uploaded, 0,
+            reason: 'an unreadable local file must NOT be counted as '
+                'completed - that is exactly the silent-success defect '
+                'this bucket exists to close');
+        expect(first.failed, 1);
+        expect(backend.putCalls, isEmpty,
+            reason: 'never even reaches the network - caught on the local '
+                'read, same as before');
 
+        final failures = await mirror.failedUploadItems();
+        expect(failures, hasLength(1));
+        expect(failures.single.id, photo.id);
+        expect(failures.single.uploadFailureReason, isNotNull);
+
+        // Excluded from the ordinary queue, exactly like any other
+        // PERMANENT failure - never silently retried forever.
+        expect(await mirror.itemsPendingUpload(), isEmpty);
         final row =
             (await mirror.queryItems()).firstWhere((i) => i.id == photo.id);
         expect(row.availability, GalleryAvailability.deviceOnly);
 
-        // The file reappears - the very next run re-offers it with no
-        // special recovery action needed, exactly "re-queued... never
-        // mark synced".
+        // The user regains photo access; the file is readable again. The
+        // existing Retry action (GalleryMirror.retryFailedUpload) clears
+        // the bucket, and the very next run genuinely re-attempts rather
+        // than immediately re-parking it.
+        localSource.setLocalBytes(
+            'DCIM/Camera/', 'IMG_0001.jpg', _bytesOfLength(500));
+        await mirror.retryFailedUpload(photo.id);
+        expect(await mirror.failedUploadItems(), isEmpty);
+
+        final second = await engine.run();
+        expect(second.outcome, GallerySyncOutcome.completed);
+        expect(second.uploaded, 1);
+        expect(second.failed, 0);
+        expect(backend.putCalls, hasLength(1));
+        expect(await mirror.failedUploadItems(), isEmpty);
+      });
+
+      test(
+          'a device file that merely changed size mid-upload (a racing '
+          'scan, a same-second edit) is left untouched and simply offered '
+          'again next run - never marked synced, never added to the '
+          'failure list, unlike an unreadable file', () async {
+        final photo = await scanDevicePhoto(
+          displayName: 'IMG_0001.jpg',
+          capturedAtSeconds: 1000,
+          bytes: _bytesOfLength(500),
+        );
+        // The device copy read back a different length than the mirror row
+        // recorded at scan time - GalleryUploadResult.deviceFileChanged,
+        // the OTHER never-throws outcome, deliberately left alone.
+        localSource.setLocalBytes(
+            'DCIM/Camera/', 'IMG_0001.jpg', _bytesOfLength(999));
+
+        final engine = GallerySyncEngine(mirror, uploadService);
+        final first = await engine.run();
+        expect(first.outcome, GallerySyncOutcome.completed);
+        expect(first.uploaded, 1,
+            reason: 'attempted, not failed - this is not this engine\'s '
+                'job to police (ticket 22)');
+        expect(first.failed, 0);
+        expect(backend.putCalls, isEmpty);
+        expect(await mirror.failedUploadItems(), isEmpty);
+        final rowAfterFirst =
+            (await mirror.queryItems()).firstWhere((i) => i.id == photo.id);
+        expect(rowAfterFirst.availability, GalleryAvailability.deviceOnly);
+
+        // The race resolves itself - the device copy is back to the size
+        // the mirror row expects. No special recovery action needed - the
+        // very next run offers it again on its own, this time matching.
         localSource.setLocalBytes(
             'DCIM/Camera/', 'IMG_0001.jpg', _bytesOfLength(500));
         final second = await engine.run();
