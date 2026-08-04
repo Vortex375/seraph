@@ -77,7 +77,7 @@ class FileService {
   /// Throws (a [Client] is required - see [stat]'s null-client case) when no
   /// server is configured, and propagates whatever the server responded with
   /// otherwise - including a 403 on a read-only Space - so a caller such as
-  /// [GalleryUploadService](../gallery/mirror/gallery_upload_backend.dart)
+  /// [GalleryUploadService](../gallery/mirror/gallery_upload_service.dart)
   /// can translate the failure into a comprehensible reason instead of it
   /// being swallowed here.
   Future<void> writeBytes(String path, Uint8List data) async {
@@ -95,7 +95,7 @@ class FileService {
   /// Throws (a [Client] is required - see [stat]'s null-client case) when no
   /// server is configured, and propagates whatever the server responded with
   /// otherwise - including a 404, which
-  /// [WebDavGalleryUploadBackend](../gallery/mirror/gallery_upload_backend.dart)
+  /// [WebDavGalleryUploadBackend](../gallery/mirror/webdav_gallery_upload_backend.dart)
   /// translates into "already gone, not an error" rather than surfacing it.
   Future<void> removeFile(String path) async {
     Client? c = client;

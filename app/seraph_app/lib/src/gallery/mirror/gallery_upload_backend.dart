@@ -1,7 +1,6 @@
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
-import 'package:seraph_app/src/file_browser/file_service.dart';
 
 /// Ticket 25's queue policy: which of the spec's two THROWN failure buckets
 /// a [GalleryUploadException] belongs to. The third bucket, "moved target" -
@@ -52,8 +51,9 @@ class GalleryUploadException implements Exception {
     this.bucket = GalleryUploadFailureBucket.transient,
   });
 
-  /// A message fit to show the user directly - see [WebDavGalleryUploadBackend]
-  /// for the wording used for each server response this seam recognises.
+  /// A message fit to show the user directly - see [translateWebDavError]
+  /// for the wording used for each server response the WebDAV backend
+  /// recognises.
   final String message;
 
   /// True when the failure was specifically "this Space will not accept a
@@ -101,8 +101,9 @@ abstract class GalleryUploadBackend {
   /// Throws [GalleryUploadException] on failure - a read-only Space, the
   /// server out of storage, or a dropped connection alike. An upload that
   /// throws must leave nothing at [path]: server-side atomic PUT (ADR 0002's
-  /// amendment) is what makes that true for [WebDavGalleryUploadBackend]
-  /// without any client-side staging of its own.
+  /// amendment) is what makes that true for the WebDAV backend
+  /// (`webdav_gallery_upload_backend.dart`) without any client-side staging
+  /// of its own.
   Future<void> put(String spaceProviderId, String path, Uint8List bytes);
 
   /// Deletes whatever currently occupies ([spaceProviderId], [path]) - ticket
@@ -116,91 +117,12 @@ abstract class GalleryUploadBackend {
   Future<void> remove(String spaceProviderId, String path);
 }
 
-/// The production [GalleryUploadBackend], over the same [FileService]
-/// (and therefore the same WebDAV [Client](package:webdav_client/webdav_client.dart))
-/// the file browser already uses - one WebDAV client in the app, not a
-/// second one built for Gallery Mode.
-class WebDavGalleryUploadBackend implements GalleryUploadBackend {
-  WebDavGalleryUploadBackend(this.fileService);
-
-  final FileService fileService;
-
-  /// [spaceProviderId]/[path] in Space terms (as [GallerySourceFolder] and
-  /// every Sync Pair store them) translated to the flat WebDAV path
-  /// [FileService] takes - the same `/<spaceProviderId><path>` shape
-  /// [GalleryItemDisplay.spaceDisplayPath] already computes for the preview
-  /// and download endpoints (`gallery_item_display.dart`), spelled out again
-  /// here rather than imported so this file has no dependency on the mirror's
-  /// presentation layer.
-  String _webDavPath(String spaceProviderId, String path) {
-    final rel = path.startsWith('/') ? path : '/$path';
-    return '/$spaceProviderId$rel';
-  }
-
-  @override
-  Future<int?> statSize(String spaceProviderId, String path) async {
-    try {
-      final file = await fileService.stat(_webDavPath(spaceProviderId, path));
-      if (file == null) {
-        // [FileService.stat] returns null only when no server is configured
-        // at all (see its own doc) - every real "not found" response throws,
-        // caught below. Treating this as "not connected" rather than "path
-        // free" matters: the latter would let an upload proceed with no
-        // server to receive it.
-        throw const GalleryUploadException('Not connected to Seraph.');
-      }
-      return file.size;
-    } on DioException catch (e) {
-      final status = e.response?.statusCode;
-      if (status == 404) {
-        return null;
-      }
-      throw _translate(e, status);
-    }
-  }
-
-  @override
-  Future<void> put(String spaceProviderId, String path, Uint8List bytes) async {
-    try {
-      await fileService.writeBytes(_webDavPath(spaceProviderId, path), bytes);
-    } on DioException catch (e) {
-      throw _translate(e, e.response?.statusCode);
-    } on StateError catch (e) {
-      // [FileService.writeBytes] throws this when no server is configured at
-      // all - the same "not connected" case [statSize] recognises via a null
-      // [FileService.stat] result.
-      throw GalleryUploadException(e.message);
-    }
-  }
-
-  @override
-  Future<void> remove(String spaceProviderId, String path) async {
-    try {
-      await fileService.removeFile(_webDavPath(spaceProviderId, path));
-    } on DioException catch (e) {
-      final status = e.response?.statusCode;
-      if (status == 404) {
-        // Already gone - not an error (see this method's doc on the
-        // interface).
-        return;
-      }
-      throw _translate(e, status);
-    } on StateError catch (e) {
-      throw GalleryUploadException(e.message);
-    }
-  }
-
-  GalleryUploadException _translate(DioException e, int? status) =>
-      translateWebDavError(e, status);
-}
-
-/// Turns a `webdav_client`/Dio failure into a [GalleryUploadException] with a
-/// message fit to show the user - the one piece of [WebDavGalleryUploadBackend]
-/// that is pure translation, with no dependency on [FileService] itself.
-/// Pulled out to a top-level function so ticket 22's headless-isolate backend
-/// (`../sync/gallery_data_sync_service_io.dart`, which deliberately does not
-/// construct a [FileService] - see that file's doc for why) can produce
-/// exactly the same messages without duplicating the status-code mapping.
+/// The production [GalleryUploadBackend] lives in
+/// `webdav_gallery_upload_backend.dart` - split out so the engine's import
+/// graph (which imports THIS file for the interface, the exception and the
+/// status-code translator) never reaches [FileService] and the GetX
+/// controllers it transitively pulls in. See that file's doc for the
+/// headlessness constraint this split upholds.
 GalleryUploadException translateWebDavError(DioException e, int? status) {
   if (status == 403) {
     // Ticket 25: PERMANENT - a read-only Space does not become writable by

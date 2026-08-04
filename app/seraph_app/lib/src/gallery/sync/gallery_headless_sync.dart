@@ -359,10 +359,11 @@ Future<OidcUser?> readPersistedHeadlessUser(
 
 /// A [GalleryUploadBackend] talking to `webdav_client` directly, over the
 /// session [loadHeadlessSyncSession] obtained - not
-/// [WebDavGalleryUploadBackend], which is built on `FileService`/
-/// `LoginController` and therefore carries the interactive-login risk
-/// [loadHeadlessSyncSession]'s doc explains a headless isolate must avoid.
-/// Shares [translateWebDavError] with [WebDavGalleryUploadBackend] so the
+/// `WebDavGalleryUploadBackend` (in `../mirror/webdav_gallery_upload_backend
+/// .dart`), which is built on `FileService`/`LoginController` and therefore
+/// carries the interactive-login risk [loadHeadlessSyncSession]'s doc explains
+/// a headless isolate must avoid.
+/// Shares [translateWebDavError] with `WebDavGalleryUploadBackend` so the
 /// two report identical, already-tested messages for the same server
 /// responses rather than a second, drifting copy of that mapping.
 class HeadlessWebDavBackend implements GalleryUploadBackend {

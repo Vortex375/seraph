@@ -12,7 +12,7 @@ import 'package:seraph_app/src/gallery/local/local_scan_service.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_sync_service.dart';
-import 'package:seraph_app/src/gallery/mirror/gallery_upload_backend.dart';
+import 'package:seraph_app/src/gallery/mirror/webdav_gallery_upload_backend.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_upload_service.dart';
 import 'package:seraph_app/src/gallery/sync/gallery_backup_schedule_coordinator.dart';
 import 'package:seraph_app/src/gallery/sync/gallery_data_sync_controller.dart';
