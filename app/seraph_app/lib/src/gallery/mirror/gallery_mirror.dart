@@ -1337,13 +1337,38 @@ class GalleryMirror {
   /// class makes no network calls itself (see the class doc), so it only
   /// surfaces which rows need that done and which of the two flavours each
   /// one is; it never attempts the deletion or the retry.
-  Future<List<GalleryItem>> itemsNeedingUploadRetry() => (_db.select(
-          _db.galleryItems)
-        ..where((t) =>
-            t.origin.equals(_originDevice) &
-            (t.uploadState.equals(_uploadStateMismatch) |
-                t.uploadState.equals(_uploadStateAssumedMismatch))))
-      .get();
+  ///
+  /// **Filtered to rows still covered by an ACTIVE Sync Pair** (ticket 25's
+  /// second rework) - the same [_activeSyncPairs] "current target for
+  /// writes" rule [itemsPendingUpload]/[expectedUploadTarget] already apply.
+  /// This IS a write path (the retry re-derives a target and re-PUTs), so
+  /// ticket 21's rule ("current target for writes, all historical targets
+  /// for lookups") means active coverage, not [_allSyncPairs], is correct
+  /// here - unlike, say, [applyPage]'s verification lookup. Without this, a
+  /// row parked here awaiting retry whose Sync Pair was then removed through
+  /// the ordinary UI ([removeSyncPair]) would be re-selected forever:
+  /// [GalleryUploadService.retryMismatchedUpload]/[upload] would call
+  /// [expectedUploadTarget], which correctly returns null for an uncovered
+  /// row, giving [GalleryUploadResult.noSyncPair] - a result nothing ever
+  /// wrote [uploadState] for, so the row stayed stuck in this query on every
+  /// subsequent run.
+  Future<List<GalleryItem>> itemsNeedingUploadRetry() async {
+    final pairs = await _activeSyncPairs();
+    if (pairs.isEmpty) {
+      return const [];
+    }
+    final rows = await (_db.select(_db.galleryItems)
+          ..where((t) =>
+              t.origin.equals(_originDevice) &
+              (t.uploadState.equals(_uploadStateMismatch) |
+                  t.uploadState.equals(_uploadStateAssumedMismatch))))
+        .get();
+    return [
+      for (final row in rows)
+        if (_coveringSyncPair(pairs, row.localRelativePath ?? '') != null)
+          row,
+    ];
+  }
 
   // --- Ticket 22: headless sync engine ---
 

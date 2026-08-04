@@ -251,6 +251,15 @@ class FakeGalleryUploadBackend implements GalleryUploadBackend {
   /// wants paused after.
   void Function()? onPut;
 
+  /// Awaited from inside [put], right after [onPut] and before checking
+  /// [putError] - what a test uses instead of [onPut] when the side effect
+  /// itself needs to be asynchronous (e.g. [GalleryMirror.removeSyncPair],
+  /// a DB write) and must be GUARANTEED complete before [put] returns and
+  /// the caller moves on to its next item - a plain synchronous [onPut]
+  /// cannot express that ordering, only trigger a fire-and-forget Future a
+  /// test would otherwise have no reliable way to wait on.
+  Future<void> Function()? onPutAsync;
+
   /// Every (spaceProviderId, path) [remove] was called with, in order - what
   /// ticket 20's mismatch-retry tests assert against to check the untrusted
   /// remote file was actually deleted before the retry PUT.
@@ -291,6 +300,7 @@ class FakeGalleryUploadBackend implements GalleryUploadBackend {
       String spaceProviderId, String path, Uint8List bytes) async {
     putCalls.add((spaceProviderId, path, bytes));
     onPut?.call();
+    await onPutAsync?.call();
     final error = putError;
     if (error != null) {
       throw error;

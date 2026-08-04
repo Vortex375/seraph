@@ -114,10 +114,15 @@ class GallerySyncEngineResult {
 ///   example, so [run] routes it to [GalleryMirror.recordUploadFailure] by
 ///   hand - see the `deviceFileUnavailable` branch in the worker loop below.
 ///   Every [GalleryUploadResult] the worker loop can see is accounted for
-///   one of these three ways, or as a genuine success ([uploaded]/
-///   [alreadyPresent]/[noSyncPair]/[notApplicable] - the last two mean "nothing
-///   for this engine to do", never "silently failed"); none is simply
-///   dropped.
+///   one of these three ways, as a genuine success ([uploaded]/
+///   [alreadyPresent] - [completedItems] and, where bytes actually moved,
+///   [completedBytes] advance), or as a SKIP that touches neither counter
+///   ([noSyncPair]/[notApplicable] - "nothing for this engine to do", not a
+///   backup failure and not something to alarm the user about (ticket 21: a
+///   removed Sync Pair changes nothing about existing photos), but counting
+///   a skip as [completedItems] would be exactly the same "silently
+///   succeeds instead of silently skips" defect [deviceFileUnavailable]
+///   was); none is simply dropped.
 class GallerySyncEngine {
   GallerySyncEngine(
     this.mirror,
@@ -331,6 +336,24 @@ class GallerySyncEngine {
                 'device - check that photo access is still granted.';
             lastError = reason;
             await mirror.recordUploadFailure(item, reason);
+          } else if (result == GalleryUploadResult.noSyncPair ||
+              result == GalleryUploadResult.notApplicable) {
+            // Ticket 25 (second rework): neither a success nor a backup
+            // failure. [GalleryMirror.itemsNeedingUploadRetry] now filters
+            // to active-Sync-Pair coverage (the query-level half of this
+            // fix), but a Sync Pair can still be removed in the window
+            // between this run building its queue and reaching this item -
+            // [noSyncPair] is the defensive result for exactly that race,
+            // and remains reachable. [notApplicable] means [item] was never
+            // a Device only row to begin with. Neither belongs in the
+            // failure list: ticket 21 established that removing a Sync Pair
+            // must change nothing about existing photos, so this is the
+            // user's own configuration choice, not something to alarm them
+            // about. But neither is it a success - counting it as
+            // [completedItems] is exactly the "silently succeeds instead of
+            // silently skips" defect ticket 25's rework closed for
+            // [GalleryUploadResult.deviceFileUnavailable]; the fix here is
+            // the same shape - touch neither counter at all.
           } else {
             completedItems++;
             consecutiveTransientFailures = 0;

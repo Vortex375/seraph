@@ -748,6 +748,127 @@ void main() {
               'again, scan-rebuilt or not',
         );
       });
+
+      test(
+          'a row parked awaiting a mismatch retry is no longer selected by '
+          'itemsNeedingUploadRetry once its Sync Pair is removed - a '
+          'removed pair must not leave the row retried (and silently '
+          'counted as sent) forever', () async {
+        final uploaded = await scanDevicePhoto(
+          displayName: 'IMG_0001.jpg',
+          capturedAtSeconds: 1000,
+          bytes: _bytesOfLength(4096),
+        );
+        await uploadService.upload(uploaded);
+        await mirror.applyPage(GalleryDeltaResponse(
+          items: [
+            GalleryDeltaItem(
+              providerId: 'space-a',
+              path: '/Photos/Phone/IMG_0001.jpg',
+              seq: 1,
+              tombstone: false,
+              capturedAt: 1000,
+              size: 1, // contradicts the 4096 bytes actually sent
+            ),
+          ],
+          nextCursor: '',
+          hasMore: false,
+          nextSince: 1,
+        ));
+        expect(await mirror.itemsNeedingUploadRetry(), hasLength(1),
+            reason: 'covered by an active Sync Pair - a normal retry '
+                'candidate');
+
+        final pair = (await mirror.listSyncPairs()).single;
+        await mirror.removeSyncPair(pair.id);
+
+        expect(await mirror.itemsNeedingUploadRetry(), isEmpty,
+            reason: 'ticket 21\'s rule is "current target for WRITES" - a '
+                'retry is a write, so it must use active coverage, the '
+                'same as itemsPendingUpload, not the all-historical-targets '
+                'rule lookups use');
+
+        // A run finds nothing to do - the row is neither retried nor
+        // counted, indefinitely, exactly what removing a Sync Pair should
+        // do to it (ticket 21: nothing about existing photos changes).
+        final engine = GallerySyncEngine(mirror, uploadService);
+        final result = await engine.run();
+        expect(result.outcome, GallerySyncOutcome.nothingToDo);
+      });
+
+      test(
+          'a Sync Pair removed in the window between a run building its '
+          'queue and reaching a row - a live race the query-level fix '
+          'alone cannot close - still does not let noSyncPair (or '
+          'notApplicable) inflate the completed count', () async {
+        final pair = (await mirror.listSyncPairs()).single;
+
+        Future<GalleryItem> mismatchedItem(String displayName, int seq) async {
+          final uploaded = await scanDevicePhoto(
+            displayName: displayName,
+            capturedAtSeconds: seq,
+            bytes: _bytesOfLength(4096),
+          );
+          await uploadService.upload(uploaded);
+          await mirror.applyPage(GalleryDeltaResponse(
+            items: [
+              GalleryDeltaItem(
+                providerId: 'space-a',
+                path: '/Photos/Phone/$displayName',
+                seq: seq,
+                tombstone: false,
+                capturedAt: seq,
+                size: 1, // contradicts what was actually sent
+              ),
+            ],
+            nextCursor: '',
+            hasMore: false,
+            nextSince: seq,
+          ));
+          return uploaded;
+        }
+
+        // Two rows queued for retry while the pair is still active - the
+        // queue this run() call builds legitimately contains both.
+        await mismatchedItem('a.jpg', 1);
+        await mismatchedItem('b.jpg', 2);
+        expect(await mirror.itemsNeedingUploadRetry(), hasLength(2));
+
+        // The pair is removed mid-run, right after the FIRST item's PUT
+        // lands (and is guaranteed complete by then - onPutAsync is
+        // awaited, unlike a plain synchronous hook) - simulating the
+        // window between this run's queue snapshot and it reaching the
+        // second item, which the query-level fix alone cannot close.
+        var removed = false;
+        backend.onPutAsync = () async {
+          if (!removed) {
+            removed = true;
+            await mirror.removeSyncPair(pair.id);
+          }
+        };
+
+        final engine =
+            GallerySyncEngine(mirror, uploadService, concurrency: 1);
+        final result = await engine.run();
+
+        // The first row: a genuine, already-in-flight retry - completes
+        // normally. The second: expectedUploadTarget now finds no active
+        // pair and returns GalleryUploadResult.noSyncPair - a skip, not a
+        // success and not a failure.
+        expect(result.uploaded, 1,
+            reason: 'only the row actually retried counts as completed - '
+                'noSyncPair must not inflate this');
+        expect(result.failed, 0,
+            reason: 'a removed Sync Pair is the user\'s own configuration '
+                'choice (ticket 21), not a backup failure');
+        expect(await mirror.failedUploadItems(), isEmpty,
+            reason: 'must never appear in the visible failure list either');
+
+        final state = await mirror.syncRunState();
+        expect(state.totalItems, 2);
+        expect(state.completedItems, 1);
+        expect(state.failedItems, 0);
+      });
     });
   });
 }
