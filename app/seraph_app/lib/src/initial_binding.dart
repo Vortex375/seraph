@@ -33,8 +33,13 @@ class InitialBinding extends Bindings {
     Get.put(SpacesService(Get.find(), Get.find()));
     Get.put(SpacesListController(Get.find()));
     Get.put(GalleryService(Get.find(), Get.find()));
-    final galleryMirrorDatabase = Get.put(GalleryMirrorDatabase.open());
-    final galleryMirror = Get.put(GalleryMirror(galleryMirrorDatabase));
+    // Both already opened and registered in main.dart, ahead of
+    // LoginController - see that file's comment for why (ticket 23's
+    // cross-isolate token-refresh lock). Reused here via Get.find rather
+    // than a second GalleryMirrorDatabase.open() call, which would open a
+    // second, redundant connection to the same file from this same isolate.
+    final galleryMirrorDatabase = Get.find<GalleryMirrorDatabase>();
+    final galleryMirror = Get.find<GalleryMirror>();
     final gallerySyncService =
         Get.put(GallerySyncService(Get.find(), Get.find(), galleryMirror));
     // Local Source defaults to the platform's own (Android only, in this

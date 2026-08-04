@@ -59,6 +59,10 @@ const String syncStatusPaused = 'paused';
 const String syncStatusCompleted = 'completed';
 const String syncStatusError = 'error';
 
+/// Ticket 23: the fixed id of [TokenRefreshLock]'s single row - see that
+/// table's class doc for why there is only ever one.
+const String tokenRefreshLockId = 'default';
+
 /// [SyncCursors.source] value for ticket 17's device-side incremental-scan
 /// watermark - the highest MediaStore generation already applied. Reuses the
 /// same tiny table the delta feed's [GalleryMirror.since]/[pendingCursor]
@@ -1387,6 +1391,78 @@ class GalleryMirror {
             updatedAt: Value(updatedAtMillis),
           ),
         );
+  }
+
+  /// Ticket 23: attempts to acquire the cross-isolate token-refresh lock via
+  /// a single atomic UPSERT - see [TokenRefreshLock]'s class doc for why a
+  /// lease, not an explicit release, is what actually bounds how long a lock
+  /// can be held. The UPSERT's own `WHERE` clause (`expires_at <= ?`) is what
+  /// makes "check whether the current holder's lease has expired, then take
+  /// the lock if it is free or expired" atomic against a concurrent acquire
+  /// from the OTHER isolate's own connection to the same file: SQLite
+  /// executes the conflict check and the conditional update as one
+  /// indivisible statement, so there is no read-then-write window a second
+  /// connection's own UPSERT could land inside and win a lock this call
+  /// already believes it holds.
+  ///
+  /// Returns whether THIS call is the one that (now) holds the lock -
+  /// `false` means another isolate's unexpired lease is still standing, and
+  /// the caller must not run its own refresh (see `refreshTokenWithLock` in
+  /// `../sync/token_refresh_coordination.dart`, the only intended caller of
+  /// this method and [releaseTokenRefreshLock] together).
+  Future<bool> tryAcquireTokenRefreshLock({
+    required String holder,
+    required int nowMillis,
+    required int leaseMillis,
+  }) async {
+    final changed = await _db.customUpdate(
+      'INSERT INTO token_refresh_lock (id, holder, acquired_at, expires_at) '
+      'VALUES (?1, ?2, ?3, ?4) '
+      'ON CONFLICT(id) DO UPDATE SET '
+      'holder = excluded.holder, '
+      'acquired_at = excluded.acquired_at, '
+      'expires_at = excluded.expires_at '
+      'WHERE token_refresh_lock.expires_at <= ?3',
+      variables: [
+        Variable<String>(tokenRefreshLockId),
+        Variable<String>(holder),
+        Variable<int>(nowMillis),
+        Variable<int>(nowMillis + leaseMillis),
+      ],
+      updates: {_db.tokenRefreshLock},
+    );
+    return changed > 0;
+  }
+
+  /// Releases the lock THIS [holder] currently holds - a no-op, not an
+  /// error, if [holder] is not (or is no longer) the row's holder, which is
+  /// exactly what happens when this isolate's own lease already expired and
+  /// the other isolate reclaimed the lock before this call ran: releasing
+  /// here must never touch a lock this isolate no longer owns. Called from a
+  /// `finally` around every refresh an isolate performs while holding the
+  /// lock, success or failure alike, so a failed refresh frees the lock
+  /// immediately rather than leaving the next attempt to wait out the whole
+  /// lease (this ticket's own "a refresh that fails releases the lock, and
+  /// the next attempt is not blocked forever" criterion).
+  Future<void> releaseTokenRefreshLock({required String holder}) async {
+    await (_db.delete(_db.tokenRefreshLock)
+          ..where((t) =>
+              t.id.equals(tokenRefreshLockId) & t.holder.equals(holder)))
+        .go();
+  }
+
+  /// Whether the lock is currently held by an unexpired lease - what a
+  /// caller that lost [tryAcquireTokenRefreshLock]'s race polls while
+  /// waiting for the winner to finish (see `refreshTokenWithLock` in
+  /// `../sync/token_refresh_coordination.dart`). `false` covers both "no one
+  /// has ever taken the lock" and "the holder's lease has lapsed" - the two
+  /// read identically here, matching [tryAcquireTokenRefreshLock]'s own
+  /// treatment of an expired row as free.
+  Future<bool> tokenRefreshLockHeld({required int nowMillis}) async {
+    final row = await (_db.select(_db.tokenRefreshLock)
+          ..where((t) => t.id.equals(tokenRefreshLockId)))
+        .getSingleOrNull();
+    return row != null && row.expiresAt > nowMillis;
   }
 
   /// Retroactively merges [pair]'s Local Source against the mirror as it

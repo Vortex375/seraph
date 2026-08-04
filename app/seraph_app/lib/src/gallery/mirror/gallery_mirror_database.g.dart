@@ -2706,6 +2706,290 @@ class SyncRunStateCompanion extends UpdateCompanion<SyncRunStateData> {
   }
 }
 
+class $TokenRefreshLockTable extends TokenRefreshLock
+    with TableInfo<$TokenRefreshLockTable, TokenRefreshLockData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $TokenRefreshLockTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+      'id', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _holderMeta = const VerificationMeta('holder');
+  @override
+  late final GeneratedColumn<String> holder = GeneratedColumn<String>(
+      'holder', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _acquiredAtMeta =
+      const VerificationMeta('acquiredAt');
+  @override
+  late final GeneratedColumn<int> acquiredAt = GeneratedColumn<int>(
+      'acquired_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _expiresAtMeta =
+      const VerificationMeta('expiresAt');
+  @override
+  late final GeneratedColumn<int> expiresAt = GeneratedColumn<int>(
+      'expires_at', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns => [id, holder, acquiredAt, expiresAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'token_refresh_lock';
+  @override
+  VerificationContext validateIntegrity(
+      Insertable<TokenRefreshLockData> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('holder')) {
+      context.handle(_holderMeta,
+          holder.isAcceptableOrUnknown(data['holder']!, _holderMeta));
+    } else if (isInserting) {
+      context.missing(_holderMeta);
+    }
+    if (data.containsKey('acquired_at')) {
+      context.handle(
+          _acquiredAtMeta,
+          acquiredAt.isAcceptableOrUnknown(
+              data['acquired_at']!, _acquiredAtMeta));
+    } else if (isInserting) {
+      context.missing(_acquiredAtMeta);
+    }
+    if (data.containsKey('expires_at')) {
+      context.handle(_expiresAtMeta,
+          expiresAt.isAcceptableOrUnknown(data['expires_at']!, _expiresAtMeta));
+    } else if (isInserting) {
+      context.missing(_expiresAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  TokenRefreshLockData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return TokenRefreshLockData(
+      id: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}id'])!,
+      holder: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}holder'])!,
+      acquiredAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}acquired_at'])!,
+      expiresAt: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}expires_at'])!,
+    );
+  }
+
+  @override
+  $TokenRefreshLockTable createAlias(String alias) {
+    return $TokenRefreshLockTable(attachedDatabase, alias);
+  }
+}
+
+class TokenRefreshLockData extends DataClass
+    implements Insertable<TokenRefreshLockData> {
+  final String id;
+
+  /// Which isolate currently holds (or most recently held) the lock -
+  /// `'ui'` or `'headless'`, see the constants next to `refreshTokenWithLock`
+  /// in `../sync/token_refresh_coordination.dart`. Diagnostic only, per the
+  /// class doc.
+  final String holder;
+
+  /// Epoch milliseconds the current holder acquired the lock at.
+  final int acquiredAt;
+
+  /// Epoch milliseconds the current lease expires at - past this point the
+  /// lock is free for another acquire regardless of whether
+  /// [GalleryMirror.releaseTokenRefreshLock] was ever called (see the class
+  /// doc's "lease-based" note).
+  final int expiresAt;
+  const TokenRefreshLockData(
+      {required this.id,
+      required this.holder,
+      required this.acquiredAt,
+      required this.expiresAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['holder'] = Variable<String>(holder);
+    map['acquired_at'] = Variable<int>(acquiredAt);
+    map['expires_at'] = Variable<int>(expiresAt);
+    return map;
+  }
+
+  TokenRefreshLockCompanion toCompanion(bool nullToAbsent) {
+    return TokenRefreshLockCompanion(
+      id: Value(id),
+      holder: Value(holder),
+      acquiredAt: Value(acquiredAt),
+      expiresAt: Value(expiresAt),
+    );
+  }
+
+  factory TokenRefreshLockData.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return TokenRefreshLockData(
+      id: serializer.fromJson<String>(json['id']),
+      holder: serializer.fromJson<String>(json['holder']),
+      acquiredAt: serializer.fromJson<int>(json['acquiredAt']),
+      expiresAt: serializer.fromJson<int>(json['expiresAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'holder': serializer.toJson<String>(holder),
+      'acquiredAt': serializer.toJson<int>(acquiredAt),
+      'expiresAt': serializer.toJson<int>(expiresAt),
+    };
+  }
+
+  TokenRefreshLockData copyWith(
+          {String? id, String? holder, int? acquiredAt, int? expiresAt}) =>
+      TokenRefreshLockData(
+        id: id ?? this.id,
+        holder: holder ?? this.holder,
+        acquiredAt: acquiredAt ?? this.acquiredAt,
+        expiresAt: expiresAt ?? this.expiresAt,
+      );
+  TokenRefreshLockData copyWithCompanion(TokenRefreshLockCompanion data) {
+    return TokenRefreshLockData(
+      id: data.id.present ? data.id.value : this.id,
+      holder: data.holder.present ? data.holder.value : this.holder,
+      acquiredAt:
+          data.acquiredAt.present ? data.acquiredAt.value : this.acquiredAt,
+      expiresAt: data.expiresAt.present ? data.expiresAt.value : this.expiresAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TokenRefreshLockData(')
+          ..write('id: $id, ')
+          ..write('holder: $holder, ')
+          ..write('acquiredAt: $acquiredAt, ')
+          ..write('expiresAt: $expiresAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, holder, acquiredAt, expiresAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is TokenRefreshLockData &&
+          other.id == this.id &&
+          other.holder == this.holder &&
+          other.acquiredAt == this.acquiredAt &&
+          other.expiresAt == this.expiresAt);
+}
+
+class TokenRefreshLockCompanion extends UpdateCompanion<TokenRefreshLockData> {
+  final Value<String> id;
+  final Value<String> holder;
+  final Value<int> acquiredAt;
+  final Value<int> expiresAt;
+  final Value<int> rowid;
+  const TokenRefreshLockCompanion({
+    this.id = const Value.absent(),
+    this.holder = const Value.absent(),
+    this.acquiredAt = const Value.absent(),
+    this.expiresAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  TokenRefreshLockCompanion.insert({
+    required String id,
+    required String holder,
+    required int acquiredAt,
+    required int expiresAt,
+    this.rowid = const Value.absent(),
+  })  : id = Value(id),
+        holder = Value(holder),
+        acquiredAt = Value(acquiredAt),
+        expiresAt = Value(expiresAt);
+  static Insertable<TokenRefreshLockData> custom({
+    Expression<String>? id,
+    Expression<String>? holder,
+    Expression<int>? acquiredAt,
+    Expression<int>? expiresAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (holder != null) 'holder': holder,
+      if (acquiredAt != null) 'acquired_at': acquiredAt,
+      if (expiresAt != null) 'expires_at': expiresAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  TokenRefreshLockCompanion copyWith(
+      {Value<String>? id,
+      Value<String>? holder,
+      Value<int>? acquiredAt,
+      Value<int>? expiresAt,
+      Value<int>? rowid}) {
+    return TokenRefreshLockCompanion(
+      id: id ?? this.id,
+      holder: holder ?? this.holder,
+      acquiredAt: acquiredAt ?? this.acquiredAt,
+      expiresAt: expiresAt ?? this.expiresAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (holder.present) {
+      map['holder'] = Variable<String>(holder.value);
+    }
+    if (acquiredAt.present) {
+      map['acquired_at'] = Variable<int>(acquiredAt.value);
+    }
+    if (expiresAt.present) {
+      map['expires_at'] = Variable<int>(expiresAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TokenRefreshLockCompanion(')
+          ..write('id: $id, ')
+          ..write('holder: $holder, ')
+          ..write('acquiredAt: $acquiredAt, ')
+          ..write('expiresAt: $expiresAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$GalleryMirrorDatabase extends GeneratedDatabase {
   _$GalleryMirrorDatabase(QueryExecutor e) : super(e);
   $GalleryMirrorDatabaseManager get managers =>
@@ -2718,6 +3002,8 @@ abstract class _$GalleryMirrorDatabase extends GeneratedDatabase {
       $LocalFolderSelectionsTable(this);
   late final $SyncPairsTable syncPairs = $SyncPairsTable(this);
   late final $SyncRunStateTable syncRunState = $SyncRunStateTable(this);
+  late final $TokenRefreshLockTable tokenRefreshLock =
+      $TokenRefreshLockTable(this);
   late final Index idxGalleryItemsLocalIdentity = Index(
       'idx_gallery_items_local_identity',
       'CREATE INDEX idx_gallery_items_local_identity ON gallery_items (local_relative_path, local_display_name, local_size, local_date_taken)');
@@ -2741,6 +3027,7 @@ abstract class _$GalleryMirrorDatabase extends GeneratedDatabase {
         localFolderSelections,
         syncPairs,
         syncRunState,
+        tokenRefreshLock,
         idxGalleryItemsLocalIdentity,
         idxGalleryItemsOriginSizeCapturedAt,
         idxGalleryItemsCapturedAtId,
@@ -4051,6 +4338,167 @@ typedef $$SyncRunStateTableProcessedTableManager = ProcessedTableManager<
     ),
     SyncRunStateData,
     PrefetchHooks Function()>;
+typedef $$TokenRefreshLockTableCreateCompanionBuilder
+    = TokenRefreshLockCompanion Function({
+  required String id,
+  required String holder,
+  required int acquiredAt,
+  required int expiresAt,
+  Value<int> rowid,
+});
+typedef $$TokenRefreshLockTableUpdateCompanionBuilder
+    = TokenRefreshLockCompanion Function({
+  Value<String> id,
+  Value<String> holder,
+  Value<int> acquiredAt,
+  Value<int> expiresAt,
+  Value<int> rowid,
+});
+
+class $$TokenRefreshLockTableFilterComposer
+    extends Composer<_$GalleryMirrorDatabase, $TokenRefreshLockTable> {
+  $$TokenRefreshLockTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get holder => $composableBuilder(
+      column: $table.holder, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get acquiredAt => $composableBuilder(
+      column: $table.acquiredAt, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get expiresAt => $composableBuilder(
+      column: $table.expiresAt, builder: (column) => ColumnFilters(column));
+}
+
+class $$TokenRefreshLockTableOrderingComposer
+    extends Composer<_$GalleryMirrorDatabase, $TokenRefreshLockTable> {
+  $$TokenRefreshLockTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+      column: $table.id, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get holder => $composableBuilder(
+      column: $table.holder, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get acquiredAt => $composableBuilder(
+      column: $table.acquiredAt, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get expiresAt => $composableBuilder(
+      column: $table.expiresAt, builder: (column) => ColumnOrderings(column));
+}
+
+class $$TokenRefreshLockTableAnnotationComposer
+    extends Composer<_$GalleryMirrorDatabase, $TokenRefreshLockTable> {
+  $$TokenRefreshLockTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get holder =>
+      $composableBuilder(column: $table.holder, builder: (column) => column);
+
+  GeneratedColumn<int> get acquiredAt => $composableBuilder(
+      column: $table.acquiredAt, builder: (column) => column);
+
+  GeneratedColumn<int> get expiresAt =>
+      $composableBuilder(column: $table.expiresAt, builder: (column) => column);
+}
+
+class $$TokenRefreshLockTableTableManager extends RootTableManager<
+    _$GalleryMirrorDatabase,
+    $TokenRefreshLockTable,
+    TokenRefreshLockData,
+    $$TokenRefreshLockTableFilterComposer,
+    $$TokenRefreshLockTableOrderingComposer,
+    $$TokenRefreshLockTableAnnotationComposer,
+    $$TokenRefreshLockTableCreateCompanionBuilder,
+    $$TokenRefreshLockTableUpdateCompanionBuilder,
+    (
+      TokenRefreshLockData,
+      BaseReferences<_$GalleryMirrorDatabase, $TokenRefreshLockTable,
+          TokenRefreshLockData>
+    ),
+    TokenRefreshLockData,
+    PrefetchHooks Function()> {
+  $$TokenRefreshLockTableTableManager(
+      _$GalleryMirrorDatabase db, $TokenRefreshLockTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$TokenRefreshLockTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$TokenRefreshLockTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$TokenRefreshLockTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> id = const Value.absent(),
+            Value<String> holder = const Value.absent(),
+            Value<int> acquiredAt = const Value.absent(),
+            Value<int> expiresAt = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              TokenRefreshLockCompanion(
+            id: id,
+            holder: holder,
+            acquiredAt: acquiredAt,
+            expiresAt: expiresAt,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String id,
+            required String holder,
+            required int acquiredAt,
+            required int expiresAt,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              TokenRefreshLockCompanion.insert(
+            id: id,
+            holder: holder,
+            acquiredAt: acquiredAt,
+            expiresAt: expiresAt,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$TokenRefreshLockTableProcessedTableManager = ProcessedTableManager<
+    _$GalleryMirrorDatabase,
+    $TokenRefreshLockTable,
+    TokenRefreshLockData,
+    $$TokenRefreshLockTableFilterComposer,
+    $$TokenRefreshLockTableOrderingComposer,
+    $$TokenRefreshLockTableAnnotationComposer,
+    $$TokenRefreshLockTableCreateCompanionBuilder,
+    $$TokenRefreshLockTableUpdateCompanionBuilder,
+    (
+      TokenRefreshLockData,
+      BaseReferences<_$GalleryMirrorDatabase, $TokenRefreshLockTable,
+          TokenRefreshLockData>
+    ),
+    TokenRefreshLockData,
+    PrefetchHooks Function()>;
 
 class $GalleryMirrorDatabaseManager {
   final _$GalleryMirrorDatabase _db;
@@ -4067,4 +4515,6 @@ class $GalleryMirrorDatabaseManager {
       $$SyncPairsTableTableManager(_db, _db.syncPairs);
   $$SyncRunStateTableTableManager get syncRunState =>
       $$SyncRunStateTableTableManager(_db, _db.syncRunState);
+  $$TokenRefreshLockTableTableManager get tokenRefreshLock =>
+      $$TokenRefreshLockTableTableManager(_db, _db.tokenRefreshLock);
 }

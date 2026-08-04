@@ -681,6 +681,130 @@ void main() {
       expect(state.totalItems, 0);
     });
 
+    test(
+        'an app upgrade from v9 creates the ticket-23 token_refresh_lock '
+        'table without losing existing rows or the sync_run_state row',
+        () async {
+      final file = File(p.join(tempDir.path, 'mirror.sqlite'));
+
+      // A v9 database - everything through ticket 22's SyncRunState exists,
+      // but there is no token_refresh_lock table yet.
+      final v9Raw = sqlite3.sqlite3.open(file.path);
+      v9Raw.execute('''
+        CREATE TABLE gallery_items (
+          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+          origin TEXT NOT NULL DEFAULT 'cloud',
+          provider_id TEXT NULL,
+          path TEXT NULL,
+          seq INTEGER NULL,
+          local_relative_path TEXT NULL,
+          local_display_name TEXT NULL,
+          local_size INTEGER NULL,
+          local_date_taken INTEGER NULL,
+          captured_at INTEGER NOT NULL,
+          captured_at_source TEXT NOT NULL DEFAULT '',
+          width INTEGER NOT NULL DEFAULT 0,
+          height INTEGER NOT NULL DEFAULT 0,
+          orientation INTEGER NOT NULL DEFAULT 0,
+          size INTEGER NOT NULL DEFAULT 0,
+          mime TEXT NOT NULL DEFAULT '',
+          unsupported TEXT NOT NULL DEFAULT '',
+          metadata_pending INTEGER NOT NULL DEFAULT 0,
+          upload_state TEXT NULL,
+          upload_target_provider_id TEXT NULL,
+          upload_target_path TEXT NULL,
+          UNIQUE(provider_id, path)
+        );
+      ''');
+      v9Raw.execute('''
+        CREATE TABLE sync_cursors (
+          source TEXT NOT NULL PRIMARY KEY,
+          since INTEGER NOT NULL DEFAULT 0,
+          pending_cursor TEXT NULL
+        );
+      ''');
+      v9Raw.execute('''
+        CREATE TABLE cached_thumbnails (
+          provider_id TEXT NOT NULL,
+          path TEXT NOT NULL,
+          size INTEGER NOT NULL,
+          bytes BLOB NOT NULL,
+          fetched_at INTEGER NOT NULL,
+          PRIMARY KEY (provider_id, path, size)
+        );
+      ''');
+      v9Raw.execute('''
+        CREATE TABLE local_folder_selections (
+          folder_path TEXT NOT NULL PRIMARY KEY,
+          selected INTEGER NOT NULL
+        );
+      ''');
+      v9Raw.execute('''
+        CREATE TABLE sync_pairs (
+          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+          local_folder_path TEXT NOT NULL,
+          space_provider_id TEXT NOT NULL,
+          path TEXT NOT NULL,
+          created_at INTEGER NOT NULL DEFAULT 0,
+          removed_at INTEGER NULL
+        );
+      ''');
+      v9Raw.execute('''
+        CREATE INDEX idx_gallery_items_upload_target
+          ON gallery_items (upload_target_provider_id, upload_target_path);
+      ''');
+      v9Raw.execute('''
+        CREATE TABLE sync_run_state (
+          id TEXT NOT NULL PRIMARY KEY,
+          status TEXT NOT NULL,
+          total_items INTEGER NOT NULL DEFAULT 0,
+          completed_items INTEGER NOT NULL DEFAULT 0,
+          failed_items INTEGER NOT NULL DEFAULT 0,
+          total_bytes INTEGER NOT NULL DEFAULT 0,
+          completed_bytes INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT NULL,
+          updated_at INTEGER NOT NULL DEFAULT 0
+        );
+      ''');
+      v9Raw.execute(
+        "INSERT INTO gallery_items (origin, provider_id, path, seq, captured_at) "
+        "VALUES ('cloud', 'space-a', '/Photos/a.jpg', 5, 1000);",
+      );
+      v9Raw.execute(
+        "INSERT INTO sync_run_state (id, status, total_items) "
+        "VALUES ('default', 'paused', 7);",
+      );
+      v9Raw.execute('PRAGMA user_version = 9;');
+      v9Raw.close();
+
+      final db = GalleryMirrorDatabase(NativeDatabase(file));
+      addTearDown(db.close);
+
+      // Everything that existed before the upgrade survived.
+      final items = await db.select(db.galleryItems).get();
+      expect(items, hasLength(1));
+      expect(items.single.path, '/Photos/a.jpg');
+      final runState = await GalleryMirror(db).syncRunState();
+      expect(runState.status, 'paused');
+      expect(runState.totalItems, 7);
+
+      // The new table exists, starts empty (the lock reads as free), and
+      // accepts the atomic acquire GalleryMirror.tryAcquireTokenRefreshLock
+      // relies on.
+      final rows = await db.select(db.tokenRefreshLock).get();
+      expect(rows, isEmpty);
+      final mirror = GalleryMirror(db);
+      final now = DateTime.now().millisecondsSinceEpoch;
+      expect(
+        await mirror.tryAcquireTokenRefreshLock(
+          holder: 'ui',
+          nowMillis: now,
+          leaseMillis: 30000,
+        ),
+        isTrue,
+      );
+    });
+
     test('a fresh install creates the current schema directly via onCreate',
         () async {
       final db = GalleryMirrorDatabase(NativeDatabase.memory());

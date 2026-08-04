@@ -13,6 +13,7 @@ import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_upload_backend.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_upload_service.dart';
 import 'package:seraph_app/src/gallery/sync/gallery_sync_engine.dart';
+import 'package:seraph_app/src/gallery/sync/token_refresh_coordination.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
 import 'package:webdav_client/webdav_client.dart' as webdav;
 
@@ -119,7 +120,7 @@ class _GallerySyncTaskHandler extends TaskHandler {
       final db = _db ??= GalleryMirrorDatabase.open();
       final mirror = GalleryMirror(db);
 
-      final session = await _loadHeadlessSession();
+      final session = await _loadHeadlessSession(mirror);
       if (session == null) {
         await mirror.writeSyncRunState(
           status: syncStatusError,
@@ -223,13 +224,23 @@ class _HeadlessSession {
 /// interactive login there) rather than by a background service silently
 /// popping a browser over whatever they were doing on their phone.
 ///
+/// **Ticket 23**: the explicit `.refreshToken()` call is guarded by the same
+/// cross-isolate lock [LoginController] itself now goes through
+/// (`refreshTokenWithLock`, `token_refresh_coordination.dart`) - [mirror] is
+/// this isolate's own connection to the SAME `gallery_mirror.sqlite` file
+/// the UI isolate has open, which is what makes the lock cross-isolate
+/// rather than merely cross-call. If the UI isolate's own refresh currently
+/// holds the lock, this call never presents the rotating refresh token a
+/// second time - it waits, then reads whatever the UI isolate's refresh
+/// persisted instead.
+///
 /// Returns null (rather than throwing) for every case that just means
 /// "there is nothing to back up to right now": no server ever confirmed, no
 /// OIDC discovery ever completed, or a refresh that failed. `serverUrlConfirmed`
 /// with an empty [SettingsController.oidcIssuer] means a no-auth server -
 /// the session then carries no token at all, which is exactly what an
 /// unauthenticated [webdav.Client] needs.
-Future<_HeadlessSession?> _loadHeadlessSession() async {
+Future<_HeadlessSession?> _loadHeadlessSession(GalleryMirror mirror) async {
   final settingsController = SettingsController();
   await settingsController.init();
 
@@ -256,20 +267,20 @@ Future<_HeadlessSession?> _loadHeadlessSession() async {
     return null;
   }
 
-  const secureStorage = FlutterSecureStorage();
-  final manager = OidcUserManager.lazy(
-    discoveryDocumentUri: OidcUtils.getOpenIdConfigWellKnownUri(Uri.parse(issuer)),
-    clientCredentials: OidcClientAuthentication.none(clientId: clientId),
-    store: OidcDefaultStore(secureStorageInstance: secureStorage),
-    settings: OidcUserManagerSettings(
-      redirectUri: Uri.parse('net.umbasa.seraph.app:/oaut2redirect'),
-      scope: const ['openid', 'profile', 'email', 'offline_access'],
-    ),
-  );
+  final manager = _buildHeadlessManager(issuer, clientId);
 
   try {
     await manager.init();
-    final user = await manager.refreshToken();
+    // Ticket 23: guarded rather than a bare `manager.refreshToken()` - see
+    // this function's own doc. The loser reads via a throwaway probe
+    // manager's `init()` ([_readPersistedHeadlessUser]) rather than
+    // reaching for the package's protected `loadCachedTokens()` internals.
+    final user = await refreshTokenWithLock<OidcUser?>(
+      mirror: mirror,
+      holder: headlessTokenRefreshLockHolder,
+      refresh: () => manager.refreshToken(),
+      readPersisted: () => _readPersistedHeadlessUser(issuer, clientId),
+    );
     if (user == null) {
       return null;
     }
@@ -280,6 +291,43 @@ Future<_HeadlessSession?> _loadHeadlessSession() async {
     return null;
   } finally {
     await manager.dispose();
+  }
+}
+
+/// Builds a fresh [OidcUserManager] against [issuer]/[clientId] - the exact
+/// construction [_loadHeadlessSession] already did inline before ticket 23,
+/// now shared with [_readPersistedHeadlessUser]'s throwaway probe manager
+/// below, so the two never drift apart on redirect URI, scope or store.
+OidcUserManager _buildHeadlessManager(String issuer, String clientId) {
+  const secureStorage = FlutterSecureStorage();
+  return OidcUserManager.lazy(
+    discoveryDocumentUri: OidcUtils.getOpenIdConfigWellKnownUri(Uri.parse(issuer)),
+    clientCredentials: OidcClientAuthentication.none(clientId: clientId),
+    store: OidcDefaultStore(secureStorageInstance: secureStorage),
+    settings: OidcUserManagerSettings(
+      redirectUri: Uri.parse('net.umbasa.seraph.app:/oaut2redirect'),
+      scope: const ['openid', 'profile', 'email', 'offline_access'],
+    ),
+  );
+}
+
+/// Ticket 23's "re-reads the persisted token" side of the lock, for the
+/// headless isolate - mirrors [LoginController]'s own
+/// `_readPersistedUser` (`../../login/login_controller.dart`): a throwaway
+/// manager, built fresh and `init()`'d then disposed, never reused, so the
+/// read goes through the package's public cold-start restore path rather
+/// than its protected `loadCachedTokens()`/`createUserFromToken()`
+/// internals. Never calls `.refreshToken()` itself - whatever `.init()`
+/// restores from secure storage (already updated by the lock's winner, by
+/// the time this runs) is authoritative.
+Future<OidcUser?> _readPersistedHeadlessUser(
+    String issuer, String clientId) async {
+  final probe = _buildHeadlessManager(issuer, clientId);
+  try {
+    await probe.init();
+    return probe.currentUser;
+  } finally {
+    await probe.dispose();
   }
 }
 

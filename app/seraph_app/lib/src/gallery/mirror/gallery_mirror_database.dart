@@ -30,6 +30,7 @@ part 'gallery_mirror_database.g.dart';
   LocalFolderSelections,
   SyncPairs,
   SyncRunState,
+  TokenRefreshLock,
 ])
 class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
   GalleryMirrorDatabase(super.e);
@@ -43,7 +44,7 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
   }
 
   @override
-  int get schemaVersion => 9;
+  int get schemaVersion => 10;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -151,6 +152,16 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
             // device with no run in progress reads exactly as a fresh
             // install would.
             await m.createTable(syncRunState);
+          }
+          if (from < 10) {
+            // v10 (ticket 23) added [TokenRefreshLock] - the cross-isolate
+            // guard around the UI isolate's and the headless engine's own
+            // non-interactive OIDC refresh (see that table's class doc). A
+            // fresh, empty table - there is nothing to backfill, since a
+            // pre-upgrade device has never had a lock row to begin with, and
+            // an absent row already reads as "free" everywhere this table is
+            // consulted.
+            await m.createTable(tokenRefreshLock);
           }
         },
         beforeOpen: (details) async {
@@ -601,6 +612,71 @@ class SyncRunState extends Table {
   /// stale (see its own reconciliation doc) if it is ever extended to time
   /// out a run whose process vanished without the courtesy of a final write.
   IntColumn get updatedAt => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// Ticket 23's cross-isolate token-refresh lock: a DB-backed mutex so the UI
+/// isolate ([LoginController], `../../login/login_controller.dart`) and the
+/// headless sync engine's own isolate (`_loadHeadlessSession` in
+/// `../sync/gallery_sync_task_handler.dart`) never both call the OIDC token
+/// endpoint's refresh grant at the same time. This matters specifically
+/// because the app's refresh token ROTATES on every use: a second, truly
+/// concurrent refresh presents a refresh token the first refresh has already
+/// invalidated server-side, and the whole session dies silently - during an
+/// unattended overnight backup, the worst possible moment to find out (spec:
+/// "Token refresh is guarded by a database-backed cross-isolate lock").
+///
+/// Read and written through [GalleryMirror.tryAcquireTokenRefreshLock] /
+/// [GalleryMirror.releaseTokenRefreshLock] / [GalleryMirror.
+/// tokenRefreshLockHeld] - never directly - and the actual refresh callers on
+/// both isolates go through `refreshTokenWithLock` in
+/// `../sync/token_refresh_coordination.dart`, which is what turns "one
+/// isolate holds the lock" into "the loser reads the persisted token instead
+/// of refreshing again" (ticket 23's own acceptance criterion).
+///
+/// Lives under `gallery/mirror/` alongside every other mirror table even
+/// though [LoginController] is not gallery-specific, because
+/// [GalleryMirrorDatabase] is the only storage this app has that is already
+/// open, as the SAME on-disk file, from both isolates - exactly what "the
+/// lock must live in shared persistent storage, since isolates share no
+/// memory" (this ticket's own text) requires. A second, auth-specific
+/// database would only duplicate that property for no benefit.
+///
+/// **Always at most one row** ([id] is always [tokenRefreshLockId]) - the
+/// same single-well-known-row shape [SyncRunState] uses, for the same reason:
+/// there is only ever one refresh worth serialising against.
+///
+/// **Lease-based, not held until explicitly released.** [expiresAt] is what
+/// bounds how long a holder may keep the lock even if it is killed before it
+/// ever calls [GalleryMirror.releaseTokenRefreshLock] - an isolate reaped by
+/// the OS mid-refresh (the headless service's process, or the app itself)
+/// leaves a row behind that [GalleryMirror.tryAcquireTokenRefreshLock]'s own
+/// UPSERT `WHERE` clause treats as free again once [expiresAt] has passed,
+/// rather than a lock nothing could ever clear - this is what makes "An
+/// isolate killed while holding the lock does not deadlock the other" true
+/// without any process-liveness check, which neither isolate has any way to
+/// perform on the other. [holder] is diagnostic only - an isolate-identifying
+/// string recorded at acquisition - and plays no part in the acquisition
+/// decision itself: an unexpired lease is honoured regardless of who asks.
+class TokenRefreshLock extends Table {
+  TextColumn get id => text()();
+
+  /// Which isolate currently holds (or most recently held) the lock -
+  /// `'ui'` or `'headless'`, see the constants next to `refreshTokenWithLock`
+  /// in `../sync/token_refresh_coordination.dart`. Diagnostic only, per the
+  /// class doc.
+  TextColumn get holder => text()();
+
+  /// Epoch milliseconds the current holder acquired the lock at.
+  IntColumn get acquiredAt => integer()();
+
+  /// Epoch milliseconds the current lease expires at - past this point the
+  /// lock is free for another acquire regardless of whether
+  /// [GalleryMirror.releaseTokenRefreshLock] was ever called (see the class
+  /// doc's "lease-based" note).
+  IntColumn get expiresAt => integer()();
 
   @override
   Set<Column> get primaryKey => {id};
