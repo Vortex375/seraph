@@ -26,7 +26,7 @@ than silently.
 
 **Blocked by:** 22
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] A photo taken during a large backlog run uploads before the remaining backlog
 - [ ] Within each priority class, newer photos upload first
