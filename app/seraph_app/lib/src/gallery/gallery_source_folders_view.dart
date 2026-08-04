@@ -572,6 +572,10 @@ class _GallerySourceFoldersViewState extends State<GallerySourceFoldersView> {
           if (_dataSyncController != null) ...[
             const Divider(height: 32),
             _BackupSection(controller: _dataSyncController),
+            // Ticket 25: the visible failure list - shown right under the
+            // Backup card itself is, present only where that card is, since
+            // there is nothing to fail without one.
+            _FailureListSection(controller: _dataSyncController),
           ],
           // Ticket 24: the constraints governing the SCHEDULED (unattended)
           // runs WorkManager triggers - distinct from the manual start/pause
@@ -749,6 +753,14 @@ class _BackupSection extends StatelessWidget {
           case syncStatusError:
             statusText = state.lastError ?? 'Backup could not start.';
             break;
+          case syncStatusBackoff:
+            // Ticket 25: distinct from both syncStatusError ("something
+            // needs the user's attention") and syncStatusPaused ("the user
+            // asked to stop") - nothing is misconfigured, and this WILL
+            // retry itself once the cooldown passes.
+            statusText = 'Seraph is not responding - retrying '
+                'automatically.';
+            break;
           case syncStatusCompleted:
             statusText = state.totalItems == 0
                 ? 'Everything is backed up.'
@@ -817,6 +829,80 @@ class _BackupSection extends StatelessWidget {
         );
       }),
     );
+  }
+}
+
+/// Ticket 25's visible failure list: every item [GalleryDataSyncController.
+/// failedItems] currently reports (a permanent failure - read-only Space,
+/// out of storage, or similar - [GallerySyncEngine] gave up retrying on its
+/// own), with the reason and a Retry action. Absent entirely when the list
+/// is empty, the same "nothing to show, show nothing" convention the rest of
+/// this screen's optional sections use - a failure list is not something a
+/// user should have to check and find reassuringly blank.
+class _FailureListSection extends StatelessWidget {
+  const _FailureListSection({required this.controller});
+
+  final GalleryDataSyncController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Obx(() {
+      final items = controller.failedItems;
+      if (items.isEmpty) {
+        return const SizedBox.shrink();
+      }
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: Card(
+          color: theme.colorScheme.errorContainer.withValues(alpha: 0.35),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Backup failed for ${items.length} photo'
+                  '${items.length == 1 ? '' : 's'}',
+                  style: theme.textTheme.titleSmall,
+                ),
+                const SizedBox(height: 4),
+                ...items.map((item) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  item.localDisplayName ?? 'Unknown photo',
+                                  style: theme.textTheme.bodyMedium,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                Text(
+                                  item.uploadFailureReason ??
+                                      'Backup failed for an unknown reason.',
+                                  style: theme.textTheme.bodySmall,
+                                ),
+                              ],
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () => controller.retryFailedItem(item),
+                            child: const Text('Retry'),
+                          ),
+                        ],
+                      ),
+                    )),
+              ],
+            ),
+          ),
+        ),
+      );
+    });
   }
 }
 

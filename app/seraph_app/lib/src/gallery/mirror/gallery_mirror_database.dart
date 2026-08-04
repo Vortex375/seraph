@@ -45,7 +45,7 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
   }
 
   @override
-  int get schemaVersion => 12;
+  int get schemaVersion => 13;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -193,9 +193,32 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
             // correct on every upgrade path: a single-version v10->v11
             // step, and a multi-version jump that never had a "before this
             // column existed" moment to begin with.
+            //
+            // **Ticket 25 revised [newColumns] here**, even though this
+            // step is still nominally ticket 24's: [alterTable] rebuilds
+            // toward the table's CURRENT Dart definition regardless of
+            // which ladder step invokes it, so on a multi-version jump
+            // starting below v11 (this step and the `from < 13` step below
+            // both run in the same `onUpgrade` call), THIS rebuild is the
+            // first one to touch a table that also lacks
+            // [SyncRunState.globalBackoffUntil]/[globalBackoffStreak] -
+            // omitting them here made this step try to copy those two
+            // columns from an old table that does not have them yet
+            // (`no such column: global_backoff_until`). Listing them as new
+            // here too is harmless for a device already at v11 or v12 (that
+            // device skips this `if` entirely) and harmless for the
+            // multi-version-jump case (this rebuild leaves them at their
+            // default, then the `from < 13` step below rebuilds again and
+            // leaves them at that same default a second time - no data is
+            // ever lost, since neither column has existed anywhere before
+            // now).
             await m.alterTable(TableMigration(
               syncRunState,
-              newColumns: [syncRunState.lastSuccessAt],
+              newColumns: [
+                syncRunState.lastSuccessAt,
+                syncRunState.globalBackoffUntil,
+                syncRunState.globalBackoffStreak,
+              ],
             ));
           }
           if (from < 12) {
@@ -209,6 +232,42 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
             // "free" everywhere this table is consulted, the same shape
             // [TokenRefreshLock] (v10) already established.
             await m.createTable(syncRunLock);
+          }
+          if (from < 13) {
+            // v13 (ticket 25) added the queue-policy/failure-list columns.
+            //
+            // On [GalleryItems]: [localFirstSeenAt] (the priority-class
+            // boundary - "observed after setup or the last completed pass"),
+            // [uploadAttempts]/[uploadNextRetryAt] (per-item transient
+            // backoff) and [uploadFailureBucket]/[uploadFailureReason] (the
+            // permanent failure list). [GalleryItems] has been part of the
+            // base schema since v1 - never re-created mid-ladder the way
+            // [SyncRunState] was (see the `from < 7` step above for the same
+            // reasoning applied to [uploadState] et al.) - so a plain
+            // `addColumn` per column is safe on every upgrade path,
+            // including a multi-version jump.
+            await m.addColumn(galleryItems, galleryItems.localFirstSeenAt);
+            await m.addColumn(galleryItems, galleryItems.uploadAttempts);
+            await m.addColumn(galleryItems, galleryItems.uploadNextRetryAt);
+            await m.addColumn(galleryItems, galleryItems.uploadFailureBucket);
+            await m.addColumn(galleryItems, galleryItems.uploadFailureReason);
+
+            // [SyncRunState], by contrast, IS created mid-ladder (`if (from
+            // < 9)` above via `createTable`, which always builds from the
+            // CURRENT Dart definition) - so a multi-version jump from below
+            // v9 straight past v13 would already have these two columns
+            // from that step, and a plain `addColumn` here would then fail
+            // with "duplicate column name" - exactly ticket 24's
+            // [lastSuccessAt] bug, same root cause. Table rebuild via
+            // [alterTable], matching that precedent (see the `from < 11`
+            // step above).
+            await m.alterTable(TableMigration(
+              syncRunState,
+              newColumns: [
+                syncRunState.globalBackoffUntil,
+                syncRunState.globalBackoffStreak,
+              ],
+            ));
           }
         },
         beforeOpen: (details) async {
@@ -416,6 +475,65 @@ class GalleryItems extends Table {
   /// reporting this exact file. Both null whenever [uploadState] is.
   TextColumn get uploadTargetProviderId => text().nullable()();
   TextColumn get uploadTargetPath => text().nullable()();
+
+  // --- Ticket 25: queue policy and failure buckets ---
+
+  /// Epoch milliseconds this row was first written as a fresh Device only
+  /// row by [GalleryMirror._upsertLocalItem] - null for a row created before
+  /// this column existed, and for every cloud-origin row (a device row's
+  /// local identity columns are the only ones this ever gates on). This is
+  /// the spec's "observed" moment, deliberately NOT [capturedAt]: a photo
+  /// migrated onto a new phone (copied over, no reliable EXIF) can have an
+  /// old or missing capture date while only being SEEN by this device's
+  /// mirror for the first time today, and the priority split needs to tell
+  /// "newly discovered" apart from "long-owned" even when the two disagree
+  /// with when the picture was actually taken.
+  ///
+  /// [GalleryMirror.itemsPendingUpload] compares this against the queue
+  /// policy's priority-class baseline (the last completed pass, or - before
+  /// any pass has ever completed - "everything currently pending", since
+  /// there is no historical backlog yet to preempt) to split the queue into
+  /// the spec's two priority classes.
+  IntColumn get localFirstSeenAt => integer().nullable()();
+
+  /// How many consecutive TRANSIENT upload failures (see
+  /// [GalleryUploadFailureBucket] in `gallery_upload_backend.dart`) this row
+  /// has had in a row, reset to 0 the moment an attempt succeeds. Drives
+  /// [uploadNextRetryAt]'s exponential per-item backoff - see
+  /// [GallerySyncEngine] (`../sync/gallery_sync_engine.dart`) for the
+  /// schedule. Never incremented for a PERMANENT failure - see
+  /// [uploadFailureBucket] - which stops retrying altogether rather than
+  /// backing off.
+  IntColumn get uploadAttempts => integer().withDefault(const Constant(0))();
+
+  /// Epoch milliseconds before which [GalleryMirror.itemsPendingUpload] must
+  /// not re-offer this row - the per-item half of the spec's "transient
+  /// failures retry with per-item exponential backoff". Null means no
+  /// backoff is currently in effect (the common case: never failed, or
+  /// failed and already past its window).
+  IntColumn get uploadNextRetryAt => integer().nullable()();
+
+  /// Null for every row except one [GallerySyncEngine] gave up retrying -
+  /// `'permanent'` once a PERMANENT failure (read-only Space, out of
+  /// storage, or an upload-side error this engine cannot itself recover
+  /// from) stops it. A row with this set is excluded from
+  /// [GalleryMirror.itemsPendingUpload] entirely (never silently retried
+  /// forever) and appears instead in [GalleryMirror.failedUploadItems] - the
+  /// spec's "visible failure list" - until [GalleryMirror.retryFailedUpload]
+  /// clears it back to null, which is what "the failure list can be
+  /// retried... requires no reconfiguration" means in code: clearing this
+  /// column is the whole retry, no Sync Pair or setting is ever touched.
+  /// Plain text, not a Dart enum column, for the same forward-compatibility
+  /// reason [origin]/[uploadState]/[status] all are - only one value exists
+  /// today, but a future second failure bucket needing its own visible list
+  /// (there is no such thing planned) would not need a schema change.
+  TextColumn get uploadFailureBucket => text().nullable()();
+
+  /// A message fit to show the user directly alongside a
+  /// [uploadFailureBucket] `'permanent'` row in the failure list - whatever
+  /// [GalleryUploadException.message] the failing attempt carried. Null
+  /// whenever [uploadFailureBucket] is.
+  TextColumn get uploadFailureReason => text().nullable()();
 
   @override
   List<Set<Column>> get uniqueKeys => [
@@ -672,6 +790,29 @@ class SyncRunState extends Table {
   /// than the UI having no way to tell "quietly up to date" from "quietly
   /// not running at all".
   IntColumn get lastSuccessAt => integer().nullable()();
+
+  /// Ticket 25: epoch milliseconds before which [GallerySyncEngine] must not
+  /// attempt ANY network call at all - the queue policy's GLOBAL backoff, as
+  /// opposed to [GalleryItems.uploadNextRetryAt]'s per-item one. Set once a
+  /// run trips the breaker (several consecutive TRANSIENT failures in a
+  /// row - see [GallerySyncEngine.run]), so a downed server stops the whole
+  /// run from hammering every remaining item's connection instead of only
+  /// slowing down each one individually ("a downed server does not produce
+  /// thousands of independent retry storms", the spec's own wording). Null
+  /// means no global backoff is currently in effect. Carried forward by
+  /// [GalleryMirror.writeSyncRunState] on every write that does not itself
+  /// change it, the same convention [lastSuccessAt] uses, so an unrelated
+  /// write (the UI's stale-`running`-row reconciliation, in particular)
+  /// never accidentally clears an active backoff.
+  IntColumn get globalBackoffUntil => integer().nullable()();
+
+  /// How many times in a row the global breaker has tripped - what
+  /// [globalBackoffUntil]'s exponential schedule is computed from. Reset to
+  /// 0 the moment a run either uploads something successfully or trips no
+  /// breaker at all (the server is reachable again), carried forward
+  /// otherwise - the same [lastSuccessAt]-style convention.
+  IntColumn get globalBackoffStreak =>
+      integer().withDefault(const Constant(0))();
 
   @override
   Set<Column> get primaryKey => {id};

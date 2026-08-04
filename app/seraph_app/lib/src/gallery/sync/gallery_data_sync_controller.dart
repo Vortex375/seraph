@@ -54,8 +54,16 @@ class GalleryDataSyncController extends GetxController {
       completedBytes: 0,
       lastError: null,
       updatedAt: 0,
+      globalBackoffStreak: 0,
     ),
   );
+
+  /// Ticket 25's visible failure list - [GalleryMirror.failedUploadItems],
+  /// polled on the same timer as [state] so the Gallery folders screen's
+  /// failure section never has to poll the mirror on its own. Empty until
+  /// the first read completes, the same "no null-check needed" convention
+  /// [state] itself uses.
+  final RxList<GalleryItem> failedItems = RxList<GalleryItem>([]);
 
   Timer? _pollTimer;
 
@@ -102,10 +110,12 @@ class GalleryDataSyncController extends GetxController {
       }
     }
     state.value = current;
+    failedItems.value = await mirror.failedUploadItems();
 
     _pollTimer?.cancel();
     _pollTimer = Timer.periodic(_pollInterval, (_) async {
       state.value = await mirror.syncRunState();
+      failedItems.value = await mirror.failedUploadItems();
     });
   }
 
@@ -120,5 +130,17 @@ class GalleryDataSyncController extends GetxController {
   /// Source, or if nothing is currently running.
   Future<void> pause() async {
     await _service?.pause();
+  }
+
+  /// The failure list's retry action (ticket 25): clears [item]'s failure
+  /// bucket via [GalleryMirror.retryFailedUpload] - "requires no
+  /// reconfiguration", so that alone is enough to make it an ordinary
+  /// pending upload again - then starts a run immediately, the same
+  /// [start] a user pressing the Backup card's own button triggers, so the
+  /// retry is not left waiting for the next scheduled pass.
+  Future<void> retryFailedItem(GalleryItem item) async {
+    await mirror.retryFailedUpload(item.id);
+    failedItems.value = await mirror.failedUploadItems();
+    await start();
   }
 }

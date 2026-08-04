@@ -181,6 +181,11 @@ class _GallerySyncTaskHandler extends TaskHandler {
               '${state.completedItems == 1 ? '' : 's'} sent',
       syncStatusPaused => 'Paused - $remaining photo'
           '${remaining == 1 ? '' : 's'} left',
+      // Ticket 25: the global backoff status - matches the wording the
+      // in-app Backup card uses for the same state
+      // (`gallery_source_folders_view.dart`).
+      syncStatusBackoff => 'Seraph is not responding - retrying '
+          'automatically',
       _ => 'Backing up…',
     };
     await FlutterForegroundTask.updateService(

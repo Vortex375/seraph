@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:seraph_app/src/gallery/gallery_item_display.dart';
@@ -68,6 +69,7 @@ void main() {
       required String displayName,
       required int capturedAtSeconds,
       required Uint8List bytes,
+      int? nowMillis,
     }) async {
       scannedItems.add(localMediaItem(
         relativePath: relativePath,
@@ -75,7 +77,7 @@ void main() {
         size: bytes.length,
         dateTakenMillis: capturedAtSeconds * 1000,
       ));
-      await mirror.applyLocalScan(scannedItems);
+      await mirror.applyLocalScan(scannedItems, nowMillis: nowMillis);
       localSource.setLocalBytes(relativePath, displayName, bytes);
       return (await mirror.queryItems())
           .firstWhere((i) => i.localDisplayName == displayName);
@@ -346,6 +348,348 @@ void main() {
       expect(afterSecondSuccess.lastSuccessAt, now.millisecondsSinceEpoch);
       expect(afterSecondSuccess.lastSuccessAt,
           greaterThan(afterFirst.lastSuccessAt!));
+    });
+
+    // Ticket 25's queue policy: two priority classes, newest first within
+    // each.
+    group('queue policy - priority classes', () {
+      test(
+          'a photo observed after the last completed pass preempts the '
+          'remaining historical backlog, newest first within each class - '
+          'even when the backlog\'s own Capture Date is NEWER than the '
+          'fresh photos\'', () async {
+        var clockMillis = 1000000;
+
+        // The historical backlog - X and Y - lives under a folder no Sync
+        // Pair covers YET, so the first run below never sees them at all
+        // (itemsPendingUpload requires ACTIVE coverage); only their
+        // observed-at timestamp (T0) is what matters later, not whether
+        // anything tried to upload them yet.
+        await scanDevicePhoto(
+          relativePath: 'DCIM/Backlog/',
+          displayName: 'X.jpg',
+          capturedAtSeconds: 100,
+          bytes: _bytesOfLength(100),
+          nowMillis: clockMillis,
+        );
+        await scanDevicePhoto(
+          relativePath: 'DCIM/Backlog/',
+          displayName: 'Y.jpg',
+          capturedAtSeconds: 200,
+          bytes: _bytesOfLength(100),
+          nowMillis: clockMillis,
+        );
+        // A filler photo under the folder already covered by setUp's Sync
+        // Pair, so this run has something to actually complete - what
+        // establishes SyncRunState.lastSuccessAt as the baseline the next
+        // run's priority split is measured against.
+        await scanDevicePhoto(
+          displayName: 'filler.jpg',
+          capturedAtSeconds: 1,
+          bytes: _bytesOfLength(50),
+          nowMillis: clockMillis,
+        );
+
+        final engine = GallerySyncEngine(mirror, uploadService,
+            concurrency: 1,
+            now: () => DateTime.fromMillisecondsSinceEpoch(clockMillis));
+        final firstRun = await engine.run();
+        expect(firstRun.outcome, GallerySyncOutcome.completed);
+        expect(firstRun.uploaded, 1,
+            reason: 'X and Y are not covered by any Sync Pair yet');
+        final afterFirst = await mirror.syncRunState();
+        expect(afterFirst.lastSuccessAt, clockMillis);
+
+        // Time passes. A Sync Pair now covers DCIM/Backlog/ - X and Y
+        // become upload candidates for the first time, but their
+        // observed-at timestamp is still T0, at/before the baseline just
+        // recorded. Two genuinely fresh photos, P and Q, are observed now -
+        // deliberately given an OLDER Capture Date than X/Y, so an ordering
+        // driven by Capture Date alone would rank them BEHIND the backlog;
+        // the priority split must not do that.
+        clockMillis += 60000;
+        await mirror.createSyncPair(
+          localFolderPath: 'DCIM/Backlog/',
+          spaceProviderId: 'space-a',
+          path: '/Photos/Backlog',
+        );
+        await scanDevicePhoto(
+          displayName: 'P.jpg',
+          capturedAtSeconds: 10,
+          bytes: _bytesOfLength(100),
+          nowMillis: clockMillis,
+        );
+        await scanDevicePhoto(
+          displayName: 'Q.jpg',
+          capturedAtSeconds: 20,
+          bytes: _bytesOfLength(100),
+          nowMillis: clockMillis,
+        );
+
+        final secondRun = await engine.run();
+        expect(secondRun.outcome, GallerySyncOutcome.completed);
+        expect(secondRun.uploaded, 4);
+        expect(
+          backend.putCalls.skip(1).map((c) => c.$2).toList(),
+          [
+            '/Photos/Phone/Q.jpg',
+            '/Photos/Phone/P.jpg',
+            '/Photos/Backlog/Y.jpg',
+            '/Photos/Backlog/X.jpg',
+          ],
+          reason: 'fresh (Q, P - newest first) entirely ahead of backlog '
+              '(Y, X - newest first), regardless of Capture Date',
+        );
+      });
+    });
+
+    // Ticket 25's queue policy: the three failure buckets.
+    group('queue policy - failure buckets', () {
+      test(
+          'transient failures retry with increasing per-item delays, and '
+          'are excluded from the queue until each window passes', () async {
+        var clockMillis = 1000000;
+        final photo = await scanDevicePhoto(
+          displayName: 'IMG_0001.jpg',
+          capturedAtSeconds: 1000,
+          bytes: _bytesOfLength(500),
+        );
+        backend.putError = const GalleryUploadException('connection lost');
+
+        final engine = GallerySyncEngine(mirror, uploadService,
+            now: () => DateTime.fromMillisecondsSinceEpoch(clockMillis));
+
+        final first = await engine.run();
+        expect(first.outcome, GallerySyncOutcome.completed);
+        expect(first.failed, 1);
+        var row = (await mirror.queryItems())
+            .firstWhere((i) => i.id == photo.id);
+        expect(row.uploadAttempts, 1);
+        expect(row.uploadNextRetryAt, clockMillis + 30000,
+            reason: 'the default per-item base delay');
+
+        // Still inside the first backoff window - must not be re-offered.
+        clockMillis += 10000;
+        final second = await engine.run();
+        expect(second.outcome, GallerySyncOutcome.nothingToDo);
+        expect(backend.putCalls, hasLength(1),
+            reason: 'no NEW attempt while still inside the backoff window '
+                '- the one entry is the first (failed) attempt itself');
+
+        // Past the window - retried, fails again, the delay doubles.
+        clockMillis += 25000;
+        final third = await engine.run();
+        expect(third.outcome, GallerySyncOutcome.completed);
+        expect(third.failed, 1);
+        expect(backend.putCalls, hasLength(2));
+        row =
+            (await mirror.queryItems()).firstWhere((i) => i.id == photo.id);
+        expect(row.uploadAttempts, 2);
+        expect(row.uploadNextRetryAt, clockMillis + 60000,
+            reason: '30s * 2^1 - the schedule doubles on the second '
+                'consecutive failure');
+      });
+
+      test(
+          'a server that is down trips a global backoff instead of '
+          'retrying every remaining item individually, and no network call '
+          'happens at all while the cooldown is in effect', () async {
+        var clockMillis = 1000000;
+        for (var i = 0; i < 5; i++) {
+          await scanDevicePhoto(
+            displayName: 'IMG_000$i.jpg',
+            capturedAtSeconds: 1000 + i,
+            bytes: _bytesOfLength(100),
+          );
+        }
+        // A permanently failing backend - never clears, exactly the
+        // ticket's own "global-backoff test with a permanently failing
+        // backend" coverage requirement.
+        backend.putError = const GalleryUploadException('connection lost');
+
+        final engine = GallerySyncEngine(mirror, uploadService,
+            concurrency: 1,
+            globalBackoffThreshold: 3,
+            globalBackoffBaseDelay: const Duration(minutes: 1),
+            now: () => DateTime.fromMillisecondsSinceEpoch(clockMillis));
+
+        final result = await engine.run();
+        expect(result.outcome, GallerySyncOutcome.globalBackoff);
+        expect(backend.putCalls, hasLength(3),
+            reason: 'the breaker trips after 3 consecutive transient '
+                'failures - the other 2 queued items are abandoned for '
+                'this run rather than each independently retried');
+        final state = await mirror.syncRunState();
+        expect(state.status, syncStatusBackoff);
+        expect(state.globalBackoffStreak, 1);
+        expect(state.globalBackoffUntil, clockMillis + 60000);
+
+        // Inside the cooldown window - not one more network call is made.
+        clockMillis += 1000;
+        final duringBackoff = await engine.run();
+        expect(duringBackoff.outcome, GallerySyncOutcome.globalBackoff);
+        expect(backend.putCalls, hasLength(3));
+
+        // Past the window, still down: the breaker trips again and the
+        // schedule grows.
+        clockMillis += 60000;
+        final secondTrip = await engine.run();
+        expect(secondTrip.outcome, GallerySyncOutcome.globalBackoff);
+        final state2 = await mirror.syncRunState();
+        expect(state2.globalBackoffStreak, 2);
+        expect(state2.globalBackoffUntil, clockMillis + 120000,
+            reason: '60s * 2^1 - doubled on the second consecutive trip');
+      });
+
+      test(
+          'a permanent failure stops retrying and appears in the visible '
+          'failure list with a reason; retrying it needs no '
+          'reconfiguration', () async {
+        final photo = await scanDevicePhoto(
+          displayName: 'IMG_0001.jpg',
+          capturedAtSeconds: 1000,
+          bytes: _bytesOfLength(500),
+        );
+        backend.statError = const GalleryUploadException(
+          'This Space is read-only - uploading is not allowed here.',
+          readOnly: true,
+          bucket: GalleryUploadFailureBucket.permanent,
+        );
+
+        final engine = GallerySyncEngine(mirror, uploadService);
+        final result = await engine.run();
+        expect(result.outcome, GallerySyncOutcome.completed);
+        expect(result.failed, 1);
+
+        expect(await mirror.itemsPendingUpload(), isEmpty,
+            reason: 'a permanent failure must never be silently retried');
+        final failures = await mirror.failedUploadItems();
+        expect(failures, hasLength(1));
+        expect(failures.single.id, photo.id);
+        expect(failures.single.uploadFailureReason, contains('read-only'));
+
+        // The retry action - clears the failure with no Sync Pair or
+        // setting touched, so the very next run picks it up normally.
+        backend.statError = null;
+        await mirror.retryFailedUpload(photo.id);
+        expect(await mirror.failedUploadItems(), isEmpty);
+
+        final second = await engine.run();
+        expect(second.outcome, GallerySyncOutcome.completed);
+        expect(second.uploaded, 1);
+        expect(backend.putCalls, hasLength(1));
+      });
+
+      test(
+          'a device file that vanished mid-upload is simply offered again '
+          'next run - never marked synced, never added to the failure '
+          'list', () async {
+        final photo = await scanDevicePhoto(
+          displayName: 'IMG_0001.jpg',
+          capturedAtSeconds: 1000,
+          bytes: _bytesOfLength(500),
+        );
+        localSource.forgetLocalBytes('DCIM/Camera/', 'IMG_0001.jpg');
+
+        final engine = GallerySyncEngine(mirror, uploadService);
+        final first = await engine.run();
+        expect(first.outcome, GallerySyncOutcome.completed);
+        expect(first.uploaded, 1,
+            reason: 'attempted, not failed - deviceFileUnavailable is not '
+                'this engine\'s job to police (ticket 22)');
+        expect(first.failed, 0);
+        expect(backend.putCalls, isEmpty);
+        expect(await mirror.failedUploadItems(), isEmpty);
+
+        final row =
+            (await mirror.queryItems()).firstWhere((i) => i.id == photo.id);
+        expect(row.availability, GalleryAvailability.deviceOnly);
+
+        // The file reappears - the very next run re-offers it with no
+        // special recovery action needed, exactly "re-queued... never
+        // mark synced".
+        localSource.setLocalBytes(
+            'DCIM/Camera/', 'IMG_0001.jpg', _bytesOfLength(500));
+        final second = await engine.run();
+        expect(second.outcome, GallerySyncOutcome.completed);
+        expect(second.uploaded, 1);
+        expect(backend.putCalls, hasLength(1));
+      });
+
+      test(
+          'losing the queue bookkeeping entirely costs only a rebuild - '
+          'nothing already Verified is re-uploaded, and a parked failure '
+          'simply becomes pending again', () async {
+        // One item that reaches Verified through the normal upload + feed
+        // path - this must NEVER be re-uploaded, queue loss or not.
+        final verified = await scanDevicePhoto(
+          displayName: 'verified.jpg',
+          capturedAtSeconds: 1000,
+          bytes: _bytesOfLength(1000),
+        );
+        await uploadService.upload(verified);
+        await mirror.applyPage(GalleryDeltaResponse(
+          items: [
+            GalleryDeltaItem(
+              providerId: 'space-a',
+              path: '/Photos/Phone/verified.jpg',
+              seq: 1,
+              tombstone: false,
+              capturedAt: 1000,
+              size: 1000,
+            ),
+          ],
+          nextCursor: '',
+          hasMore: false,
+          nextSince: 1,
+        ));
+        final verifiedRow = (await mirror.queryItems())
+            .firstWhere((i) => i.id == verified.id);
+        expect(verifiedRow.availability, GalleryAvailability.synced);
+
+        // A second item whose upload permanently failed - parked in the
+        // failure list, this ticket's own machinery.
+        final failed = await scanDevicePhoto(
+          displayName: 'failed.jpg',
+          capturedAtSeconds: 2000,
+          bytes: _bytesOfLength(500),
+        );
+        backend.statError = const GalleryUploadException(
+          'Seraph is out of storage space.',
+          bucket: GalleryUploadFailureBucket.permanent,
+        );
+        final engine = GallerySyncEngine(mirror, uploadService);
+        await engine.run();
+        expect(await mirror.failedUploadItems(), hasLength(1));
+        backend.statError = null;
+
+        // Simulate the queue itself being lost or corrupted - directly
+        // blanking the bookkeeping columns, NOT going through
+        // GalleryMirror.retryFailedUpload (a user action): the point is
+        // that losing this derived state by accident costs nothing beyond
+        // a rebuild, per the spec's own "the queue is derived state, not
+        // durable truth" rule.
+        await (db.update(db.galleryItems)
+              ..where((t) => t.id.equals(failed.id)))
+            .write(const GalleryItemsCompanion(
+          uploadFailureBucket: Value(null),
+          uploadFailureReason: Value(null),
+          uploadAttempts: Value(0),
+          uploadNextRetryAt: Value(null),
+        ));
+
+        final putCallsBeforeRebuild = backend.putCalls.length;
+        final rebuilt = await engine.run();
+        expect(rebuilt.outcome, GallerySyncOutcome.completed);
+        expect(rebuilt.uploaded, 1);
+        expect(
+          backend.putCalls.skip(putCallsBeforeRebuild).map((c) => c.$2),
+          ['/Photos/Phone/failed.jpg'],
+          reason: 'exactly one NEW put - the rebuilt item - and nothing '
+              'else; a Verified item is never even offered to the queue '
+              'again, scan-rebuilt or not',
+        );
+      });
     });
   });
 }

@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:drift/drift.dart';
 import 'package:seraph_app/src/gallery/local/local_media_item.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_delta_models.dart';
@@ -37,6 +39,36 @@ const String _uploadStateAssumed = 'assumed';
 const String _uploadStateMismatch = 'mismatch';
 const String _uploadStateAssumedMismatch = 'assumedMismatch';
 
+/// [GalleryItems.uploadFailureBucket] value (ticket 25) - named here for the
+/// same reason the [uploadState] values above are. Only one value exists
+/// today - see that column's own doc in `gallery_mirror_database.dart` for
+/// why it is still plain text rather than a bool.
+const String _uploadFailureBucketPermanent = 'permanent';
+
+/// `baseDelay * 2^(attempts-1)`, capped at [maxDelay] - ticket 25's
+/// exponential-backoff shape, shared by [GalleryMirror.
+/// recordTransientUploadFailure] (the per-item schedule) and
+/// [GallerySyncEngine]'s own global-backoff computation (`../sync/
+/// gallery_sync_engine.dart`, the per-run schedule), so both are the same
+/// formula with different constants rather than two independently-invented
+/// ones.
+int cappedExponentialBackoffMillis({
+  required int attempts,
+  required Duration baseDelay,
+  required Duration maxDelay,
+}) {
+  if (attempts <= 0) {
+    return 0;
+  }
+  // `attempts` is never large enough in practice to overflow a double via
+  // 2^(attempts-1) before the min() below caps it - the same "guarded
+  // against but never realistically hit" spirit as
+  // [GalleryUploadService.maxDisambiguationAttempts].
+  final raw = baseDelay.inMilliseconds * pow(2, attempts - 1);
+  final capped = min(raw, maxDelay.inMilliseconds.toDouble());
+  return capped.round();
+}
+
 /// Ticket 22: the fixed id of [SyncRunState]'s single row - see that table's
 /// class doc for why there is only ever one.
 const String syncRunStateId = 'default';
@@ -58,6 +90,17 @@ const String syncStatusRunning = 'running';
 const String syncStatusPaused = 'paused';
 const String syncStatusCompleted = 'completed';
 const String syncStatusError = 'error';
+
+/// Ticket 25: written instead of [syncStatusRunning]/[syncStatusCompleted]
+/// when [GallerySyncEngine.run] declines to attempt anything at all because
+/// [SyncRunState.globalBackoffUntil] has not passed yet - distinct from
+/// [syncStatusPaused] (a user asked to stop) and [syncStatusError] (an
+/// unrecoverable, one-off failure like "not signed in") because a backoff is
+/// neither: nothing is wrong with the configuration, and no one asked for
+/// this to stop - it is actively, automatically going to retry on its own,
+/// which is what the Backup card (`gallery_source_folders_view.dart`) tells
+/// the user rather than leaving them to guess from a generic "Paused".
+const String syncStatusBackoff = 'backoff';
 
 /// Ticket 23: the fixed id of [TokenRefreshLock]'s single row - see that
 /// table's class doc for why there is only ever one.
@@ -642,7 +685,15 @@ class GalleryMirror {
   /// its Capture Date position rather than disappearing and (if the same
   /// photo reappears later) reappearing as a new row elsewhere in scroll
   /// order.
-  Future<void> applyLocalScan(List<LocalMediaItem> items) async {
+  ///
+  /// [nowMillis], if given, is the timestamp a NEW device row's
+  /// [GalleryItems.localFirstSeenAt] (ticket 25's priority-class boundary)
+  /// is written with, instead of [DateTime.now]'s real value - a test's way
+  /// of controlling exactly when a device row was "observed" without racing
+  /// real wall-clock resolution between two scans it wants classified into
+  /// different priority classes.
+  Future<void> applyLocalScan(List<LocalMediaItem> items,
+      {int? nowMillis}) async {
     await _db.transaction(() async {
       final syncPairs = await _allSyncPairs();
       final seenIdentities = <String>{};
@@ -654,7 +705,7 @@ class GalleryMirror {
           size: item.size,
           dateTakenMillis: item.dateTakenMillis,
         ));
-        await _upsertLocalItem(item, syncPairs);
+        await _upsertLocalItem(item, syncPairs, nowMillis: nowMillis);
       }
 
       final previouslyOnDevice = await (_db.select(_db.galleryItems)
@@ -703,14 +754,17 @@ class GalleryMirror {
   /// this batch" as "deleted" would be exactly the mistake the ticket's
   /// governing rule forbids: [applyLocalScan] (the correctness anchor) is
   /// the only place a device photo is ever removed from the mirror.
+  ///
+  /// [nowMillis]: see [applyLocalScan]'s doc on the same parameter.
   Future<void> applyLocalDelta(
     List<LocalMediaItem> items, {
     required int generation,
+    int? nowMillis,
   }) async {
     await _db.transaction(() async {
       final syncPairs = await _allSyncPairs();
       for (final item in items) {
-        await _upsertLocalItem(item, syncPairs);
+        await _upsertLocalItem(item, syncPairs, nowMillis: nowMillis);
       }
       await _writeLocalGeneration(generation);
     });
@@ -801,8 +855,9 @@ class GalleryMirror {
   /// scan's result set, which only [applyLocalScan] has.
   Future<void> _upsertLocalItem(
     LocalMediaItem item,
-    List<SyncPairRow> syncPairs,
-  ) async {
+    List<SyncPairRow> syncPairs, {
+    int? nowMillis,
+  }) async {
     final existingByIdentity = await (_db.select(_db.galleryItems)
           ..where((t) =>
               t.localRelativePath.equals(item.relativePath) &
@@ -865,6 +920,8 @@ class GalleryMirror {
               capturedAt: capturedAt,
               capturedAtSource: Value(capturedAtSource),
               size: Value(item.size),
+              localFirstSeenAt: Value(
+                  nowMillis ?? DateTime.now().millisecondsSinceEpoch),
             ),
           );
       return;
@@ -908,6 +965,8 @@ class GalleryMirror {
             capturedAt: capturedAt,
             capturedAtSource: Value(capturedAtSource),
             size: Value(item.size),
+            localFirstSeenAt:
+                Value(nowMillis ?? DateTime.now().millisecondsSinceEpoch),
           ),
         );
   }
@@ -1303,12 +1362,16 @@ class GalleryMirror {
   /// [GalleryUploadService.upload] immediately reports [GalleryUploadResult.
   /// noSyncPair] for.
   ///
-  /// Newest [GalleryItem.capturedAt] first - user story 53's "historical
-  /// backlog uploaded newest first". **Deliberately not the spec's two
-  /// priority classes** ("photos observed after setup preempt the backlog") -
-  /// that split, and the failure-list/retry-policy machinery around it, is
-  /// ticket 25's job; this is a single, simple queue ordering that already
-  /// satisfies the newest-first half of it on its own.
+  /// **Ticket 25's two priority classes**, newest first within each: every
+  /// row whose [GalleryItems.localFirstSeenAt] is more recent than
+  /// [_priorityBaselineMillis] (the spec's "observed after setup, or after
+  /// the last completed pass") sorts entirely ahead of every row that is
+  /// not, so a photo taken during a large backlog run - or discovered by the
+  /// next incremental scan - is never stuck behind thousands of older ones.
+  /// Excludes a row currently in the failure list ([uploadFailureBucket] set
+  /// - "stop retrying" means exactly that: never silently re-offered) and a
+  /// row still inside its own per-item backoff window ([uploadNextRetryAt]
+  /// in the future relative to [nowMillis]).
   ///
   /// Filtered in Dart against a fetched row set, the same style
   /// [_countCoveredByLocalFolder]/[_unselectedFolders] already use for a
@@ -1318,31 +1381,168 @@ class GalleryMirror {
   /// queue REBUILD, not a per-item probe (D12/the spec's "the queue is
   /// derived state... rebuildable at any time"), so it is expected to run
   /// once per engine run, not once per photo.
-  Future<List<GalleryItem>> itemsPendingUpload({int? limit}) async {
+  ///
+  /// **Why the priority split needs no separate sort pass:** the underlying
+  /// SQL query already orders by [GalleryItem.capturedAt] descending, and
+  /// class membership here is a threshold on a DIFFERENT, monotonic-in-scan-
+  /// order column ([localFirstSeenAt] against a fixed baseline) - so
+  /// partitioning that single descending stream into "fresh" and "backlog"
+  /// while preserving each sub-list's relative order, then concatenating
+  /// fresh-then-backlog, is exactly "newest first within each class" with no
+  /// extra ordering logic needed.
+  Future<List<GalleryItem>> itemsPendingUpload({
+    int? limit,
+    int? nowMillis,
+  }) async {
     final pairs = await _activeSyncPairs();
     if (pairs.isEmpty) {
       return const [];
     }
+    final now = nowMillis ?? DateTime.now().millisecondsSinceEpoch;
+    final baseline = await _priorityBaselineMillis();
+
     final rows = await (_db.select(_db.galleryItems)
           ..where((t) =>
-              t.origin.equals(_originDevice) & t.uploadState.isNull())
+              t.origin.equals(_originDevice) &
+              t.uploadState.isNull() &
+              t.uploadFailureBucket.isNull() &
+              (t.uploadNextRetryAt.isNull() |
+                  t.uploadNextRetryAt.isSmallerOrEqualValue(now)))
           ..orderBy([
             (t) =>
                 OrderingTerm(expression: t.capturedAt, mode: OrderingMode.desc)
           ]))
         .get();
 
-    final matching = <GalleryItem>[];
+    final fresh = <GalleryItem>[];
+    final backlog = <GalleryItem>[];
     for (final row in rows) {
-      if (_coveringSyncPair(pairs, row.localRelativePath ?? '') != null) {
-        matching.add(row);
-        if (limit != null && matching.length >= limit) {
-          break;
-        }
+      if (_coveringSyncPair(pairs, row.localRelativePath ?? '') == null) {
+        continue;
       }
+      final seenAt = row.localFirstSeenAt;
+      (seenAt != null && seenAt > baseline ? fresh : backlog).add(row);
     }
-    return matching;
+
+    final ordered = [...fresh, ...backlog];
+    if (limit != null && ordered.length > limit) {
+      return ordered.sublist(0, limit);
+    }
+    return ordered;
   }
+
+  /// The moving boundary [itemsPendingUpload] classifies
+  /// [GalleryItems.localFirstSeenAt] against: [SyncRunState.lastSuccessAt]
+  /// once at least one pass has ever completed - "after the last completed
+  /// pass" advances the boundary forward every time a run finishes, so
+  /// whatever backlog remains from an interrupted or still-in-progress
+  /// catch-up stays behind anything discovered since. Before any pass has
+  /// EVER completed, there is no historical backlog to preempt yet - the
+  /// entire pending set (including a first-ever 9,000-photo scan) is, by
+  /// definition, everything "observed since setup", so `0` (before every
+  /// real [localFirstSeenAt] value) puts it all in one undifferentiated
+  /// class rather than arbitrarily splitting a backlog that has never been
+  /// touched.
+  Future<int> _priorityBaselineMillis() async {
+    final state = await syncRunState();
+    return state.lastSuccessAt ?? 0;
+  }
+
+  /// Ticket 25's visible failure list: every Device only row
+  /// [GallerySyncEngine] gave up retrying after a PERMANENT failure -
+  /// [GalleryItems.uploadFailureBucket] set - newest [GalleryItem.
+  /// capturedAt] first, the same ordering convention every other list in
+  /// this seam uses. Never silently dropped (this IS the list that makes it
+  /// visible) and never retried automatically ([itemsPendingUpload] excludes
+  /// these rows outright) - only [retryFailedUpload] moves a row out of it.
+  Future<List<GalleryItem>> failedUploadItems() => (_db.select(
+          _db.galleryItems)
+        ..where((t) =>
+            t.origin.equals(_originDevice) &
+            t.uploadFailureBucket.equals(_uploadFailureBucketPermanent))
+        ..orderBy([
+          (t) =>
+              OrderingTerm(expression: t.capturedAt, mode: OrderingMode.desc)
+        ]))
+      .get();
+
+  /// The user's retry action on one [failedUploadItems] entry - clears
+  /// [GalleryItems.uploadFailureBucket]/[uploadFailureReason] and resets the
+  /// per-item backoff bookkeeping, so [itemId] is a completely ordinary
+  /// [itemsPendingUpload] candidate again on the very next engine run. This
+  /// IS the whole retry - "fixing the underlying cause requires no
+  /// reconfiguration" (the ticket's own criterion) because nothing here
+  /// touches a Sync Pair, a setting, or anything other than this one row's
+  /// own bookkeeping.
+  Future<void> retryFailedUpload(int itemId) async {
+    await (_db.update(_db.galleryItems)
+          ..where((t) =>
+              t.id.equals(itemId) &
+              t.uploadFailureBucket.equals(_uploadFailureBucketPermanent)))
+        .write(const GalleryItemsCompanion(
+      uploadFailureBucket: Value(null),
+      uploadFailureReason: Value(null),
+      uploadAttempts: Value(0),
+      uploadNextRetryAt: Value(null),
+    ));
+  }
+
+  /// Parks [item] in the visible failure list after a PERMANENT failure -
+  /// [GallerySyncEngine] calls this instead of leaving the row to be
+  /// silently re-offered forever. Conditioned on [item]'s id AND local
+  /// identity still matching, the same guard [recordUploaded] uses, so a row
+  /// deleted or changed by a racing scan is left alone rather than recording
+  /// a failure for content that no longer exists as this engine last saw it.
+  Future<void> recordUploadFailure(GalleryItem item, String reason) async {
+    await (_db.update(_db.galleryItems)
+          ..where((t) =>
+              t.id.equals(item.id) &
+              t.origin.equals(_originDevice) &
+              t.localRelativePath.equals(item.localRelativePath ?? '') &
+              t.localDisplayName.equals(item.localDisplayName ?? '') &
+              t.localSize.equals(item.localSize ?? -1)))
+        .write(GalleryItemsCompanion(
+      uploadFailureBucket: const Value(_uploadFailureBucketPermanent),
+      uploadFailureReason: Value(reason),
+      uploadAttempts: const Value(0),
+      uploadNextRetryAt: const Value(null),
+    ));
+  }
+
+  /// Records one TRANSIENT failure against [item] - increments
+  /// [GalleryItems.uploadAttempts] and sets [uploadNextRetryAt] to an
+  /// exponentially growing delay from [nowMillis], capped at
+  /// [maxPerItemBackoff] - the spec's "transient failures retry with
+  /// increasing per-item delays". Same identity-matching guard as
+  /// [recordUploadFailure]/[recordUploaded]. Returns the resulting attempt
+  /// count, so a caller (currently only [GallerySyncEngine]'s own tests) can
+  /// assert on the schedule without re-deriving it.
+  Future<int> recordTransientUploadFailure(
+    GalleryItem item, {
+    required int nowMillis,
+    Duration baseDelay = const Duration(seconds: 30),
+    Duration maxDelay = const Duration(hours: 1),
+  }) async {
+    final attempts = (item.uploadAttempts) + 1;
+    final delayMillis = cappedExponentialBackoffMillis(
+      attempts: attempts,
+      baseDelay: baseDelay,
+      maxDelay: maxDelay,
+    );
+    await (_db.update(_db.galleryItems)
+          ..where((t) =>
+              t.id.equals(item.id) &
+              t.origin.equals(_originDevice) &
+              t.localRelativePath.equals(item.localRelativePath ?? '') &
+              t.localDisplayName.equals(item.localDisplayName ?? '') &
+              t.localSize.equals(item.localSize ?? -1)))
+        .write(GalleryItemsCompanion(
+      uploadAttempts: Value(attempts),
+      uploadNextRetryAt: Value(nowMillis + delayMillis),
+    ));
+    return attempts;
+  }
+
 
   /// The single [SyncRunState] row - [GallerySyncEngine]'s only channel to
   /// the UI (see that table's class doc). An idle, all-zero snapshot when no
@@ -1364,6 +1564,8 @@ class GalleryMirror {
           lastError: null,
           updatedAt: 0,
           lastSuccessAt: null,
+          globalBackoffUntil: null,
+          globalBackoffStreak: 0,
         );
   }
 
@@ -1374,6 +1576,18 @@ class GalleryMirror {
   /// atomic by construction) and by [GalleryDataSyncController]'s startup
   /// reconciliation to correct a `running` row the process that wrote it did
   /// not survive to clear.
+  ///
+  /// [globalBackoffUntilMillis]/[globalBackoffStreak] (ticket 25): when both
+  /// are omitted, the previous row's values carry forward untouched - the
+  /// same convention [lastSuccessAt] uses below, so a write that has nothing
+  /// to do with the global backoff (the UI's stale-`running`-row
+  /// reconciliation, in particular) never accidentally clears one in
+  /// progress. [clearGlobalBackoff] is the explicit opposite: set true once
+  /// a run recovers, to reset both back to "no backoff in effect" - `null`
+  /// cannot itself mean that here, since [GallerySyncEngine] also needs to
+  /// EXPLICITLY set [globalBackoffUntilMillis] to a real value while leaving
+  /// [globalBackoffStreak] to whatever it was, so a bare "pass null to
+  /// clear" convention would be ambiguous between the two.
   Future<void> writeSyncRunState({
     required String status,
     required int totalItems,
@@ -1383,6 +1597,9 @@ class GalleryMirror {
     required int completedBytes,
     String? lastError,
     required int updatedAtMillis,
+    int? globalBackoffUntilMillis,
+    int? globalBackoffStreak,
+    bool clearGlobalBackoff = false,
   }) async {
     // Ticket 24: [SyncRunState.lastSuccessAt] only ever moves forward, and
     // only on a write that itself reaches [syncStatusCompleted] - never
@@ -1396,6 +1613,12 @@ class GalleryMirror {
     final lastSuccessAt = status == syncStatusCompleted
         ? updatedAtMillis
         : previous.lastSuccessAt;
+    final resolvedBackoffUntil = clearGlobalBackoff
+        ? null
+        : (globalBackoffUntilMillis ?? previous.globalBackoffUntil);
+    final resolvedBackoffStreak = clearGlobalBackoff
+        ? 0
+        : (globalBackoffStreak ?? previous.globalBackoffStreak);
     await _db.into(_db.syncRunState).insertOnConflictUpdate(
           SyncRunStateCompanion(
             id: const Value(syncRunStateId),
@@ -1408,6 +1631,8 @@ class GalleryMirror {
             lastError: Value(lastError),
             updatedAt: Value(updatedAtMillis),
             lastSuccessAt: Value(lastSuccessAt),
+            globalBackoffUntil: Value(resolvedBackoffUntil),
+            globalBackoffStreak: Value(resolvedBackoffStreak),
           ),
         );
   }

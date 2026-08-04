@@ -184,8 +184,12 @@ class GalleryUploadService {
       // disambiguated name at the same target folder.
     }
 
+    // Ticket 25: PERMANENT, not transient - a thousand collisions in a row
+    // is a naming/logic problem, not a network hiccup, and would only churn
+    // through the exact same statSize calls again on a backoff retry.
     throw const GalleryUploadException(
       'Could not find a free name for this photo after many attempts.',
+      bucket: GalleryUploadFailureBucket.permanent,
     );
   }
 
@@ -299,8 +303,12 @@ class GalleryUploadService {
       // disambiguated name.
     }
 
+    // Ticket 25: PERMANENT, not transient - a thousand collisions in a row
+    // is a naming/logic problem, not a network hiccup, and would only churn
+    // through the exact same statSize calls again on a backoff retry.
     throw const GalleryUploadException(
       'Could not find a free name for this photo after many attempts.',
+      bucket: GalleryUploadFailureBucket.permanent,
     );
   }
 

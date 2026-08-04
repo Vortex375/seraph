@@ -3,6 +3,35 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:seraph_app/src/file_browser/file_service.dart';
 
+/// Ticket 25's queue policy: which of the spec's two THROWN failure buckets
+/// a [GalleryUploadException] belongs to (the third bucket, "moved target" -
+/// the local file changed or vanished mid-upload - never throws at all; see
+/// [GalleryUploadResult.deviceFileChanged]/[GalleryUploadResult.
+/// deviceFileUnavailable] in `gallery_upload_service.dart` instead).
+/// [GallerySyncEngine] (`../sync/gallery_sync_engine.dart`) branches on this
+/// to decide per-item exponential backoff versus parking a row in the
+/// visible failure list - see that class's own doc for the schedule.
+enum GalleryUploadFailureBucket {
+  /// Network gone, a 5xx, a timeout, "not connected" - anything that says
+  /// nothing about THIS upload in particular and may well succeed on retry
+  /// once whatever is wrong resolves itself. The default for every
+  /// [GalleryUploadException] that does not explicitly say otherwise, since
+  /// treating an unrecognised failure as worth retrying is the safe
+  /// direction - a permanent failure wrongly treated as transient still
+  /// eventually reaches the user (retried, still failing, forever - not
+  /// ideal, but not silent either); a transient one wrongly treated as
+  /// permanent stops retrying something that would have recovered on its
+  /// own.
+  transient,
+
+  /// Read-only Space (403), out of storage (507) - retrying will not help
+  /// until the user (or someone with access to the server) does something
+  /// about it, so [GallerySyncEngine] stops retrying immediately and moves
+  /// the row to [GalleryMirror.failedUploadItems] instead of backing off
+  /// forever.
+  permanent,
+}
+
 /// Thrown by a [GalleryUploadBackend] when a remote operation fails for a
 /// reason [GalleryUploadService](gallery_upload_service.dart) cannot itself
 /// recover from - a read-only Space (ticket 19's "fails with a comprehensible
@@ -13,18 +42,28 @@ import 'package:seraph_app/src/file_browser/file_service.dart';
 /// side is WebDAV at all, HTTP-flavoured errors included - a test's fake
 /// backend throws this directly, with no HTTP response to fabricate.
 class GalleryUploadException implements Exception {
-  const GalleryUploadException(this.message, {this.readOnly = false});
+  const GalleryUploadException(
+    this.message, {
+    this.readOnly = false,
+    this.bucket = GalleryUploadFailureBucket.transient,
+  });
 
   /// A message fit to show the user directly - see [WebDavGalleryUploadBackend]
   /// for the wording used for each server response this seam recognises.
   final String message;
 
   /// True when the failure was specifically "this Space will not accept a
-  /// write" (WebDAV 403) - callers do not currently branch on this, but a
-  /// future failure-list UI (ticket 25) is expected to want the distinction
-  /// between "read-only Space" and "everything else" without re-parsing
-  /// [message].
+  /// write" (WebDAV 403) - kept alongside [bucket] (which already implies
+  /// `permanent` for this case) purely as a finer-grained diagnostic; no
+  /// caller needs to branch on [readOnly] itself.
   final bool readOnly;
+
+  /// Ticket 25's queue-policy classification - see [GalleryUploadFailureBucket]
+  /// for what each value means. Defaults to [GalleryUploadFailureBucket.
+  /// transient], the safe-to-retry direction, for every call site that does
+  /// not explicitly classify its own failure (see [translateWebDavError] for
+  /// the one place that does, from the server's actual HTTP status).
+  final GalleryUploadFailureBucket bucket;
 
   @override
   String toString() => message;
@@ -160,14 +199,27 @@ class WebDavGalleryUploadBackend implements GalleryUploadBackend {
 /// exactly the same messages without duplicating the status-code mapping.
 GalleryUploadException translateWebDavError(DioException e, int? status) {
   if (status == 403) {
+    // Ticket 25: PERMANENT - a read-only Space does not become writable by
+    // retrying, so this stops the per-item backoff loop and moves the row
+    // straight to the failure list instead.
     return const GalleryUploadException(
       'This Space is read-only - uploading is not allowed here.',
       readOnly: true,
+      bucket: GalleryUploadFailureBucket.permanent,
     );
   }
   if (status == 507) {
-    return const GalleryUploadException('Seraph is out of storage space.');
+    // Ticket 25: PERMANENT for the same reason - out of storage will not
+    // resolve itself on the next attempt.
+    return const GalleryUploadException(
+      'Seraph is out of storage space.',
+      bucket: GalleryUploadFailureBucket.permanent,
+    );
   }
+  // Ticket 25: everything else - connection lost, a timeout, any other HTTP
+  // status - is TRANSIENT (the enum's own default), the spec's "network
+  // gone, 5xx, timeout" bucket: worth retrying with backoff rather than
+  // giving up on.
   return GalleryUploadException(
       'Could not reach Seraph (${status ?? e.message}).');
 }
