@@ -1,0 +1,7 @@
+<!-- The Android plugin's own module-level manifest. Permissions for MediaStore
+     access (READ_MEDIA_IMAGES / READ_MEDIA_VISUAL_USER_SELECTED) and the
+     foreground-service permissions the backup scheduler relies on are declared
+     in the host app's AndroidManifest.xml; this file exists only because an
+     Android library project requires a manifest, and carries no permissions or
+     components of its own. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" />

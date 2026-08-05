@@ -13,6 +13,13 @@ dependencies:
   dio: ^5.7.0
   flutter:
     sdk: flutter
+  # Local path-dependency plugin: registers the `seraph/local_media` Android
+  # MethodChannel on EVERY FlutterEngine (MainActivity's, the foreground-task
+  # engine, and the workmanager engine) so background backup's `loadOriginal`
+  # stops throwing MissingPluginException. See
+  # plugins/seraph_local_media/lib/seraph_local_media.dart.
+  seraph_local_media:
+    path: plugins/seraph_local_media
   flutter_breadcrumb: ^1.0.1
   flutter_localizations:
     sdk: flutter

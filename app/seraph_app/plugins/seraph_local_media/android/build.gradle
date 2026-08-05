@@ -1,0 +1,69 @@
+// The Android library project for the seraph_local_media plugin.
+//
+// Mirrors the structure Flutter's own plugin template produces for path-
+// dependency plugins: a `com.android.library` module whose Kotlin sources
+// under `src/main/kotlin/...` implement `SeraphLocalMediaPlugin`, registered
+// on every FlutterEngine via `GeneratedPluginRegistrant` (which Flutter's
+// tooling regenerates to include this plugin once the host app declares
+// `seraph_local_media: path: plugins/seraph_local_media` in its pubspec).
+
+group 'net.umbasa.seraph.local_media'
+version '1.0-SNAPSHOT'
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        // Match the host app's AGP / Kotlin versions (android/settings.gradle)
+        // so the plugin module builds against the same toolchain the app does.
+        classpath 'com.android.tools.build:gradle:8.13.0'
+        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.20'
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+
+android {
+    if (project.android.hasProperty("namespace")) {
+        namespace 'net.umbasa.seraph.local_media'
+    }
+
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+    }
+
+    // compileSdk/minSdk match the host app (android/app/build.gradle:
+    // flutter.compileSdkVersion, minSdk 34). Hard-coded rather than reading
+    // the `flutter` ext because path-dependency plugin modules do not get
+    // the app's Flutter extension applied.
+    compileSdk 35
+
+    defaultConfig {
+        minSdk 34
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+dependencies {
+    // ContextCompat.checkSelfPermission / ActivityCompat.requestPermissions
+    // (used by the permission half of the channel).
+    implementation 'androidx.core:core-ktx:1.13.1'
+}

@@ -1,0 +1,19 @@
+name: seraph_local_media
+description: "Seraph's Android MediaStore bridge (seraph/local_media channel). Owns the native handler so it auto-registers on every Flutter engine the app uses - including the headless isolates flutter_foreground_task and workmanager spawn for background backup - not just MainActivity's engine."
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: '>=3.4.3 <4.0.0'
+  flutter: '>=3.24.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: net.umbasa.seraph.local_media
+        pluginClass: SeraphLocalMediaPlugin
