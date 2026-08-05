@@ -1,13 +1,15 @@
 import 'package:dio/dio.dart';
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:get/get.dart' hide Response;
+import 'package:get/get.dart' hide Response, Value;
 import 'package:seraph_app/src/gallery/gallery_service.dart';
 import 'package:seraph_app/src/gallery/gallery_source_folders_view.dart';
 import 'package:seraph_app/src/gallery/local/local_scan_service.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
+import 'package:seraph_app/src/gallery/sync/gallery_data_sync_controller.dart';
 
 import 'gallery_test_support.dart';
 
@@ -311,6 +313,83 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byTooltip('Retarget Sync Pair'), findsOneWidget);
+    });
+  });
+
+  // The failure list can grow to thousands of items when many uploads
+  // permanently fail. It MUST be virtualized - only the rows actually on
+  // screen are built - or the whole page freezes (Android shows the
+  // "unresponsive app" dialog). A non-virtualized Column would build every
+  // Retry button in one frame; a SliverList.builder builds only the
+  // screenful plus cacheExtent.
+  group('Backup failure list', () {
+    testWidgets(
+        'virtualizes a large failure list so only a screenful of rows is '
+        'built, not every item', (tester) async {
+      setUpServiceWithLocalSource();
+      await mirror.createSyncPair(
+        localFolderPath: 'DCIM/Camera/',
+        spaceProviderId: 'space-a',
+        path: '/Photos/Phone',
+      );
+
+      // Scan many photos, then mark every one permanently failed directly
+      // in the mirror DB - the same end state a run of GallerySyncEngine
+      // against a permanently-failing backend would leave, without the
+      // engine/backend setup this view test does not need.
+      const failureCount = 500;
+      await mirror.applyLocalScan([
+        for (var i = 0; i < failureCount; i++)
+          localMediaItem(
+            relativePath: 'DCIM/Camera/',
+            displayName:
+                'IMG_${i.toString().padLeft(4, '0')}.jpg',
+            size: 1,
+          ),
+      ]);
+      await (mirrorDb!.update(mirrorDb!.galleryItems)
+            ..where((t) => t.uploadFailureBucket.isNull()))
+          .write(const GalleryItemsCompanion(
+        uploadFailureBucket: Value('permanent'),
+        uploadFailureReason: Value('No space left on Seraph.'),
+      ));
+
+      // Register the controller the failure section reads from, with a
+      // long poll interval so no periodic timer churns during the test.
+      Get.put(GalleryDataSyncController(
+        mirror,
+        pollInterval: const Duration(minutes: 60),
+      ));
+
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      // Bring the failure section into view - it lives below the folder
+      // and Sync Pair sections.
+      await tester.scrollUntilVisible(
+        find.textContaining('Backup failed for $failureCount photos'),
+        200,
+        maxScrolls: 30,
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Backup failed for $failureCount photos'),
+          findsOneWidget);
+
+      // Virtualization: only a handful of Retry buttons are in the tree,
+      // not 500. A non-virtualized Column would build every one and the
+      // count would equal failureCount.
+      final builtRetryButtons =
+          find.widgetWithText(TextButton, 'Retry').evaluate().length;
+      expect(builtRetryButtons, lessThan(50),
+          reason: 'the failure list must be virtualized so thousands of '
+              'items never build in a single frame; a Column would have '
+              'built all $failureCount Retry buttons');
+
+      // Dispose the controller (cancels its periodic poll timer) before the
+      // test body ends - tearDown runs after the binding's pending-timer
+      // check, so a live timer would fail the test.
+      Get.delete<GalleryDataSyncController>();
     });
   });
 }

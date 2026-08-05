@@ -9,6 +9,7 @@ import 'package:seraph_app/src/gallery/gallery_service.dart';
 import 'package:seraph_app/src/gallery/local/local_scan_service.dart';
 import 'package:seraph_app/src/gallery/local_folder_picker_dialog.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
+import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 import 'package:seraph_app/src/gallery/sync/gallery_backup_schedule_coordinator.dart';
 import 'package:seraph_app/src/gallery/sync/gallery_data_sync_controller.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
@@ -518,50 +519,65 @@ class _GallerySourceFoldersViewState extends State<GallerySourceFoldersView> {
     // Source, *On this device*. The device section is omitted entirely
     // rather than shown empty when there is no Local Source at all - the
     // criterion is "no Local Source", not "no folders yet".
-    return ListView(
-      children: [
-        _sectionHeader('In Seraph'),
+    //
+    // A CustomScrollView (not a ListView) so the Backup failure list can be
+    // a virtualized SliverList - a ListView would build the whole failure
+    // Card (every row, in one Column, in one frame) the moment the card
+    // scrolled into view, which freezes the page once failures reach the
+    // thousands. Slivers let only the rows actually on screen build.
+    return CustomScrollView(
+      slivers: [
+        _sliverBox(_sectionHeader('In Seraph')),
         if (_folders.isEmpty)
-          const Padding(
+          _sliverBox(const Padding(
             padding: EdgeInsets.all(24),
             child: Text(
               'No gallery folders yet.\n\n'
               'Add a folder to show its photos in Gallery Mode.',
               textAlign: TextAlign.center,
             ),
-          )
+          ))
         else
-          ..._folders.map(_buildCloudFolderTile),
+          SliverList(
+            delegate: SliverChildListDelegate(
+                _folders.map(_buildCloudFolderTile).toList()),
+          ),
         if (_hasLocalSource) ...[
-          const Divider(height: 32),
-          _sectionHeader('On this device'),
+          _sliverBox(const Divider(height: 32)),
+          _sliverBox(_sectionHeader('On this device')),
           if (_localFolders.isEmpty)
-            const Padding(
+            _sliverBox(const Padding(
               padding: EdgeInsets.all(24),
               child: Text(
                 'No photo folders found on this device yet.',
                 textAlign: TextAlign.center,
               ),
-            )
+            ))
           else
-            ..._localFolders.map(_buildLocalFolderTile),
-          const Divider(height: 32),
+            SliverList(
+              delegate: SliverChildListDelegate(
+                  _localFolders.map(_buildLocalFolderTile).toList()),
+            ),
+          _sliverBox(const Divider(height: 32)),
           // Ticket 18: a third section, present only where the device
           // section itself is - "Configuration is unavailable on platforms
           // without a Local Source implementation, rather than present and
           // broken" is the same criterion for both.
-          _sectionHeader('Sync Pairs', onAdd: _addSyncPair),
+          _sliverBox(_sectionHeader('Sync Pairs', onAdd: _addSyncPair)),
           if (_syncPairs.isEmpty)
-            const Padding(
+            _sliverBox(const Padding(
               padding: EdgeInsets.all(24),
               child: Text(
                 'No Sync Pairs yet.\n\n'
                 'Add one to back up a device folder to Seraph.',
                 textAlign: TextAlign.center,
               ),
-            )
+            ))
           else
-            ..._syncPairs.map(_buildSyncPairTile),
+            SliverList(
+              delegate: SliverChildListDelegate(
+                  _syncPairs.map(_buildSyncPairTile).toList()),
+            ),
           // Ticket 22: the headless engine's start/pause and progress -
           // present only where Sync Pairs itself is (same "no Local Source,
           // no section" rule), since there is nothing to back up without
@@ -570,11 +586,13 @@ class _GallerySourceFoldersViewState extends State<GallerySourceFoldersView> {
           // test that never registers the controller sees exactly what a
           // platform with no Local Source sees.
           if (_dataSyncController != null) ...[
-            const Divider(height: 32),
-            _BackupSection(controller: _dataSyncController),
+            _sliverBox(const Divider(height: 32)),
+            _sliverBox(_BackupSection(controller: _dataSyncController)),
             // Ticket 25: the visible failure list - shown right under the
             // Backup card itself is, present only where that card is, since
-            // there is nothing to fail without one.
+            // there is nothing to fail without one. Returned as a sliver
+            // (see _FailureListSection) so a list of thousands of failures
+            // never builds in a single frame.
             _FailureListSection(controller: _dataSyncController),
           ],
           // Ticket 24: the constraints governing the SCHEDULED (unattended)
@@ -586,16 +604,19 @@ class _GallerySourceFoldersViewState extends State<GallerySourceFoldersView> {
           // settings - [_syncBackupSchedule] is what actually needs the
           // coordinator, and is a no-op without one.
           if (_dataSyncController != null && _settingsController != null) ...[
-            const SizedBox(height: 8),
-            _BackupConstraintsSection(
+            _sliverBox(const SizedBox(height: 8)),
+            _sliverBox(_BackupConstraintsSection(
               settings: _settingsController,
               onChanged: _syncBackupSchedule,
-            ),
+            )),
           ],
         ],
       ],
     );
   }
+
+  /// Wraps a single box widget as a sliver for the [CustomScrollView] above.
+  Widget _sliverBox(Widget child) => SliverToBoxAdapter(child: child);
 
   Widget _sectionHeader(String title, {VoidCallback? onAdd}) {
     return Padding(
@@ -839,6 +860,15 @@ class _BackupSection extends StatelessWidget {
 /// is empty, the same "nothing to show, show nothing" convention the rest of
 /// this screen's optional sections use - a failure list is not something a
 /// user should have to check and find reassuringly blank.
+///
+/// Returned as a sliver, not a box: the list is virtualized via
+/// [SliverList] + [SliverChildBuilderDelegate] so that only the rows
+/// actually on screen are built. The failure list can grow to thousands of
+/// items when many uploads permanently fail; a non-virtualized Column would
+/// build every row in a single frame the moment the section scrolled into
+/// view, freezing the page (Android shows the "unresponsive app" dialog).
+/// The card-style background is preserved via [DecoratedSliver], which
+/// paints behind the virtualized sliver's extent just as a [Card] would.
 class _FailureListSection extends StatelessWidget {
   const _FailureListSection({required this.controller});
 
@@ -850,59 +880,71 @@ class _FailureListSection extends StatelessWidget {
     return Obx(() {
       final items = controller.failedItems;
       if (items.isEmpty) {
-        return const SizedBox.shrink();
+        return const SliverToBoxAdapter(child: SizedBox.shrink());
       }
-      return Padding(
+      return SliverPadding(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        child: Card(
-          color: theme.colorScheme.errorContainer.withValues(alpha: 0.35),
-          child: Padding(
+        sliver: DecoratedSliver(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.errorContainer.withValues(alpha: 0.35),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          sliver: SliverPadding(
             padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Backup failed for ${items.length} photo'
-                  '${items.length == 1 ? '' : 's'}',
-                  style: theme.textTheme.titleSmall,
-                ),
-                const SizedBox(height: 4),
-                ...items.map((item) => Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  item.localDisplayName ?? 'Unknown photo',
-                                  style: theme.textTheme.bodyMedium,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                Text(
-                                  item.uploadFailureReason ??
-                                      'Backup failed for an unknown reason.',
-                                  style: theme.textTheme.bodySmall,
-                                ),
-                              ],
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () => controller.retryFailedItem(item),
-                            child: const Text('Retry'),
-                          ),
-                        ],
-                      ),
-                    )),
-              ],
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) => index == 0
+                    ? _buildHeader(theme, items.length)
+                    : _buildFailureRow(theme, items[index - 1]),
+                childCount: items.length + 1,
+              ),
             ),
           ),
         ),
       );
     });
+  }
+
+  Widget _buildHeader(ThemeData theme, int count) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Text(
+        'Backup failed for $count photo${count == 1 ? '' : 's'}',
+        style: theme.textTheme.titleSmall,
+      ),
+    );
+  }
+
+  Widget _buildFailureRow(ThemeData theme, GalleryItem item) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  item.localDisplayName ?? 'Unknown photo',
+                  style: theme.textTheme.bodyMedium,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  item.uploadFailureReason ??
+                      'Backup failed for an unknown reason.',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: () => controller.retryFailedItem(item),
+            child: const Text('Retry'),
+          ),
+        ],
+      ),
+    );
   }
 }
 
