@@ -1512,6 +1512,33 @@ class GalleryMirror {
     ));
   }
 
+  /// The bulk form of [retryFailedUpload]: clears the failure bucket and
+  /// per-item backoff bookkeeping on EVERY permanently-failed Device row at
+  /// once, so each becomes an ordinary [itemsPendingUpload] candidate again
+  /// on the very next engine run. Used by the user-initiated backup button
+  /// (`GalleryDataSyncController.startBackup`) - a user pressing "backup"
+  /// expects the engine to try everything that has not yet reached Seraph,
+  /// including items a prior run gave up on, not only files never attempted.
+  /// Permanently-failed rows are otherwise excluded from [itemsPendingUpload]
+  /// outright, so without this the button would silently skip them.
+  ///
+  /// No identity guard (unlike [recordUploadFailure]) because nothing is
+  /// being recorded against a snapshot - this only clears bookkeeping on rows
+  /// that are already parked, and a row a racing scan has since replaced will
+  /// simply not match the `uploadFailureBucket == permanent` clause.
+  Future<void> retryAllFailedUploads() async {
+    await (_db.update(_db.galleryItems)
+          ..where((t) =>
+              t.origin.equals(_originDevice) &
+              t.uploadFailureBucket.equals(_uploadFailureBucketPermanent)))
+        .write(const GalleryItemsCompanion(
+      uploadFailureBucket: Value(null),
+      uploadFailureReason: Value(null),
+      uploadAttempts: Value(0),
+      uploadNextRetryAt: Value(null),
+    ));
+  }
+
   /// Parks [item] in the visible failure list after a PERMANENT failure -
   /// [GallerySyncEngine] calls this instead of leaving the row to be
   /// silently re-offered forever. Conditioned on [item]'s id AND local

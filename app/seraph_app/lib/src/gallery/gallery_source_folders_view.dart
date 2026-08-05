@@ -842,7 +842,7 @@ class _BackupSection extends StatelessWidget {
                   IconButton(
                     icon: const Icon(Icons.cloud_upload_outlined),
                     tooltip: isPaused ? 'Resume backup' : 'Start backup',
-                    onPressed: controller.start,
+                    onPressed: controller.startBackup,
                   ),
               ],
             ),

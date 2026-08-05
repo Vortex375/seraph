@@ -581,6 +581,54 @@ void main() {
       });
 
       test(
+          'retryAllFailedUploads clears every permanently-failed row at once '
+          'so the next run re-attempts all of them, not just one - the '
+          'backup button relies on this to retry previously failed backups '
+          'rather than only files never backed up before', () async {
+        await scanDevicePhoto(
+          displayName: 'IMG_0001.jpg',
+          capturedAtSeconds: 1000,
+          bytes: _bytesOfLength(500),
+        );
+        await scanDevicePhoto(
+          displayName: 'IMG_0002.jpg',
+          capturedAtSeconds: 2000,
+          bytes: _bytesOfLength(500),
+        );
+        backend.statError = const GalleryUploadException(
+          'This Space is read-only - uploading is not allowed here.',
+          readOnly: true,
+          bucket: GalleryUploadFailureBucket.permanent,
+        );
+
+        final engine = GallerySyncEngine(mirror, uploadService);
+        final first = await engine.run();
+        expect(first.outcome, GallerySyncOutcome.completed);
+        expect(first.failed, 2);
+
+        // Both parked in the visible failure list, and excluded from the
+        // ordinary queue - exactly the state the backup button inherits.
+        expect(await mirror.failedUploadItems(), hasLength(2));
+        expect(await mirror.itemsPendingUpload(), isEmpty);
+
+        // The bulk retry - the action the backup button takes before
+        // starting a run.
+        backend.statError = null;
+        await mirror.retryAllFailedUploads();
+        expect(await mirror.failedUploadItems(), isEmpty,
+            reason: 'every permanently-failed row is cleared, not just one');
+        expect(await mirror.itemsPendingUpload(), hasLength(2),
+            reason: 'each cleared row is an ordinary pending candidate '
+                'again, so the next engine run re-attempts all of them');
+
+        final second = await engine.run();
+        expect(second.outcome, GallerySyncOutcome.completed);
+        expect(second.uploaded, 2);
+        expect(second.failed, 0);
+        expect(backend.putCalls, hasLength(2));
+      });
+
+      test(
           'a device copy this engine cannot read (permission revoked, or '
           'the file genuinely gone) is a PERMANENT failure - parked in the '
           'visible failure list, never silently counted as completed - and '

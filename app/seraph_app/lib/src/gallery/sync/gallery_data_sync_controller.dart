@@ -125,6 +125,20 @@ class GalleryDataSyncController extends GetxController {
     await _service?.start();
   }
 
+  /// The backup button's action: retries every permanently-failed upload
+  /// (clearing the failure bucket so [GalleryMirror.itemsPendingUpload] will
+  /// re-offer each one) and then starts a run, the same [start] a resumed
+  /// run uses. Without this, the button would only attempt files never
+  /// backed up before - permanently-failed rows are excluded from the
+  /// engine's queue outright, so a user pressing "backup" to try the failed
+  /// ones again would see nothing happen. A no-op on a platform with no
+  /// Local Source.
+  Future<void> startBackup() async {
+    await mirror.retryAllFailedUploads();
+    failedItems.value = await mirror.failedUploadItems();
+    await start();
+  }
+
   /// Asks the running engine to pause - see [GallerySyncEngine.requestPause]
   /// for what "promptly" means here. A no-op on a platform with no Local
   /// Source, or if nothing is currently running.
