@@ -429,286 +429,287 @@ func getBody(t *testing.T, resp *http.Response) []byte {
 	return b
 }
 
-// --- WebDAV verb tests ---
+// --- WebDAV verb suite ---
+//
+// runWebDavVerbSuite drives every WebDAV verb the gallery upload path and the
+// file browser use against the live api-gateway, asserting both the HTTP
+// status and (where applicable) the on-disk result in [diskRoot]. [davPrefix]
+// is the WebDAV path prefix that resolves onto the provider under test - e.g.
+// "/dav/p/storage" for the dir provider and "/dav/p/smbstorage" for the SMB
+// provider - so the same suite runs unchanged against either backing store.
+//
+// Subtests are nested under the caller's name, so `go test -v` reports
+// TestE2EDirProvider/PUT_file and TestE2ESmbProvider/PUT_file side by side,
+// making a provider-specific regression immediately visible.
+func runWebDavVerbSuite(t *testing.T, diskRoot, davPrefix string) {
+	t.Helper()
 
-func TestE2E_PUT_file(t *testing.T) {
-	resp := putFile(t, "/dav/p/storage/e2e-put.txt", []byte("hello e2e"))
-	// 201 created or 204 no content (overwrite); both are success.
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("PUT new file: want 201/204, got %d (body=%s)", resp.StatusCode, getBody(t, resp))
-	}
-	disk, err := os.ReadFile(filepath.Join(providerDir, "e2e-put.txt"))
-	require.NoError(t, err)
-	assert.Equal(t, "hello e2e", string(disk))
-}
+	p := func(rel string) string { return davPrefix + rel }
 
-func TestE2E_PUT_overwrite(t *testing.T) {
-	putFile(t, "/dav/p/storage/e2e-ow.txt", []byte("first"))
-	resp := putFile(t, "/dav/p/storage/e2e-ow.txt", []byte("second"))
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("PUT overwrite: want 201/204, got %d (body=%s)", resp.StatusCode, getBody(t, resp))
-	}
-	disk, err := os.ReadFile(filepath.Join(providerDir, "e2e-ow.txt"))
-	require.NoError(t, err)
-	assert.Equal(t, "second", string(disk))
-}
+	t.Run("PUT_file", func(t *testing.T) {
+		resp := putFile(t, p("/e2e-put.txt"), []byte("hello e2e"))
+		if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent {
+			t.Fatalf("PUT new file: want 201/204, got %d (body=%s)", resp.StatusCode, getBody(t, resp))
+		}
+		disk, err := os.ReadFile(filepath.Join(diskRoot, "e2e-put.txt"))
+		require.NoError(t, err)
+		assert.Equal(t, "hello e2e", string(disk))
+	})
 
-func TestE2E_PUT_large(t *testing.T) {
-	// Larger than the fileprovider single-NATS-message cap (768KB) so the
-	// buffered multi-chunk write path is exercised - the path the phone's
-	// 3.5MB upload takes.
-	big := bytes.Repeat([]byte("Z"), 3*1024*1024) // 3 MiB
-	resp := putFile(t, "/dav/p/storage/e2e-large.bin", big)
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("PUT large: want 201/204, got %d (body=%s)", resp.StatusCode, getBody(t, resp))
-	}
-	disk, err := os.ReadFile(filepath.Join(providerDir, "e2e-large.bin"))
-	require.NoError(t, err)
-	assert.Equal(t, len(big), len(disk))
-	assert.True(t, bytes.Equal(big, disk))
-}
+	t.Run("PUT_overwrite", func(t *testing.T) {
+		putFile(t, p("/e2e-ow.txt"), []byte("first"))
+		resp := putFile(t, p("/e2e-ow.txt"), []byte("second"))
+		if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent {
+			t.Fatalf("PUT overwrite: want 201/204, got %d (body=%s)", resp.StatusCode, getBody(t, resp))
+		}
+		disk, err := os.ReadFile(filepath.Join(diskRoot, "e2e-ow.txt"))
+		require.NoError(t, err)
+		assert.Equal(t, "second", string(disk))
+	})
 
-func TestE2E_GET_file(t *testing.T) {
-	putFile(t, "/dav/p/storage/e2e-get.txt", []byte("get me"))
-	resp := do(t, http.MethodGet, "/dav/p/storage/e2e-get.txt", nil)
-	body := getBody(t, resp)
-	require.Equal(t, http.StatusOK, resp.StatusCode, "GET file: %s", body)
-	assert.Equal(t, "get me", string(body))
-}
+	t.Run("PUT_large", func(t *testing.T) {
+		// Larger than the fileprovider single-NATS-message cap (768KB) so the
+		// buffered multi-chunk write path is exercised - the path the phone's
+		// 3.5MB upload takes.
+		big := bytes.Repeat([]byte("Z"), 3*1024*1024) // 3 MiB
+		resp := putFile(t, p("/e2e-large.bin"), big)
+		if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent {
+			t.Fatalf("PUT large: want 201/204, got %d (body=%s)", resp.StatusCode, getBody(t, resp))
+		}
+		disk, err := os.ReadFile(filepath.Join(diskRoot, "e2e-large.bin"))
+		require.NoError(t, err)
+		assert.Equal(t, len(big), len(disk))
+		assert.True(t, bytes.Equal(big, disk))
+	})
 
-func TestE2E_HEAD_file(t *testing.T) {
-	putFile(t, "/dav/p/storage/e2e-head.txt", []byte("head me"))
-	resp := do(t, http.MethodHead, "/dav/p/storage/e2e-head.txt", nil)
-	require.Equal(t, http.StatusOK, resp.StatusCode, "HEAD file: %s", getBody(t, resp))
-	// HEAD must not return a body; resp.Body is already empty, but read it to
-	// confirm (io.ReadAll on an empty body returns empty, no error).
-	assert.Empty(t, getBody(t, resp), "HEAD must not return a body")
-}
+	t.Run("GET_file", func(t *testing.T) {
+		putFile(t, p("/e2e-get.txt"), []byte("get me"))
+		resp := do(t, http.MethodGet, p("/e2e-get.txt"), nil)
+		body := getBody(t, resp)
+		require.Equal(t, http.StatusOK, resp.StatusCode, "GET file: %s", body)
+		assert.Equal(t, "get me", string(body))
+	})
 
-func TestE2E_OPTIONS_file(t *testing.T) {
-	putFile(t, "/dav/p/storage/e2e-opt.txt", []byte("x"))
-	resp := do(t, http.MethodOptions, "/dav/p/storage/e2e-opt.txt", nil)
-	// OPTIONS on an existing resource should be 200 with an Allow header.
-	require.Equal(t, http.StatusOK, resp.StatusCode, "OPTIONS file: %s", getBody(t, resp))
-	allow := resp.Header.Get("Allow")
-	assert.NotEmpty(t, allow, "OPTIONS must return an Allow header")
-	t.Logf("OPTIONS Allow: %s", allow)
-}
+	t.Run("HEAD_file", func(t *testing.T) {
+		putFile(t, p("/e2e-head.txt"), []byte("head me"))
+		resp := do(t, http.MethodHead, p("/e2e-head.txt"), nil)
+		require.Equal(t, http.StatusOK, resp.StatusCode, "HEAD file: %s", getBody(t, resp))
+		assert.Empty(t, getBody(t, resp), "HEAD must not return a body")
+	})
 
-func TestE2E_OPTIONS_nonexistent(t *testing.T) {
-	// The webdav_client library sends an OPTIONS before every PUT/GET; a 405
-	// here would propagate to the client as the request error the phone saw.
-	resp := do(t, http.MethodOptions, "/dav/p/storage/never-existed.txt", nil)
-	assert.True(t, resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusNotFound,
-		"OPTIONS on a nonexistent file should be 200 or 404, got %d (body=%s)", resp.StatusCode, getBody(t, resp))
-}
+	t.Run("OPTIONS_file", func(t *testing.T) {
+		putFile(t, p("/e2e-opt.txt"), []byte("x"))
+		resp := do(t, http.MethodOptions, p("/e2e-opt.txt"), nil)
+		require.Equal(t, http.StatusOK, resp.StatusCode, "OPTIONS file: %s", getBody(t, resp))
+		allow := resp.Header.Get("Allow")
+		assert.NotEmpty(t, allow, "OPTIONS must return an Allow header")
+		t.Logf("OPTIONS Allow: %s", allow)
+	})
 
-func TestE2E_MKCOL_dir(t *testing.T) {
-	resp := do(t, "MKCOL", "/dav/p/storage/e2e-dir", nil)
-	require.Equal(t, http.StatusCreated, resp.StatusCode, "MKCOL new dir: %s", getBody(t, resp))
-	st, err := os.Stat(filepath.Join(providerDir, "e2e-dir"))
-	require.NoError(t, err)
-	assert.True(t, st.IsDir())
-}
+	t.Run("OPTIONS_nonexistent", func(t *testing.T) {
+		// The webdav_client library sends an OPTIONS before every PUT/GET; a 405
+		// here would propagate to the client as the request error the phone saw.
+		resp := do(t, http.MethodOptions, p("/never-existed.txt"), nil)
+		assert.True(t, resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusNotFound,
+			"OPTIONS on a nonexistent file should be 200 or 404, got %d (body=%s)", resp.StatusCode, getBody(t, resp))
+	})
 
-func TestE2E_MKCOL_existing_dir(t *testing.T) {
-	do(t, "MKCOL", "/dav/p/storage/e2e-dir2", nil)
-	resp := do(t, "MKCOL", "/dav/p/storage/e2e-dir2", nil)
-	// 405 Method Not Allowed is the WebDAV convention for "collection already
-	// exists" - webdav_client relies on this to treat MKCOL as mkdirAll.
-	assert.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode,
-		"MKCOL existing dir should be 405, got %d (body=%s)", resp.StatusCode, getBody(t, resp))
-}
+	t.Run("MKCOL_dir", func(t *testing.T) {
+		resp := do(t, "MKCOL", p("/e2e-dir"), nil)
+		require.Equal(t, http.StatusCreated, resp.StatusCode, "MKCOL new dir: %s", getBody(t, resp))
+		st, err := os.Stat(filepath.Join(diskRoot, "e2e-dir"))
+		require.NoError(t, err)
+		assert.True(t, st.IsDir())
+	})
 
-func TestE2E_MKCOL_nested(t *testing.T) {
-	// webdav_client's mkdirAll does a top-level MKCOL, falls back to a
-	// 409 -> per-segment walk. A nested path whose parents do not exist
-	// exercises both.
-	resp := do(t, "MKCOL", "/dav/p/storage/e2e-nest/a/b/c", nil)
-	// Some servers 409 (conflict) for a deep MKCOL whose parent is missing;
-	// either 201 (created the whole chain) or 409 is acceptable for this
-	// assertion, what matters is that mkdirAll subsequently succeeds.
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
-		t.Fatalf("MKCOL nested (no parent): want 201/409, got %d (body=%s)", resp.StatusCode, getBody(t, resp))
-	}
-}
+	t.Run("MKCOL_existing_dir", func(t *testing.T) {
+		do(t, "MKCOL", p("/e2e-dir2"), nil)
+		resp := do(t, "MKCOL", p("/e2e-dir2"), nil)
+		// 405 Method Not Allowed is the WebDAV convention for "collection already
+		// exists" - webdav_client relies on this to treat MKCOL as mkdirAll.
+		assert.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode,
+			"MKCOL existing dir should be 405, got %d (body=%s)", resp.StatusCode, getBody(t, resp))
+	})
 
-func TestE2E_PUT_into_missing_dir(t *testing.T) {
-	// The phone's upload path: PUT straight to /storage/Benni/Photos/Pixel 10/file
-	// where the intermediate dirs do not exist yet. webdav_client's
-	// wdWriteWithBytes calls mkdirAll on the parent first, then PUTs. This is
-	// the exact scenario the backend log showed failing.
-	resp := putFile(t, "/dav/p/storage/Benni/Photos/Pixel 10/PXL_e2e.jpg", []byte("pixel"))
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("PUT into missing dir: want 201/204, got %d (body=%s)", resp.StatusCode, getBody(t, resp))
-	}
-	disk, err := os.ReadFile(filepath.Join(providerDir, "Benni/Photos/Pixel 10/PXL_e2e.jpg"))
-	require.NoError(t, err)
-	assert.Equal(t, "pixel", string(disk))
-}
+	t.Run("MKCOL_nested", func(t *testing.T) {
+		// webdav_client's mkdirAll does a top-level MKCOL, falls back to a
+		// 409 -> per-segment walk. A nested path whose parents do not exist
+		// exercises both.
+		resp := do(t, "MKCOL", p("/e2e-nest/a/b/c"), nil)
+		if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
+			t.Fatalf("MKCOL nested (no parent): want 201/409, got %d (body=%s)", resp.StatusCode, getBody(t, resp))
+		}
+	})
 
-// TestE2E_PUT_phone_upload_sequence mirrors the EXACT sequence the
-// seraph_app's HeadlessWebDavBackend + webdav_client wdWriteWithBytes drive
-// for a gallery upload: an OPTIONS preflight on the file, then mkdirAll on
-// the parent collection, then the PUT. This is what the phone's background
-// backup does, and what the backend log showed returning 405. If the bare
-// PUT_into_missing_dir test fails but THIS one passes, the bug is the
-// server not creating the parent itself (a client mkdirAll dependency);
-// if THIS one fails too, the bug is deeper in the staging/mkdirAll
-// interaction.
-func TestE2E_PUT_phone_upload_sequence(t *testing.T) {
-	const file = "/dav/p/storage/Phone/Photos/Pixel 10/IMG_e2e.jpg"
+	t.Run("PUT_into_missing_dir", func(t *testing.T) {
+		// The phone's upload path: PUT straight to /storage/Benni/Photos/Pixel 10/file
+		// where the intermediate dirs do not exist yet. The atomic-PUT decorator
+		// now creates the parent dir server-side, so this succeeds regardless of
+		// whether the client ran mkdirAll first.
+		resp := putFile(t, p("/Benni/Photos/Pixel 10/PXL_e2e.jpg"), []byte("pixel"))
+		if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent {
+			t.Fatalf("PUT into missing dir: want 201/204, got %d (body=%s)", resp.StatusCode, getBody(t, resp))
+		}
+		disk, err := os.ReadFile(filepath.Join(diskRoot, "Benni/Photos/Pixel 10/PXL_e2e.jpg"))
+		require.NoError(t, err)
+		assert.Equal(t, "pixel", string(disk))
+	})
 
-	// 1. OPTIONS preflight (webdav_client.wdOptions before every read/write).
-	optResp := do(t, http.MethodOptions, file, nil)
-	if optResp.StatusCode != http.StatusOK {
-		t.Fatalf("OPTIONS preflight: want 200, got %d (body=%s)", optResp.StatusCode, getBody(t, optResp))
-	}
+	t.Run("PUT_phone_upload_sequence", func(t *testing.T) {
+		// Mirrors the EXACT sequence the seraph_app's HeadlessWebDavBackend +
+		// webdav_client wdWriteWithBytes drive for a gallery upload: an OPTIONS
+		// preflight on the file, then mkdirAll on the parent collection, then the
+		// PUT. This is what the phone's background backup does.
+		const fname = "/IMG_e2e.jpg"
+		file := p("/Phone/Photos/Pixel 10" + fname)
 
-	// 2. mkdirAll on the parent collection - the path webdav_client computes
-	// from the file path (everything up to and including the last '/'). The
-	// client walks segments RELATIVE to its base (/dav/p), so the walk here
-	// does too: split the part after /dav/p.
-	const davBase = "/dav/p"
-	parent := strings.TrimSuffix(strings.TrimSuffix(file, "/"), "/IMG_e2e.jpg") + "/"
-	parentRel := strings.TrimPrefix(parent, davBase) // "/storage/Phone/Photos/Pixel 10/"
-	mkResp := do(t, "MKCOL", parent, nil)
-	if mkResp.StatusCode != http.StatusCreated && mkResp.StatusCode != http.StatusMethodNotAllowed {
-		if mkResp.StatusCode == http.StatusConflict {
-			// 409 -> walk each segment, MKCOL'd relative to /dav/p.
-			segments := strings.Split(strings.Trim(parentRel, "/"), "/")
-			sub := davBase + "/"
-			for _, seg := range segments {
-				sub += seg + "/"
-				sr := do(t, "MKCOL", sub, nil)
-				if sr.StatusCode != http.StatusCreated && sr.StatusCode != http.StatusMethodNotAllowed {
-					t.Fatalf("mkdirAll walk MKCOL %s: want 201/405, got %d (body=%s)", sub, sr.StatusCode, getBody(t, sr))
+		// 1. OPTIONS preflight (webdav_client.wdOptions before every read/write).
+		optResp := do(t, http.MethodOptions, file, nil)
+		if optResp.StatusCode != http.StatusOK {
+			t.Fatalf("OPTIONS preflight: want 200, got %d (body=%s)", optResp.StatusCode, getBody(t, optResp))
+		}
+
+		// 2. mkdirAll on the parent collection - the path webdav_client computes
+		// from the file path (everything up to and including the last '/'). The
+		// client walks segments RELATIVE to its base (/dav/p), so the walk here
+		// does too: split the part after /dav/p.
+		const davBase = "/dav/p"
+		parent := strings.TrimSuffix(strings.TrimSuffix(file, "/"), fname) + "/"
+		parentRel := strings.TrimPrefix(parent, davBase)
+		mkResp := do(t, "MKCOL", parent, nil)
+		if mkResp.StatusCode != http.StatusCreated && mkResp.StatusCode != http.StatusMethodNotAllowed {
+			if mkResp.StatusCode == http.StatusConflict {
+				segments := strings.Split(strings.Trim(parentRel, "/"), "/")
+				sub := davBase + "/"
+				for _, seg := range segments {
+					sub += seg + "/"
+					sr := do(t, "MKCOL", sub, nil)
+					if sr.StatusCode != http.StatusCreated && sr.StatusCode != http.StatusMethodNotAllowed {
+						t.Fatalf("mkdirAll walk MKCOL %s: want 201/405, got %d (body=%s)", sub, sr.StatusCode, getBody(t, sr))
+					}
 				}
+			} else {
+				t.Fatalf("mkdirAll parent MKCOL %s: want 201/405/409, got %d (body=%s)", parent, mkResp.StatusCode, getBody(t, mkResp))
 			}
-		} else {
-			t.Fatalf("mkdirAll parent MKCOL %s: want 201/405/409, got %d (body=%s)", parent, mkResp.StatusCode, getBody(t, mkResp))
 		}
-	}
 
-	// 3. PUT the file - the staging openFile must succeed now that the parent
-	// collection exists.
-	resp := putFile(t, file, []byte("pixel"))
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("PUT after mkdirAll: want 201/204, got %d (body=%s)", resp.StatusCode, getBody(t, resp))
-	}
-	disk, err := os.ReadFile(filepath.Join(providerDir, "Phone/Photos/Pixel 10/IMG_e2e.jpg"))
-	require.NoError(t, err)
-	assert.Equal(t, "pixel", string(disk))
-}
-
-func TestE2E_PROPFIND_file(t *testing.T) {
-	putFile(t, "/dav/p/storage/e2e-propfind.txt", []byte("prop me"))
-	resp := do(t, "PROPFIND", "/dav/p/storage/e2e-propfind.txt", strings.NewReader(propfindBody), "Depth", "0", "Content-Type", "application/xml")
-	require.Equal(t, http.StatusMultiStatus, resp.StatusCode, "PROPFIND file: %s", getBody(t, resp))
-}
-
-func TestE2E_PROPFIND_dir(t *testing.T) {
-	do(t, "MKCOL", "/dav/p/storage/e2e-pfdir", nil)
-	putFile(t, "/dav/p/storage/e2e-pfdir/inner.txt", []byte("inner"))
-	resp := do(t, "PROPFIND", "/dav/p/storage/e2e-pfdir", strings.NewReader(propfindBody), "Depth", "1", "Content-Type", "application/xml")
-	require.Equal(t, http.StatusMultiStatus, resp.StatusCode, "PROPFIND dir: %s", getBody(t, resp))
-}
-
-func TestE2E_PROPFIND_nonexistent(t *testing.T) {
-	resp := do(t, "PROPFIND", "/dav/p/storage/no-such-file.txt", strings.NewReader(propfindBody), "Depth", "0", "Content-Type", "application/xml")
-	// 404 Not Found is the correct response for PROPFIND on a missing resource.
-	assert.Equal(t, http.StatusNotFound, resp.StatusCode,
-		"PROPFIND nonexistent: want 404, got %d (body=%s)", resp.StatusCode, getBody(t, resp))
-}
-
-func TestE2E_DELETE_file(t *testing.T) {
-	putFile(t, "/dav/p/storage/e2e-del.txt", []byte("delete me"))
-	resp := do(t, http.MethodDelete, "/dav/p/storage/e2e-del.txt", nil)
-	require.Equal(t, http.StatusNoContent, resp.StatusCode, "DELETE file: %s", getBody(t, resp))
-	_, err := os.Stat(filepath.Join(providerDir, "e2e-del.txt"))
-	assert.True(t, os.IsNotExist(err), "file should be gone on disk")
-}
-
-func TestE2E_DELETE_empty_dir(t *testing.T) {
-	do(t, "MKCOL", "/dav/p/storage/e2e-emptydir", nil)
-	resp := do(t, http.MethodDelete, "/dav/p/storage/e2e-emptydir", nil)
-	require.Equal(t, http.StatusNoContent, resp.StatusCode, "DELETE empty dir: %s", getBody(t, resp))
-	_, err := os.Stat(filepath.Join(providerDir, "e2e-emptydir"))
-	assert.True(t, os.IsNotExist(err), "empty dir should be gone on disk")
-}
-
-func TestE2E_DELETE_nonempty_dir_recursive(t *testing.T) {
-	do(t, "MKCOL", "/dav/p/storage/e2e-recdir", nil)
-	putFile(t, "/dav/p/storage/e2e-recdir/a.txt", []byte("a"))
-	do(t, "MKCOL", "/dav/p/storage/e2e-recdir/sub", nil)
-	putFile(t, "/dav/p/storage/e2e-recdir/sub/b.txt", []byte("b"))
-	resp := do(t, http.MethodDelete, "/dav/p/storage/e2e-recdir", nil)
-	require.Equal(t, http.StatusNoContent, resp.StatusCode, "DELETE non-empty dir: %s", getBody(t, resp))
-	_, err := os.Stat(filepath.Join(providerDir, "e2e-recdir"))
-	assert.True(t, os.IsNotExist(err), "non-empty dir should be gone recursively")
-}
-
-func TestE2E_MOVE_rename_file(t *testing.T) {
-	putFile(t, "/dav/p/storage/e2e-mov-src.txt", []byte("move me"))
-	resp := do(t, "MOVE", "/dav/p/storage/e2e-mov-src.txt", nil, "Destination", gatewayBase+"/dav/p/storage/e2e-mov-dst.txt")
-	require.Equal(t, http.StatusCreated, resp.StatusCode, "MOVE rename file: %s", getBody(t, resp))
-	disk, err := os.ReadFile(filepath.Join(providerDir, "e2e-mov-dst.txt"))
-	require.NoError(t, err)
-	assert.Equal(t, "move me", string(disk))
-	_, err = os.Stat(filepath.Join(providerDir, "e2e-mov-src.txt"))
-	assert.True(t, os.IsNotExist(err), "source should be gone after MOVE")
-}
-
-func TestE2E_COPY_file(t *testing.T) {
-	putFile(t, "/dav/p/storage/e2e-cpy-src.txt", []byte("copy me"))
-	resp := do(t, "COPY", "/dav/p/storage/e2e-cpy-src.txt", nil, "Destination", gatewayBase+"/dav/p/storage/e2e-cpy-dst.txt")
-	require.Equal(t, http.StatusCreated, resp.StatusCode, "COPY file: %s", getBody(t, resp))
-	disk, err := os.ReadFile(filepath.Join(providerDir, "e2e-cpy-dst.txt"))
-	require.NoError(t, err)
-	assert.Equal(t, "copy me", string(disk))
-	// source still present after COPY
-	_, err = os.Stat(filepath.Join(providerDir, "e2e-cpy-src.txt"))
-	assert.NoError(t, err, "source should still exist after COPY")
-}
-
-func TestE2E_PUT_atomic_no_partial_on_abort(t *testing.T) {
-	// The atomic-PUT decorator must leave NOTHING at the destination if the
-	// upload body is truncated. Simulate a dropped upload by opening a raw
-	// TCP connection, sending a PUT with a Content-Length that overstates the
-	// body, then closing the connection mid-stream - the server sees the
-	// body never reach EOF and must treat the upload as aborted.
-	conn, err := net.Dial("tcp", gatewayAddr)
-	require.NoError(t, err)
-	t.Cleanup(func() { conn.Close() })
-	const file = "/dav/p/storage/e2e-abort.bin"
-	const claimedLen = 1024 * 1024 // claim 1 MiB
-	reqStr := "PUT " + file + " HTTP/1.1\r\n" +
-		"Host: " + gatewayAddr + "\r\n" +
-		"Content-Length: " + fmt.Sprintf("%d", claimedLen) + "\r\n" +
-		"Connection: close\r\n\r\n" +
-		"only-a-few-bytes" // far less than claimedLen; then we hang up
-	_, err = conn.Write([]byte(reqStr))
-	require.NoError(t, err)
-	// Close (FIN) immediately after the short body: the server's io.Copy gets
-	// an unexpected EOF rather than the full Content-Length, so trackingBody
-	// records an incomplete read and Close() discards the staging file.
-	conn.Close()
-
-	// Give the server a moment to process the aborted request.
-	time.Sleep(200 * time.Millisecond)
-
-	// No destination file should have been published.
-	_, err = os.Stat(filepath.Join(providerDir, "e2e-abort.bin"))
-	assert.True(t, os.IsNotExist(err), "destination must not exist after an aborted PUT, got err=%v", err)
-	// And no staging file should be left behind in the dir.
-	files, err := os.ReadDir(providerDir)
-	require.NoError(t, err)
-	for _, f := range files {
-		name := f.Name()
-		if strings.HasPrefix(name, ".seraph-upload-") && strings.HasSuffix(name, ".part") {
-			t.Errorf("leftover staging file after abort: %s", name)
+		// 3. PUT the file - the staging openFile must succeed now that the parent
+		// collection exists.
+		resp := putFile(t, file, []byte("pixel"))
+		if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent {
+			t.Fatalf("PUT after mkdirAll: want 201/204, got %d (body=%s)", resp.StatusCode, getBody(t, resp))
 		}
-	}
+		disk, err := os.ReadFile(filepath.Join(diskRoot, "Phone/Photos/Pixel 10/IMG_e2e.jpg"))
+		require.NoError(t, err)
+		assert.Equal(t, "pixel", string(disk))
+	})
+
+	t.Run("PROPFIND_file", func(t *testing.T) {
+		putFile(t, p("/e2e-propfind.txt"), []byte("prop me"))
+		resp := do(t, "PROPFIND", p("/e2e-propfind.txt"), strings.NewReader(propfindBody), "Depth", "0", "Content-Type", "application/xml")
+		require.Equal(t, http.StatusMultiStatus, resp.StatusCode, "PROPFIND file: %s", getBody(t, resp))
+	})
+
+	t.Run("PROPFIND_dir", func(t *testing.T) {
+		do(t, "MKCOL", p("/e2e-pfdir"), nil)
+		putFile(t, p("/e2e-pfdir/inner.txt"), []byte("inner"))
+		resp := do(t, "PROPFIND", p("/e2e-pfdir"), strings.NewReader(propfindBody), "Depth", "1", "Content-Type", "application/xml")
+		require.Equal(t, http.StatusMultiStatus, resp.StatusCode, "PROPFIND dir: %s", getBody(t, resp))
+	})
+
+	t.Run("PROPFIND_nonexistent", func(t *testing.T) {
+		resp := do(t, "PROPFIND", p("/no-such-file.txt"), strings.NewReader(propfindBody), "Depth", "0", "Content-Type", "application/xml")
+		assert.Equal(t, http.StatusNotFound, resp.StatusCode,
+			"PROPFIND nonexistent: want 404, got %d (body=%s)", resp.StatusCode, getBody(t, resp))
+	})
+
+	t.Run("DELETE_file", func(t *testing.T) {
+		putFile(t, p("/e2e-del.txt"), []byte("delete me"))
+		resp := do(t, http.MethodDelete, p("/e2e-del.txt"), nil)
+		require.Equal(t, http.StatusNoContent, resp.StatusCode, "DELETE file: %s", getBody(t, resp))
+		_, err := os.Stat(filepath.Join(diskRoot, "e2e-del.txt"))
+		assert.True(t, os.IsNotExist(err), "file should be gone on disk")
+	})
+
+	t.Run("DELETE_empty_dir", func(t *testing.T) {
+		do(t, "MKCOL", p("/e2e-emptydir"), nil)
+		resp := do(t, http.MethodDelete, p("/e2e-emptydir"), nil)
+		require.Equal(t, http.StatusNoContent, resp.StatusCode, "DELETE empty dir: %s", getBody(t, resp))
+		_, err := os.Stat(filepath.Join(diskRoot, "e2e-emptydir"))
+		assert.True(t, os.IsNotExist(err), "empty dir should be gone on disk")
+	})
+
+	t.Run("DELETE_nonempty_dir_recursive", func(t *testing.T) {
+		do(t, "MKCOL", p("/e2e-recdir"), nil)
+		putFile(t, p("/e2e-recdir/a.txt"), []byte("a"))
+		do(t, "MKCOL", p("/e2e-recdir/sub"), nil)
+		putFile(t, p("/e2e-recdir/sub/b.txt"), []byte("b"))
+		resp := do(t, http.MethodDelete, p("/e2e-recdir"), nil)
+		require.Equal(t, http.StatusNoContent, resp.StatusCode, "DELETE non-empty dir: %s", getBody(t, resp))
+		_, err := os.Stat(filepath.Join(diskRoot, "e2e-recdir"))
+		assert.True(t, os.IsNotExist(err), "non-empty dir should be gone recursively")
+	})
+
+	t.Run("MOVE_rename_file", func(t *testing.T) {
+		putFile(t, p("/e2e-mov-src.txt"), []byte("move me"))
+		resp := do(t, "MOVE", p("/e2e-mov-src.txt"), nil, "Destination", gatewayBase+p("/e2e-mov-dst.txt"))
+		require.Equal(t, http.StatusCreated, resp.StatusCode, "MOVE rename file: %s", getBody(t, resp))
+		disk, err := os.ReadFile(filepath.Join(diskRoot, "e2e-mov-dst.txt"))
+		require.NoError(t, err)
+		assert.Equal(t, "move me", string(disk))
+		_, err = os.Stat(filepath.Join(diskRoot, "e2e-mov-src.txt"))
+		assert.True(t, os.IsNotExist(err), "source should be gone after MOVE")
+	})
+
+	t.Run("COPY_file", func(t *testing.T) {
+		putFile(t, p("/e2e-cpy-src.txt"), []byte("copy me"))
+		resp := do(t, "COPY", p("/e2e-cpy-src.txt"), nil, "Destination", gatewayBase+p("/e2e-cpy-dst.txt"))
+		require.Equal(t, http.StatusCreated, resp.StatusCode, "COPY file: %s", getBody(t, resp))
+		disk, err := os.ReadFile(filepath.Join(diskRoot, "e2e-cpy-dst.txt"))
+		require.NoError(t, err)
+		assert.Equal(t, "copy me", string(disk))
+		_, err = os.Stat(filepath.Join(diskRoot, "e2e-cpy-src.txt"))
+		assert.NoError(t, err, "source should still exist after COPY")
+	})
+
+	t.Run("PUT_atomic_no_partial_on_abort", func(t *testing.T) {
+		// The atomic-PUT decorator must leave NOTHING at the destination if the
+		// upload body is truncated. Simulate a dropped upload by opening a raw
+		// TCP connection, sending a PUT with a Content-Length that overstates the
+		// body, then closing the connection mid-stream.
+		conn, err := net.Dial("tcp", gatewayAddr)
+		require.NoError(t, err)
+		t.Cleanup(func() { conn.Close() })
+		file := p("/e2e-abort.bin")
+		const claimedLen = 1024 * 1024
+		reqStr := "PUT " + file + " HTTP/1.1\r\n" +
+			"Host: " + gatewayAddr + "\r\n" +
+			"Content-Length: " + fmt.Sprintf("%d", claimedLen) + "\r\n" +
+			"Connection: close\r\n\r\n" +
+			"only-a-few-bytes"
+		_, err = conn.Write([]byte(reqStr))
+		require.NoError(t, err)
+		conn.Close()
+		time.Sleep(200 * time.Millisecond)
+		_, err = os.Stat(filepath.Join(diskRoot, "e2e-abort.bin"))
+		assert.True(t, os.IsNotExist(err), "destination must not exist after an aborted PUT, got err=%v", err)
+		files, err := os.ReadDir(diskRoot)
+		require.NoError(t, err)
+		for _, f := range files {
+			name := f.Name()
+			if strings.HasPrefix(name, ".seraph-upload-") && strings.HasSuffix(name, ".part") {
+				t.Errorf("leftover staging file after abort: %s", name)
+			}
+		}
+	})
+}
+
+// TestE2EDirProvider runs the full WebDAV verb suite against the file-provider-dir
+// backing the "storage" space seeded in TestMain. This is the suite that
+// caught the missing-parent-dir 405; it stays green as the regression guard
+// for the local-dir provider.
+func TestE2EDirProvider(t *testing.T) {
+	runWebDavVerbSuite(t, providerDir, "/dav/p/storage")
 }
 
 // propfindBody is a minimal PROPFIND request body asking for the basic
