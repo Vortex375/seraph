@@ -272,6 +272,14 @@ func (g *GalleryProvider) Start() error {
 		}
 	}()
 
+	// one-off startup sweep that tombstones every pre-existing dotfile
+	// galleryPhotos document (interrupted-upload staging files, .DS_Store,
+	// and the like) so the delta feed delivers their tombstones to every
+	// mirror - see runDotfileSweep's docs. Gated by a persisted marker so it
+	// does not re-run on subsequent restarts. Runs in the background like
+	// every other startup pass so Start() returns promptly.
+	g.startDotfileSweep(backfillCtx)
+
 	return nil
 }
 
