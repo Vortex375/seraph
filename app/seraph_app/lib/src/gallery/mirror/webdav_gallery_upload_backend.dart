@@ -19,6 +19,17 @@ import 'package:seraph_app/src/gallery/mirror/gallery_upload_backend.dart';
 /// (`../sync/gallery_headless_sync.dart`) uses its own
 /// [HeadlessWebDavBackend] over a raw `webdav_client` [Client] instead;
 /// only the UI wiring (`initial_binding.dart`) instantiates THIS class.
+///
+/// Every WebDAV operation is wrapped in [withTokenRecovery]: a 401/403 from
+/// the gateway (the auth middleware's response to an expired access token -
+/// see [tokenRecoveryStatuses]'s own doc for why that is the SAME status a
+/// genuinely read-only Space produces) triggers one forced refresh via
+/// [LoginController.refreshTokenIfNeeded] and a single retry. [FileService]
+/// reads the bearer from [LoginController.currentUser] before every
+/// request (`getRequestHeaders` → `setHeaders`), so the retry automatically
+/// uses the just-refreshed access token - this is the reactive safety net
+/// the proactive (resume / audio-timer) refresh triggers alone cannot
+/// guarantee covers the access token's short lifetime.
 class WebDavGalleryUploadBackend implements GalleryUploadBackend {
   WebDavGalleryUploadBackend(this.fileService);
 
@@ -36,38 +47,65 @@ class WebDavGalleryUploadBackend implements GalleryUploadBackend {
     return '/$spaceProviderId$rel';
   }
 
+  /// The refresh callback [withTokenRecovery] calls between the failed
+  /// attempt and its retry. For the UI-isolate backend this is a forced
+  /// refresh on the same [LoginController] [FileService] already reads the
+  /// bearer from, so the retry's `setHeaders` picks up the fresh access
+  /// token automatically - no header plumbing of its own here.
+  Future<void> _refreshToken() =>
+      fileService.loginController.refreshTokenIfNeeded(force: true);
+
   @override
   Future<int?> statSize(String spaceProviderId, String path) async {
     try {
-      final file = await fileService.stat(_webDavPath(spaceProviderId, path));
-      if (file == null) {
-        // [FileService.stat] returns null only when no server is configured
-        // at all (see its own doc) - every real "not found" response throws,
-        // caught below. Treating this as "not connected" rather than "path
-        // free" matters: the latter would let an upload proceed with no
-        // server to receive it.
-        throw const GalleryUploadException('Not connected to Seraph.');
-      }
-      return file.size;
-    } on DioException catch (e) {
-      final status = e.response?.statusCode;
-      if (status == 404) {
-        return null;
-      }
-      throw _translate(e, status);
+      return await withTokenRecovery<int?>(
+        op: () async {
+          try {
+            final file =
+                await fileService.stat(_webDavPath(spaceProviderId, path));
+            if (file == null) {
+              // [FileService.stat] returns null only when no server is
+              // configured at all (see its own doc) - every real "not found"
+              // response throws, caught below. Treating this as "not
+              // connected" rather than "path free" matters: the latter
+              // would let an upload proceed with no server to receive it.
+              throw const GalleryUploadException('Not connected to Seraph.');
+            }
+            return file.size;
+          } on DioException catch (e) {
+            if (e.response?.statusCode == 404) {
+              // "Path is free" - not a token failure and not an error. A
+              // 404 means the gateway accepted the token and looked the
+              // path up; an expired token would have been a 403 before the
+              // path was even considered, so this never reaches
+              // [withTokenRecovery]'s refresh branch.
+              return null;
+            }
+            rethrow;
+          }
+        },
+        refreshToken: _refreshToken,
+        translate: translateWebDavError,
+      );
+    } on GalleryUploadException {
+      rethrow;
     }
   }
 
   @override
   Future<void> put(String spaceProviderId, String path, Uint8List bytes) async {
     try {
-      await fileService.writeBytes(_webDavPath(spaceProviderId, path), bytes);
-    } on DioException catch (e) {
-      throw _translate(e, e.response?.statusCode);
+      await withTokenRecovery<void>(
+        op: () async =>
+            fileService.writeBytes(_webDavPath(spaceProviderId, path), bytes),
+        refreshToken: _refreshToken,
+        translate: translateWebDavError,
+      );
     } on StateError catch (e) {
       // [FileService.writeBytes] throws this when no server is configured at
       // all - the same "not connected" case [statSize] recognises via a null
-      // [FileService.stat] result.
+      // [FileService.stat] result. [withTokenRecovery] only catches
+      // [DioException], so this propagates straight through to here.
       throw GalleryUploadException(e.message);
     }
   }
@@ -75,20 +113,25 @@ class WebDavGalleryUploadBackend implements GalleryUploadBackend {
   @override
   Future<void> remove(String spaceProviderId, String path) async {
     try {
-      await fileService.removeFile(_webDavPath(spaceProviderId, path));
-    } on DioException catch (e) {
-      final status = e.response?.statusCode;
-      if (status == 404) {
-        // Already gone - not an error (see this method's doc on the
-        // interface).
-        return;
-      }
-      throw _translate(e, status);
+      await withTokenRecovery<void>(
+        op: () async {
+          try {
+            await fileService.removeFile(_webDavPath(spaceProviderId, path));
+          } on DioException catch (e) {
+            if (e.response?.statusCode == 404) {
+              // Already gone - not an error (see this method's doc on the
+              // interface), and not a token failure (a 404 means the token
+              // was accepted; an expired one would have been a 403).
+              return;
+            }
+            rethrow;
+          }
+        },
+        refreshToken: _refreshToken,
+        translate: translateWebDavError,
+      );
     } on StateError catch (e) {
       throw GalleryUploadException(e.message);
     }
   }
-
-  GalleryUploadException _translate(DioException e, int? status) =>
-      translateWebDavError(e, status);
 }

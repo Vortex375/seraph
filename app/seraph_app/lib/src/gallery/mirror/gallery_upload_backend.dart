@@ -149,3 +149,74 @@ GalleryUploadException translateWebDavError(DioException e, int? status) {
   return GalleryUploadException(
       'Could not reach Seraph (${status ?? e.message}).');
 }
+
+/// The HTTP statuses the gateway returns for an access token that has
+/// expired (or was otherwise invalidated). The auth middleware answers a
+/// Bearer request whose token fails introspection with **403 Forbidden** -
+/// NOT 401 - (see `auth/authenticationFailed`'s `bearerAuth` branch), the
+/// SAME status a genuinely read-only Space's `fs.ErrPermission` surfaces as
+/// via the webdav handler, which is exactly why [translateWebDavError] alone
+/// cannot tell the two apart and [withTokenRecovery] has to retry to
+/// disambiguate. 401 is included too: some gateways answer 401 for an
+/// expired bearer, and accepting either keeps the recovery from depending
+/// on one specific auth-server policy.
+const Set<int> tokenRecoveryStatuses = {401, 403};
+
+/// Runs [op], and if it throws a [DioException] whose HTTP status is in
+/// [tokenRecoveryStatuses] - the gateway's "your access token is no good"
+/// response, indistinguishable at the status-code level from a genuinely
+/// read-only Space - calls [refreshToken] ONCE, then retries [op] a single
+/// time. If the retry succeeds, the failure was an expired access token and
+/// the upload proceeds as if nothing happened; if the retry throws the SAME
+/// status, it was a real permission denial and [translate] classifies it the
+/// usual way (a permanent, read-only-Space [GalleryUploadException]). A
+/// non-recovery [DioException] (500, timeout, 507, 404, ...) is translated
+/// immediately, without wasting a refresh-grant round trip on something that
+/// has nothing to do with the token.
+///
+/// **Why this exists (the gap ticket 23's lock leaves open):** the
+/// cross-isolate lock serializes concurrent refreshes so two isolates never
+/// present a rotating refresh token at once, but NEITHER the lock nor any
+/// other mechanism guarantees a refresh happens BEFORE an access token's
+/// (short - 5 minutes, for the test realm) lifetime elapses. The headless
+/// sync isolate loads ONE token at session start and never refreshes
+/// mid-run; the main app only refreshes on cold start, resume, and a 30s
+/// audio timer (only while music plays). So both paths can - and do -
+/// present an expired access token, the gateway answers 403, and
+/// [translateWebDavError] silently misclassifies a recoverable token
+/// failure as a permanent "read-only Space" failure. This helper is the
+/// reactive safety net that catches that: refresh, retry, and let the
+/// classification reflect what the SECOND attempt actually returned.
+///
+/// The refresh runs even when the 403 turns out to be a real read-only
+/// Space - one extra token-endpoint round trip per permanent failure is
+/// cheap (the lock serializes it, and a refresh that did not need to happen
+/// does not invalidate anything the other isolate still holds), and the
+/// alternative - trying to predict whether a 403 is a token failure or a
+/// permission failure WITHOUT retrying - is exactly the impossible call
+/// [translateWebDavError] was already getting wrong.
+Future<T> withTokenRecovery<T>({
+  required Future<T> Function() op,
+  required Future<void> Function() refreshToken,
+  required GalleryUploadException Function(DioException e, int? status)
+      translate,
+}) async {
+  try {
+    return await op();
+  } on DioException catch (e) {
+    final status = e.response?.statusCode;
+    if (!tokenRecoveryStatuses.contains(status)) {
+      throw translate(e, status);
+    }
+    // An expired/invalid access token and a genuinely read-only Space both
+    // surface as 403 (see [tokenRecoveryStatuses]'s own doc) - refresh the
+    // token and retry once. If the retry succeeds, it was an expired token;
+    // if it fails the same way, [translate] classifies it as permanent.
+    await refreshToken();
+    try {
+      return await op();
+    } on DioException catch (e2) {
+      throw translate(e2, e2.response?.statusCode);
+    }
+  }
+}

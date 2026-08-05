@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:dio/dio.dart';
 import 'package:seraph_app/src/login/login_controller.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
 import 'package:seraph_app/src/share/share_controller.dart';
@@ -47,14 +48,40 @@ class FileService {
     }
   }
 
+  /// Reactive refresh-and-retry for the file browser's own WebDAV calls. The
+  /// gateway answers an expired access token with HTTP 403 (the SAME status
+  /// a read-only Space produces), and [LoginController]'s proactive refresh
+  /// triggers (cold start, resume, 30s audio timer) do not cover every
+  /// case - a user browsing files in the foreground for longer than the
+  /// access-token's lifetime (5 minutes, for the test realm) with no resume
+  /// and no audio playing hits an expired token. This catches that: on a
+  /// 401/403 [DioException], force-refreshes the token and retries [op]
+  /// once. The retry reads the fresh bearer via [getRequestHeaders] (which
+  /// reads [loginController.currentUser], set synchronously by the forced
+  /// [refreshTokenIfNeeded]); a second failure of any kind propagates as-is.
+  Future<T> _withTokenRecovery<T>(Future<T> Function() op) async {
+    try {
+      return await op();
+    } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      if (status == 401 || status == 403) {
+        await loginController.refreshTokenIfNeeded(force: true);
+        return await op();
+      }
+      rethrow;
+    }
+  }
+
   Future<List<File>> readDir(String path) async {
     Client? c = client;
     if (c == null) {
       return [];
     }
-    final headers = await getRequestHeaders();
-    c.setHeaders(headers);
-    return c.readDir(path);
+    return _withTokenRecovery(() async {
+      final headers = await getRequestHeaders();
+      c.setHeaders(headers);
+      return c.readDir(path);
+    });
   }
 
   Future<File?> stat(String path) async {
@@ -62,9 +89,11 @@ class FileService {
     if (c == null) {
       return null;
     }
-    final headers = await getRequestHeaders();
-    c.setHeaders(headers);
-    return c.readProps(path);
+    return _withTokenRecovery(() async {
+      final headers = await getRequestHeaders();
+      c.setHeaders(headers);
+      return c.readProps(path);
+    });
   }
 
   /// PUTs [data] to [path], creating any missing intermediate WebDAV
@@ -85,9 +114,11 @@ class FileService {
     if (c == null) {
       throw StateError('Not connected to a server');
     }
-    final headers = await getRequestHeaders();
-    c.setHeaders(headers);
-    await c.write(path, data);
+    await _withTokenRecovery(() async {
+      final headers = await getRequestHeaders();
+      c.setHeaders(headers);
+      await c.write(path, data);
+    });
   }
 
   /// Deletes the file (or collection) at [path].
@@ -102,9 +133,11 @@ class FileService {
     if (c == null) {
       throw StateError('Not connected to a server');
     }
-    final headers = await getRequestHeaders();
-    c.setHeaders(headers);
-    await c.remove(path);
+    await _withTokenRecovery(() async {
+      final headers = await getRequestHeaders();
+      c.setHeaders(headers);
+      await c.remove(path);
+    });
   }
 
   String getFileUrl(String path) {

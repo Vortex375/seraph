@@ -41,9 +41,25 @@ import 'package:webdav_client/webdav_client.dart' as webdav;
 /// client against the currently configured server, with whatever bearer
 /// token (if any - a no-auth server has none) the persisted OIDC session
 /// currently holds.
+///
+/// [refreshToken], when non-null, refreshes the session's access token
+/// in-place - updating [client]'s `Authorization` header so the next
+/// request on it uses the fresh bearer. [HeadlessWebDavBackend] calls it
+/// via [withTokenRecovery] on a 401/403, the gateway's "your access token
+/// is no good" response: without it, an access token that expired mid-run
+/// (its lifetime is short - 5 minutes, for the test realm - and a backup
+/// runs for hours) would surface as a permanent "read-only Space" failure
+/// the engine parks in the visible failure list rather than recovering
+/// from. Null for a no-auth server (no token to refresh).
 class HeadlessSyncSession {
-  const HeadlessSyncSession(this.client);
+  const HeadlessSyncSession(this.client, {this.refreshToken});
+
   final webdav.Client client;
+
+  /// Refreshes [client]'s bearer token under the cross-isolate lock
+  /// ([refreshTokenWithLock]) and updates its headers in-place. See the
+  /// class doc for why this exists and when it is null.
+  final Future<void> Function()? refreshToken;
 }
 
 /// Ticket 24's `SyncRunLock` holder identity for ticket 22's foreground
@@ -179,7 +195,7 @@ Future<HeadlessSyncAttempt> runHeadlessGallerySync(
       return const HeadlessSyncAttempt.noSession();
     }
 
-    final backend = HeadlessWebDavBackend(session.client);
+    final backend = HeadlessWebDavBackend(session);
     final localSource = AndroidLocalSource();
     final uploadService = GalleryUploadService(mirror, backend, localSource);
     final engine = GallerySyncEngine(mirror, uploadService);
@@ -290,7 +306,38 @@ Future<HeadlessSyncSession?> loadHeadlessSyncSession(
     }
     final client = webdav.newClient('$serverUrl/dav/p', debug: false);
     client.setHeaders({'Authorization': 'Bearer ${user.token.accessToken}'});
-    return HeadlessSyncSession(client);
+
+    // The reactive refresh callback [HeadlessWebDavBackend] hands to
+    // [withTokenRecovery] on a 401/403 - the gateway's "expired access
+    // token" response, which an hours-long backup hits every time the
+    // short-lived access token (5 minutes, for the test realm) elapses.
+    // Builds a FRESH [LockedOidcUserManager] each call (the one used for
+    // the initial refresh, above, is disposed in this function's `finally`
+    // before the engine even starts) and refreshes it under the SAME
+    // cross-isolate lock the initial refresh used, then updates [client]'s
+    // headers in-place so the retry picks up the new bearer without the
+    // backend needing to know how a token is obtained.
+    Future<void> refreshSessionToken() async {
+      final refreshManager = buildHeadlessOidcManager(issuer, clientId);
+      try {
+        await refreshManager.init();
+        final refreshed = await refreshTokenWithLock<OidcUser?>(
+          mirror: mirror,
+          holder: headlessTokenRefreshLockHolder,
+          refresh: () => refreshManager.refreshToken(),
+          readPersisted: () =>
+              readPersistedHeadlessUser(refreshManager, issuer, clientId),
+        );
+        if (refreshed != null) {
+          client.setHeaders(
+              {'Authorization': 'Bearer ${refreshed.token.accessToken}'});
+        }
+      } finally {
+        await refreshManager.dispose();
+      }
+    }
+
+    return HeadlessSyncSession(client, refreshToken: refreshSessionToken);
   } catch (_) {
     return null;
   } finally {
@@ -366,10 +413,22 @@ Future<OidcUser?> readPersistedHeadlessUser(
 /// Shares [translateWebDavError] with `WebDavGalleryUploadBackend` so the
 /// two report identical, already-tested messages for the same server
 /// responses rather than a second, drifting copy of that mapping.
+///
+/// Every operation is wrapped in [withTokenRecovery]: a 401/403 from the
+/// gateway (the auth middleware's "expired access token" response - the
+/// SAME status a genuinely read-only Space produces) triggers one
+/// [HeadlessSyncSession.refreshToken] and a single retry. Without this, an
+/// access token that expired mid-run (its lifetime is short - 5 minutes,
+/// for the test realm - and a backup runs for hours) would surface as a
+/// permanent "read-only Space" failure the engine parks in the failure
+/// list rather than recovering from - the exact symptom the backup feature
+/// reports.
 class HeadlessWebDavBackend implements GalleryUploadBackend {
-  HeadlessWebDavBackend(this._client);
+  HeadlessWebDavBackend(this._session);
 
-  final webdav.Client _client;
+  final HeadlessSyncSession _session;
+
+  webdav.Client get _client => _session.client;
 
   String _path(String spaceProviderId, String path) {
     final rel = path.startsWith('/') ? path : '/$path';
@@ -379,35 +438,55 @@ class HeadlessWebDavBackend implements GalleryUploadBackend {
   @override
   Future<int?> statSize(String spaceProviderId, String path) async {
     try {
-      final file = await _client.readProps(_path(spaceProviderId, path));
-      return file.size;
-    } on DioException catch (e) {
-      if (e.response?.statusCode == 404) {
-        return null;
-      }
-      throw translateWebDavError(e, e.response?.statusCode);
+      return await withTokenRecovery<int?>(
+        op: () async {
+          try {
+            final file = await _client.readProps(_path(spaceProviderId, path));
+            return file.size;
+          } on DioException catch (e) {
+            if (e.response?.statusCode == 404) {
+              return null;
+            }
+            rethrow;
+          }
+        },
+        refreshToken: _session.refreshToken ?? () async {},
+        translate: translateWebDavError,
+      );
+    } on GalleryUploadException {
+      rethrow;
     }
   }
 
   @override
   Future<void> put(
       String spaceProviderId, String path, Uint8List bytes) async {
-    try {
-      await _client.write(_path(spaceProviderId, path), bytes);
-    } on DioException catch (e) {
-      throw translateWebDavError(e, e.response?.statusCode);
-    }
+    await withTokenRecovery<void>(
+      op: () async => _client.write(_path(spaceProviderId, path), bytes),
+      refreshToken: _session.refreshToken ?? () async {},
+      translate: translateWebDavError,
+    );
   }
 
   @override
   Future<void> remove(String spaceProviderId, String path) async {
     try {
-      await _client.remove(_path(spaceProviderId, path));
-    } on DioException catch (e) {
-      if (e.response?.statusCode == 404) {
-        return;
-      }
-      throw translateWebDavError(e, e.response?.statusCode);
+      await withTokenRecovery<void>(
+        op: () async {
+          try {
+            await _client.remove(_path(spaceProviderId, path));
+          } on DioException catch (e) {
+            if (e.response?.statusCode == 404) {
+              return;
+            }
+            rethrow;
+          }
+        },
+        refreshToken: _session.refreshToken ?? () async {},
+        translate: translateWebDavError,
+      );
+    } on GalleryUploadException {
+      rethrow;
     }
   }
 }

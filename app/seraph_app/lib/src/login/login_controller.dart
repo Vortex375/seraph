@@ -299,12 +299,13 @@ class LoginController extends GetxController with WidgetsBindingObserver {
     print("oidc: logout complete");
   }
 
-  Future<void> refreshTokenIfNeeded() async {
+  Future<void> refreshTokenIfNeeded({bool force = false}) async {
     final manager = _manager;
     if (manager == null) {
       return;
     }
-    if (!(manager.currentUser?.token.isAccessTokenAboutToExpire() ?? false)) {
+    if (!force &&
+        !(manager.currentUser?.token.isAccessTokenAboutToExpire() ?? false)) {
       return;
     }
     final oidcIssuer = settingsController.oidcIssuer.value;
@@ -326,12 +327,32 @@ class LoginController extends GetxController with WidgetsBindingObserver {
     // again - `LockedOidcUserManager` no longer has its own internal expiry
     // timer to catch that for us (see that class's doc), so there is no
     // other path back to a fresh token here.
-    await refreshTokenWithLock<OidcUser?>(
+    //
+    // [force] is the reactive-refresh entry point: [withTokenRecovery]
+    // (gallery_upload_backend.dart) calls this with `force: true` after a
+    // 401/403 to refresh an already-expired access token and let the caller
+    // retry with the fresh one - the safety net the proactive (resume /
+    // audio-timer) triggers cannot guarantee covers every case, since the
+    // access-token lifetime (5 minutes, for the test realm) can elapse
+    // while the app is in the foreground with no resume and no audio playing.
+    //
+    // The return value is set on [_currentUser] directly (not just via the
+    // [userChanges()] listener, which fires asynchronously on the next
+    // microtask) so a caller's immediate retry - [FileService.
+    // getRequestHeaders] reads [currentUser] before every request - sees the
+    // fresh access token without waiting for the stream to deliver it. This
+    // mirrors what [init] itself does on cold start (line ~143); the
+    // duplicate [userChanges()] delivery that follows is harmless.
+    final user = await refreshTokenWithLock<OidcUser?>(
       mirror: galleryMirror,
       holder: uiTokenRefreshLockHolder,
       refresh: () => manager.refreshToken(),
       readPersisted: () => _readPersistedUser(manager, oidcIssuer, clientId),
     );
+    if (user != null) {
+      _currentUser.value = user;
+      _updateSpaceAdmin(user);
+    }
   }
 
   @override
