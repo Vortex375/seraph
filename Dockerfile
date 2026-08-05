@@ -20,7 +20,12 @@ RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go b
 FROM --platform=$BUILDPLATFORM ghcr.io/cirruslabs/flutter:3.41.7 AS flutter
 WORKDIR /app
 RUN flutter precache --web
+# Copy the pubspec and the path-dependency plugin it references before pub get,
+# so the path dep (plugins/seraph_local_media) resolves. Only pubspec.yaml/lock
+# and the plugin's own pubspec are needed for dependency resolution; the rest
+# of the app (and the plugin's sources) are copied below before the build.
 COPY app/seraph_app/pubspec.yaml app/seraph_app/pubspec.lock ./
+COPY app/seraph_app/plugins ./plugins
 RUN --mount=type=cache,target=/root/.pub-cache flutter pub get
 COPY app/seraph_app .
 RUN --mount=type=cache,target=/root/.pub-cache flutter build web --release --base-href=/app/
