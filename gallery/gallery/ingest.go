@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -36,6 +37,16 @@ import (
 	"umbasa.net/seraph/file-provider/fileprovider"
 	"umbasa.net/seraph/util"
 )
+
+// isDotfile reports whether the final path segment of filePath begins with
+// ".", matching the dotfile convention (a .DS_Store, an editor lock file, an
+// interrupted-upload staging file like ".foo.jpg.part"). A directory whose
+// name begins with "." is already rejected by the IsDir check that runs
+// before this predicate on both the live and backfill paths, so this only
+// needs to look at the basename.
+func isDotfile(filePath string) bool {
+	return strings.HasPrefix(path.Base(filePath), ".")
+}
 
 // ingestConsumerName is the durable JetStream consumer name the gallery
 // service uses on events.FileChangedStream. Fixed and well-known, like the
@@ -280,6 +291,14 @@ func (ic *ingestConsumer) handleMessage(ctx context.Context, msg jetstream.Msg) 
 
 	if ev.IsDir {
 		// the gallery only ever holds files
+		msg.Ack()
+		return
+	}
+
+	if isDotfile(ev.Path) {
+		// dotfiles never produce a galleryPhotos document on either the
+		// Created/Changed or the Deleted branch, so reject before the
+		// prefix-cache lookup covers both
 		msg.Ack()
 		return
 	}

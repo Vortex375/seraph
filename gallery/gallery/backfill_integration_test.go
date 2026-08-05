@@ -537,6 +537,50 @@ func TestBackfillNeverContactsFileProvider(t *testing.T) {
 	assert.Equal(t, 0, photo.Height)
 }
 
+// TestBackfillSkipsDotfileEntries covers: a backfill page that contains a
+// dotfile entry (e.g. a .DS_Store, an interrupted-upload staging file)
+// produces no galleryPhotos document for it, while non-dotfile entries on the
+// same page continue to backfill exactly as before. The filter is applied in
+// the backfill result loop, alongside the existing IsDir skip.
+func TestBackfillSkipsDotfileEntries(t *testing.T) {
+	nc, db := startGalleryProvider(t, map[string][]string{
+		"pino": {"photos"},
+	})
+	clearSourceFolders(t, db)
+	clearPhotos(t, db)
+
+	stub := newStubFileIndex(t, nc, 0)
+	stub.set("physical-photos", "/mounted/photos/holidays", withProvider("physical-photos", []events.FileIndexListEntry{
+		fileEntry("/mounted/photos/holidays/a.jpg", 100, time.Date(2015, 6, 1, 0, 0, 0, 0, time.UTC).Unix(), "image/jpeg"),
+		fileEntry("/mounted/photos/holidays/.DS_Store", 1, 1000, "application/octet-stream"),
+		fileEntry("/mounted/photos/holidays/.beach.jpg.swp", 1, 1000, "application/octet-stream"),
+		fileEntry("/mounted/photos/holidays/b.jpg", 200, time.Date(2016, 7, 1, 0, 0, 0, 0, time.UTC).Unix(), "image/jpeg"),
+	}))
+
+	res := crud(t, nc, &gallery.GallerySourceFolderCrudRequest{
+		Operation:       gallery.GallerySourceFolderOperationAdd,
+		UserId:          "pino",
+		SpaceProviderId: "photos",
+		Path:            "/holidays",
+	})
+	require.Equal(t, "", res.Error)
+
+	// only the two non-dotfile entries must land
+	waitForPhotoCount(t, db, "physical-photos", 2)
+
+	// neither dotfile produced a document
+	assert.Nil(t, findPhoto(t, db, "physical-photos", "/mounted/photos/holidays/.DS_Store"))
+	assert.Nil(t, findPhoto(t, db, "physical-photos", "/mounted/photos/holidays/.beach.jpg.swp"))
+
+	// and the non-dotfile files backfilled exactly as before
+	a := findPhoto(t, db, "physical-photos", "/mounted/photos/holidays/a.jpg")
+	require.NotNil(t, a)
+	assert.True(t, a.MetadataPending)
+	b := findPhoto(t, db, "physical-photos", "/mounted/photos/holidays/b.jpg")
+	require.NotNil(t, b)
+	assert.True(t, b.MetadataPending)
+}
+
 // TestBackfillDoesNotDowngradeALiveHealedItem covers the invariant that
 // backfill data must never overwrite better data that is already present.
 //

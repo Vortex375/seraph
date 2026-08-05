@@ -490,6 +490,66 @@ func TestEventsOutsideConfiguredFoldersAreIgnored(t *testing.T) {
 	assert.Nil(t, findPhoto(t, db, "physical-photos", siblingPath))
 }
 
+// TestDotfileEventsProduceNoPhoto covers: a Created or Changed event for a
+// dotfile path under a configured Gallery Source Folder produces no
+// galleryPhotos document, and a Deleted event for a dotfile path produces no
+// document either - confirming the dotfile reject covers the delete branch as
+// well as the create/change branch. A non-dotfile file under the same folder
+// published alongside continues to ingest exactly as before.
+func TestDotfileEventsProduceNoPhoto(t *testing.T) {
+	nc, db := startGalleryProvider(t, map[string][]string{
+		"pino": {"photos"},
+	})
+	clearSourceFolders(t, db)
+	clearPhotos(t, db)
+
+	dir := startFileProvider(t, "physical-photos")
+
+	crud(t, nc, &gallery.GallerySourceFolderCrudRequest{
+		Operation:       gallery.GallerySourceFolderOperationAdd,
+		UserId:          "pino",
+		SpaceProviderId: "photos",
+		Path:            "/holidays",
+	})
+
+	data := buildJPEGWithExif(t, 12, 8, "2018:05:05 08:00:00", 0)
+
+	// a Created event for a dotfile (e.g. a .DS_Store) under the folder
+	dotfileCreatedPath := "/mounted/photos/holidays/.DS_Store"
+	writeFixture(t, dir, dotfileCreatedPath, data)
+	publishFileChanged(t, nc, "physical-photos", dotfileCreatedPath, events.FileChangedEventCreated, int64(len(data)), time.Now().Unix(), "application/octet-stream")
+
+	// a Changed event for a different dotfile (e.g. an editor lock file)
+	dotfileChangedPath := "/mounted/photos/holidays/.beach.jpg.swp"
+	writeFixture(t, dir, dotfileChangedPath, data)
+	publishFileChanged(t, nc, "physical-photos", dotfileChangedPath, events.FileChangedEventChanged, int64(len(data)), time.Now().Unix(), "application/octet-stream")
+
+	// a Deleted event for a dotfile path - the filter must reject it before
+	// markDeleted, so no document is ever created
+	dotfileDeletedPath := "/mounted/photos/holidays/.gone.jpg.part"
+	publishFileChanged(t, nc, "physical-photos", dotfileDeletedPath, events.FileChangedEventDeleted, 0, 0, "")
+
+	// a real in-folder file published last, so once it lands we know the
+	// dotfile events have already been processed (or correctly ignored) by
+	// the same sequential-per-provider consumer
+	insidePath := "/mounted/photos/holidays/beach.jpg"
+	writeFixture(t, dir, insidePath, data)
+	publishFileChanged(t, nc, "physical-photos", insidePath, events.FileChangedEventCreated, int64(len(data)), time.Now().Unix(), "image/jpeg")
+
+	waitForPhoto(t, db, "physical-photos", insidePath)
+
+	// give the dotfile events a chance to be processed and assert none of
+	// them produced a document
+	assert.Nil(t, findPhoto(t, db, "physical-photos", dotfileCreatedPath))
+	assert.Nil(t, findPhoto(t, db, "physical-photos", dotfileChangedPath))
+	assert.Nil(t, findPhoto(t, db, "physical-photos", dotfileDeletedPath))
+
+	// and the non-dotfile file is present exactly as before
+	photo := findPhoto(t, db, "physical-photos", insidePath)
+	require.NotNil(t, photo)
+	assert.False(t, photo.Deleted)
+}
+
 // TestTwoUsersSharingAFolderProduceOneReadModelDocument covers: the read
 // model is shared across users while configuration stays per user - two
 // users configuring the same physical folder cost one metadata extraction,

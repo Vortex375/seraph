@@ -215,6 +215,9 @@ func (g *GalleryProvider) runBackfill(ctx context.Context, folderId primitive.Ob
 			if entry.IsDir {
 				continue
 			}
+			if isDotfile(entry.Path) {
+				continue
+			}
 			if err := g.backfillUpsert(ctx, entry); err != nil {
 				g.log.Error("backfill: failed to upsert entry; skipping it for this pass",
 					"error", err, "providerId", entry.ProviderId, "path", entry.Path)
