@@ -88,6 +88,17 @@ func toIoError(err error) IoError {
 	if errors.Is(err, fs.ErrNotExist) {
 		return IoError{err.Error(), "ErrNotExist"}
 	}
+	// Some providers (and os.Mkdir on a missing parent before the PathError
+	// unwrap was made to satisfy fs.ErrNotExist on every Go version) return an
+	// error that os.IsNotExist recognises but errors.Is(err, fs.ErrNotExist)
+	// does not - notably a bare syscall.ENOENT not wrapped in an *os.PathError,
+	// or a provider-specific error type whose Is-targeting predates the
+	// io/fs sentinel. Mapping those to the same "ErrNotExist" class is what
+	// keeps webdav_client's mkdirAll (which keys its segment walk off the 409
+	// the gateway returns for ErrNotExist) working across every provider.
+	if os.IsNotExist(err) {
+		return IoError{err.Error(), "ErrNotExist"}
+	}
 	if errors.Is(err, fs.ErrClosed) {
 		return IoError{err.Error(), "ErrClosed"}
 	}

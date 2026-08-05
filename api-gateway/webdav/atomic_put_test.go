@@ -197,13 +197,22 @@ func TestAtomicPut(t *testing.T) {
 		assert.Equal(t, "hello", string(content))
 	})
 
-	t.Run("fails when the destination directory does not exist", func(t *testing.T) {
+	t.Run("creates the destination directory when it does not exist", func(t *testing.T) {
 		dir := t.TempDir()
 		handler := newTestHandler(dir)
 
 		res := put(handler, "/missing/new.txt", 5, strings.NewReader("hello"))
 
-		assert.Equal(t, http.StatusConflict, res.Code)
+		// The atomic-PUT decorator creates the destination's parent directory
+		// before opening the staging file, so a PUT to a path whose
+		// intermediate dirs do not exist yet succeeds (201) rather than
+		// surfacing a Write-time ENOENT as a 405 from handlePut - which is
+		// what every background backup upload failed with before this fix.
+		// webdav_client's mkdirAll is no longer load-bearing for this path.
+		assert.Equal(t, http.StatusCreated, res.Code)
+		content, err := os.ReadFile(filepath.Join(dir, "missing", "new.txt"))
+		require.NoError(t, err)
+		assert.Equal(t, "hello", string(content))
 		assert.Empty(t, stagingFiles(t, dir))
 	})
 
