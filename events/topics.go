@@ -22,6 +22,15 @@ const FileInfoStream = "SERAPH_FILE_INFO"
 const FileProviderFileInfoTopic = "seraph.fileprovider.*.fileinfo"
 const FileProviderFileInfoTopicPattern = "seraph.fileprovider.%s.fileinfo"
 
+// FileRemovedStream reuses the FileInfoStream so the file-indexer's single
+// JetStream consumer reads both FileInfoEvent and FileRemovedEvent from one
+// durable; the consumer branches on the message subject. Carrying the
+// removal signal on the same stream keeps ordering between a file's last
+// FileInfoEvent and its removal within a provider's subject, which a
+// separate stream could not guarantee.
+const FileProviderFileRemovedTopic = "seraph.fileprovider.*.fileremoved"
+const FileProviderFileRemovedTopicPattern = "seraph.fileprovider.%s.fileremoved"
+
 const FileChangedStream = "SERAPH_FILE_CHANGED"
 const FileChangedTopic = "seraph.file.*.changed"
 const FileChangedTopicPattern = "seraph.file.%s.changed"

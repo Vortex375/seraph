@@ -52,6 +52,16 @@
   },
   {
     "type": "record",
+    "name": "FileRemovedEvent",
+    "namespace": "seraph.events",
+    "fields": [
+			{"name": "event", "type": "Event"},
+      {"name": "providerId", "type": "string"},
+      {"name": "path", "type": "string"}
+    ]
+  },
+  {
+    "type": "record",
     "name": "JobEvent",
     "namespace": "seraph.events",
     "fields": [

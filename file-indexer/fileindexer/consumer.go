@@ -97,7 +97,7 @@ func NewConsumer(p ConsumerParams) (Consumer, error) {
 	log.Debug("create " + events.FileInfoStream)
 	stream, err := p.Js.CreateOrUpdateStream(context.Background(), jetstream.StreamConfig{
 		Name:     events.FileInfoStream,
-		Subjects: []string{events.FileProviderFileInfoTopic},
+		Subjects: []string{events.FileProviderFileInfoTopic, events.FileProviderFileRemovedTopic},
 	})
 	if err != nil {
 		return nil, err
@@ -191,6 +191,11 @@ func (c *consumer) handleMessage(msg jetstream.Msg) {
 	metadata, err := msg.Metadata()
 	if err != nil {
 		c.log.Error("failed to read message metadata", "error", err)
+		return
+	}
+
+	if strings.HasSuffix(msg.Subject(), ".fileremoved") {
+		c.handleFileRemoved(ctx, msg, metadata)
 		return
 	}
 
@@ -572,6 +577,109 @@ func (c *consumer) handleReaddirComplete(ctx context.Context, file *File, readDi
 	}
 
 	return nil
+}
+
+// handleFileRemoved fans a FileProvider removal signal (RemoveAll/Rename)
+// out into one FileChangedEvent(deleted) per file the index held at or
+// beneath the removed path, then removes each from the files collection.
+//
+// The File Provider stays simple: it signals one removed path; the File Index
+// is the authority on what it held beneath that path, so the fan-out lives
+// here. The published events go through the same publishChange path as
+// readdir-driven deletion detection, so downstream consumers (the gallery)
+// see no difference between a signalled and a discovered deletion.
+//
+// Idempotence with readdir-driven detection: a later complete Readdir of the
+// parent finds the already-removed file absent from the files collection, so
+// its deleteFilter ($nin the listed ids) does not match it again and no
+// second FileChangedEvent(deleted) is emitted -- handleReaddirComplete is
+// already a no-op for an absent file, so no guard is needed here.
+func (c *consumer) handleFileRemoved(ctx context.Context, msg jetstream.Msg, metadata *jetstream.MsgMetadata) {
+	ctx, span := c.tracer.Start(ctx, "handleFileRemoved")
+	defer span.End()
+
+	ev := events.FileRemovedEvent{}
+	if err := ev.Unmarshal(msg.Data()); err != nil {
+		c.log.Error("failed to deserialize FileRemovedEvent", "error", err)
+		msg.TermWithReason("invalid FileRemovedEvent payload")
+		return
+	}
+
+	if !strings.HasPrefix(ev.Path, "/") {
+		c.log.Error("error processing FileRemovedEvent: path is not absolute", "event", ev)
+		msg.TermWithReason("path is not absolute")
+		return
+	}
+
+	cleanPath := path.Clean(ev.Path)
+
+	files, err := c.findFilesAtOrBeneath(ctx, ev.ProviderID, cleanPath)
+	if err != nil {
+		c.log.Error("error while finding files for removal", "error", err, "providerId", ev.ProviderID, "path", cleanPath)
+		return
+	}
+
+	for i := range files {
+		if pubErr := c.publishChange(ctx, &files[i], events.FileChangedEventDeleted); pubErr != nil {
+			c.log.Error("error publishing FileChangedEvent", "error", pubErr, "file", files[i])
+			return
+		}
+	}
+
+	if len(files) > 0 {
+		ids := make([]primitive.ObjectID, len(files))
+		for i, f := range files {
+			ids[i] = f.Id
+		}
+		_, err = c.files.DeleteMany(ctx, bson.M{"_id": bson.M{"$in": ids}})
+		if err != nil {
+			c.log.Error("error while deleting removed files", "error", err, "providerId", ev.ProviderID, "path", cleanPath)
+			return
+		}
+	}
+
+	c.log.Debug("processed FileRemovedEvent", "providerId", ev.ProviderID, "path", cleanPath, "deleted", len(files))
+
+	msg.Ack()
+
+	c.updateLastSeq(ctx, metadata.Sequence.Stream)
+	c.progressThrottle.Trigger()
+}
+
+// findFilesAtOrBeneath returns every indexed file the provider holds at the
+// exact path or strictly beneath it. The two pieces of the key space are
+// queried separately -- a point lookup on (providerId, path) for the path
+// itself, and a bounded range scan [path+"/", path+"0") for descendants --
+// so each keeps tight index bounds on the (providerId, path) index rather
+// than collapsing into the whole-provider scan an $or would produce.
+func (c *consumer) findFilesAtOrBeneath(ctx context.Context, providerId string, removedPath string) ([]File, error) {
+	var files []File
+
+	if selfFilter, ok := buildPrefixSelfFilter(providerId, removedPath); ok {
+		cur, err := c.files.Find(ctx, selfFilter)
+		if err != nil {
+			return nil, err
+		}
+		var self []File
+		if err := cur.All(ctx, &self); err != nil {
+			return nil, err
+		}
+		files = append(files, self...)
+	}
+
+	if descFilter, ok := buildDescendantsFilter(providerId, removedPath, ""); ok {
+		cur, err := c.files.Find(ctx, descFilter)
+		if err != nil {
+			return nil, err
+		}
+		var desc []File
+		if err := cur.All(ctx, &desc); err != nil {
+			return nil, err
+		}
+		files = append(files, desc...)
+	}
+
+	return files, nil
 }
 
 func (c *consumer) updateProgress() {

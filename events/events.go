@@ -113,6 +113,30 @@ func (o *FileChangedEvent) Marshal() ([]byte, error) {
 	return avro.Marshal(o.Schema(), o)
 }
 
+// FileRemovedEvent is a generated struct.
+type FileRemovedEvent struct {
+	Event      Event  `avro:"event" json:"event"`
+	ProviderID string `avro:"providerId" json:"providerId"`
+	Path       string `avro:"path" json:"path"`
+}
+
+var schemaFileRemovedEvent = avro.MustParse(`{"name":"seraph.events.FileRemovedEvent","type":"record","fields":[{"name":"event","type":"seraph.events.Event"},{"name":"providerId","type":"string"},{"name":"path","type":"string"}]}`)
+
+// Schema returns the schema for FileRemovedEvent.
+func (o *FileRemovedEvent) Schema() avro.Schema {
+	return schemaFileRemovedEvent
+}
+
+// Unmarshal decodes b into the receiver.
+func (o *FileRemovedEvent) Unmarshal(b []byte) error {
+	return avro.Unmarshal(o.Schema(), b, o)
+}
+
+// Marshal encodes the receiver.
+func (o *FileRemovedEvent) Marshal() ([]byte, error) {
+	return avro.Marshal(o.Schema(), o)
+}
+
 // JobEvent is a generated struct.
 type JobEvent struct {
 	Event         Event             `avro:"event" json:"event"`

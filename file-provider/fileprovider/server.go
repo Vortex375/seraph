@@ -113,7 +113,7 @@ func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.
 	if p.Js != nil {
 		cfg := jetstream.StreamConfig{
 			Name:     events.FileInfoStream,
-			Subjects: []string{events.FileProviderFileInfoTopic},
+			Subjects: []string{events.FileProviderFileInfoTopic, events.FileProviderFileRemovedTopic},
 		}
 
 		_, err := p.Js.CreateOrUpdateStream(context.Background(), cfg)
@@ -310,6 +310,9 @@ func (s *FileProviderServer) handleRemoveALl(ctx context.Context, uid string, re
 	err := s.fs.RemoveAll(ctx, req.Name)
 	if err == nil {
 		s.log.Debug("removeAll", "uid", uid, "req", req)
+		if pubErr := s.publishFileRemovedEvent(ctx, req.Name); pubErr != nil {
+			s.log.Error("failed to publish file removed event", "uid", uid, "req", req, "error", pubErr)
+		}
 	} else {
 		s.log.Debug("removeAll failed", "uid", uid, "req", req, "error", err)
 	}
@@ -339,6 +342,9 @@ func (s *FileProviderServer) handleRename(ctx context.Context, uid string, req *
 	err := s.fs.Rename(ctx, req.OldName, req.NewName)
 	if err == nil {
 		s.log.Debug("rename", "uid", uid, "req", req)
+		if pubErr := s.publishFileRemovedEvent(ctx, req.OldName); pubErr != nil {
+			s.log.Error("failed to publish file removed event", "uid", uid, "req", req, "error", pubErr)
+		}
 	} else {
 		s.log.Debug("rename failed", "uid", uid, "req", req, "error", err)
 	}
@@ -398,6 +404,22 @@ func (s *FileProviderServer) publishFileInfoEvent(ctx context.Context, path stri
 	}
 	fileInfoEventData, _ := fileInfoEvent.Marshal()
 	return s.nc.Publish(fmt.Sprintf(events.FileProviderFileInfoTopicPattern, s.providerId), fileInfoEventData)
+}
+
+func (s *FileProviderServer) publishFileRemovedEvent(ctx context.Context, path string) error {
+	ev := events.FileRemovedEvent{
+		Event: events.Event{
+			ID:      uuid.NewString(),
+			Version: 1,
+		},
+		ProviderID: s.providerId,
+		Path:       ensureAbsolutePath(path),
+	}
+	data, err := ev.Marshal()
+	if err != nil {
+		return fmt.Errorf("error while marshalling FileRemovedEvent: %w", err)
+	}
+	return s.nc.Publish(fmt.Sprintf(events.FileProviderFileRemovedTopicPattern, s.providerId), data)
 }
 
 func ensureAbsolutePath(p string) string {
