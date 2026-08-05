@@ -41,6 +41,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -89,6 +90,28 @@ func TestE2ESmbProvider(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { os.RemoveAll(hostSmbDir) })
 
+	// A minimal smb.conf without the dockurr/samba image's default
+	// `vfs objects = catia fruit streams_xattr` — those VFS modules block
+	// FILE_DELETE_ON_CLOSE and FileDispositionInformation on Samba, returning
+	// STATUS_NOT_SUPPORTED for every delete/rename operation. A plain
+	// config (security=user, writable, no VFS modules) is what a real
+	// Linux SMB share serving files for backup looks like, and is what makes
+	// the DELETE/MOVE/PUT verbs exercisable here at all.
+	//
+	// Written under $HOME (same Rancher Desktop bind-mount constraint).
+	confDir, err := os.MkdirTemp("/home/vortex", "seraph-e2e-smbconf-*")
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(confDir) })
+	smbConfPath := filepath.Join(confDir, "smb.conf")
+	require.NoError(t, os.WriteFile(smbConfPath, []byte(`[global]
+    server min protocol = SMB2
+    security = user
+[Data]
+    path = /storage
+    writable = yes
+    read only = no
+`), 0644))
+
 	// Start the Samba server. The dockurr/samba image exports the share named
 	// by NAME over /storage, authenticating USER/PASS, on port 445.
 	sambaC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
@@ -101,7 +124,10 @@ func TestE2ESmbProvider(t *testing.T) {
 			},
 			ExposedPorts: []string{"445/tcp"},
 			HostConfigModifier: func(hc *container.HostConfig) {
-				hc.Binds = []string{hostSmbDir + ":/storage:rw"}
+				hc.Binds = []string{
+					hostSmbDir + ":/storage:rw",
+					smbConfPath + ":/etc/samba/smb.conf:ro",
+				}
 			},
 			// smbd takes a couple of seconds to start. The image EXPOSEs 139
 			// (NetBIOS) as well as 445, and ForExposedPort would wait on both,

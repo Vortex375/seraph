@@ -23,3 +23,5 @@ use (
 	./tracing
 	./util
 )
+
+replace github.com/hirochachacha/go-smb2 => ./vendor-forks/go-smb2
