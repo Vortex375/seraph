@@ -246,6 +246,17 @@ func (s *FileProviderServer) handleMkdir(ctx context.Context, uid string, req *M
 	err := s.fs.Mkdir(ctx, req.Name, req.Perm)
 	if err == nil {
 		s.log.Debug("mkdir", "uid", uid, "req", req)
+		// A new directory is a new entry the file-indexer should know about
+		// (a PROPFIND on the parent, a backfill walking the tree, a gallery
+		// rescan's walkDir - all discover it via Stat/Readdir, but a freshly
+		// created dir would otherwise stay invisible until someone happens to
+		// list its parent). Publish a FileInfoEvent so the indexer upserts it
+		// immediately, the same way a Stat of an existing dir would.
+		if fi, statErr := s.fs.Stat(ctx, req.Name); statErr == nil {
+			if pubErr := s.publishFileInfoEvent(ctx, req.Name, fi, nil); pubErr != nil {
+				s.log.Error("failed to publish file info event after mkdir", "uid", uid, "req", req, "error", pubErr)
+			}
+		}
 	} else {
 		s.log.Debug("mkdir failed", "uid", uid, "req", req, "error", err)
 	}
@@ -277,7 +288,7 @@ func (s *FileProviderServer) handleOpenFile(ctx context.Context, uid string, req
 	response := OpenFileResponse{}
 	if err == nil {
 		fileId := uuid.New()
-		err = newServerFile(ctx, uid, fileId, req.Name, file, s)
+		err = newServerFile(ctx, uid, fileId, req.Name, file, s, flag)
 		if err == nil {
 			response.FileId = fileId.String()
 		} else {
@@ -344,6 +355,18 @@ func (s *FileProviderServer) handleRename(ctx context.Context, uid string, req *
 		s.log.Debug("rename", "uid", uid, "req", req)
 		if pubErr := s.publishFileRemovedEvent(ctx, req.OldName); pubErr != nil {
 			s.log.Error("failed to publish file removed event", "uid", uid, "req", req, "error", pubErr)
+		}
+		// The target is now a new or changed file (the staging->target
+		// rename of an atomic PUT, or a user-initiated MOVE). Without a
+		// FileInfoEvent for NewName the file-indexer never sees it, no
+		// FileChangedEvent is published, and the gallery never ingests -
+		// exactly the "uploads don't appear until manual rescan" bug. Stat
+		// the new path and publish, the same way handleStat does for an
+		// explicit Stat.
+		if fi, statErr := s.fs.Stat(ctx, req.NewName); statErr == nil {
+			if pubErr := s.publishFileInfoEvent(ctx, req.NewName, fi, nil); pubErr != nil {
+				s.log.Error("failed to publish file info event after rename", "uid", uid, "req", req, "error", pubErr)
+			}
 		}
 	} else {
 		s.log.Debug("rename failed", "uid", uid, "req", req, "error", err)

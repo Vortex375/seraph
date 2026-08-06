@@ -147,6 +147,21 @@ func New(p Params) (Result, error) {
 }
 
 func (g *GalleryProvider) Start() error {
+	// JetStream is required for the gallery to function: the ingest consumer
+	// (startIngestConsumer), the delta feed's sequence allocator, the
+	// thumbnail warm work queue, and the spaces.changed consumer all depend
+	// on it. Without JetStream, live ingestion silently never starts
+	// (startIngestConsumer returns nil,nil at ingest.go:203-205), the gallery
+	// read model never updates except via manual rescan, and the phone's
+	// verification gate never closes - the exact "stuck on uploading" bug.
+	//
+	// Rather than silently degrading, fail fast so a misconfigured deployment
+	// is immediately visible. This makes JetStream as mandatory as the
+	// database: if either is absent, the service has no business running.
+	if g.js == nil {
+		return errors.New("gallery: JetStream is required but not configured (the gallery cannot function without it; live ingestion, the delta feed, and thumbnail warming all depend on it)")
+	}
+
 	sub, err := g.nc.QueueSubscribe(GallerySourceFolderCrudTopic, GallerySourceFolderCrudTopic, func(msg *nats.Msg) {
 		ctx := messaging.ExtractTraceContext(context.Background(), msg)
 		ctx, span := g.tracer.Start(ctx, "handleSourceFolderCrud")

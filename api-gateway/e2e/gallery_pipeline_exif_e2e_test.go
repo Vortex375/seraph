@@ -173,6 +173,80 @@ func TestE2EGalleryPipelineExifThroughRealUpload(t *testing.T) {
 		deltaItem.Seq, deltaItem.CapturedAt, deltaItem.MetadataPending)
 }
 
+// TestE2EGalleryPipelineUploadWithoutStatIngests proves the root-cause fix for
+// the "uploads don't appear until manual rescan" bug: a WebDAV PUT through the
+// api-gateway (the exact path the phone's HeadlessWebDavBackend.upload takes)
+// now triggers gallery ingestion AUTOMATICALLY, without any explicit Stat
+// afterward.
+//
+// Before the fix, the file-provider published a FileInfoEvent ONLY on
+// Stat/Readdir. The atomic-PUT decorator's staging->target rename went through
+// handleRename, which published a FileRemovedEvent for the staging path and
+// NOTHING for the target. The phone does not Stat after PUT
+// (gallery_upload_service.dart:168). So no FileInfoEvent ever reached the
+// file-indexer for the uploaded file, no FileChangedEvent was published, and
+// the gallery never ingested - until a manual rescan walked the folder via
+// Readdir. The e2e test TestE2EGalleryPipelineLiveEvent only passed because it
+// explicitly called statClient.Stat() after the PUT (the test's own comment
+// called it "the load-bearing step").
+//
+// The fix: handleRename now publishes a FileInfoEvent for the target
+// (req.NewName) in addition to the FileRemovedEvent for the staging path
+// (req.OldName). This test proves that fix works end to end: it uploads
+// WITHOUT calling Stat, and asserts the photo still reaches the gallery read
+// model with EXIF extraction. If the rename-published FileInfoEvent is ever
+// removed or broken, this test fails with a poll timeout - the exact symptom
+// the user reported.
+func TestE2EGalleryPipelineUploadWithoutStatIngests(t *testing.T) {
+	realData := requireRealPixelPhoto(t)
+
+	relPath := galleryFolder + "/PXL_e2e_no_stat.jpg"
+
+	cleanupGalleryPipelineState(t, relPath)
+	mongoClient.Database(galleryDbName).Collection("gallerySourceFolders").
+		DeleteOne(context.Background(), bson.M{"spaceProviderId": spaceProviderId, "path": galleryFolder})
+
+	// Add the Gallery Source Folder BEFORE uploading, so the prefix cache
+	// matches the FileChangedEvent the upload triggers.
+	addGallerySourceFolder(t, galleryFolder)
+
+	// PUT the real Pixel photo through the WebDAV endpoint - and NOTHING ELSE.
+	// No statClient.Stat(), no Readdir, no manual rescan. The phone's
+	// upload path (HeadlessWebDavBackend.put) does exactly this and nothing
+	// more. If the file-provider does not publish a FileInfoEvent for the
+	// target on its own (via the rename), the gallery will never see this
+	// photo and the poll below will time out.
+	davPath := "/dav/p/storage" + relPath
+	optResp := do(t, http.MethodOptions, davPath, nil)
+	if optResp.StatusCode != http.StatusOK {
+		t.Fatalf("OPTIONS preflight %s: want 200, got %d (body=%s)", davPath, optResp.StatusCode, getBody(t, optResp))
+	}
+	resp := putFile(t, davPath, realData)
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("PUT %s: want 201/204, got %d (body=%s)", davPath, resp.StatusCode, getBody(t, resp))
+	}
+
+	// The photo MUST reach the gallery read model with EXIF extraction,
+	// WITHOUT any explicit Stat. This is the assertion that would have failed
+	// before the fix: no FileInfoEvent -> no FileChangedEvent -> no
+	// galleryPhotos row -> poll timeout.
+	photo := requireEventualGalleryPhoto(t, relPath)
+	assert.Equal(t, gallery.CaptureDateSourceExif, photo["capturedAtSource"],
+		"photo uploaded without explicit Stat must still be ingested with EXIF extraction (rename publishes FileInfoEvent for the target)")
+	assert.Equal(t, realPhotoCaptureDate.Unix(), photo["capturedAt"],
+		"capturedAt must be the EXIF date, not upload time")
+	pending, _ := photo["metadataPending"].(bool)
+	assert.False(t, pending, "live-ingested photo must not be metadataPending")
+
+	// The delta feed must also serve it, so the phone's verification gate
+	// closes without a manual rescan.
+	deltaItem := requireEventualDeltaItem(t, relPath)
+	assert.False(t, deltaItem.Tombstone, "delta item must not be a tombstone")
+	assert.Equal(t, realPhotoCaptureDate.Unix(), deltaItem.CapturedAt,
+		"delta capturedAt must be the EXIF date")
+	t.Logf("upload-without-stat succeeded: seq=%v capturedAt=%v", deltaItem.Seq, deltaItem.CapturedAt)
+}
+
 // galleryListItem mirrors the GalleryListItem JSON the gateway returns from
 // GET /api/gallery/photos, so the test can assert on the capture-date fields
 // the app actually renders.

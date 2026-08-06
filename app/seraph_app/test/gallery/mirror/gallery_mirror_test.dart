@@ -9,6 +9,7 @@ GalleryDeltaItem _item({
   required String path,
   required int seq,
   int capturedAt = 1000,
+  String capturedAtSource = '',
   bool tombstone = false,
 }) {
   return GalleryDeltaItem(
@@ -17,6 +18,7 @@ GalleryDeltaItem _item({
     seq: seq,
     tombstone: tombstone,
     capturedAt: capturedAt,
+    capturedAtSource: capturedAtSource,
   );
 }
 
@@ -231,6 +233,88 @@ void main() {
       final thirdPage = await mirror.queryPage(offset: 4, limit: 2);
       expect(thirdPage.items.map((i) => i.path), ['/Photos/5.jpg']);
       expect(thirdPage.totalCount, 5);
+    });
+
+    test(
+        'a delta heal that changes capturedAt re-sorts the item relative to '
+        'its neighbours (the backfill modTime->exif heal scenario)', () async {
+      // Two photos arrive with modTime-derived capturedAt values (the
+      // backfill path): A is older, B is newer. The gallery shows B first.
+      await mirror.applyPage(GalleryDeltaResponse(
+        items: [
+          _item(path: '/Photos/a.jpg', seq: 1, capturedAt: 100,
+              capturedAtSource: 'modTime'),
+          _item(path: '/Photos/b.jpg', seq: 2, capturedAt: 200,
+              capturedAtSource: 'modTime'),
+        ],
+        nextCursor: '',
+        hasMore: false,
+        nextSince: 2,
+      ));
+
+      final before = await mirror.queryPage();
+      expect(before.items.map((i) => i.path), ['/Photos/b.jpg', '/Photos/a.jpg']);
+      expect(before.items.last.capturedAtSource, 'modTime');
+
+      // The server heals A: its EXIF DateTimeOriginal is 300, strictly newer
+      // than B's 200. The next delta page carries the healed row.
+      await mirror.applyPage(GalleryDeltaResponse(
+        items: [
+          _item(path: '/Photos/a.jpg', seq: 3, capturedAt: 300,
+              capturedAtSource: 'exif'),
+        ],
+        nextCursor: '',
+        hasMore: false,
+        nextSince: 3,
+      ));
+
+      final after = await mirror.queryPage();
+      // A must now sort BEFORE B: its healed capturedAt (300) > B's (200).
+      expect(after.items.map((i) => i.path), ['/Photos/a.jpg', '/Photos/b.jpg'],
+          reason: 'a healed capturedAt must re-sort the item to its correct '
+              'position, not leave it where the old value placed it');
+      final healed = after.items.first;
+      expect(healed.capturedAt, 300);
+      expect(healed.capturedAtSource, 'exif');
+    });
+
+    test(
+        'two photos sharing the same capturedAt second are ordered by the '
+        'tiebreaker (id DESC = reverse insertion order)', () async {
+      // Burst shots, fast sequences, or any EXIF date that resolves only to
+      // the second: two photos can share a capturedAt. The tiebreaker
+      // determines their relative order.
+      //
+      // The mirror sorts `capturedAt DESC, id DESC` where `id` is the local
+      // SQLite autoincrement rowid (gallery_mirror_database.dart:381). So
+      // among same-second peers, the row inserted LAST sorts FIRST — the
+      // reverse of insertion order.
+      //
+      // NOTE: this differs from the server, which sorts `capturedAt DESC,
+      // _id ASC` (gallery/gallery/query.go:333) where `_id` is a MongoDB
+      // ObjectId (insertion-ordered, ASC). The two orders are reversed for
+      // same-second groups. This test characterizes the mirror's CURRENT
+      // behavior so a future fix to align the tiebreaker with the server
+      // flips it intentionally rather than accidentally.
+      await mirror.applyPage(GalleryDeltaResponse(
+        items: [
+          _item(path: '/Photos/burst-a.jpg', seq: 1, capturedAt: 500),
+          _item(path: '/Photos/burst-b.jpg', seq: 2, capturedAt: 500),
+        ],
+        nextCursor: '',
+        hasMore: false,
+        nextSince: 2,
+      ));
+
+      final page = await mirror.queryPage();
+      // Both share capturedAt=500; burst-b was inserted second (higher id),
+      // so id DESC puts it first.
+      expect(page.items.map((i) => i.path),
+          ['/Photos/burst-b.jpg', '/Photos/burst-a.jpg'],
+          reason: 'same-capturedAt tiebreaker is id DESC (reverse insertion '
+              'order); the server uses _id ASC (insertion order). These are '
+              'reversed for same-second groups — see gallery/gallery/query.go '
+              'listSort vs gallery_mirror.dart queryItems orderBy');
     });
 
     test('querying the mirror needs no network - it is a plain local query',
