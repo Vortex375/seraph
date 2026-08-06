@@ -355,6 +355,7 @@ func (g *GalleryProvider) healPendingMetadata(ctx context.Context, p prefix) err
 		return fmt.Errorf("finding MetadataPending photos under %s/%s: %w", p.providerId, p.path, err)
 	}
 
+	healed, errored := 0, 0
 	for _, photo := range pending {
 		select {
 		case <-ctx.Done():
@@ -386,11 +387,17 @@ func (g *GalleryProvider) healPendingMetadata(ctx context.Context, p prefix) err
 		}
 
 		if err := g.upsertPhoto(ctx, ev); err != nil {
+			errored++
 			g.log.Error("rescan: failed to heal MetadataPending photo; leaving it pending",
 				"error", err, "providerId", photo.ProviderId, "path", photo.Path)
 			continue
 		}
+		healed++
 	}
+
+	g.log.Info("gallery: metadata heal pass complete",
+		"providerId", p.providerId, "path", p.path,
+		"pending", len(pending), "healed", healed, "errored", errored)
 
 	return nil
 }

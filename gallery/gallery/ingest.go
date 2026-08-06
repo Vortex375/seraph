@@ -447,7 +447,27 @@ func (g *GalleryProvider) extractForEvent(ctx context.Context, ev *events.FileCh
 
 	meta := extractMetadata(buf)
 
-	capturedAt, capturedAtSource := resolveCaptureDate(buf, ev)
+	capturedAt, capturedAtSource, exifReason := resolveCaptureDate(buf, ev)
+
+	// Log the outcome of every extraction so a missing EXIF capture date is
+	// distinguishable from "extraction never ran": the rung that won is
+	// recorded, and when EXIF did not win the reason it did not is recorded
+	// too. This is the only signal that lets an operator tell a file that
+	// genuinely lacks DateTimeOriginal from a pipeline that never read the
+	// file.
+	if capturedAtSource == CaptureDateSourceExif {
+		g.log.Debug("gallery: extracted capture date from EXIF",
+			"providerId", ev.ProviderID, "path", ev.Path,
+			"capturedAt", capturedAt,
+			"width", meta.Width, "height", meta.Height,
+			"orientation", meta.Orientation, "unsupported", meta.Unsupported)
+	} else {
+		g.log.Info("gallery: EXIF capture date unavailable; falling back",
+			"providerId", ev.ProviderID, "path", ev.Path,
+			"capturedAtSource", capturedAtSource,
+			"exifReason", exifReason,
+			"unsupported", meta.Unsupported)
+	}
 
 	return meta, capturedAt, capturedAtSource, nil
 }
@@ -468,16 +488,22 @@ func (g *GalleryProvider) extractForEvent(ctx context.Context, ev *events.FileCh
 // r is tried for EXIF regardless of meta.Unsupported: a file image/Decode
 // cannot handle (e.g. a RAW format Go's stdlib doesn't register) may still
 // carry a perfectly good EXIF header.
-func resolveCaptureDate(r *bytes.Reader, ev *events.FileChangedEvent) (int64, string) {
+//
+// exifReason is non-empty whenever the EXIF rung is tried but does not win,
+// so the caller (extractForEvent) can log it for diagnosis. It is empty when
+// EXIF succeeds and when EXIF is not tried at all (Seek failed).
+func resolveCaptureDate(r *bytes.Reader, ev *events.FileChangedEvent) (capturedAt int64, capturedAtSource, exifReason string) {
 	if _, err := r.Seek(0, io.SeekStart); err == nil {
-		if t, ok := exifCaptureDate(r); ok {
-			return t.Unix(), CaptureDateSourceExif
+		t, ok, reason := exifCaptureDate(r)
+		if ok {
+			return t.Unix(), CaptureDateSourceExif, ""
 		}
+		exifReason = reason
 	}
 
 	if ev.ModTime != 0 {
-		return ev.ModTime, CaptureDateSourceModTime
+		return ev.ModTime, CaptureDateSourceModTime, exifReason
 	}
 
-	return time.Now().Unix(), CaptureDateSourceIndexed
+	return time.Now().Unix(), CaptureDateSourceIndexed, exifReason
 }

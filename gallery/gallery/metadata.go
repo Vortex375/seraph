@@ -128,27 +128,30 @@ func decodeOrientation(r io.Reader) int {
 // photo with a nonsensical embedded date is stored, not rejected. Sanity
 // filtering of implausible dates, if ever wanted, belongs in the UI/query
 // layer, not here.
-func exifCaptureDate(r io.Reader) (t time.Time, ok bool) {
+// reason is always set when ok is false, so callers can log WHY EXIF yielded
+// nothing rather than only observing the fallback rung that was chosen. It is
+// empty on success.
+func exifCaptureDate(r io.Reader) (t time.Time, ok bool, reason string) {
 	x, err := exif.Decode(r)
 	if err != nil {
-		return time.Time{}, false
+		return time.Time{}, false, "exif decode failed: " + err.Error()
 	}
 	tag, err := x.Get(exif.DateTimeOriginal)
 	if err != nil {
-		return time.Time{}, false
+		return time.Time{}, false, "DateTimeOriginal tag absent: " + err.Error()
 	}
 	str, err := tag.StringVal()
 	if err != nil {
-		return time.Time{}, false
+		return time.Time{}, false, "DateTimeOriginal value unreadable: " + err.Error()
 	}
 	str = strings.TrimRight(str, "\x00")
 
 	const exifTimeLayout = "2006:01:02 15:04:05"
 	parsed, err := time.ParseInLocation(exifTimeLayout, str, time.UTC)
 	if err != nil {
-		return time.Time{}, false
+		return time.Time{}, false, "DateTimeOriginal unparseable: " + err.Error()
 	}
-	return parsed, true
+	return parsed, true, ""
 }
 
 // bufferAll reads r fully into memory so metadata extraction can look at the
