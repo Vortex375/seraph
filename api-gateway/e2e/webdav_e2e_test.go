@@ -60,12 +60,16 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/fx/fxtest"
 	xwebdav "golang.org/x/net/webdav"
+	"go.mongodb.org/mongo-driver/mongo"
 	"umbasa.net/seraph/api-gateway/auth"
 	gwhandler "umbasa.net/seraph/api-gateway/gateway-handler"
 	"umbasa.net/seraph/api-gateway/gateway"
 	apidav "umbasa.net/seraph/api-gateway/spaces"
 	"umbasa.net/seraph/api-gateway/webdav"
+	apigallery "umbasa.net/seraph/api-gateway/gallery"
+	"umbasa.net/seraph/file-indexer/fileindexer"
 	"umbasa.net/seraph/file-provider/fileprovider"
+	"umbasa.net/seraph/gallery/gallery"
 	"umbasa.net/seraph/logging"
 	"umbasa.net/seraph/mongodb"
 	"umbasa.net/seraph/spaces/spaces"
@@ -90,11 +94,23 @@ var (
 	mongoC      testcontainers.Container
 	mongoUrl    string
 	mongoDbName = "seraph_e2e"
+	// Separate Mongo databases for the file-indexer and gallery services, matching
+	// the per-service defaults in their main.go (seraph-files / seraph-gallery).
+	// Distinct from mongoDbName (auth/spaces) so a test run never leaves gallery
+	// state behind that a later run's auth/spaces teardown would not clean.
+	fileIndexDbName  = "seraph_files_e2e"
+	galleryDbName    = "seraph_gallery_e2e"
+	mongoClient      *mongo.Client
 	providerDir string
 	fpServer    *fileprovider.FileProviderServer
 	fpConn      *nats.Conn
 	gatewayAddr string
 	gatewayBase string
+	// galleryProvider / fiConsumer are started in setup() so the gallery-pipeline
+	// E2E test can exercise the full upload → file-indexer → gallery → delta path
+	// against the same live stack the WebDAV verb suite uses.
+	galleryProvider *gallery.GalleryProvider
+	fiConsumer      fileindexer.Consumer
 )
 
 func TestMain(m *testing.M) {
@@ -235,6 +251,7 @@ func setup() int {
 		fmt.Printf("e2e: mongo client: %v\n", err)
 		return 1
 	}
+	mongoClient = mongoRes.Client
 	db := mongoRes.Client.Database(mongoDbName)
 
 	// spaces service: started directly (not via fx) so its NATS subscribers
@@ -258,6 +275,63 @@ func setup() int {
 	}
 	// register spaces stop for teardown
 	spacesStop := spacesRes.SpacesProvider.Stop
+
+	// --- file-indexer: consumes FileInfoEvent (from the file-provider's
+	// stat/readdir) and publishes FileChangedEvent (which the gallery
+	// service consumes). Needs its own Mongo db and the shared NATS + Js.
+	// Started directly (not via fx) like spaces so its streams/consumers are
+	// up before the gallery service starts consuming FileChangedEvent.
+	fiV := viper.New()
+	fiV.Set("mongo.url", mongoUrl)
+	fiV.Set("mongo.db", fileIndexDbName)
+	fiV.Set("fileindexer.parallel", 2)
+	fiRes, err := fileindexer.NewConsumer(fileindexer.ConsumerParams{
+		Nc:      appConn,
+		Js:      appJs,
+		Db:      mongoClient.Database(fileIndexDbName),
+		Logger:  logger,
+		Viper:   fiV,
+		Tracing: tracing.NewNoopTracing(),
+		Mig:     fileindexer.Migrations{},
+	})
+	if err != nil {
+		fmt.Printf("e2e: file-indexer consumer: %v\n", err)
+		return 1
+	}
+	fiConsumer = fiRes
+	// file-indexer list answers the FileIndexListRequest gallery backfill sends
+	// (see backfill.go's requestFileIndexPage); register its start/stop on the
+	// shared lifecycle so lc.Start()/lc.Stop() drives it.
+	_, err = fileindexer.NewList(fileindexer.ListParams{
+		Nc:      appConn,
+		Db:      mongoClient.Database(fileIndexDbName),
+		Logger:  logger,
+		Tracing: tracing.NewNoopTracing(),
+		Mig:     fileindexer.Migrations{},
+		Lc:      lc,
+	})
+	if err != nil {
+		fmt.Printf("e2e: file-indexer list: %v\n", err)
+		return 1
+	}
+
+	// --- gallery service: consumes FileChangedEvent, serves the gallery
+	// delta/list/crud NATS topics. Started directly (not via fx) like spaces so
+	// its NATS subscribers are up before the gateway serves any gallery request.
+	// Needs spaces running (refreshPrefixCache at Start resolves every folder).
+	galleryRes, err := gallery.New(gallery.Params{
+		Nc:      appConn,
+		Js:      appJs,
+		Db:      mongoClient.Database(galleryDbName),
+		Logger:  logger,
+		Tracing: tracing.NewNoopTracing(),
+		Mig:     gallery.Migrations{},
+	})
+	if err != nil {
+		fmt.Printf("e2e: gallery.New: %v\n", err)
+		return 1
+	}
+	galleryProvider = galleryRes.GalleryProvider
 
 	// auth: noAuth because auth.enabled=false. Needs Js + Db + Mig.
 	authRes, err := auth.New(auth.Params{
@@ -288,6 +362,15 @@ func setup() int {
 		Auth: authRes.Auth,
 	})
 
+	// gallery gateway handler: serves GET/POST /api/gallery/* the gallery-
+	// pipeline E2E test uses (source-folders CRUD, delta feed). Without it,
+	// those routes 404.
+	galleryHandler := apigallery.New(apigallery.Params{
+		Log:  logger,
+		Nc:   appConn,
+		Auth: authRes.Auth,
+	})
+
 	// gateway: registers start (listen) + stop hooks on the shared lifecycle;
 	// lc.Start() below triggers the listen so the HTTP server is up before
 	// any test runs. Only the webdav handler is passed, keeping the test
@@ -300,6 +383,7 @@ func setup() int {
 		Handlers: []gwhandler.GatewayHandler{
 			webdavRes.Handler,
 			spacesHandler.Handler,
+			galleryHandler.Handler,
 		},
 		Lc: lc,
 	}
@@ -322,8 +406,24 @@ func setup() int {
 		return 1
 	}
 
+	// --- start the file-indexer consumer and gallery provider now that the
+	// gateway is listening, spaces is up (gallery resolves folders), and the
+	// streams file-indexer/gallery create in their constructors exist. The
+	// file-provider publishes FileInfoEvents via core NATS; JetStream captures
+	// them into SERAPH_FILE_INFO (created by file-indexer.NewConsumer). ---
+	if err := fiConsumer.Start(); err != nil {
+		fmt.Printf("e2e: file-indexer consumer start: %v\n", err)
+		return 1
+	}
+	if err := galleryProvider.Start(); err != nil {
+		fmt.Printf("e2e: gallery provider start: %v\n", err)
+		return 1
+	}
+
 	// register teardown for everything started here
 	_teardownExtras = func() {
+		_ = galleryProvider.Stop()
+		fiConsumer.Stop()
 		lc.Stop(context.Background()) // gateway stop + mongo disconnect
 		spacesStop()
 		appConn.Close()
