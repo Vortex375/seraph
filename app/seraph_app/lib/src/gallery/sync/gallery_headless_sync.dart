@@ -6,6 +6,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:oidc/oidc.dart';
 import 'package:oidc_default_store/oidc_default_store.dart';
 import 'package:seraph_app/src/gallery/local/android_local_source.dart';
+import 'package:seraph_app/src/gallery/local/local_scan_service.dart';
+import 'package:seraph_app/src/gallery/local/local_source.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_upload_backend.dart';
@@ -89,6 +91,19 @@ const int _syncRunLockLeaseMillis = 5 * 60 * 1000;
 /// slow renewal (a busy isolate, a slow SQLite write) never races the lease
 /// actually expiring out from under a still-healthy run.
 const Duration _syncRunLockRenewInterval = Duration(minutes: 2);
+
+/// How long a full Local Source scan is considered current before the
+/// headless backup path runs one instead of a cheaper incremental scan -
+/// the same 6-hour backstop [GalleryGridController.fullScanBackstopInterval]
+/// (`gallery_grid_controller.dart`) uses on the interactive path. A full
+/// scan is the only thing that ever removes or demotes a device row from
+/// the mirror (see [GalleryMirror.applyLocalScan]'s doc), so without this
+/// backstop a photo deleted from the device while the app is never opened
+/// would linger in the mirror - and in the backup queue - indefinitely.
+/// Kept as a separate constant from the gallery's own so a future change
+/// to one does not silently change the other without a deliberate review
+/// of both paths.
+const Duration _headlessFullScanBackstop = Duration(hours: 6);
 
 /// What [runHeadlessGallerySync] did - distinguishes "the engine ran and
 /// produced [result]" from the two reasons it did not, which callers need to
@@ -201,6 +216,8 @@ Future<HeadlessSyncAttempt> runHeadlessGallerySync(
     final engine = GallerySyncEngine(mirror, uploadService);
     onEngineReady?.call(engine);
 
+    await _discoverNewLocalPhotos(mirror, localSource);
+
     try {
       final result = await engine.run();
       return HeadlessSyncAttempt.ran(result);
@@ -210,6 +227,58 @@ Future<HeadlessSyncAttempt> runHeadlessGallerySync(
   } finally {
     renewal?.cancel();
     await mirror.releaseSyncRunLock(holder: lockHolder);
+  }
+}
+
+/// Discovers photos that entered the device's MediaStore since the last
+/// scan, so [GallerySyncEngine.run]'s queue - which is built entirely from
+/// the mirror's existing rows ([GalleryMirror.itemsPendingUpload] /
+/// [GalleryMirror.itemsNeedingUploadRetry]) - actually includes them.
+///
+/// Without this, a photo taken while the app is backgrounded or killed is
+/// invisible to every headless backup trigger (periodic, content-URI,
+/// fast-path, and the foreground service alike): the trigger fires and the
+/// engine runs, but [GalleryMirror.itemsPendingUpload] returns nothing
+/// because no scan ever wrote the new photo into the mirror. The scan is
+/// the missing bridge between "photo exists on device" and "row in mirror".
+///
+/// Uses the same full-scan-vs-incremental decision as
+/// `GalleryGridController._fullScanIsDue`: a full scan when one has never
+/// run ([GalleryMirror.lastFullScanAt] is 0) or is older than
+/// [_headlessFullScanBackstop], otherwise a cheap incremental scan from the
+/// mirror's saved MediaStore generation watermark. Reuses
+/// [LocalScanService] rather than duplicating its scan logic so the two
+/// paths can never drift apart.
+///
+/// Best-effort: a scan failure (permission revoked, platform-channel issue)
+/// is caught and swallowed - the engine still runs with whatever the mirror
+/// already knows about, and the next periodic full scan or gallery-screen
+/// sync remains the correctness backstop, per ticket 17's governing rule.
+/// The [localSource] instance is the same one [runHeadlessGallerySync]
+/// constructed for the upload service - never a second one (see
+/// [AndroidLocalSource]'s class doc on the single channel handler slot) -
+/// and is NOT disposed here; [runHeadlessGallerySync]'s own `finally` block
+/// handles that.
+Future<void> _discoverNewLocalPhotos(
+    GalleryMirror mirror, LocalSource localSource) async {
+  final scanner = LocalScanService(mirror, localSource: localSource);
+  try {
+    final lastFullScanAt = await mirror.lastFullScanAt();
+    final nowMillis = DateTime.now().millisecondsSinceEpoch;
+    final fullScanOverdue = lastFullScanAt == 0 ||
+        (nowMillis - lastFullScanAt) >=
+            _headlessFullScanBackstop.inMilliseconds;
+    if (fullScanOverdue) {
+      await scanner.scan();
+      await mirror.recordFullScanAt(DateTime.now().millisecondsSinceEpoch);
+    } else {
+      await scanner.incrementalScan();
+    }
+  } catch (_) {
+    // A scan failure must not prevent the engine from running - the engine
+    // will simply upload whatever the mirror already knows about. The next
+    // periodic full scan or gallery-screen sync remains the correctness
+    // backstop, per ticket 17's governing rule.
   }
 }
 
