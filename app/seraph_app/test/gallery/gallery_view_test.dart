@@ -203,6 +203,98 @@ void main() {
     expect(tester.widget<PageView>(page).controller!.page!.round(), 1);
   });
 
+  testWidgets('zooming a photo gates panning and the swipe-to-next gesture',
+      (tester) async {
+    await setUpGallery(itemCount: 3);
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(GalleryTile).first);
+    await tester.pumpAndSettle();
+
+    final page = find.byType(PageView);
+    final photoPage = find.byType(GalleryPhotoPage).first;
+    InteractiveViewer viewer() => tester.widget<InteractiveViewer>(
+          find.descendant(
+              of: photoPage, matching: find.byType(InteractiveViewer)),
+        );
+
+    // At 1×: the page swipes, the photo does not pan.
+    expect(tester.widget<PageView>(page).physics,
+        isA<PageScrollPhysics>(),
+        reason: 'at 1× the PageView must reclaim the swipe');
+    expect(viewer().panEnabled, isFalse,
+        reason: 'at 1× the photo must not pan, so a drag always pages');
+
+    // Pinch out (two fingers moving apart) to zoom in past 1×. The
+    // InteractiveViewer clamps to its maxScale of 4, so a generous spread
+    // is enough to cross the threshold the shared controller's listener
+    // gates `_isZoomedIn` on (`getMaxScaleOnAxis() > 1.0`).
+    final center = tester.getCenter(photoPage);
+    final scaleStart1 = center;
+    final scaleStart2 = Offset(center.dx + 10.0, center.dy);
+    final scaleEnd1 = Offset(center.dx - 50.0, center.dy);
+    final scaleEnd2 = Offset(center.dx + 60.0, center.dy);
+    final gesture = await tester.createGesture();
+    final gesture2 = await tester.createGesture();
+    await gesture.down(scaleStart1);
+    await gesture2.down(scaleStart2);
+    await tester.pump();
+    await gesture.moveTo(scaleEnd1);
+    await gesture2.moveTo(scaleEnd2);
+    await tester.pump();
+    await gesture.up();
+    await gesture2.up();
+    await tester.pumpAndSettle();
+
+    // Zoomed in: the swipe is disabled and the photo pans.
+    expect(tester.widget<PageView>(page).physics,
+        isA<NeverScrollableScrollPhysics>(),
+        reason: 'while zoomed the PageView must not swipe');
+    expect(viewer().panEnabled, isTrue,
+        reason: 'while zoomed the photo must pan');
+
+    // A horizontal fling while zoomed pans the photo, it does not page.
+    await tester.fling(page, const Offset(-400, 0), 1000);
+    await tester.pumpAndSettle();
+    expect(tester.widget<PageView>(page).controller!.page!.round(), 0,
+        reason: 'a swipe while zoomed must not change the page');
+
+    // Pinch in (two fingers moving together) back to ~1×. The ratio is
+    // relative to this gesture's own start, so starting at the zoomed
+    // spread and closing the fingers scales the matrix back down; the
+    // InteractiveViewer clamps at its minScale, which is below 1×, so the
+    // shared flag flips back to false.
+    final zoomStart1 = scaleEnd1;
+    final zoomStart2 = scaleEnd2;
+    final zoomEnd1 = center;
+    final zoomEnd2 = Offset(center.dx + 10.0, center.dy);
+    final g1 = await tester.createGesture();
+    final g2 = await tester.createGesture();
+    await g1.down(zoomStart1);
+    await g2.down(zoomStart2);
+    await tester.pump();
+    await g1.moveTo(zoomEnd1);
+    await g2.moveTo(zoomEnd2);
+    await tester.pump();
+    await g1.up();
+    await g2.up();
+    await tester.pumpAndSettle();
+
+    // Back at 1×: the swipe returns and panning is disabled.
+    expect(tester.widget<PageView>(page).physics,
+        isA<PageScrollPhysics>(),
+        reason: 'back at 1× the PageView must reclaim the swipe');
+    expect(viewer().panEnabled, isFalse,
+        reason: 'back at 1× the photo must not pan');
+
+    // A horizontal fling now pages as before.
+    await tester.fling(page, const Offset(-400, 0), 1000);
+    await tester.pumpAndSettle();
+    expect(tester.widget<PageView>(page).controller!.page!.round(), 1,
+        reason: 'a swipe at 1× must page to the next photo');
+  });
+
   testWidgets('tapping a photo in the viewer toggles full-screen chrome',
       (tester) async {
     await setUpGallery(itemCount: 3);

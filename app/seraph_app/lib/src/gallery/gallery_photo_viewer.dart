@@ -56,11 +56,30 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
   /// together, mirroring `FileViewerController.toggleUiVisible`.
   final ValueNotifier<bool> _isUiVisible = ValueNotifier<bool>(true);
 
+  /// True while the current photo is zoomed in past 1×, so the `PageView`
+  /// switches to `NeverScrollableScrollPhysics` and the `InteractiveViewer`
+  /// enables panning - mirroring `FileViewerController.isZoomedIn`. A single
+  /// shared state is acceptable because swiping is disabled while zoomed,
+  /// so the user never sees two photos at different zooms (see the spec's
+  /// "Out of Scope" note on per-photo zoom memory).
+  final ValueNotifier<bool> _isZoomedIn = ValueNotifier<bool>(false);
+
+  /// The shared zoom/pan transform for every page. The `InteractiveViewer`
+  /// on each `GalleryPhotoPage` binds to this; a listener flips
+  /// `_isZoomedIn` from `getMaxScaleOnAxis() > 1.0`, identical to
+  /// `FileViewerController`'s wiring.
+  late final TransformationController _transformController;
+
   @override
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: widget.initialIndex);
     _currentIndex = ValueNotifier<int>(widget.initialIndex);
+    _transformController = TransformationController();
+    _transformController.addListener(() {
+      _isZoomedIn.value =
+          _transformController.value.getMaxScaleOnAxis() > 1.0;
+    });
     controller.ensureRangeLoaded(widget.initialIndex - 1, widget.initialIndex + 1);
   }
 
@@ -72,6 +91,8 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     _pageController.dispose();
     _currentIndex.dispose();
+    _transformController.dispose();
+    _isZoomedIn.dispose();
     _uploading.dispose();
     _isUiVisible.dispose();
     super.dispose();
@@ -226,25 +247,36 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
           if (total == 0) {
             return const SizedBox.shrink();
           }
-          return PageView.builder(
-            controller: _pageController,
-            itemCount: total,
-            onPageChanged: (index) {
-              _currentIndex.value = index;
-              controller.ensureRangeLoaded(index - 1, index + 1);
-            },
-            itemBuilder: (context, index) {
-              final item = controller.itemAt(index);
-              if (item == null) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              return GalleryPhotoPage(
-                item: item,
-                loader: loader,
-                localLoader: localLoader,
-                onToggleUi: _toggleUi,
-              );
-            },
+          return ValueListenableBuilder<bool>(
+            valueListenable: _isZoomedIn,
+            builder: (context, zoomed, _) => PageView.builder(
+              controller: _pageController,
+              itemCount: total,
+              // Disable swipe-to-next-image while zoomed so a drag pans the
+              // photo instead of paging - identical to the file viewer's
+              // gating on `isZoomedIn`.
+              physics: zoomed
+                  ? const NeverScrollableScrollPhysics()
+                  : const PageScrollPhysics(),
+              onPageChanged: (index) {
+                _currentIndex.value = index;
+                controller.ensureRangeLoaded(index - 1, index + 1);
+              },
+              itemBuilder: (context, index) {
+                final item = controller.itemAt(index);
+                if (item == null) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                return GalleryPhotoPage(
+                  item: item,
+                  loader: loader,
+                  localLoader: localLoader,
+                  onToggleUi: _toggleUi,
+                  transformationController: _transformController,
+                  isZoomedIn: _isZoomedIn,
+                );
+              },
+            ),
           );
         }),
       ),
@@ -262,6 +294,8 @@ class GalleryPhotoPage extends StatelessWidget {
     required this.loader,
     required this.localLoader,
     required this.onToggleUi,
+    required this.transformationController,
+    required this.isZoomedIn,
   });
 
   final GalleryItem item;
@@ -275,6 +309,17 @@ class GalleryPhotoPage extends StatelessWidget {
   /// opaque but does not claim scale gestures, so pinch-to-zoom still
   /// reaches the [InteractiveViewer] underneath.
   final VoidCallback onToggleUi;
+
+  /// The viewer's shared zoom/pan transform. Bound to this page's
+  /// [InteractiveViewer] so a listener on the controller can gate the
+  /// `PageView`'s swipe physics and this viewer's `panEnabled` on the
+  /// shared zoom flag, mirroring the file viewer.
+  final TransformationController transformationController;
+
+  /// The viewer's shared zoom flag. [InteractiveViewer.panEnabled] is gated
+  /// on it: panning is only enabled while zoomed in, so a drag at 1× always
+  /// pages rather than nudging the photo.
+  final ValueNotifier<bool> isZoomedIn;
 
   @override
   Widget build(BuildContext context) {
@@ -300,20 +345,28 @@ class GalleryPhotoPage extends StatelessWidget {
     return GestureDetector(
       onTap: onToggleUi,
       behavior: HitTestBehavior.opaque,
-      child: InteractiveViewer(
-        maxScale: 4,
-        child: Center(
-          child: hasLocal
-              ? _LocalPhotoStack(
-                  item: item,
-                  localLoader: localLoader,
-                  fallback: hasCloud
-                      ? _CloudPhotoStack(
-                          loader: loader, providerId: providerId, path: path)
-                      : _DeviceOnlyPhoto(item: item),
-                )
-              : _CloudPhotoStack(
-                  loader: loader, providerId: providerId!, path: path!),
+      child: ValueListenableBuilder<bool>(
+        valueListenable: isZoomedIn,
+        builder: (context, zoomed, _) => InteractiveViewer(
+          transformationController: transformationController,
+          maxScale: 4,
+          // Panning is only enabled while zoomed in; at 1× the page
+          // reclaims the swipe and the photo does not pan - identical to
+          // the file viewer's `panEnabled: isZoomedIn`.
+          panEnabled: zoomed,
+          child: Center(
+            child: hasLocal
+                ? _LocalPhotoStack(
+                    item: item,
+                    localLoader: localLoader,
+                    fallback: hasCloud
+                        ? _CloudPhotoStack(
+                            loader: loader, providerId: providerId, path: path)
+                        : _DeviceOnlyPhoto(item: item),
+                  )
+                : _CloudPhotoStack(
+                    loader: loader, providerId: providerId!, path: path!),
+          ),
         ),
       ),
     );
