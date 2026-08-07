@@ -109,15 +109,53 @@ class GalleryImageLoader {
     }
   }
 
-  Future<Uint8List> _get(String url) async {
-    final response = await dio.get<List<int>>(
-      url,
-      options: Options(
-        responseType: ResponseType.bytes,
-        headers: await _requestHeaders(),
-      ),
-    );
-    return Uint8List.fromList(response.data ?? const []);
+  Future<Uint8List> _get(String url) {
+    Future<Uint8List> request() async {
+      final response = await dio.get<List<int>>(
+        url,
+        options: Options(
+          responseType: ResponseType.bytes,
+          headers: await _requestHeaders(),
+        ),
+      );
+      return Uint8List.fromList(response.data ?? const []);
+    }
+
+    return _withTokenRecovery(request);
+  }
+
+  /// Reactive refresh-and-retry for the gallery's thumbnail and full-resolution
+  /// image fetches - the safety net the proactive refresh triggers (cold
+  /// start, resume, 30s audio timer) cannot guarantee covers this path.
+  ///
+  /// The gateway answers an expired access token with HTTP 403 (the SAME
+  /// status a genuinely read-only Space produces), and [LoginController]'s
+  /// proactive triggers do not cover a user browsing the gallery in the
+  /// foreground past the access-token's lifetime (5 minutes, for the test
+  /// realm) with no resume and no audio playing. Without this, every
+  /// non-cached thumbnail fetched after expiry 403s, [GalleryImage._load]
+  /// throws [GalleryImageUnavailable], and the tile renders its error
+  /// placeholder - until some other path (switching to the file browser, whose
+  /// WebDAV calls DO recover via [FileService._withTokenRecovery]) refreshes
+  /// the token. This catches it here instead: on a 401/403 [DioException],
+  /// force-refreshes the token and retries [op] once. The retry re-reads the
+  /// bearer via [_requestHeaders] (which reads [loginController.currentUser],
+  /// set synchronously by the forced [LoginController.refreshTokenIfNeeded]);
+  /// a second failure of any kind propagates as-is, becoming
+  /// [GalleryImageUnavailable] the same way a 404 or a network error already
+  /// does. Mirrors [FileService._withTokenRecovery] and
+  /// [withTokenRecovery] (gallery_upload_backend.dart) exactly.
+  Future<T> _withTokenRecovery<T>(Future<T> Function() op) async {
+    try {
+      return await op();
+    } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      if (status == 401 || status == 403) {
+        await loginController.refreshTokenIfNeeded(force: true);
+        return await op();
+      }
+      rethrow;
+    }
   }
 
   Future<Map<String, String>> _requestHeaders() async {

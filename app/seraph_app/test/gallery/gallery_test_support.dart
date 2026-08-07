@@ -515,6 +515,12 @@ class FakeLoginController extends GetxController implements LoginController {
   final Rx<bool> _isSpaceAdmin = false.obs;
   final Rx<OidcUser?> _currentUser = Rx<OidcUser?>(null);
 
+  /// How many times [refreshTokenIfNeeded] has been called, and the `force`
+  /// flag each call carried - what a token-recovery regression test asserts
+  /// against to check the gallery's image fetches refreshed exactly once on
+  /// a 401/403 (and zero times on any other failure).
+  final List<bool> refreshTokenIfNeededCalls = [];
+
   @override
   Rx<bool> get isInitialized => _isInitialized;
 
@@ -526,6 +532,11 @@ class FakeLoginController extends GetxController implements LoginController {
 
   @override
   Rx<OidcUser?> get currentUser => _currentUser;
+
+  @override
+  Future<void> refreshTokenIfNeeded({bool force = false}) async {
+    refreshTokenIfNeededCalls.add(force);
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

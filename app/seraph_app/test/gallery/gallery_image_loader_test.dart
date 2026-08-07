@@ -219,5 +219,111 @@ void main() {
       expect(remaining.map((t) => t.path).toList()..sort(),
           ['/Photos/2.jpg', '/Photos/3.jpg', '/Photos/4.jpg']);
     });
+
+    group('token recovery on 401/403', () {
+      // The gateway answers an expired access token with HTTP 403 (the same
+      // status a genuinely read-only Space produces). Without a reactive
+      // refresh-and-retry in GalleryImageLoader, every non-cached thumbnail
+      // fetched after the token's lifetime elapses 403s and the tile renders
+      // its error placeholder until some other path refreshes the token -
+      // this is the bug these tests lock down.
+      late FakeLoginController login;
+
+      setUp(() {
+        login = FakeLoginController();
+      });
+
+      DioException reject403(RequestOptions options) => DioException(
+            requestOptions: options,
+            response: Response(requestOptions: options, statusCode: 403),
+            type: DioExceptionType.badResponse,
+          );
+
+      test(
+          'a 403 from an expired token is recovered by a forced refresh and a single retry',
+          () async {
+        var attempts = 0;
+        dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+          requested.add(options.path);
+          attempts++;
+          if (attempts == 1) {
+            handler.reject(reject403(options));
+          } else {
+            handler.resolve(
+                Response(requestOptions: options, data: onePixelPng));
+          }
+        }));
+        final loader =
+            GalleryImageLoader(FakeSettingsController(), login, db, dio: dio);
+
+        final bytes = await loader.thumbnail('space-a', '/Photos/a.jpg', 512);
+
+        expect(bytes, onePixelPng);
+        expect(attempts, 2, reason: 'the first 403 must trigger one retry');
+        expect(login.refreshTokenIfNeededCalls, [true],
+            reason: 'a 403 must force-refresh the token exactly once');
+      });
+
+      test('a 403 on full resolution is recovered the same way', () async {
+        var attempts = 0;
+        dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+          requested.add(options.path);
+          attempts++;
+          if (attempts == 1) {
+            handler.reject(reject403(options));
+          } else {
+            handler.resolve(
+                Response(requestOptions: options, data: onePixelPng));
+          }
+        }));
+        final loader =
+            GalleryImageLoader(FakeSettingsController(), login, db, dio: dio);
+
+        final bytes = await loader.fullResolution('space-a', '/Photos/a.jpg');
+
+        expect(bytes, onePixelPng);
+        expect(attempts, 2);
+        expect(login.refreshTokenIfNeededCalls, [true]);
+      });
+
+      test('a 403 that persists after refresh surfaces as unavailable', () async {
+        dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+          requested.add(options.path);
+          handler.reject(reject403(options));
+        }));
+        final loader =
+            GalleryImageLoader(FakeSettingsController(), login, db, dio: dio);
+
+        await expectLater(
+          loader.thumbnail('space-a', '/Photos/readonly.jpg', 512),
+          throwsA(isA<GalleryImageUnavailable>()),
+        );
+        expect(login.refreshTokenIfNeededCalls, [true],
+            reason: 'refresh once, retry once, then give up - no refresh loop');
+      });
+
+      test('a non-auth failure is not treated as an expired token', () async {
+        var attempts = 0;
+        dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+          requested.add(options.path);
+          attempts++;
+          handler.reject(DioException(
+            requestOptions: options,
+            response: Response(requestOptions: options, statusCode: 500),
+            type: DioExceptionType.badResponse,
+          ));
+        }));
+        final loader =
+            GalleryImageLoader(FakeSettingsController(), login, db, dio: dio);
+
+        await expectLater(
+          loader.thumbnail('space-a', '/Photos/oops.jpg', 512),
+          throwsA(isA<GalleryImageUnavailable>()),
+        );
+        expect(attempts, 1, reason: 'a 500 must not trigger a retry');
+        expect(login.refreshTokenIfNeededCalls, isEmpty,
+            reason: 'no token refresh on a non-auth failure');
+      });
+    });
   });
 }
