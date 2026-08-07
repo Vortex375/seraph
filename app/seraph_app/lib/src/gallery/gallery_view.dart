@@ -296,9 +296,9 @@ class _DateHeading extends StatelessWidget {
         controller.revision.value;
         final date = controller.knownDateAt(value);
         if (date == null) {
-          // Not loaded yet: ask, and stay out of the way until the answer
-          // arrives rather than flashing a wrong month.
-          controller.dateAt(value);
+          // Before the first reload completes (or an empty gallery): stay out
+          // of the way rather than flashing a wrong month. The date is
+          // otherwise always available synchronously from the boundary map.
           return const SizedBox.shrink();
         }
         return Container(
@@ -374,9 +374,8 @@ class _GalleryDateScrubberState extends State<GalleryDateScrubber> {
       final max = widget.scrollController.position.maxScrollExtent;
       widget.scrollController.jumpTo(clamped * max);
     }
-    // Make sure the month bubble can answer, even for a position whose page
-    // is nowhere near loaded.
-    widget.controller.dateAt(widget.indexAtFraction(clamped));
+    // The month under the thumb is answered synchronously from the boundary
+    // map the controller built on reload - no async lookup, no page load.
   }
 
   @override

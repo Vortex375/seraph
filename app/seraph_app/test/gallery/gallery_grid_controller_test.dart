@@ -192,12 +192,17 @@ void main() {
       await controller.open();
 
       // Item 350 is 350 days before the newest one, and its page is nowhere
-      // near loaded.
-      expect(controller.knownDateAt(350), isNull);
-
-      final date = await controller.dateAt(350);
+      // near loaded. The date now comes synchronously from the boundary map
+      // built on reload - no await, no async lookup. knownDateAt returns
+      // month granularity, so derive the expected month with the same local
+      // conversion the controller uses.
+      final date = controller.knownDateAt(350);
       expect(date, isNotNull);
-      expect(date!.millisecondsSinceEpoch ~/ 1000, 1770000000 - 350 * day);
+      final expectedCapturedAt = 1770000000 - 350 * day;
+      final expectedLocal =
+          DateTime.fromMillisecondsSinceEpoch(expectedCapturedAt * 1000);
+      expect(date!.year, expectedLocal.year);
+      expect(date.month, expectedLocal.month);
 
       // Knowing the date did not require loading the page it lives on.
       expect(controller.itemAt(351), isNull);
@@ -216,7 +221,11 @@ void main() {
 
       final expected = await mirrorInOrder(mirror);
       for (var i = 0; i < expected.length; i++) {
-        expect(controller.knownDateAt(i), expected[i].capturedAtDateTime,
+        final known = controller.knownDateAt(i);
+        expect(known, isNotNull, reason: 'index $i');
+        expect(known!.year, expected[i].capturedAtDateTime.year,
+            reason: 'index $i');
+        expect(known.month, expected[i].capturedAtDateTime.month,
             reason: 'index $i');
       }
     });
@@ -228,8 +237,50 @@ void main() {
       final controller = GalleryGridController(mirror: mirror);
       await controller.open();
 
-      expect(await controller.dateAt(3), isNull);
-      expect(await controller.dateAt(-1), isNull);
+      expect(controller.knownDateAt(3), isNull);
+      expect(controller.knownDateAt(-1), isNull);
+    });
+
+    // The boundary map is built in the device's LOCAL time (the same
+    // conversion the label uses), not UTC - so a photo taken just past
+    // midnight local on the first of a new month is labelled as that new
+    // month, not the previous one. The expected months are derived from the
+    // same local conversion the controller uses, so the test is correct
+    // regardless of the test machine's timezone.
+    test('a photo just past midnight local on a new month is grouped into it',
+        () async {
+      // Pick an epoch-second value that, in local time, falls on the first
+      // of some month just after midnight, and another a day earlier in the
+      // previous month. Derive everything from the same conversion.
+      final justPastMidnight = DateTime(2026, 3, 1, 0, 30, 0);
+      final previousDay = justPastMidnight.subtract(const Duration(days: 1));
+      final justPastMidnightEpoch = justPastMidnight.millisecondsSinceEpoch ~/ 1000;
+      final previousDayEpoch = previousDay.millisecondsSinceEpoch ~/ 1000;
+
+      // Newer first: the just-past-midnight item is at index 0, the previous
+      // month's item at index 1.
+      await insertMirrorItem(db,
+          path: '/Photos/new-month.jpg', capturedAt: justPastMidnightEpoch);
+      await insertMirrorItem(db,
+          path: '/Photos/prev-month.jpg', capturedAt: previousDayEpoch);
+
+      final controller = GalleryGridController(mirror: mirror);
+      await controller.open();
+      await pumpEventQueue();
+
+      final newMonthDate = controller.knownDateAt(0);
+      final prevMonthDate = controller.knownDateAt(1);
+      expect(newMonthDate, isNotNull);
+      expect(prevMonthDate, isNotNull);
+      // The just-past-midnight item is the new month, NOT the previous one -
+      // proving the boundary is local, not UTC.
+      expect(newMonthDate!.year, justPastMidnight.year);
+      expect(newMonthDate.month, justPastMidnight.month);
+      expect(prevMonthDate!.year, previousDay.year);
+      expect(prevMonthDate.month, previousDay.month);
+      expect(galleryMonthLabel(newMonthDate) != galleryMonthLabel(prevMonthDate),
+          isTrue,
+          reason: 'the two items must fall in different months locally');
     });
 
     test('a sync that adds items is picked up by an explicit reload', () async {

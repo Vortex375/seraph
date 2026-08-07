@@ -131,8 +131,20 @@ class GalleryGridController extends GetxController {
   final Map<int, GalleryItem> _items = {};
   final Set<int> _loadedPages = {};
   final Set<int> _pagesInFlight = {};
-  final Map<int, DateTime> _dates = {};
-  final Set<int> _datesInFlight = {};
+
+  /// One entry in the month-boundary map [reload] builds from the mirror's
+  /// `capturedAt` column: the zero-based [startIndex] at which a given
+  /// (year, month) first begins, plus that year and month. Binary-searched by
+  /// [knownDateAt] in O(log months) for an instant, synchronous answer to
+  /// "what month is under the thumb" - no per-drag async lookup, no page load
+  /// required.
+  ///
+  /// Built in local time (the same `DateTime.fromMillisecondsSinceEpoch(
+  /// v * 1000)` conversion the displayed label uses), so a photo taken just
+  /// past midnight local on the first of a new month is grouped into that new
+  /// month exactly as its label renders it. Empty for a collection not yet
+  /// loaded or genuinely empty.
+  final List<_MonthBoundary> _boundaries = [];
 
   /// In-memory cache of [GalleryMirror.lastSyncedAt], primed once by [open]
   /// and kept current by [syncNow] itself. This exists solely so [syncNow]'s
@@ -193,16 +205,44 @@ class GalleryGridController extends GetxController {
   /// a `refresh()` that means "rebuild the widgets bound to me" - a different
   /// thing, and one this must not quietly replace.
   Future<void> reload() async {
-    final count = await mirror.totalCount(filter: filter.value);
+    final filterValue = filter.value;
+    final count = await mirror.totalCount(filter: filterValue);
     _items.clear();
     _loadedPages.clear();
-    _dates.clear();
     totalCount.value = count;
+    // Build the month-boundary map from the same column the slider's length
+    // is derived from, so the scrubber can answer "what month is here"
+    // synchronously for every index - including ones whose page has not
+    // loaded - with no per-drag async work. See [_boundaries]'s doc for why
+    // the local-time conversion happens here in Dart, not in SQL.
+    _boundaries
+      ..clear()
+      ..addAll(await _buildMonthBoundaries(filterValue));
     summary.value = await mirror.availabilitySummary();
     localPermission.value = await localScanService?.permissionStatus() ??
         LocalPermissionStatus.unsupported;
     revision.value++;
     await _loadPage(0);
+  }
+
+  /// Walks the mirror's `capturedAt` int column once, converting each value
+  /// to a local [DateTime] with the identical conversion the displayed label
+  /// uses, and emits a [_MonthBoundary] whenever the (year, month) changes
+  /// from the previous item. Empty for an empty collection; a single entry at
+  /// index 0 for a single-month collection.
+  Future<List<_MonthBoundary>> _buildMonthBoundaries(
+      GalleryAvailabilityFilter filterValue) async {
+    final column = await mirror.capturedAtColumn(filter: filterValue);
+    final boundaries = <_MonthBoundary>[];
+    for (var i = 0; i < column.length; i++) {
+      final date = DateTime.fromMillisecondsSinceEpoch(column[i] * 1000);
+      final last = boundaries.isEmpty ? null : boundaries.last;
+      if (last == null || last.year != date.year || last.month != date.month) {
+        boundaries.add(_MonthBoundary(
+            startIndex: i, year: date.year, month: date.month));
+      }
+    }
+    return boundaries;
   }
 
   /// Changes the Availability filter and reloads. A no-op if [value] is
@@ -483,8 +523,6 @@ class GalleryGridController extends GetxController {
       );
       for (var i = 0; i < rows.length; i++) {
         _items[offset + i] = rows[i];
-        _dates[offset + i] =
-            DateTime.fromMillisecondsSinceEpoch(rows[i].capturedAt * 1000);
       }
       _loadedPages.add(page);
       revision.value++;
@@ -493,35 +531,50 @@ class GalleryGridController extends GetxController {
     }
   }
 
-  /// The Capture Date at [index], if it is already known - from a loaded page
-  /// or from an earlier scrubber lookup.
-  DateTime? knownDateAt(int index) => _dates[index];
-
-  /// Asks the mirror for the Capture Date at [index] without loading its
-  /// page. This is the scrubber's question: the user is dragging past
-  /// thousands of items and wants to know where in history they are, faster
-  /// than pages could possibly load.
-  Future<DateTime?> dateAt(int index) async {
-    final known = _dates[index];
-    if (known != null) {
-      return known;
-    }
+  /// The Capture Date (month granularity) at [index] in the grid's order,
+  /// answered synchronously from the month-boundary map [reload] built - or
+  /// null before the first reload completes, for an empty collection, or for
+  /// an index outside `[0, totalCount)`.
+  ///
+  /// This is what the date scrubber and the floating month heading ask: the
+  /// user is dragging through thousands of items and wants to know where in
+  /// history they are, instantly, with no `…` placeholder and no page load.
+  /// The boundary map is built in local time so the answer can never disagree
+  /// with the label a tile at that index would render.
+  DateTime? knownDateAt(int index) {
     if (index < 0 || index >= totalCount.value) {
       return null;
     }
-    if (_datesInFlight.contains(index)) {
+    final boundaries = _boundaries;
+    if (boundaries.isEmpty) {
       return null;
     }
-    _datesInFlight.add(index);
-    try {
-      final date = await mirror.capturedAtAtOffset(index, filter: filter.value);
-      if (date != null) {
-        _dates[index] = date;
-        revision.value++;
+    // Binary search for the largest startIndex <= index.
+    var lo = 0;
+    var hi = boundaries.length - 1;
+    while (lo < hi) {
+      final mid = lo + (hi - lo + 1) ~/ 2;
+      if (boundaries[mid].startIndex <= index) {
+        lo = mid;
+      } else {
+        hi = mid - 1;
       }
-      return date;
-    } finally {
-      _datesInFlight.remove(index);
     }
+    final b = boundaries[lo];
+    return DateTime(b.year, b.month);
   }
+}
+
+/// The month-boundary record [GalleryGridController._boundaries] holds - see
+/// [GalleryGridController.knownDateAt] for the contract.
+class _MonthBoundary {
+  const _MonthBoundary({
+    required this.startIndex,
+    required this.year,
+    required this.month,
+  });
+
+  final int startIndex;
+  final int year;
+  final int month;
 }

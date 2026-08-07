@@ -2034,28 +2034,43 @@ class GalleryMirror {
     );
   }
 
-  /// The Capture Date of the item at [offset] in the gallery's order, or null
-  /// if the mirror has no item there.
-  ///
-  /// This is what the date scrubber needs: while the user drags it, the
-  /// position under their thumb has to be turned into a point in time without
-  /// first loading the page of items it lands on - the whole point of the
-  /// scrubber is to move faster than pages can load.
-  Future<DateTime?> capturedAtAtOffset(
-    int offset, {
-    GalleryAvailabilityFilter filter = GalleryAvailabilityFilter.all,
-  }) async {
-    if (offset < 0) {
-      return null;
-    }
-    final rows = await queryItems(offset: offset, limit: 1, filter: filter);
-    if (rows.isEmpty) {
-      return null;
-    }
-    return DateTime.fromMillisecondsSinceEpoch(rows.first.capturedAt * 1000);
+   /// Every visible item's Capture Date, in the grid's exact order
+   /// (`capturedAt DESC, id DESC`) and under the same visibility predicate as
+   /// [queryItems] - the column the gallery scrubber's month-boundary map is
+   /// built from in a single read.
+   ///
+   /// Returns the raw epoch-seconds ints rather than [DateTime]s so the
+   /// local-time conversion happens once, in the controller, with the
+   /// identical code path as `GalleryItemDisplay.capturedAtDateTime`
+   /// (`DateTime.fromMillisecondsSinceEpoch(capturedAt * 1000)`). Grouping in
+   /// SQLite with `strftime(..., 'unixepoch')` would group in UTC, which can
+   /// disagree with the local-time label by a month around midnight and is
+   /// fragile under DST; reading the int column and converting in Dart keeps
+   /// the boundary map and the label on the same conversion, so they can
+   /// never disagree. The read is a covered scan on the existing
+   /// `idx_gallery_items_captured_at_id` index (the column is in the index, so
+   /// no table access is needed) and transfers one int per item.
+   Future<List<int>> capturedAtColumn({
+     GalleryAvailabilityFilter filter = GalleryAvailabilityFilter.all,
+   }) async {
+     final unselectedFolders = await _unselectedFolders();
+     final column = _db.galleryItems.capturedAt;
+     final query = _db.selectOnly(_db.galleryItems)
+       ..addColumns([column])
+       ..orderBy([
+         OrderingTerm(
+             expression: _db.galleryItems.capturedAt,
+             mode: OrderingMode.desc),
+         OrderingTerm(
+             expression: _db.galleryItems.id, mode: OrderingMode.desc),
+       ])
+       ..where(_visibilityPredicates(_db.galleryItems, unselectedFolders)
+           .forFilter(filter));
+     final rows = await query.get();
+    return rows.map((r) => r.read(column)!).toList();
   }
 
-  /// The total number of items currently in the mirror, optionally
+   /// The total number of items currently in the mirror, optionally
   /// restricted by Availability. Ticket 29's Local Folder selection is
   /// already folded into what "restricted by Availability" means - see
   /// [_visibilityPredicates].
