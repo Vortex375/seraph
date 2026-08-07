@@ -81,7 +81,7 @@ void main() {
     // Clear any SystemChannels.platform mock a test installed (the
     // full-screen-toggle test does) so it cannot leak into the next test.
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(SystemChannels.platform.name, null);
+        .setMockMethodCallHandler(SystemChannels.platform, null);
   });
 
   Widget wrap() {
@@ -218,12 +218,14 @@ void main() {
 
     // Intercept the platform channel SystemChrome.setEnabledSystemUIMode
     // drives so we can assert the system-UI mode is actually flipped, not
-    // just the app bar. The mock captures every setSystemUIMode call.
+    // just the app bar. The mock captures every setEnabledSystemUIMode
+    // call; its argument is the mode's toString() (e.g.
+    // 'SystemUiMode.immersive').
     final uiModeCalls = <MethodCall>[];
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      SystemChannels.platform.name,
+      SystemChannels.platform,
       (MethodCall call) async {
-        if (call.method == 'SystemChrome.setSystemUIMode') {
+        if (call.method == 'SystemChrome.setEnabledSystemUIMode') {
           uiModeCalls.add(call);
         }
         return null;
@@ -242,16 +244,8 @@ void main() {
         reason: 'a tap on the photo must hide the app bar');
     expect(uiModeCalls, isNotEmpty,
         reason: 'hiding chrome must call SystemChrome.setEnabledSystemUIMode');
-    final hideMode = uiModeCalls.last.arguments is Map
-        ? (uiModeCalls.last.arguments as Map)['mode']
-        : uiModeCalls.last.arguments;
-    // The channel carries the mode as SystemUiMode.immersive's name when
-    // encoded as a string; assert that when it is a string, and otherwise
-    // just that a value was sent.
-    expect(hideMode, isNotNull);
-    if (hideMode is String) {
-      expect(hideMode, contains('immersive'));
-    }
+    final hideMode = uiModeCalls.last.arguments;
+    expect(hideMode.toString(), contains('immersive'));
 
     // Tap again -> chrome returns and the system goes back to edge-to-edge.
     await tester.tap(find.byType(GalleryPhotoPage).first);
@@ -260,14 +254,10 @@ void main() {
     expect(find.byType(AppBar), findsOneWidget,
         reason: 'a second tap must bring the app bar back');
     expect(uiModeCalls.length, greaterThan(1));
-    final showMode = uiModeCalls.last.arguments is Map
-        ? (uiModeCalls.last.arguments as Map)['mode']
-        : uiModeCalls.last.arguments;
+    final showMode = uiModeCalls.last.arguments;
+    expect(showMode.toString(), contains('edgeToEdge'));
     expect(showMode, isNot(equals(hideMode)),
         reason: 'the second tap must flip the system-UI mode');
-    if (showMode is String) {
-      expect(showMode, contains('edgeToEdge'));
-    }
   });
 
   testWidgets("a photo's details name the Seraph folder it lives in",
