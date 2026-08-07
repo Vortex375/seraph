@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
+import 'package:seraph_app/src/file_browser/file_browser_view.dart';
 import 'package:seraph_app/src/gallery/gallery_grid_controller.dart';
 import 'package:seraph_app/src/gallery/gallery_image_loader.dart';
 import 'package:seraph_app/src/gallery/gallery_item_display.dart';
 import 'package:seraph_app/src/gallery/gallery_tile.dart';
+import 'package:seraph_app/src/gallery/gallery_view.dart';
 import 'package:seraph_app/src/gallery/local/local_image_loader.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_upload_backend.dart';
@@ -111,7 +113,19 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
-      builder: (context) => GalleryPhotoDetails(item: item),
+      builder: (context) => GalleryPhotoDetails(
+        item: item,
+        onOpenFolder: () {
+          // Pop back to the Gallery: this dismisses the details modal sheet
+          // AND the photo viewer, stopping at the Gallery route. Then push
+          // the file browser at the folder the photo lives in on top of it,
+          // giving the stack [FileBrowser(root), Gallery, FileBrowser(folder)]
+          // - back from the folder returns to the Gallery, not the viewer.
+          Get.until((route) => route.settings.name == GalleryView.routeName);
+          Get.toNamed(
+              '${FileBrowserView.routeName}?path=${item.folderDisplayPath}');
+        },
+      ),
     );
   }
 
@@ -566,14 +580,24 @@ class _UnsupportedPhoto extends StatelessWidget {
 /// so the user can go and find the file again through the file browser or
 /// over WebDAV.
 class GalleryPhotoDetails extends StatelessWidget {
-  const GalleryPhotoDetails({super.key, required this.item});
+  const GalleryPhotoDetails({
+    super.key,
+    required this.item,
+    this.onOpenFolder,
+  });
 
   final GalleryItem item;
+
+  /// Opens the file browser at [item.folderDisplayPath]. Only wired up for
+  /// items that have a real Seraph folder ([item.providerId] non-null); a
+  /// Device-only item has no folder to open, so its "File" row stays a plain,
+  /// non-interactive label - mirroring the "Seraph folder" row, which is
+  /// already omitted for Device-only items for the same reason.
+  final VoidCallback? onOpenFolder;
 
   @override
   Widget build(BuildContext context) {
     final rows = <_DetailRow>[
-      _DetailRow(Icons.image_outlined, 'File', item.fileName),
       // A Device only item has no Seraph folder to name at all - showing one
       // would be a folder that does not exist.
       if (item.providerId != null)
@@ -599,6 +623,14 @@ class GalleryPhotoDetails extends StatelessWidget {
       child: ListView(
         shrinkWrap: true,
         children: [
+          ListTile(
+            leading: const Icon(Icons.image_outlined),
+            title: const Text('File'),
+            subtitle: Text(item.fileName),
+            // Only a Seraph-backed item has a folder to open; a Device-only
+            // item's "File" row is a plain, non-interactive label.
+            onTap: item.providerId != null ? onOpenFolder : null,
+          ),
           for (final row in rows)
             ListTile(
               leading: Icon(row.icon),

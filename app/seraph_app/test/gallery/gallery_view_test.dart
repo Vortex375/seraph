@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:get/get.dart' hide Response;
+import 'package:seraph_app/src/file_browser/file_browser_view.dart';
 import 'package:seraph_app/src/gallery/gallery_grid_controller.dart';
 import 'package:seraph_app/src/gallery/gallery_image_loader.dart';
 import 'package:seraph_app/src/gallery/gallery_item_display.dart';
@@ -86,13 +87,29 @@ void main() {
 
   Widget wrap() {
     return GetMaterialApp(
-      home: const GalleryView(),
+      // `initialRoute` (rather than `home:`) so the Gallery route carries
+      // `settings.name == GalleryView.routeName`, which is what `Get.until`
+      // in the folder-jump callback predicates on. The Gallery is still the
+      // first thing on screen.
+      initialRoute: GalleryView.routeName,
       getPages: [
+        GetPage(
+          name: GalleryView.routeName,
+          page: () => const GalleryView(),
+        ),
         GetPage(
           name: GalleryPhotoViewerView.routeName,
           page: () => GalleryPhotoViewerView(
             initialIndex: int.tryParse(Get.parameters['index'] ?? '') ?? 0,
           ),
+        ),
+        // A minimal stand-in: the folder-jump test asserts the route, not the
+        // file browser's contents, so the page does not stand up the real
+        // FileBrowserView (which would `Get.find` controllers the test does
+        // not register).
+        GetPage(
+          name: FileBrowserView.routeName,
+          page: () => const Scaffold(body: SizedBox.shrink()),
         ),
       ],
     );
@@ -372,6 +389,67 @@ void main() {
 
     expect(find.text('Seraph folder'), findsOneWidget);
     expect(find.text('/family-space/Holidays/Crete'), findsOneWidget);
+  });
+
+  testWidgets('tapping the File row in details opens the Seraph folder',
+      (tester) async {
+    await setUpGallery();
+    await insertMirrorItem(db,
+        providerId: 'family-space',
+        path: '/Holidays/Crete/beach.jpg',
+        capturedAt: 1770000000);
+    await controller.reload();
+
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(GalleryTile).first);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Photo details'));
+    await tester.pumpAndSettle();
+
+    final item = controller.itemAt(0)!;
+    final fileRow =
+        find.ancestor(of: find.text('File'), matching: find.byType(ListTile));
+    await tester.tap(fileRow);
+    await tester.pumpAndSettle();
+
+    expect(
+        Get.currentRoute,
+        '${FileBrowserView.routeName}?path=${item.folderDisplayPath}',
+        reason: 'tapping the File row must jump to the file browser at the '
+            "photo's Seraph folder, with the Gallery left underneath");
+  });
+
+  testWidgets("a Device-only photo's File row is not tappable", (tester) async {
+    final source = FakeLocalSource([
+      localMediaItem(
+          relativePath: 'DCIM/Camera/',
+          displayName: 'device.jpg',
+          dateTakenMillis: 1700000000000),
+    ]);
+    await setUpGallery(localSource: source);
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(GalleryTile).first);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Photo details'));
+    await tester.pumpAndSettle();
+
+    final fileRow =
+        find.ancestor(of: find.text('File'), matching: find.byType(ListTile));
+    expect(tester.widget<ListTile>(fileRow).onTap, isNull,
+        reason: 'a Device-only item has no Seraph folder, so the File row '
+            'must be a plain, non-interactive label');
+
+    final routeBefore = Get.currentRoute;
+    await tester.tap(fileRow);
+    await tester.pumpAndSettle();
+    expect(Get.currentRoute, routeBefore,
+        reason: 'tapping a non-interactive File row must not navigate');
   });
 
   testWidgets('an unsupported photo full screen says why', (tester) async {
