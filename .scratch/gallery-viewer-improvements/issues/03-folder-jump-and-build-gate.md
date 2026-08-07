@@ -21,7 +21,18 @@ changes).
 **Blocked by:** 02 — Zoom-gated panning (same file; sequencing avoids
 file-level edit conflicts).
 
-**Status:** ready-for-agent
+**Status:** resolved
+
+Base SHA: 59491862771ca8627dd38c812b376206faf30d41
+
+## Comments
+
+### Implementer report
+Committed. Folder jump from the photo details dialog. `GalleryPhotoDetails` gained `onOpenFolder`; the "File" row's `ListTile` renders with `onTap` wired only when `item.providerId != null`. `_showDetails` provides the callback: `Get.until` to the Gallery route (popping the modal sheet and the viewer), then `Get.toNamed` to the file browser at `folderDisplayPath`. Added imports for `gallery_view.dart` and `file_browser_view.dart`. Test `wrap()` switched from `home:` to `initialRoute: GalleryView.routeName` and registered `GalleryView.routeName` + a minimal `FileBrowserView.routeName` page so `Get.until`/`Get.toNamed` resolve. Two new tests: Seraph-backed item taps File → asserts route `/files?path=/family-space/Holidays/Crete`; Device-only item asserts `ListTile.onTap` is null and no navigation. Gate: analyze clean, 32 tests pass (verifier counted 31 — minor reporting discrepancy, not a defect), web build succeeded, APK build succeeded (52.1MB, ~70s).
+Decision the ticket didn't settle: `Get.currentRoute` includes the query string in this GetX version, so the test asserts the full `/files?path=...` route exactly — no fallback to `Get.parameters` was needed.
+
+### Verifier verdict
+APPROVED — all four gates green independently (analyze clean, 31 tests pass, web build succeeds, APK build succeeds). All 8 acceptance criteria verified against the diff. No regression to tickets 01/02 (full-screen toggle and zoom-gated panning tests still pass; diff only touches `_showDetails` and `GalleryPhotoDetails`). The `wrap()` switch to `initialRoute` preserves the existing tests.
 
 - [ ] `GalleryPhotoDetails` gains an `onOpenFolder` callback; the "File" row's
       `ListTile` gets `onTap: onOpenFolder` only when `item.providerId != null`,

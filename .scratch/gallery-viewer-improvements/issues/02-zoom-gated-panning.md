@@ -15,7 +15,18 @@ single shared zoom state (matching the file viewer) is acceptable.
 **Blocked by:** 01 — Full-screen toggle (both rewrite `GalleryPhotoPage`'s
 build tree; sequencing avoids file-level edit conflicts).
 
-**Status:** ready-for-agent
+**Status:** resolved
+
+Base SHA: ffea3e7eab44676e01f8f3839ed7857632d81fb9
+
+## Comments
+
+### Implementer report
+Committed. Zoom-gated panning in the gallery photo viewer, mirroring the file viewer. `_GalleryPhotoViewerViewState` holds a shared `TransformationController` and `_isZoomedIn` `ValueNotifier<bool>`; a listener flips the flag from `getMaxScaleOnAxis() > 1.0`. The `PageView.builder` is wrapped in a `ValueListenableBuilder` selecting `NeverScrollableScrollPhysics` while zoomed and `PageScrollPhysics` otherwise. `GalleryPhotoPage` takes the controller + notifier, binds `transformationController`, keeps `maxScale: 4`, and gates `panEnabled` on the zoom flag via a `ValueListenableBuilder`. `dispose` disposes both. Files: `gallery_photo_viewer.dart`, `gallery_view_test.dart`. `flutter analyze` clean; all 30 tests pass, including the new zoom-gating test (two-pointer pinch in/out, asserting physics + `panEnabled` + fling-no-page while zoomed, fling-pages at 1×).
+Decision the ticket didn't settle: `InteractiveViewer`'s default `minScale` is 0.8, so a pinch-in clamps at 0.8 (still < 1.0, flag flips correctly). Kept the default rather than pinning `minScale: 1.0`, matching the file viewer which also leaves it default.
+
+### Verifier verdict
+APPROVED — all criteria verified with the toolchain running. Listener, physics gating, controller binding, `maxScale: 4`, `panEnabled`, and dispose all correct. No regression to ticket 01's toggle/swipe/details/upload. Test drives a real two-finger scale gesture and asserts physics, `panEnabled`, and fling behaviour in both directions.
 
 - [ ] `_GalleryPhotoViewerViewState` holds a `ValueNotifier<bool>` for zoom
       state and a shared `TransformationController` with a listener that sets

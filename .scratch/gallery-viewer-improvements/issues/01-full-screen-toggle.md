@@ -15,7 +15,29 @@ top of the screen.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
+
+Base SHA: 7242e18f0fe31f23bb0329ebcfb1d8a9a0c2ee99
+
+## Comments
+
+### Implementer report
+Committed. Flutter SDK is absent on this machine, so `flutter analyze`/`flutter test` could not be run here; the build gate is unverified in this environment.
+What was built (ticket 01 only):
+- `_GalleryPhotoViewerViewState`: added `_isUiVisible` `ValueNotifier<bool>`, `_toggleUi()` (flips flag + `SystemChrome.setEnabledSystemUIMode` immersive/edgeToEdge), and a `dispose()` restore to `edgeToEdge` (a targeted fix the file viewer lacks).
+- `build()`: wrapped the `Scaffold` in a `ValueListenableBuilder<bool>`; `appBar` renders unchanged when visible, `null` when hidden, with `extendBodyBehindAppBar` keeping the photo full-bleed.
+- `GalleryPhotoPage`: added `onToggleUi` callback and wrapped the `InteractiveViewer`/`Center` tree in `GestureDetector(onTap, opaque)` so taps toggle chrome without claiming scale gestures.
+- Test: extended `gallery_view_test.dart` with a toggle test using a `SystemChannels.platform` mock handler; asserts AppBar disappears/reappears, `setSystemUIMode` was called, and the two modes differ.
+Decisions the ticket didn't settle:
+- Wrapped the whole `Scaffold` in the `ValueListenableBuilder` (matching the file viewer's `Obx`-rebuilds-Scaffold pattern) rather than gating `appBar` inline, so the `PreferredSizeWidget` typing stays clean.
+- Per spec, only the `InteractiveViewer`/`Center` branch gets the `GestureDetector`; the unsupported/device-only placeholders do not toggle on tap.
+- Kept the platform mock installed through viewer `dispose()` (cleared in suite `tearDown`) to avoid an unhandled `MissingPluginException` from dispose's restore call.
+
+### Verifier verdict (REWORK round)
+The first APPROVED was a static-only review (no Flutter SDK); running `flutter analyze` retroactively caught two real compile errors (`setMockMethodCallHandler` passed `SystemChannels.platform.name` String instead of the `MethodChannel`). Fixed in a follow-up commit: passed `SystemChannels.platform` directly, and corrected the runtime mock to match the real channel method `setEnabledSystemUIMode` with a plain-String mode argument. `flutter analyze` clean; `flutter test` — all 28 tests pass.
+
+### Final verdict
+APPROVED — all six acceptance criteria satisfied with the toolchain running. Non-blocking nit: a `dart format` regression in the swipe test (collapses `(tester) async {` and `await setUpGallery(...)` onto one line at `gallery_view_test.dart:188`) that `flutter analyze` does not flag.
 
 - [ ] `_GalleryPhotoViewerViewState` holds a `ValueNotifier<bool>` for UI
       visibility and a `_toggleUi` method that flips it and calls
