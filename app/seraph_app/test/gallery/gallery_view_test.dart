@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:get/get.dart' hide Response;
 import 'package:seraph_app/src/gallery/gallery_grid_controller.dart';
@@ -77,6 +78,10 @@ void main() {
     // this.
     PaintingBinding.instance.imageCache.clear();
     PaintingBinding.instance.imageCache.clearLiveImages();
+    // Clear any SystemChannels.platform mock a test installed (the
+    // full-screen-toggle test does) so it cannot leak into the next test.
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform.name, null);
   });
 
   Widget wrap() {
@@ -180,8 +185,7 @@ void main() {
   });
 
   testWidgets('the viewer swipes through photos in the grid order',
-      (tester) async {
-    await setUpGallery(itemCount: 6);
+      (tester) async {    await setUpGallery(itemCount: 6);
     await tester.pumpWidget(wrap());
     await tester.pumpAndSettle();
 
@@ -197,6 +201,73 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.widget<PageView>(page).controller!.page!.round(), 1);
+  });
+
+  testWidgets('tapping a photo in the viewer toggles full-screen chrome',
+      (tester) async {
+    await setUpGallery(itemCount: 3);
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(GalleryTile).first);
+    await tester.pumpAndSettle();
+
+    // The viewer opens with the app bar visible.
+    expect(find.byType(AppBar), findsOneWidget);
+    expect(find.byTooltip('Photo details'), findsOneWidget);
+
+    // Intercept the platform channel SystemChrome.setEnabledSystemUIMode
+    // drives so we can assert the system-UI mode is actually flipped, not
+    // just the app bar. The mock captures every setSystemUIMode call.
+    final uiModeCalls = <MethodCall>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform.name,
+      (MethodCall call) async {
+        if (call.method == 'SystemChrome.setSystemUIMode') {
+          uiModeCalls.add(call);
+        }
+        return null;
+      },
+    );
+    // The mock is cleared in the suite tearDown (below) so it stays
+    // installed through the viewer's dispose(), which itself restores
+    // edge-to-edge over the same channel - clearing it here would leave
+    // that restore call unhandled.
+
+    // Tap the photo -> chrome hides and the system enters immersive.
+    await tester.tap(find.byType(GalleryPhotoPage).first);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AppBar), findsNothing,
+        reason: 'a tap on the photo must hide the app bar');
+    expect(uiModeCalls, isNotEmpty,
+        reason: 'hiding chrome must call SystemChrome.setEnabledSystemUIMode');
+    final hideMode = uiModeCalls.last.arguments is Map
+        ? (uiModeCalls.last.arguments as Map)['mode']
+        : uiModeCalls.last.arguments;
+    // The channel carries the mode as SystemUiMode.immersive's name when
+    // encoded as a string; assert that when it is a string, and otherwise
+    // just that a value was sent.
+    expect(hideMode, isNotNull);
+    if (hideMode is String) {
+      expect(hideMode, contains('immersive'));
+    }
+
+    // Tap again -> chrome returns and the system goes back to edge-to-edge.
+    await tester.tap(find.byType(GalleryPhotoPage).first);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AppBar), findsOneWidget,
+        reason: 'a second tap must bring the app bar back');
+    expect(uiModeCalls.length, greaterThan(1));
+    final showMode = uiModeCalls.last.arguments is Map
+        ? (uiModeCalls.last.arguments as Map)['mode']
+        : uiModeCalls.last.arguments;
+    expect(showMode, isNot(equals(hideMode)),
+        reason: 'the second tap must flip the system-UI mode');
+    if (showMode is String) {
+      expect(showMode, contains('edgeToEdge'));
+    }
   });
 
   testWidgets("a photo's details name the Seraph folder it lives in",

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:seraph_app/src/gallery/gallery_grid_controller.dart';
 import 'package:seraph_app/src/gallery/gallery_image_loader.dart';
@@ -50,6 +51,11 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
   /// tap on the button (or on another photo mid-upload) is not offered.
   final ValueNotifier<bool> _uploading = ValueNotifier<bool>(false);
 
+  /// Whether the viewer's chrome (app bar + system status/navigation bars)
+  /// is visible. A tap on the photo flips this and the system-UI mode
+  /// together, mirroring `FileViewerController.toggleUiVisible`.
+  final ValueNotifier<bool> _isUiVisible = ValueNotifier<bool>(true);
+
   @override
   void initState() {
     super.initState();
@@ -60,10 +66,24 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
 
   @override
   void dispose() {
+    // Always restore the system UI so leaving the viewer never strands the
+    // rest of the app in immersive mode (a targeted fix the file viewer is
+    // missing; see the spec's "Out of Scope" note).
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     _pageController.dispose();
     _currentIndex.dispose();
     _uploading.dispose();
+    _isUiVisible.dispose();
     super.dispose();
+  }
+
+  /// Toggling the chrome flips the visibility flag and the system-UI mode
+  /// in lockstep: hiding enters immersive, showing returns to edge-to-edge.
+  Future<void> _toggleUi() async {
+    _isUiVisible.value = !_isUiVisible.value;
+    await SystemChrome.setEnabledSystemUIMode(
+      _isUiVisible.value ? SystemUiMode.edgeToEdge : SystemUiMode.immersive,
+    );
   }
 
   void _showDetails(GalleryItem item) {
@@ -129,96 +149,105 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        foregroundColor: Colors.white,
-        title: ValueListenableBuilder<int>(
-          valueListenable: _currentIndex,
-          builder: (context, index, _) => Obx(() {
-            controller.revision.value;
-            final date = controller.knownDateAt(index);
-            return Text(
-              date == null ? '' : galleryDayLabel(date),
-              style: const TextStyle(fontSize: 16),
-            );
-          }),
-        ),
-        actions: [
-          if (uploadService != null)
-            ValueListenableBuilder<int>(
-              valueListenable: _currentIndex,
-              builder: (context, index, _) => Obx(() {
-                controller.revision.value;
-                final item = controller.itemAt(index);
-                if (item == null ||
-                    item.availability != GalleryAvailability.deviceOnly ||
-                    item.isAwaitingVerification) {
-                  // Ticket 20: an item already uploaded and awaiting the
-                  // delta feed's confirmation must not offer the button
-                  // again - it is still Device only (not yet Verified), but
-                  // there is nothing more for a press to do until the feed
-                  // answers.
-                  return const SizedBox.shrink();
-                }
-                return ValueListenableBuilder<bool>(
-                  valueListenable: _uploading,
-                  builder: (context, uploading, _) => IconButton(
-                    icon: uploading
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(Icons.cloud_upload_outlined),
-                    tooltip: 'Upload to Seraph',
-                    onPressed: uploading ? null : () => _upload(item),
+    return ValueListenableBuilder<bool>(
+      valueListenable: _isUiVisible,
+      builder: (context, uiVisible, _) => Scaffold(
+        backgroundColor: Colors.black,
+        extendBodyBehindAppBar: true,
+        appBar: uiVisible
+            ? AppBar(
+                backgroundColor: Colors.transparent,
+                foregroundColor: Colors.white,
+                title: ValueListenableBuilder<int>(
+                  valueListenable: _currentIndex,
+                  builder: (context, index, _) => Obx(() {
+                    controller.revision.value;
+                    final date = controller.knownDateAt(index);
+                    return Text(
+                      date == null ? '' : galleryDayLabel(date),
+                      style: const TextStyle(fontSize: 16),
+                    );
+                  }),
+                ),
+                actions: [
+                  if (uploadService != null)
+                    ValueListenableBuilder<int>(
+                      valueListenable: _currentIndex,
+                      builder: (context, index, _) => Obx(() {
+                        controller.revision.value;
+                        final item = controller.itemAt(index);
+                        if (item == null ||
+                            item.availability != GalleryAvailability.deviceOnly ||
+                            item.isAwaitingVerification) {
+                          // Ticket 20: an item already uploaded and awaiting the
+                          // delta feed's confirmation must not offer the button
+                          // again - it is still Device only (not yet Verified), but
+                          // there is nothing more for a press to do until the feed
+                          // answers.
+                          return const SizedBox.shrink();
+                        }
+                        return ValueListenableBuilder<bool>(
+                          valueListenable: _uploading,
+                          builder: (context, uploading, _) => IconButton(
+                            icon: uploading
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.cloud_upload_outlined),
+                            tooltip: 'Upload to Seraph',
+                            onPressed: uploading ? null : () => _upload(item),
+                          ),
+                        );
+                      }),
+                    ),
+                  ValueListenableBuilder<int>(
+                    valueListenable: _currentIndex,
+                    builder: (context, index, _) => Obx(() {
+                      controller.revision.value;
+                      final item = controller.itemAt(index);
+                      return IconButton(
+                        icon: const Icon(Icons.info_outline),
+                        tooltip: 'Photo details',
+                        onPressed: item == null ? null : () => _showDetails(item),
+                      );
+                    }),
                   ),
-                );
-              }),
-            ),
-          ValueListenableBuilder<int>(
-            valueListenable: _currentIndex,
-            builder: (context, index, _) => Obx(() {
-              controller.revision.value;
+                ],
+              )
+            : null,
+        body: Obx(() {
+          controller.revision.value;
+          final total = controller.totalCount.value;
+          if (total == 0) {
+            return const SizedBox.shrink();
+          }
+          return PageView.builder(
+            controller: _pageController,
+            itemCount: total,
+            onPageChanged: (index) {
+              _currentIndex.value = index;
+              controller.ensureRangeLoaded(index - 1, index + 1);
+            },
+            itemBuilder: (context, index) {
               final item = controller.itemAt(index);
-              return IconButton(
-                icon: const Icon(Icons.info_outline),
-                tooltip: 'Photo details',
-                onPressed: item == null ? null : () => _showDetails(item),
+              if (item == null) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              return GalleryPhotoPage(
+                item: item,
+                loader: loader,
+                localLoader: localLoader,
+                onToggleUi: _toggleUi,
               );
-            }),
-          ),
-        ],
+            },
+          );
+        }),
       ),
-      body: Obx(() {
-        controller.revision.value;
-        final total = controller.totalCount.value;
-        if (total == 0) {
-          return const SizedBox.shrink();
-        }
-        return PageView.builder(
-          controller: _pageController,
-          itemCount: total,
-          onPageChanged: (index) {
-            _currentIndex.value = index;
-            controller.ensureRangeLoaded(index - 1, index + 1);
-          },
-          itemBuilder: (context, index) {
-            final item = controller.itemAt(index);
-            if (item == null) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            return GalleryPhotoPage(
-                item: item, loader: loader, localLoader: localLoader);
-          },
-        );
-      }),
     );
   }
 }
@@ -232,6 +261,7 @@ class GalleryPhotoPage extends StatelessWidget {
     required this.item,
     required this.loader,
     required this.localLoader,
+    required this.onToggleUi,
   });
 
   final GalleryItem item;
@@ -240,6 +270,11 @@ class GalleryPhotoPage extends StatelessWidget {
   /// Ticket 28: loads the device copy's full-resolution bytes through the
   /// Local Source seam. Always given - see [GalleryTile.localLoader]'s doc.
   final LocalImageLoader localLoader;
+
+  /// Tapping the photo toggles the viewer's full-screen chrome. The tap is
+  /// opaque but does not claim scale gestures, so pinch-to-zoom still
+  /// reaches the [InteractiveViewer] underneath.
+  final VoidCallback onToggleUi;
 
   @override
   Widget build(BuildContext context) {
@@ -262,20 +297,24 @@ class GalleryPhotoPage extends StatelessWidget {
     // regardless of source, so a Synced item whose device copy fails to
     // decode can fall back to the cloud version's own image stack without
     // nesting a second InteractiveViewer inside this one.
-    return InteractiveViewer(
-      maxScale: 4,
-      child: Center(
-        child: hasLocal
-            ? _LocalPhotoStack(
-                item: item,
-                localLoader: localLoader,
-                fallback: hasCloud
-                    ? _CloudPhotoStack(
-                        loader: loader, providerId: providerId, path: path)
-                    : _DeviceOnlyPhoto(item: item),
-              )
-            : _CloudPhotoStack(
-                loader: loader, providerId: providerId!, path: path!),
+    return GestureDetector(
+      onTap: onToggleUi,
+      behavior: HitTestBehavior.opaque,
+      child: InteractiveViewer(
+        maxScale: 4,
+        child: Center(
+          child: hasLocal
+              ? _LocalPhotoStack(
+                  item: item,
+                  localLoader: localLoader,
+                  fallback: hasCloud
+                      ? _CloudPhotoStack(
+                          loader: loader, providerId: providerId, path: path)
+                      : _DeviceOnlyPhoto(item: item),
+                )
+              : _CloudPhotoStack(
+                  loader: loader, providerId: providerId!, path: path!),
+        ),
       ),
     );
   }
