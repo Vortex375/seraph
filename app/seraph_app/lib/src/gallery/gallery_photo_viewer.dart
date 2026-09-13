@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
+import 'package:seraph_app/src/file_browser/file_browser_controller.dart';
 import 'package:seraph_app/src/file_browser/file_browser_view.dart';
+import 'package:seraph_app/src/file_viewer/file_viewer_view.dart';
 import 'package:seraph_app/src/gallery/gallery_grid_controller.dart';
 import 'package:seraph_app/src/gallery/gallery_image_loader.dart';
 import 'package:seraph_app/src/gallery/gallery_item_display.dart';
@@ -19,7 +21,6 @@ import 'package:seraph_app/src/gallery/mirror/gallery_upload_service.dart';
 /// swiping moves through photos in exactly the order the grid showed them,
 /// including through pages neither view has read yet.
 class GalleryPhotoViewerView extends StatefulWidget {
-
   static const routeName = '/gallery/photo';
 
   const GalleryPhotoViewerView({super.key, this.initialIndex = 0});
@@ -79,10 +80,10 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
     _currentIndex = ValueNotifier<int>(widget.initialIndex);
     _transformController = TransformationController();
     _transformController.addListener(() {
-      _isZoomedIn.value =
-          _transformController.value.getMaxScaleOnAxis() > 1.0;
+      _isZoomedIn.value = _transformController.value.getMaxScaleOnAxis() > 1.0;
     });
-    controller.ensureRangeLoaded(widget.initialIndex - 1, widget.initialIndex + 1);
+    controller.ensureRangeLoaded(
+        widget.initialIndex - 1, widget.initialIndex + 1);
   }
 
   @override
@@ -115,15 +116,30 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
       showDragHandle: true,
       builder: (context) => GalleryPhotoDetails(
         item: item,
+        // Pop back to the Gallery: this dismisses the details modal sheet
+        // AND the photo viewer, stopping at the Gallery route. Then push
+        // the file browser at the folder the photo lives in on top of it,
+        // giving the stack [FileBrowser(root), Gallery, FileBrowser(folder)]
+        // - back from the folder returns to the Gallery, not the viewer.
         onOpenFolder: () {
-          // Pop back to the Gallery: this dismisses the details modal sheet
-          // AND the photo viewer, stopping at the Gallery route. Then push
-          // the file browser at the folder the photo lives in on top of it,
-          // giving the stack [FileBrowser(root), Gallery, FileBrowser(folder)]
-          // - back from the folder returns to the Gallery, not the viewer.
           Get.until((route) => route.settings.name == GalleryView.routeName);
           Get.toNamed(
               '${FileBrowserView.routeName}?path=${item.folderDisplayPath}');
+        },
+        // Same pop back to the Gallery, then the file browser at the photo's
+        // folder, then the file browser's own viewer on the photo itself:
+        // [FileBrowser(root), Gallery, FileBrowser(folder), FileViewer(file)]
+        // - back from the viewer returns to the folder, then the Gallery.
+        onOpenFile: () {
+          Get.until((route) => route.settings.name == GalleryView.routeName);
+          // The viewer would otherwise inherit the index of a file the user
+          // opened from the browser earlier and show that listing's file
+          // instead of this one; a direct open has no listing beside it.
+          Get.find<FileBrowserController>().resetOpenItem();
+          Get.toNamed(
+              '${FileBrowserView.routeName}?path=${item.folderDisplayPath}');
+          Get.toNamed(
+              '${FileViewerView.routeName}?path=${item.spaceDisplayPath}');
         },
       ),
     );
@@ -161,7 +177,8 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
         case GalleryUploadResult.deviceFileUnavailable:
           _showSnackBar('This photo is no longer available on this device.');
         case GalleryUploadResult.deviceFileChanged:
-          _showSnackBar('This photo changed on this device and was not uploaded.');
+          _showSnackBar(
+              'This photo changed on this device and was not uploaded.');
         case GalleryUploadResult.notApplicable:
           break;
       }
@@ -197,9 +214,25 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
                   valueListenable: _currentIndex,
                   builder: (context, index, _) => Obx(() {
                     controller.revision.value;
-                    final date = controller.knownDateAt(index);
+                    // The header is a day-granularity label, so it must come
+                    // from the item's own capture date - the boundary map
+                    // [knownDateAt] answers only month granularity (day is
+                    // always the 1st), and rendering it through
+                    // [galleryDayLabel] showed e.g. "1 August 2026" for
+                    // every photo taken that month. Until the item's page
+                    // has loaded, fall back to the month label, which the
+                    // boundary map can answer synchronously and which is
+                    // never wrong (a photo on the 25th is still in August).
+                    final item = controller.itemAt(index);
+                    final exact = item?.capturedAtDateTime;
+                    final month = controller.knownDateAt(index);
+                    final label = exact != null
+                        ? galleryDayLabel(exact)
+                        : month == null
+                            ? ''
+                            : galleryMonthLabel(month);
                     return Text(
-                      date == null ? '' : galleryDayLabel(date),
+                      label,
                       style: const TextStyle(fontSize: 16),
                     );
                   }),
@@ -212,7 +245,8 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
                         controller.revision.value;
                         final item = controller.itemAt(index);
                         if (item == null ||
-                            item.availability != GalleryAvailability.deviceOnly ||
+                            item.availability !=
+                                GalleryAvailability.deviceOnly ||
                             item.isAwaitingVerification) {
                           // Ticket 20: an item already uploaded and awaiting the
                           // delta feed's confirmation must not offer the button
@@ -248,7 +282,8 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
                       return IconButton(
                         icon: const Icon(Icons.info_outline),
                         tooltip: 'Photo details',
-                        onPressed: item == null ? null : () => _showDetails(item),
+                        onPressed:
+                            item == null ? null : () => _showDetails(item),
                       );
                     }),
                   ),
@@ -416,8 +451,7 @@ class _CloudPhotoStack extends StatelessWidget {
             size: galleryThumbnailSize,
           ),
           fit: BoxFit.contain,
-          errorBuilder: (context, error, stackTrace) =>
-              const SizedBox.shrink(),
+          errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
         ),
         Image(
           image: GalleryImage(
@@ -427,8 +461,7 @@ class _CloudPhotoStack extends StatelessWidget {
           ),
           fit: BoxFit.contain,
           gaplessPlayback: true,
-          errorBuilder: (context, error, stackTrace) =>
-              const SizedBox.shrink(),
+          errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
           frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
             if (wasSynchronouslyLoaded) {
               return child;
@@ -479,8 +512,7 @@ class _LocalPhotoStack extends StatelessWidget {
             height: galleryThumbnailSize,
           ),
           fit: BoxFit.contain,
-          errorBuilder: (context, error, stackTrace) =>
-              const SizedBox.shrink(),
+          errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
         ),
         Image(
           image: LocalGalleryImage(
@@ -584,16 +616,22 @@ class GalleryPhotoDetails extends StatelessWidget {
     super.key,
     required this.item,
     this.onOpenFolder,
+    this.onOpenFile,
   });
 
   final GalleryItem item;
 
   /// Opens the file browser at [item.folderDisplayPath]. Only wired up for
   /// items that have a real Seraph folder ([item.providerId] non-null); a
-  /// Device-only item has no folder to open, so its "File" row stays a plain,
-  /// non-interactive label - mirroring the "Seraph folder" row, which is
-  /// already omitted for Device-only items for the same reason.
+  /// Device-only item has no folder to open, so its "Seraph folder" row is
+  /// omitted outright and its "File" row stays a plain, non-interactive
+  /// label - there is no Seraph copy for either to land on.
   final VoidCallback? onOpenFolder;
+
+  /// Opens the file browser's own file viewer on this item's file (at
+  /// [GalleryItem.spaceDisplayPath]). Same [item.providerId] gating as
+  /// [onOpenFolder]. A Device-only item has no Seraph copy to show.
+  final VoidCallback? onOpenFile;
 
   @override
   Widget build(BuildContext context) {
@@ -602,7 +640,8 @@ class GalleryPhotoDetails extends StatelessWidget {
       // would be a folder that does not exist.
       if (item.providerId != null)
         _DetailRow(
-            Icons.folder_outlined, 'Seraph folder', item.folderDisplayPath),
+            Icons.folder_outlined, 'Seraph folder', item.folderDisplayPath,
+            onTap: onOpenFolder),
       _DetailRow(
         Icons.event_outlined,
         item.captureDateSourceLabel,
@@ -612,8 +651,7 @@ class GalleryPhotoDetails extends StatelessWidget {
         _DetailRow(Icons.aspect_ratio_outlined, 'Dimensions',
             '${item.displayWidth} x ${item.displayHeight}'),
       if (item.size > 0)
-        _DetailRow(Icons.sd_storage_outlined, 'Size',
-            _formatBytes(item.size)),
+        _DetailRow(Icons.sd_storage_outlined, 'Size', _formatBytes(item.size)),
       if (item.mime.isNotEmpty)
         _DetailRow(Icons.description_outlined, 'Type', item.mime),
       _DetailRow(Icons.info_outline, 'Availability', item.availabilityLabel),
@@ -627,15 +665,17 @@ class GalleryPhotoDetails extends StatelessWidget {
             leading: const Icon(Icons.image_outlined),
             title: const Text('File'),
             subtitle: Text(item.fileName),
-            // Only a Seraph-backed item has a folder to open; a Device-only
-            // item's "File" row is a plain, non-interactive label.
-            onTap: item.providerId != null ? onOpenFolder : null,
+            // Only a Seraph-backed item has a file to open in the file
+            // browser; a Device-only item's "File" row is a plain,
+            // non-interactive label.
+            onTap: item.providerId != null ? onOpenFile : null,
           ),
           for (final row in rows)
             ListTile(
               leading: Icon(row.icon),
               title: Text(row.label),
               subtitle: Text(row.value),
+              onTap: row.onTap,
             ),
         ],
       ),
@@ -644,11 +684,12 @@ class GalleryPhotoDetails extends StatelessWidget {
 }
 
 class _DetailRow {
-  const _DetailRow(this.icon, this.label, this.value);
+  const _DetailRow(this.icon, this.label, this.value, {this.onTap});
 
   final IconData icon;
   final String label;
   final String value;
+  final VoidCallback? onTap;
 }
 
 String _formatBytes(int bytes) {
@@ -659,6 +700,7 @@ String _formatBytes(int bytes) {
     value /= 1024;
     unit++;
   }
-  final rendered = unit == 0 ? value.toStringAsFixed(0) : value.toStringAsFixed(1);
+  final rendered =
+      unit == 0 ? value.toStringAsFixed(0) : value.toStringAsFixed(1);
   return '$rendered ${units[unit]}';
 }

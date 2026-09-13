@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:get/get.dart' hide Response;
+import 'package:seraph_app/src/file_browser/file_browser_controller.dart';
 import 'package:seraph_app/src/file_browser/file_browser_view.dart';
+import 'package:seraph_app/src/file_viewer/file_viewer_view.dart';
 import 'package:seraph_app/src/gallery/gallery_grid_controller.dart';
 import 'package:seraph_app/src/gallery/gallery_image_loader.dart';
 import 'package:seraph_app/src/gallery/gallery_item_display.dart';
@@ -32,7 +34,8 @@ void main() {
   late GalleryMirror mirror;
   late GalleryGridController controller;
 
-  Future<void> setUpGallery({int itemCount = 0, FakeLocalSource? localSource}) async {
+  Future<void> setUpGallery(
+      {int itemCount = 0, FakeLocalSource? localSource}) async {
     Get.testMode = true;
     Get.reset();
 
@@ -50,6 +53,9 @@ void main() {
     Get.put<ShareController>(FakeShareController());
     Get.put<SettingsController>(FakeSettingsController());
     Get.put<LoginController>(FakeLoginController());
+    // The real app puts the file browser controller in initial_binding.dart;
+    // the file-row test's direct viewer open resets its open-item cursor.
+    Get.put(FileBrowserController());
     Get.put(GalleryImageLoader(
       Get.find<SettingsController>(),
       Get.find<LoginController>(),
@@ -111,6 +117,12 @@ void main() {
           name: FileBrowserView.routeName,
           page: () => const Scaffold(body: SizedBox.shrink()),
         ),
+        // The file-row test asserts the route too, so the file viewer gets the
+        // same minimal stand-in.
+        GetPage(
+          name: FileViewerView.routeName,
+          page: () => const Scaffold(body: SizedBox.shrink()),
+        ),
       ],
     );
   }
@@ -128,7 +140,8 @@ void main() {
     await tester.pumpWidget(wrap());
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('No photos in your gallery yet'), findsOneWidget);
+    expect(
+        find.textContaining('No photos in your gallery yet'), findsOneWidget);
     expect(find.text('Choose folders'), findsOneWidget);
   });
 
@@ -142,7 +155,8 @@ void main() {
     // some tiles rendered and that the first one is the newest item.
     expect(find.byType(GalleryTile), findsWidgets);
 
-    final firstTile = tester.widgetList<GalleryTile>(find.byType(GalleryTile)).first;
+    final firstTile =
+        tester.widgetList<GalleryTile>(find.byType(GalleryTile)).first;
     expect(firstTile.item!.path, controller.itemAt(0)!.path);
   });
 
@@ -153,8 +167,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final newest = controller.knownDateAt(0)!;
-    final expected =
-        '${_monthName(newest.month)} ${newest.year}';
+    final expected = '${_monthName(newest.month)} ${newest.year}';
     expect(find.text(expected), findsOneWidget);
   });
 
@@ -202,7 +215,8 @@ void main() {
   });
 
   testWidgets('the viewer swipes through photos in the grid order',
-      (tester) async {    await setUpGallery(itemCount: 6);
+      (tester) async {
+    await setUpGallery(itemCount: 6);
     await tester.pumpWidget(wrap());
     await tester.pumpAndSettle();
 
@@ -237,8 +251,7 @@ void main() {
         );
 
     // At 1×: the page swipes, the photo does not pan.
-    expect(tester.widget<PageView>(page).physics,
-        isA<PageScrollPhysics>(),
+    expect(tester.widget<PageView>(page).physics, isA<PageScrollPhysics>(),
         reason: 'at 1× the PageView must reclaim the swipe');
     expect(viewer().panEnabled, isFalse,
         reason: 'at 1× the photo must not pan, so a drag always pages');
@@ -299,8 +312,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Back at 1×: the swipe returns and panning is disabled.
-    expect(tester.widget<PageView>(page).physics,
-        isA<PageScrollPhysics>(),
+    expect(tester.widget<PageView>(page).physics, isA<PageScrollPhysics>(),
         reason: 'back at 1× the PageView must reclaim the swipe');
     expect(viewer().panEnabled, isFalse,
         reason: 'back at 1× the photo must not pan');
@@ -391,7 +403,7 @@ void main() {
     expect(find.text('/family-space/Holidays/Crete'), findsOneWidget);
   });
 
-  testWidgets('tapping the File row in details opens the Seraph folder',
+  testWidgets('tapping the File row in details opens the file viewer on it',
       (tester) async {
     await setUpGallery();
     await insertMirrorItem(db,
@@ -415,11 +427,40 @@ void main() {
     await tester.tap(fileRow);
     await tester.pumpAndSettle();
 
-    expect(
-        Get.currentRoute,
+    expect(Get.currentRoute,
+        '${FileViewerView.routeName}?path=${item.spaceDisplayPath}',
+        reason: 'tapping the File row must land in the file browser and open '
+            "its viewer on the photo itself, with the Gallery left underneath");
+  });
+
+  testWidgets('tapping the Seraph folder row in details opens the folder',
+      (tester) async {
+    await setUpGallery();
+    await insertMirrorItem(db,
+        providerId: 'family-space',
+        path: '/Holidays/Crete/beach.jpg',
+        capturedAt: 1770000000);
+    await controller.reload();
+
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(GalleryTile).first);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Photo details'));
+    await tester.pumpAndSettle();
+
+    final item = controller.itemAt(0)!;
+    final folderRow = find.ancestor(
+        of: find.text('Seraph folder'), matching: find.byType(ListTile));
+    await tester.tap(folderRow);
+    await tester.pumpAndSettle();
+
+    expect(Get.currentRoute,
         '${FileBrowserView.routeName}?path=${item.folderDisplayPath}',
-        reason: 'tapping the File row must jump to the file browser at the '
-            "photo's Seraph folder, with the Gallery left underneath");
+        reason: 'tapping the Seraph folder row must jump to the file browser '
+            "at the photo's folder, with the Gallery left underneath");
   });
 
   testWidgets("a Device-only photo's File row is not tappable", (tester) async {
@@ -442,8 +483,8 @@ void main() {
     final fileRow =
         find.ancestor(of: find.text('File'), matching: find.byType(ListTile));
     expect(tester.widget<ListTile>(fileRow).onTap, isNull,
-        reason: 'a Device-only item has no Seraph folder, so the File row '
-            'must be a plain, non-interactive label');
+        reason: 'a Device-only item has no Seraph copy to show in the file '
+            "browser, so the File row must be a plain, non-interactive label");
 
     final routeBefore = Get.currentRoute;
     await tester.tap(fileRow);
@@ -515,8 +556,8 @@ void main() {
       await tester.pumpWidget(wrap());
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('gallery-partial-access-banner')),
-          findsNothing);
+      expect(
+          find.byKey(const Key('gallery-partial-access-banner')), findsNothing);
       expect(find.textContaining('Limited photo access'), findsNothing);
       expect(find.textContaining('everything is backed up'), findsNothing);
     });
@@ -527,12 +568,13 @@ void main() {
       await tester.pumpWidget(wrap());
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('gallery-partial-access-banner')),
-          findsNothing);
+      expect(
+          find.byKey(const Key('gallery-partial-access-banner')), findsNothing);
       expect(find.textContaining('Allow access'), findsNothing);
     });
 
-    testWidgets('a partial grant shows a persistent warning that cannot be '
+    testWidgets(
+        'a partial grant shows a persistent warning that cannot be '
         'dismissed', (tester) async {
       await setUpGallery(
         itemCount: 2,
@@ -545,8 +587,7 @@ void main() {
       expect(banner, findsOneWidget);
       expect(find.textContaining("don't include the"), findsOneWidget);
       // No close/dismiss affordance on the warning itself.
-      expect(
-          find.descendant(of: banner, matching: find.text('Not now')),
+      expect(find.descendant(of: banner, matching: find.text('Not now')),
           findsNothing);
     });
 
@@ -595,8 +636,8 @@ void main() {
 
       // The explanation is on screen before the request button is ever
       // pressed - ticket 16's "preceded by an explanation" criterion.
-      expect(find.textContaining('back up photos on this device'),
-          findsOneWidget);
+      expect(
+          find.textContaining('back up photos on this device'), findsOneWidget);
       final requestButton = find.text('Allow access');
       expect(requestButton, findsOneWidget);
 
@@ -641,7 +682,8 @@ void main() {
       await tester.pumpWidget(wrap());
       await tester.pumpAndSettle();
 
-      expect(controller.itemAt(0)!.availability, GalleryAvailability.deviceOnly);
+      expect(
+          controller.itemAt(0)!.availability, GalleryAvailability.deviceOnly);
       final images = tester.widgetList<Image>(find.byType(Image));
       expect(images.any((img) => img.image is LocalGalleryImage), isTrue,
           reason: 'the tile must ask the Local Source seam for pixels');
@@ -760,7 +802,8 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('a Cloud only photo renders exactly as before this ticket - '
+    testWidgets(
+        'a Cloud only photo renders exactly as before this ticket - '
         'no Local Source call is ever made for it', (tester) async {
       final source = FakeLocalSource();
       await setUpGallery(itemCount: 3, localSource: source);
