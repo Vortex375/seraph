@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:seraph_app/src/gallery/gallery_tile.dart' show galleryThumbnailSize;
 import 'package:seraph_app/src/login/login_controller.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
 import 'package:seraph_app/src/share/share_controller.dart';
@@ -169,8 +170,13 @@ class FileService {
   }
 
   Image getPreviewImage(String path, int w, int h) {
+    // [w]/[h] size the rendered widget only. The server is always asked for
+    // galleryThumbnailSize, the one size the thumbnailer pre-warms (see
+    // gallery_tile.dart) - anything else would miss the warmed thumbnail and
+    // make the thumbnailer decode the full source image again. BoxFit.cover
+    // scales the (aspect-preserving) warmed thumb to the widget box.
     final headers = getRequestHeadersSync();
-    return Image.network(getPreviewUrl(path, w, h),
+    return Image.network(getPreviewUrl(path, galleryThumbnailSize, galleryThumbnailSize),
       headers: headers,
       fit: BoxFit.cover,
       width: w.toDouble(),
