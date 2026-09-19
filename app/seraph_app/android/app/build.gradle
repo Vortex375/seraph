@@ -1,5 +1,9 @@
 plugins {
     id "com.android.application"
+    // `kotlin-android` cannot be dropped yet: built-in Kotlin is an
+    // all-or-nothing switch and is blocked upstream (see the
+    // android.builtInKotlin note in gradle.properties). With the flag false,
+    // removing this leaves MainActivity.kt with no Kotlin compiler.
     id "kotlin-android"
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id "dev.flutter.flutter-gradle-plugin"

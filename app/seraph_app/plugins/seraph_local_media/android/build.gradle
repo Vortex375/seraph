@@ -33,6 +33,11 @@ rootProject.allprojects {
 }
 
 apply plugin: 'com.android.library'
+// This plugin is migration-ready apart from this line: its kotlinOptions block
+// is already the `kotlin { compilerOptions }` form built-in Kotlin wants. The
+// line stays only because android.builtInKotlin cannot be enabled while other
+// plugins still apply KGP - see the note in android/gradle.properties. When
+// that unblocks, delete this line and the KGP classpath above.
 apply plugin: 'kotlin-android'
 
 android {
