@@ -176,3 +176,126 @@ class _HdrPhotoViewState extends State<HdrPhotoView> {
     );
   }
 }
+
+/// One full-screen photo page for a pager, rendered through [HdrPhotoView]
+/// on the native path - shared by the gallery photo viewer and the file
+/// viewer (which fetches over WebDAV instead of the gallery loader; the
+/// bytes and this page are identical either way).
+///
+/// Contract with its host: the host owns a pager whose scroll physics gate
+/// on [onZoomChanged] reports exactly like both viewers' `isZoomedIn`
+/// shape, owns the chrome tap while unzoomed, and supplies a
+/// [Uint8List]-producing [fetch]; the [thumbnail] image (already in
+/// Flutter's image cache from the grid or the previous viewing) holds the
+/// frame until the bytes land - never a blank page. There is deliberately
+/// no Hero support: a platform view cannot serve as a Hero child
+/// mid-flight, and the file viewer is dropping its Hero (approved).
+class HdrPhotoPage extends StatefulWidget {
+  const HdrPhotoPage({
+    super.key,
+    required this.fetch,
+    required this.thumbnail,
+    required this.onToggleUi,
+    required this.onZoomChanged,
+    required this.onResetZoom,
+  });
+
+  /// Produces the photo's full-resolution bytes. A throw is a failure; a
+  /// null or empty result is one too - both land in the failure state.
+  final Future<Uint8List?> Function() fetch;
+
+  /// The photo's already-loaded thumbnail - the same provider the grid
+  /// (or the previous viewing) warmed, so it serves from Flutter's image
+  /// cache and never re-fetches. Shown until the bytes arrive and the
+  /// native view replaces it - no cross-fade.
+  final Widget thumbnail;
+
+  /// Tapping the photo toggles the host's full-screen chrome. See
+  /// [HdrPhotoView]'s class doc for how the tap reaches here.
+  final VoidCallback onToggleUi;
+
+  /// Receives the native view's zoom entered/exited reports, to gate the
+  /// host pager's scroll physics.
+  final ValueChanged<bool> onZoomChanged;
+
+  /// Clears the host's shared zoom state when the native view dies (decode
+  /// error), so the pager is never stranded on `NeverScrollableScrollPhysics`.
+  final VoidCallback onResetZoom;
+
+  @override
+  State<HdrPhotoPage> createState() => _HdrPhotoPageState();
+}
+
+class _HdrPhotoPageState extends State<HdrPhotoPage> {
+  /// The full-resolution bytes, once fetched. Null until then; a fetch that
+  /// ended in failure lands in [_failed] instead.
+  Uint8List? _bytes;
+
+  /// The fetch failed (network, 404, an exhausted refresh-retry) or the
+  /// native view could not decode what arrived: fall back to the existing
+  /// Flutter error state.
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    Uint8List? bytes;
+    try {
+      bytes = await widget.fetch();
+    } catch (_) {
+      // Any failure - offline, 404, an expired token the retry could not
+      // save - is the existing error state, not a crash.
+      bytes = null;
+    }
+    if (!mounted) {
+      return;
+    }
+    if (bytes == null || bytes.isEmpty) {
+      setState(() => _failed = true);
+      return;
+    }
+    setState(() => _bytes = bytes);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bytes = _bytes;
+    return SizedBox.expand(
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // The already-loaded thumbnail holds the frame while the bytes
+          // download - the page is never blank.
+          widget.thumbnail,
+          if (bytes != null)
+            Positioned.fill(
+              child: HdrPhotoView(
+                bytes: bytes,
+                onTap: widget.onToggleUi,
+                onZoomChanged: widget.onZoomChanged,
+                onError: () => setState(() {
+                  // The native view is gone: forget its bytes (they are
+                  // undecodable natively) and fall back to the existing
+                  // error state.
+                  _bytes = null;
+                  _failed = true;
+                  // The native zoom state died with the view; the pager
+                  // must be swiping again for whatever shows next.
+                  widget.onResetZoom();
+                }),
+              ),
+            )
+          else if (_failed)
+            // The failure state: the thumbnail above keeps showing - the
+            // existing "error leaves the thumbnail" behaviour, never a
+            // blank page.
+            const SizedBox.shrink(),
+        ],
+      ),
+    );
+  }
+}

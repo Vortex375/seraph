@@ -395,66 +395,6 @@ class GalleryPhotoPage extends StatefulWidget {
 }
 
 class _GalleryPhotoPageState extends State<GalleryPhotoPage> {
-  /// The full-resolution bytes, once fetched. Null until then; a fetch that
-  /// ended in failure lands in [_failed] instead.
-  Uint8List? _bytes;
-
-  /// The fetch failed (network, 404, an exhausted refresh-retry) or the
-  /// native view could not decode what arrived: fall back to the existing
-  /// Flutter error state.
-  bool _failed = false;
-
-  @override
-  void initState() {
-    super.initState();
-    // Fetch only for photos the native path can actually render; the
-    // placeholder states below are returned before this branch is reached.
-    if (hdrPhotoNativeAvailable &&
-        !widget.item.isUnsupported &&
-        (widget.item.providerId != null || widget.item.hasLocalCopy)) {
-      _load();
-    }
-  }
-
-  /// Device copy first, cloud stack as the fallback - the same preference
-  /// order the Flutter rendering below uses, with the Local Source's
-  /// quiet-null-on-failure contract and the cloud loader's
-  /// [GalleryImageUnavailable] flattened into one null = failed outcome.
-  Future<void> _load() async {
-    Uint8List? bytes;
-    try {
-      if (widget.item.hasLocalCopy) {
-        bytes = await widget.localLoader.original(
-          widget.item.localRelativePath!,
-          widget.item.localDisplayName!,
-        );
-      }
-      if (bytes == null || bytes.isEmpty) {
-        final providerId = widget.item.providerId;
-        final path = widget.item.path;
-        bytes = (providerId == null || path == null)
-            ? null
-            : await widget.loader.fullResolution(providerId, path);
-      }
-    } catch (_) {
-      // Any failure - offline, 404, an expired token the retry could not
-      // save - is the existing error state, not a crash.
-      bytes = null;
-    }
-    if (!mounted) {
-      return;
-    }
-    if (bytes == null || bytes.isEmpty) {
-      setState(() => _failed = true);
-      return;
-    }
-    // The native view owns its transform; clear any zoom the thumbnail's
-    // InteractiveViewer accumulated so the pager is never stranded on
-    // NeverScrollableScrollPhysics while nothing is zoomed.
-    widget.transformationController.value = Matrix4.identity();
-    setState(() => _bytes = bytes);
-  }
-
   @override
   Widget build(BuildContext context) {
     if (widget.item.isUnsupported) {
@@ -473,7 +413,21 @@ class _GalleryPhotoPageState extends State<GalleryPhotoPage> {
     }
 
     final child = hdrPhotoNativeAvailable
-        ? _buildNative(hasCloud: hasCloud, providerId: providerId, path: path)
+        ? HdrPhotoPage(
+            fetch: _fetchBytes,
+            onToggleUi: widget.onToggleUi,
+            onZoomChanged: (z) => widget.isZoomedIn.value = z,
+            onResetZoom: () {
+              widget.isZoomedIn.value = false;
+              // The native view owns its transform; clear any zoom the
+              // thumbnail's InteractiveViewer accumulated so the pager is
+              // never stranded on NeverScrollableScrollPhysics while
+              // nothing is zoomed.
+              widget.transformationController.value = Matrix4.identity();
+            },
+            thumbnail: _thumbnailImage(
+                hasCloud: hasCloud, providerId: providerId, path: path),
+          )
         : _buildFlutter(hasCloud: hasCloud, providerId: providerId, path: path);
 
     // The outer tap toggles the chrome in the Flutter path (and while the
@@ -487,62 +441,37 @@ class _GalleryPhotoPageState extends State<GalleryPhotoPage> {
     );
   }
 
-  /// The native path: thumbnail behind, [HdrPhotoView] on top once the
-  /// bytes have arrived - the swap happens without cross-fade, per the
-  /// spec's load sequence. No InteractiveViewer here: the native view owns
-  /// the transform, and a Flutter-side one would fight it for the pinch.
-  ///
-  /// The native view must fill the PAGE, not the Stack's intrinsic size: a
-  /// Stack sizes itself to its non-positioned children - the thumbnail,
-  /// which is square (512x512) and on this portrait screen narrower than
-  /// the page - so the platform view would only cover that square. A
-  /// landscape photo's thumbnail is WIDER than the screen, the Stack gets
-  /// clamped to full width and the bug hides; a portrait one isn't, and
-  /// the photo letterboxes at the thumbnail's width. [SizedBox.expand]
-  /// gives the Stack the page's full size regardless of the thumbnail.
-  Widget _buildNative({
-    required bool hasCloud,
-    String? providerId,
-    String? path,
-  }) {
-    final bytes = _bytes;
-    return SizedBox.expand(
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          _thumbnailImage(
-              hasCloud: hasCloud, providerId: providerId, path: path),
-          if (bytes != null)
-            Positioned.fill(
-              child: HdrPhotoView(
-                bytes: bytes,
-                onTap: widget.onToggleUi,
-                onZoomChanged: (z) => widget.isZoomedIn.value = z,
-                onError: () => setState(() {
-                  // The native view is gone: forget its bytes (they are
-                  // undecodable natively) and fall back to the existing
-                  // error state.
-                  _bytes = null;
-                  _failed = true;
-                  // The native zoom state died with the view; the pager
-                  // must be swiping again for whatever shows next.
-                  widget.isZoomedIn.value = false;
-                }),
-              ),
-            )
-          else if (_failed)
-            _failureState(
-                hasCloud: hasCloud, providerId: providerId, path: path),
-        ],
-      ),
-    );
+  /// Device copy first, cloud stack as the fallback - the same preference
+  /// order the Flutter rendering below uses, with the Local Source's
+  /// quiet-null-on-failure contract and the cloud loader's
+  /// [GalleryImageUnavailable] flattened into one null = failed outcome.
+  Future<Uint8List?> _fetchBytes() async {
+    Uint8List? bytes;
+    try {
+      if (widget.item.hasLocalCopy) {
+        bytes = await widget.localLoader.original(
+          widget.item.localRelativePath!,
+          widget.item.localDisplayName!,
+        );
+      }
+      if (bytes == null || bytes.isEmpty) {
+        final providerId = widget.item.providerId;
+        final path = widget.item.path;
+        bytes = (providerId == null || path == null)
+            ? null
+            : await widget.loader.fullResolution(providerId, path);
+      }
+    } catch (_) {
+      // Any failure - offline, 404, an expired token the retry could not
+      // save - is the existing error state, not a crash.
+      return null;
+    }
+    return bytes;
   }
 
-  /// The existing Flutter rendering, unchanged - and what a native fetch or
-  /// decode failure falls back to, through the same states it always
-  /// produced: a Synced item whose device copy is unreadable falls back to
-  /// the cloud stack, a Device-only one shows its honest placeholder, and a
-  /// Cloud-only failure leaves its thumbnail showing.
+  /// The existing Flutter rendering, unchanged - the NON-Android path of
+  /// the gallery viewer. On Android, [HdrPhotoPage]'s failure states cover
+  /// the same ground (thumbnail keeps showing, or an honest placeholder).
   Widget _buildFlutter({
     required bool hasCloud,
     String? providerId,
@@ -603,22 +532,6 @@ class _GalleryPhotoPageState extends State<GalleryPhotoPage> {
       fit: BoxFit.contain,
       errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
     );
-  }
-
-  Widget _failureState({
-    required bool hasCloud,
-    String? providerId,
-    String? path,
-  }) {
-    if (widget.item.hasLocalCopy) {
-      return hasCloud
-          ? _CloudPhotoStack(
-              loader: widget.loader, providerId: providerId!, path: path!)
-          : _DeviceOnlyPhoto(item: widget.item);
-    }
-    // Cloud-only failure: the existing error state leaves the thumbnail
-    // showing (its full-res layer's errorBuilder is an empty shrink).
-    return const SizedBox.shrink();
   }
 }
 

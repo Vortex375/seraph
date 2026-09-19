@@ -22,7 +22,6 @@ class FileService {
       }
     });
   }
-
   final SettingsController settingsController;
   final LoginController loginController;
   final ShareController shareController;
@@ -30,6 +29,12 @@ class FileService {
   late String pathPrefix;
 
   Client? client;
+
+  /// Bare HTTP client for byte fetches ([fetchFileBytes]) - the
+  /// `webdav_client` [client] wraps its own and exposes no raw-GET seam.
+  /// ponytail: unauthenticated-at-construction like every other field
+  /// here; headers are attached per request.
+  final dio = Dio();
 
   Future<Map<String, String>> getRequestHeaders() async {
     await until(loginController.isInitialized, identity);
@@ -146,6 +151,40 @@ class FileService {
       path = '/$path';
     }
     return '${settingsController.serverUrl}$pathPrefix$path';
+  }
+
+  /// The file's raw bytes at full resolution - what the file viewer's HDR
+  /// page feeds the native photo view. Same authenticated GET the
+  /// `Image.network` in [getImage] issues, minus the image decode; 401/403
+  /// force-refresh-and-retry included, mirroring [_withTokenRecovery]'s
+  /// other users. Null on any failure - the page shows its error state.
+  Future<Uint8List?> fetchFileBytes(String path) async {
+    try {
+      final response = await dio.get<List<int>>(
+        getFileUrl(path),
+        options: Options(
+          responseType: ResponseType.bytes,
+          headers: await getRequestHeaders(),
+        ),
+      );
+      return Uint8List.fromList(response.data ?? const []);
+    } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      if (status == 401 || status == 403) {
+        await loginController.refreshTokenIfNeeded(force: true);
+        final response = await dio.get<List<int>>(
+          getFileUrl(path),
+          options: Options(
+            responseType: ResponseType.bytes,
+            headers: await getRequestHeaders(),
+          ),
+        );
+        return Uint8List.fromList(response.data ?? const []);
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
   }
 
   String getDownloadUrl(String path) {

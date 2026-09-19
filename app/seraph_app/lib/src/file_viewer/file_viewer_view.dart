@@ -3,6 +3,9 @@ import 'package:get/get.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:seraph_app/src/file_browser/file_browser_controller.dart';
 import 'package:seraph_app/src/file_viewer/file_viewer_controller.dart';
+import 'package:seraph_app/src/gallery/gallery_tile.dart'
+    show galleryThumbnailSize;
+import 'package:seraph_app/src/gallery/hdr_photo_view.dart';
 import 'package:seraph_app/src/media_player/media_bottom_bar.dart';
 import 'package:seraph_app/src/media_player/video_player_controller.dart';
 
@@ -49,6 +52,32 @@ class FileViewerView extends StatelessWidget{
         itemBuilder: (context, index) {
           final file = controller.files[index];
           if (fileService.isImageFile(file)) {
+            // Android: the native HDR platform view - the same path the
+            // gallery viewer uses (spec: the file viewer's WebDAV fetch is
+            // the only difference, and fetchFileBytes provides it). No
+            // Hero: approved to drop - a platform view cannot serve as a
+            // Hero child mid-flight anyway. Elsewhere: the unchanged
+            // Flutter rendering.
+            if (hdrPhotoNativeAvailable) {
+              return HdrPhotoPage(
+                fetch: () => fileService.fetchFileBytes(file.path!),
+                onToggleUi: controller.toggleUiVisible,
+                onZoomChanged: (z) => controller.isZoomedIn.value = z,
+                onResetZoom: () {
+                  controller.isZoomedIn.value = false;
+                  controller.transformationController.value =
+                      Matrix4.identity();
+                },
+                thumbnail: Image.network(
+                  fileService.getPreviewUrl(
+                      file.path!, galleryThumbnailSize, galleryThumbnailSize),
+                  headers: fileService.getRequestHeadersSync(),
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) =>
+                      const SizedBox.shrink(),
+                ),
+              );
+            }
             return Center(
               child: Hero(
                 tag: "preview:${file.path}",
@@ -59,7 +88,7 @@ class FileViewerView extends StatelessWidget{
                     maxScale: 4.0,
                     // Disable pan when not zoomed
                     panEnabled: controller.isZoomedIn.value,
-                    child: fileService.getImage(file.path!, (context, child, loadingProgress) => 
+                    child: fileService.getImage(file.path!, (context, child, loadingProgress) =>
                       (loadingProgress == null) ? SizedBox.expand(child: child) : (index == controller.initialIndex ? previewWidget : null) ?? Container())
                   )),
                 ),
