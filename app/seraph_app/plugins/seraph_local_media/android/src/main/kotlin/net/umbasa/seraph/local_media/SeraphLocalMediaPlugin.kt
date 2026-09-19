@@ -81,7 +81,6 @@ class SeraphLocalMediaPlugin : FlutterPlugin, ActivityAware, PluginRegistry.Requ
 
     private var appContext: Context? = null
     private var activity: Activity? = null
-    private var messenger: io.flutter.plugin.common.BinaryMessenger? = null
 
     // Held across the `requestPermission` -> `onRequestPermissionsResult`
     // pair; resolved and cleared there. Activity-scoped state, so a second
@@ -103,7 +102,6 @@ class SeraphLocalMediaPlugin : FlutterPlugin, ActivityAware, PluginRegistry.Requ
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         appContext = binding.applicationContext
-        messenger = binding.binaryMessenger
         val ch = MethodChannel(binding.binaryMessenger, channelName)
         channel = ch
         localMediaChannelForObserver = ch
@@ -142,7 +140,6 @@ class SeraphLocalMediaPlugin : FlutterPlugin, ActivityAware, PluginRegistry.Requ
         channel?.setMethodCallHandler(null)
         channel = null
         localMediaChannelForObserver = null
-        messenger = null
         // A pending permission result's Activity callback can no longer fire
         // through this plugin once its engine is gone; resolve it as `denied`
         // rather than leaving the Dart side awaiting forever. This path is
