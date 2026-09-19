@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.database.ContentObserver
 import android.graphics.Bitmap
@@ -64,6 +65,10 @@ import java.util.concurrent.Executors
  * single native counterpart, moved here from `MainActivity.kt` wholesale so
  * the channel has ONE registration site (this plugin) rather than two that
  * could drift apart.
+ *
+ * Also registers the gallery photo viewer's HDR platform view
+ * (`HdrPhotoImageView`, viewType `seraph/hdr_photo`), which reports on its
+ * own per-view channels rather than this one - see `HdrPhotoView.kt`.
  */
 class SeraphLocalMediaPlugin : FlutterPlugin, ActivityAware, PluginRegistry.RequestPermissionsResultListener {
 
@@ -76,6 +81,7 @@ class SeraphLocalMediaPlugin : FlutterPlugin, ActivityAware, PluginRegistry.Requ
 
     private var appContext: Context? = null
     private var activity: Activity? = null
+    private var messenger: io.flutter.plugin.common.BinaryMessenger? = null
 
     // Held across the `requestPermission` -> `onRequestPermissionsResult`
     // pair; resolved and cleared there. Activity-scoped state, so a second
@@ -97,6 +103,7 @@ class SeraphLocalMediaPlugin : FlutterPlugin, ActivityAware, PluginRegistry.Requ
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         appContext = binding.applicationContext
+        messenger = binding.binaryMessenger
         val ch = MethodChannel(binding.binaryMessenger, channelName)
         channel = ch
         localMediaChannelForObserver = ch
@@ -117,10 +124,17 @@ class SeraphLocalMediaPlugin : FlutterPlugin, ActivityAware, PluginRegistry.Requ
                     setBrightnessBoost(call.arguments as? Boolean == true)
                     result.success(null)
                 }
+                "setHdrColorMode" -> handleSetHdrColorMode(call, result)
                 else -> result.notImplemented()
             }
         }
         registerMediaObserver()
+        // The gallery photo viewer's HDR path (HdrPhotoView.kt): registered
+        // on every engine, same as the channel above.
+        binding.platformViewRegistry.registerViewFactory(
+            "seraph/hdr_photo",
+            HdrPhotoViewFactory(binding.binaryMessenger),
+        )
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
@@ -128,6 +142,7 @@ class SeraphLocalMediaPlugin : FlutterPlugin, ActivityAware, PluginRegistry.Requ
         channel?.setMethodCallHandler(null)
         channel = null
         localMediaChannelForObserver = null
+        messenger = null
         // A pending permission result's Activity callback can no longer fire
         // through this plugin once its engine is gone; resolve it as `denied`
         // rather than leaving the Dart side awaiting forever. This path is
@@ -561,6 +576,23 @@ class SeraphLocalMediaPlugin : FlutterPlugin, ActivityAware, PluginRegistry.Requ
             screenBrightness =
                 if (on) 1f else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
         }
+    }
+
+    // --- HDR photo viewer (.scratch/hdr-photo-viewer/spec.md) --------------
+
+    /**
+     * `Window.setColorMode(COLOR_MODE_HDR)` while the gallery photo viewer's
+     * native path has a live view, `COLOR_MODE_DEFAULT` when the last one
+     * closes - the enter/exit shape the brightness boost uses, via the same
+     * Activity access. No ratio polling, no display listeners; the spike's
+     * measurement plumbing does not ship. No-op without an Activity, same
+     * shape as [setBrightnessBoost].
+     */
+    private fun handleSetHdrColorMode(call: MethodCall, result: MethodChannel.Result) {
+        val hdr = call.arguments as? Boolean == true
+        activity?.window?.colorMode =
+            if (hdr) ActivityInfo.COLOR_MODE_HDR else ActivityInfo.COLOR_MODE_DEFAULT
+        result.success(null)
     }
 
     private fun encodeJpeg(bitmap: Bitmap): ByteArray {

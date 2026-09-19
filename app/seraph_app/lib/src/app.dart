@@ -36,48 +36,42 @@ class MyApp extends StatelessWidget {
     if (shareController.shareMode.value) {
       pages = [
         GetPage(
-          name: ShareController.routeName,
-          page: () {
-            if (shareController.isDir.value) {
-              Get.find<FileBrowserController>().setPath(Get.parameters['path'] ?? '/');
-            }
-            return const ShareView();
-          },
-          transition: Transition.noTransition,
-          binding: BindingsBuilder(() {
-            Get.put(FileViewerController(), tag: 'shareview');
-          })
-        ),
+            name: ShareController.routeName,
+            page: () {
+              if (shareController.isDir.value) {
+                Get.find<FileBrowserController>()
+                    .setPath(Get.parameters['path'] ?? '/');
+              }
+              return const ShareView();
+            },
+            transition: Transition.noTransition,
+            binding: BindingsBuilder(() {
+              Get.put(FileViewerController(), tag: 'shareview');
+            })),
         GetPage(
-          name: FileViewerView.routeName, 
-          page: () => const FileViewerView(),
-          binding: BindingsBuilder(() {
-            Get.put(FileViewerController());
-          })
-        ),
+            name: FileViewerView.routeName,
+            page: () => const FileViewerView(),
+            binding: BindingsBuilder(() {
+              Get.put(FileViewerController());
+            })),
         GetPage(
-          name: AudioPlayerView.routeName, 
-          page: () => const AudioPlayerView(),
-          opaque: false,
-          transition: Transition.downToUp
-        ),
+            name: AudioPlayerView.routeName,
+            page: () => const AudioPlayerView(),
+            opaque: false,
+            transition: Transition.downToUp),
       ];
     } else {
       pages = [
         GetPage(
           name: FileBrowserView.routeName,
           page: () {
-            Get.find<FileBrowserController>().setPath(Get.parameters['path'] ?? '/');
-            return const LoginView(
-              child: FileBrowserView()
-            );
-          }, 
+            Get.find<FileBrowserController>()
+                .setPath(Get.parameters['path'] ?? '/');
+            return const LoginView(child: FileBrowserView());
+          },
           transition: Transition.noTransition,
         ),
-        GetPage(
-          name: GalleryView.routeName,
-          page: () => const GalleryView()
-        ),
+        GetPage(name: GalleryView.routeName, page: () => const GalleryView()),
         GetPage(
           name: GallerySourceFoldersView.routeName,
           page: () => const GallerySourceFoldersView(),
@@ -89,71 +83,63 @@ class MyApp extends StatelessWidget {
           ),
         ),
         GetPage(
-          name: FileViewerView.routeName, 
-          page: () => const FileViewerView(),
-          binding: BindingsBuilder(() {
-            Get.put(FileViewerController());
-            Get.put(VideoPlayerController());
-          })
-        ),
+            name: FileViewerView.routeName,
+            page: () => const FileViewerView(),
+            binding: BindingsBuilder(() {
+              Get.put(FileViewerController());
+              Get.put(VideoPlayerController());
+            })),
         GetPage(
-          name: AudioPlayerView.routeName, 
-          page: () => const AudioPlayerView(),
-          opaque: false,
-          transition: Transition.downToUp
-        ),
+            name: AudioPlayerView.routeName,
+            page: () => const AudioPlayerView(),
+            opaque: false,
+            transition: Transition.downToUp),
         GetPage(
-          name: SearchView.routeName, 
-          page: () => const SearchView(),
-          binding: BindingsBuilder(() {
-            Get.put(MySearchController(Get.find()));
-          })
-        ),
+            name: SearchView.routeName,
+            page: () => const SearchView(),
+            binding: BindingsBuilder(() {
+              Get.put(MySearchController(Get.find()));
+            })),
         GetPage(
           name: ChatView.routeName,
           page: () => const ChatView(),
         ),
-        GetPage(
-          name: SettingsView.routeName, 
-          page: () => const SettingsView()
-        ),
+        GetPage(name: SettingsView.routeName, page: () => const SettingsView()),
         GetPage(
           name: SpacesListView.routeName,
           page: () => const SpacesListView(),
-        )
+        ),
       ];
     }
 
     final SettingsController settingsController = Get.find();
     return Obx(() => GetMaterialApp(
-      // Provide the generated AppLocalizations to the MaterialApp. This
-      // allows descendant Widgets to display the correct translations
-      // depending on the user's locale.
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
+          // Provide the generated AppLocalizations to the MaterialApp. This
+          // allows descendant Widgets to display the correct translations
+          // depending on the user's locale.
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
 
-      // Use AppLocalizations to configure the correct application title
-      // depending on the user's locale.
-      //
-      // The appTitle is defined in .arb files found in the localization
-      // directory.
-      onGenerateTitle: (BuildContext context) =>
-          AppLocalizations.of(context)!.appTitle,
+          // Use AppLocalizations to configure the correct application title
+          // depending on the user's locale.
+          //
+          // The appTitle is defined in .arb files found in the localization
+          // directory.
+          onGenerateTitle: (BuildContext context) =>
+              AppLocalizations.of(context)!.appTitle,
 
-      // Define a light and dark color theme. Then, read the user's
-      // preferred ThemeMode (light, dark, or system default) from the
-      // SettingsController to display the correct theme.
-      theme: ThemeData(
-        useMaterial3: true
-      ),
-      darkTheme: ThemeData.dark(
-        useMaterial3: true
-      ),
-      themeMode: settingsController.themeMode.value,
+          // Define a light and dark color theme. Then, read the user's
+          // preferred ThemeMode (light, dark, or system default) from the
+          // SettingsController to display the correct theme.
+          theme: ThemeData(useMaterial3: true),
+          darkTheme: ThemeData.dark(useMaterial3: true),
+          themeMode: settingsController.themeMode.value,
 
-      initialRoute: shareController.shareMode.value ? ShareController.routeName : FileBrowserView.routeName,
-      getPages: pages,
-      initialBinding: InitialBinding(),
-    ));
+          initialRoute: shareController.shareMode.value
+              ? ShareController.routeName
+              : FileBrowserView.routeName,
+          getPages: pages,
+          initialBinding: InitialBinding(),
+        ));
   }
 }

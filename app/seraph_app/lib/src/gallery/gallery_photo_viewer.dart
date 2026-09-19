@@ -9,6 +9,7 @@ import 'package:seraph_app/src/gallery/gallery_image_loader.dart';
 import 'package:seraph_app/src/gallery/gallery_item_display.dart';
 import 'package:seraph_app/src/gallery/gallery_tile.dart';
 import 'package:seraph_app/src/gallery/gallery_view.dart';
+import 'package:seraph_app/src/gallery/hdr_photo_view.dart';
 import 'package:seraph_app/src/gallery/local/local_image_loader.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_upload_backend.dart';
@@ -339,7 +340,21 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
 /// One full-screen photo: the original file, at full resolution, with the
 /// thumbnail already on screen behind it so the frame is never empty while
 /// the original downloads.
-class GalleryPhotoPage extends StatelessWidget {
+///
+/// Two rendering paths, decided by the platform gate - never per photo
+/// (spec: "no per-image routing, no dual renderer"):
+///
+///  - Android: the bytes are fetched once (device copy via the Local Source,
+///    falling back to the cloud stack; cloud-only over the authenticated
+///    loader, which carries the reactive 401/403 refresh-and-retry) and fed
+///    to [HdrPhotoView], which renders the Ultra HDR gain map natively. The
+///    already-loaded thumbnail (a Flutter `Image`, served from the image
+///    cache the grid warmed) shows until the bytes arrive and the platform
+///    view replaces it - no cross-fade. Full-resolution bytes are not
+///    cached: paging back re-fetches, thumbnail-first.
+///  - Everywhere else (and the failure fallbacks): the existing Flutter
+///    rendering, unchanged.
+class GalleryPhotoPage extends StatefulWidget {
   const GalleryPhotoPage({
     super.key,
     required this.item,
@@ -357,71 +372,247 @@ class GalleryPhotoPage extends StatelessWidget {
   /// Local Source seam. Always given - see [GalleryTile.localLoader]'s doc.
   final LocalImageLoader localLoader;
 
-  /// Tapping the photo toggles the viewer's full-screen chrome. The tap is
-  /// opaque but does not claim scale gestures, so pinch-to-zoom still
-  /// reaches the [InteractiveViewer] underneath.
+  /// Tapping the photo toggles the viewer's full-screen chrome. In the
+  /// Flutter path the tap comes from the surrounding detector; in the
+  /// native path, once the platform view is zoomed and claims gestures,
+  /// the tap is reported by the native view over its channel instead. The
+  /// two never fire for the same tap - they compete in one gesture arena.
   final VoidCallback onToggleUi;
 
   /// The viewer's shared zoom/pan transform. Bound to this page's
-  /// [InteractiveViewer] so a listener on the controller can gate the
-  /// `PageView`'s swipe physics and this viewer's `panEnabled` on the
-  /// shared zoom flag, mirroring the file viewer.
+  /// [InteractiveViewer] in the Flutter path so a listener on the
+  /// controller can gate the `PageView`'s swipe physics; reset to identity
+  /// the moment the native view takes over, so a stale Flutter zoom cannot
+  /// leave the pager stuck on `NeverScrollableScrollPhysics` while the
+  /// native transform (which this controller knows nothing about) is at 1x.
   final TransformationController transformationController;
 
-  /// The viewer's shared zoom flag. [InteractiveViewer.panEnabled] is gated
-  /// on it: panning is only enabled while zoomed in, so a drag at 1× always
-  /// pages rather than nudging the photo.
+  /// The viewer's shared zoom flag. In the Flutter path the
+  /// [InteractiveViewer]'s transform listener drives it; in the native path
+  /// the native view's zoom reports drive it - the same `isZoomedIn` shape
+  /// either way, and the only thing gating the pager's physics.
   final ValueNotifier<bool> isZoomedIn;
 
   @override
+  State<GalleryPhotoPage> createState() => _GalleryPhotoPageState();
+}
+
+class _GalleryPhotoPageState extends State<GalleryPhotoPage> {
+  /// The full-resolution bytes, once fetched. Null until then; a fetch that
+  /// ended in failure lands in [_failed] instead.
+  Uint8List? _bytes;
+
+  /// The fetch failed (network, 404, an exhausted refresh-retry) or the
+  /// native view could not decode what arrived: fall back to the existing
+  /// Flutter error state.
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Fetch only for photos the native path can actually render; the
+    // placeholder states below are returned before this branch is reached.
+    if (hdrPhotoNativeAvailable &&
+        !widget.item.isUnsupported &&
+        (widget.item.providerId != null || widget.item.hasLocalCopy)) {
+      _load();
+    }
+  }
+
+  /// Device copy first, cloud stack as the fallback - the same preference
+  /// order the Flutter rendering below uses, with the Local Source's
+  /// quiet-null-on-failure contract and the cloud loader's
+  /// [GalleryImageUnavailable] flattened into one null = failed outcome.
+  Future<void> _load() async {
+    Uint8List? bytes;
+    try {
+      if (widget.item.hasLocalCopy) {
+        bytes = await widget.localLoader.original(
+          widget.item.localRelativePath!,
+          widget.item.localDisplayName!,
+        );
+      }
+      if (bytes == null || bytes.isEmpty) {
+        final providerId = widget.item.providerId;
+        final path = widget.item.path;
+        bytes = (providerId == null || path == null)
+            ? null
+            : await widget.loader.fullResolution(providerId, path);
+      }
+    } catch (_) {
+      // Any failure - offline, 404, an expired token the retry could not
+      // save - is the existing error state, not a crash.
+      bytes = null;
+    }
+    if (!mounted) {
+      return;
+    }
+    if (bytes == null || bytes.isEmpty) {
+      setState(() => _failed = true);
+      return;
+    }
+    // The native view owns its transform; clear any zoom the thumbnail's
+    // InteractiveViewer accumulated so the pager is never stranded on
+    // NeverScrollableScrollPhysics while nothing is zoomed.
+    widget.transformationController.value = Matrix4.identity();
+    setState(() => _bytes = bytes);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (item.isUnsupported) {
-      return _UnsupportedPhoto(item: item);
+    if (widget.item.isUnsupported) {
+      return _UnsupportedPhoto(item: widget.item);
     }
 
-    final providerId = item.providerId;
-    final path = item.path;
+    final providerId = widget.item.providerId;
+    final path = widget.item.path;
     final hasCloud = providerId != null && path != null;
-    final hasLocal = item.hasLocalCopy;
+    final hasLocal = widget.item.hasLocalCopy;
 
     if (!hasCloud && !hasLocal) {
       // Should not happen (see GalleryItemDisplay.hasLocalCopy's doc) but
       // stays an honest "on this device" state rather than a crash.
-      return _DeviceOnlyPhoto(item: item);
+      return _DeviceOnlyPhoto(item: widget.item);
     }
 
-    // The outer InteractiveViewer/Center chrome is applied exactly once,
-    // regardless of source, so a Synced item whose device copy fails to
-    // decode can fall back to the cloud version's own image stack without
-    // nesting a second InteractiveViewer inside this one.
+    final child = hdrPhotoNativeAvailable
+        ? _buildNative(hasCloud: hasCloud, providerId: providerId, path: path)
+        : _buildFlutter(hasCloud: hasCloud, providerId: providerId, path: path);
+
+    // The outer tap toggles the chrome in the Flutter path (and while the
+    // native path is still on its thumbnail); once the native view is
+    // zoomed it claims gestures and reports taps over its channel instead.
+    // Both compete in one gesture arena, so a tap toggles exactly once.
     return GestureDetector(
-      onTap: onToggleUi,
+      onTap: widget.onToggleUi,
       behavior: HitTestBehavior.opaque,
-      child: ValueListenableBuilder<bool>(
-        valueListenable: isZoomedIn,
-        builder: (context, zoomed, _) => InteractiveViewer(
-          transformationController: transformationController,
-          maxScale: 4,
-          // Panning is only enabled while zoomed in; at 1× the page
-          // reclaims the swipe and the photo does not pan - identical to
-          // the file viewer's `panEnabled: isZoomedIn`.
-          panEnabled: zoomed,
-          child: Center(
-            child: hasLocal
-                ? _LocalPhotoStack(
-                    item: item,
-                    localLoader: localLoader,
-                    fallback: hasCloud
-                        ? _CloudPhotoStack(
-                            loader: loader, providerId: providerId, path: path)
-                        : _DeviceOnlyPhoto(item: item),
-                  )
-                : _CloudPhotoStack(
-                    loader: loader, providerId: providerId!, path: path!),
-          ),
+      child: child,
+    );
+  }
+
+  /// The native path: thumbnail behind, [HdrPhotoView] on top once the
+  /// bytes have arrived - the swap happens without cross-fade, per the
+  /// spec's load sequence. No InteractiveViewer here: the native view owns
+  /// the transform, and a Flutter-side one would fight it for the pinch.
+  Widget _buildNative({
+    required bool hasCloud,
+    String? providerId,
+    String? path,
+  }) {
+    final bytes = _bytes;
+    return Center(
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          _thumbnailImage(
+              hasCloud: hasCloud, providerId: providerId, path: path),
+          if (bytes != null)
+            Positioned.fill(
+              child: HdrPhotoView(
+                bytes: bytes,
+                onTap: widget.onToggleUi,
+                onZoomChanged: (z) => widget.isZoomedIn.value = z,
+                onError: () => setState(() {
+                  // The native view is gone: forget its bytes (they are
+                  // undecodable natively) and fall back to the existing
+                  // error state.
+                  _bytes = null;
+                  _failed = true;
+                  // The native zoom state died with the view; the pager
+                  // must be swiping again for whatever shows next.
+                  widget.isZoomedIn.value = false;
+                }),
+              ),
+            )
+          else if (_failed)
+            _failureState(
+                hasCloud: hasCloud, providerId: providerId, path: path),
+        ],
+      ),
+    );
+  }
+
+  /// The existing Flutter rendering, unchanged - and what a native fetch or
+  /// decode failure falls back to, through the same states it always
+  /// produced: a Synced item whose device copy is unreadable falls back to
+  /// the cloud stack, a Device-only one shows its honest placeholder, and a
+  /// Cloud-only failure leaves its thumbnail showing.
+  Widget _buildFlutter({
+    required bool hasCloud,
+    String? providerId,
+    String? path,
+  }) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: widget.isZoomedIn,
+      builder: (context, zoomed, _) => InteractiveViewer(
+        transformationController: widget.transformationController,
+        maxScale: 4,
+        // Panning is only enabled while zoomed in; at 1× the page
+        // reclaims the swipe and the photo does not pan - identical to
+        // the file viewer's `panEnabled: isZoomedIn`.
+        panEnabled: zoomed,
+        child: Center(
+          child: widget.item.hasLocalCopy
+              ? _LocalPhotoStack(
+                  item: widget.item,
+                  localLoader: widget.localLoader,
+                  fallback: hasCloud
+                      ? _CloudPhotoStack(
+                          loader: widget.loader,
+                          providerId: providerId!,
+                          path: path!)
+                      : _DeviceOnlyPhoto(item: widget.item),
+                )
+              : _CloudPhotoStack(
+                  loader: widget.loader, providerId: providerId!, path: path!),
         ),
       ),
     );
+  }
+
+  /// The photo's already-loaded thumbnail - the same provider the grid
+  /// (or the previous viewing) warmed, so this serves from Flutter's image
+  /// cache and never re-fetches.
+  Widget _thumbnailImage({
+    required bool hasCloud,
+    String? providerId,
+    String? path,
+  }) {
+    final item = widget.item;
+    return Image(
+      image: item.hasLocalCopy
+          ? LocalGalleryImage(
+              loader: widget.localLoader,
+              relativePath: item.localRelativePath!,
+              displayName: item.localDisplayName!,
+              width: galleryThumbnailSize,
+              height: galleryThumbnailSize,
+            )
+          : GalleryImage(
+              loader: widget.loader,
+              providerId: providerId!,
+              path: path!,
+              size: galleryThumbnailSize,
+            ),
+      fit: BoxFit.contain,
+      errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+    );
+  }
+
+  Widget _failureState({
+    required bool hasCloud,
+    String? providerId,
+    String? path,
+  }) {
+    if (widget.item.hasLocalCopy) {
+      return hasCloud
+          ? _CloudPhotoStack(
+              loader: widget.loader, providerId: providerId!, path: path!)
+          : _DeviceOnlyPhoto(item: widget.item);
+    }
+    // Cloud-only failure: the existing error state leaves the thumbnail
+    // showing (its full-res layer's errorBuilder is an empty shrink).
+    return const SizedBox.shrink();
   }
 }
 

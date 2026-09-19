@@ -102,15 +102,15 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
-        <!-- HDR platform-view spike prep: Hybrid Composition++ (HCPP) is the
-             Android API 34+/Impeller/Vulkan platform-view compositing mode
-             the spike needs. It's experimental and opt-in. The
-             "enable hcpp" run flag only affects `flutter run`/`flutter test`;
-             this manifest entry is what turns it on for `flutter build`.
-             Impeller is made explicit here too, since HCPP depends on it. -->
+        <!-- HDR photo viewer (.scratch/hdr-photo-viewer/spec.md): HCPP is
+             disabled by decision - Classic Hybrid Composition is the path
+             that renders an Ultra HDR gain map; HCPP rendered blank on the
+             spike device while spamming SurfaceComposerClient errors
+             app-wide. Do not re-enable HCPP without re-measuring that spam.
+             Impeller is made explicit here too. -->
         <meta-data
             android:name="io.flutter.embedding.android.EnableHcpp"
-            android:value="true" />
+            android:value="false" />
         <meta-data
             android:name="io.flutter.embedding.android.EnableImpeller"
             android:value="true" />

@@ -22,11 +22,8 @@ class SettingsView extends StatelessWidget {
 
     final urlController = TextEditingController(text: settings.serverUrl.value);
     return Scaffold(
-      appBar: seraphAppBar(context, 
-        name: 'Settings', 
-        routeName: routeName, 
-        actions: []
-      ),
+      appBar: seraphAppBar(context,
+          name: 'Settings', routeName: routeName, actions: []),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -38,12 +35,14 @@ class SettingsView extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Appearance', style: Theme.of(context).textTheme.titleLarge),
+                    Text('Appearance',
+                        style: Theme.of(context).textTheme.titleLarge),
                     const SizedBox(height: 16),
                     DropdownMenu<ThemeMode>(
                       label: const Text('Theme'),
                       initialSelection: settings.themeMode.value,
-                      onSelected: (v) => settings.setThemeMode(v ?? ThemeMode.system),
+                      onSelected: (v) =>
+                          settings.setThemeMode(v ?? ThemeMode.system),
                       requestFocusOnTap: false,
                       dropdownMenuEntries: const [
                         DropdownMenuEntry(
@@ -71,7 +70,8 @@ class SettingsView extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Server', style: Theme.of(context).textTheme.titleLarge),
+                    Text('Server',
+                        style: Theme.of(context).textTheme.titleLarge),
                     const SizedBox(height: 16),
                     TextField(
                       decoration: const InputDecoration(
@@ -87,14 +87,19 @@ class SettingsView extends StatelessWidget {
                       if (currentUser == null) {
                         return const Text("Unknown user");
                       } else {
-                        return Text("Logged in as ${currentUser.userInfo['preferred_username']} (${currentUser.userInfo['email']})");
+                        return Text(
+                            "Logged in as ${currentUser.userInfo['preferred_username']} (${currentUser.userInfo['email']})");
                       }
                     }),
                     const SizedBox(height: 16),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Theme.of(context).colorScheme.error, // Use error color for warning
-                        foregroundColor: Theme.of(context).colorScheme.onError, // Ensures contrast
+                        backgroundColor: Theme.of(context)
+                            .colorScheme
+                            .error, // Use error color for warning
+                        foregroundColor: Theme.of(context)
+                            .colorScheme
+                            .onError, // Ensures contrast
                       ),
                       onPressed: () {
                         Get.defaultDialog(
