@@ -30,6 +30,13 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
+# `/build/` above is anchored to this directory, so it does not cover the
+# Gradle build output an APK build drops in `android/build/`.
+/android/build/
+# Lock file of the `seraph_local_media` path-dependency plugin. It is a
+# library package consumed only by this app - the app's own pubspec.lock is
+# what governs resolution - so its lock file is generated noise.
+/plugins/*/pubspec.lock
 
 # Symbolication related
 app.*.symbols
