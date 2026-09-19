@@ -17,7 +17,12 @@ RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go b
 RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go build -C log-viewer -o /out/log-viewer .
 
 # Build the flutter app for web
-FROM --platform=$BUILDPLATFORM ghcr.io/cirruslabs/flutter:3.41.7 AS flutter
+FROM --platform=$BUILDPLATFORM ubuntu:24.04 AS flutter
+RUN apt-get update && apt-get install -y --no-install-recommends git curl xz-utils ca-certificates && rm -rf /var/lib/apt/lists/*
+# ponytail: tarball version pinned twice (URL + below); cirruslabs images stopped at 3.44.0
+RUN curl -fsSL "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.47.5-stable.tar.xz" | tar -xJ -C /opt
+ENV PATH=/opt/flutter/bin:$PATH
+RUN git config --global --add safe.directory /opt/flutter
 WORKDIR /app
 RUN flutter precache --web
 # Copy the pubspec and the path-dependency plugin it references before pub get,
