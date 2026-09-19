@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:audio_service/audio_service.dart';
 import 'package:media_kit/media_kit.dart';
@@ -69,7 +70,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       ));
     });
     _player!.stream.error.listen((err) {
-      print("playback error: $err");
+      developer.log("playback error: $err", name: 'seraph.media_player', error: err);
       playbackState.add(playbackState.value.copyWith(
         processingState: AudioProcessingState.error,
         errorMessage: err
@@ -149,8 +150,8 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   }
 
   @override
-  Future<void> updateQueue(List<MediaItem> newQueue) async {
-    await super.updateQueue(newQueue);
+  Future<void> updateQueue(List<MediaItem> queue) async {
+    await super.updateQueue(queue);
 
     await _getPlayer();
   }
@@ -180,7 +181,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       }
       _updatingHeaders = true;
 
-      print("updating audio player request headers");
+      developer.log("updating audio player request headers", name: 'seraph.media_player');
       queue.add(queue.value.map((media) => media.copyWith(extras: extras)).toList());
       if (_player != null) {
         for (var i = 0; i < queue.value.length; i++) {
@@ -200,7 +201,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         }
       }
       _updatingHeaders = false;
-      print("updating audio player request headers complete");
+      developer.log("updating audio player request headers complete", name: 'seraph.media_player');
     }
   }
 

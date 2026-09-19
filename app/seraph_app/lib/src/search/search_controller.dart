@@ -1,5 +1,6 @@
 
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -31,8 +32,8 @@ class MySearchController extends GetxController {
     debounce(queryText, searchFor);
   }
 
-  searchFor(String query) async {
-    print("search for: $query");
+  Future<void> searchFor(String query) async {
+    developer.log("search for: $query", name: 'seraph.search');
 
     if (query.trim() == "") {
       fileResults.clear();
@@ -48,7 +49,7 @@ class MySearchController extends GetxController {
         first = false;
         fileResults.clear();
       }
-      print("found $obj");
+      developer.log("found $obj", name: 'seraph.search');
       if (obj["type"] == "files") {
         final reply = obj["reply"] as Map<String, dynamic>;
         fileResults.add(File(
@@ -64,7 +65,7 @@ class MySearchController extends GetxController {
     }
   }
 
-  clearSearch() {
+  void clearSearch() {
     queryTextController.clear();
     queryText.value = '';
   }

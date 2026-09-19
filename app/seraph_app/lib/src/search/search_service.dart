@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as developer;
 
 import 'package:dio/dio.dart';
 import 'package:seraph_app/src/login/login_controller.dart';
@@ -56,7 +57,8 @@ class SearchService {
         try {
           yield json.decode(payload) as Map<String, dynamic>;
         } catch (e) {
-          print('Failed to decode SSE payload: $payload');
+          developer.log('Failed to decode SSE payload: $payload',
+              name: 'seraph.search', error: e);
         }
         continue;
       }

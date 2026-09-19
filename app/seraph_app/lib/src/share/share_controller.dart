@@ -1,4 +1,6 @@
 
+import 'dart:developer' as developer;
+
 import 'package:dio/dio.dart';
 import 'package:get/get.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
@@ -19,7 +21,7 @@ class ShareController extends GetxController{
 
   final RxMap<String, String> sharedPaths = RxMap();
 
-  init() async {
+  Future<void> init() async {
     shareMode.value = Uri.base.fragment.startsWith(routeName);
 
     final SettingsController settingsController = Get.find();
@@ -53,7 +55,7 @@ class ShareController extends GetxController{
         isDir.value = Map.from(list[0])['isDir'];
 
       } catch (err) {
-        print("Error while loading share: $err");
+        developer.log("Error while loading share: $err", name: 'seraph.share', error: err);
         fail.value = true;
       } finally {
         ready.value = true;
@@ -98,7 +100,7 @@ class ShareController extends GetxController{
       }
       sharedPaths["/$providerId$path"] = shareId;
     }
-    print("sharedPaths: $sharedPaths");
+    developer.log("sharedPaths: $sharedPaths", name: 'seraph.share');
   }
 
   Future<void> createShare(File file) async {

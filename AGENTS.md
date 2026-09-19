@@ -84,6 +84,13 @@ Location: `app/seraph_app/`
 that broke the web build. Do not accept a Dart change — and do not resolve a Dart
 ticket — on `flutter analyze` alone; gate it on the web release build above.
 
+**`flutter analyze` must report zero issues, not merely zero errors — this is now a
+required gate.** The baseline is clean, so any info or warning `flutter analyze`
+reports is a regression introduced by the change under review. This gate is
+necessary but not sufficient: a zero-issue `flutter analyze` still does not mean the
+code builds (see above) — separately run the web release build, and the APK build
+when `android/` is touched, before accepting the change.
+
 ## Agents app (Agno/AgentOS)
 
 Location: `agents/`
@@ -239,9 +246,10 @@ Testing:
 
 Linting:
 - Uses `flutter_lints` via `analysis_options.yaml`.
-- Prefer running `flutter analyze` after changes — but treat it as a lint pass, not a
-  build check. It is known to pass on code that fails `flutter build web --release`.
-  Verify Dart changes with the web release build (see the Flutter app commands above).
+- `flutter analyze` must come back with zero issues (the baseline is clean; any
+  finding is a regression) — but treat a clean run as a lint gate, not a build check.
+  It is known to pass on code that fails `flutter build web --release`. Verify Dart
+  changes with the web release build (see the Flutter app commands above).
 
 Formatting:
 - Use `dart format` or `flutter format` for Dart files.

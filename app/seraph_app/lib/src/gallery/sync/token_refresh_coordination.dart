@@ -153,16 +153,11 @@ OidcUserManagerSettings lockedOidcSettings({
 /// token revalidation) this alone does not close.
 class LockedOidcUserManager extends OidcUserManager {
   LockedOidcUserManager.lazy({
-    required Uri discoveryDocumentUri,
-    required OidcClientAuthentication clientCredentials,
-    required OidcStore store,
-    required OidcUserManagerSettings settings,
-  }) : super.lazy(
-          discoveryDocumentUri: discoveryDocumentUri,
-          clientCredentials: clientCredentials,
-          store: store,
-          settings: settings,
-        );
+    required super.discoveryDocumentUri,
+    required super.clientCredentials,
+    required super.store,
+    required super.settings,
+  }) : super.lazy();
 
   @override
   Future<void> handleTokenExpiring(OidcToken event) async {

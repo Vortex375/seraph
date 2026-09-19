@@ -1,3 +1,4 @@
+import 'dart:developer' as developer;
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -113,7 +114,7 @@ class LoginController extends GetxController with WidgetsBindingObserver {
     _manager = manager;
 
     await manager.init();
-    print("oidc: init complete");
+    developer.log("oidc: init complete", name: 'seraph.login');
 
     // Ticket 23: guarded rather than a bare `manager.refreshToken()` - with
     // the headless data-sync isolate potentially refreshing the SAME
@@ -136,17 +137,20 @@ class LoginController extends GetxController with WidgetsBindingObserver {
       readPersisted: () => _readPersistedUser(manager, oidcIssuer, clientId),
     );
     if (user == null) {
-      print("oidc: refresh failed -> perform login");
+      developer.log("oidc: refresh failed -> perform login", name: 'seraph.login');
       await login();
     } else {
-      print("oidc: refresh successful");
+      developer.log("oidc: refresh successful", name: 'seraph.login');
       _currentUser.value = user;
       _initialized.value = true;
       _updateSpaceAdmin(user);
     }
-    
+
     _manager?.userChanges().listen((user) async {
-      print('currentUser changed to ${user?.uid} ${user?.parsedIdToken.claims.toString()}');
+      developer.log(
+        'currentUser changed to ${user?.uid} ${user?.parsedIdToken.claims.toString()}',
+        name: 'seraph.login',
+      );
       _currentUser.value = user;
       _initialized.value = true;
       shareController.loadShares();
@@ -229,8 +233,8 @@ class LoginController extends GetxController with WidgetsBindingObserver {
 
     try {
       final response = await dio.get('/auth/login');
-      print("*** login response");
-      print(response);
+      developer.log("*** login response", name: 'seraph.login');
+      developer.log(response.toString(), name: 'seraph.login');
       if (response.statusCode == 200) {
         _noAuth.value = true;
         _initialized.value = true;
@@ -242,8 +246,8 @@ class LoginController extends GetxController with WidgetsBindingObserver {
           webOnlyWindowName: '_self');
       }
     } catch (err, stack) {
-      print('oidc: web login check failed: $err');
-      print(stack);
+      developer.log('oidc: web login check failed: $err',
+          name: 'seraph.login', error: err, stackTrace: stack);
       Get.snackbar('Connection failed', 'Failed to connect to server: $err',
         backgroundColor: Colors.amber[800],
         isDismissible: true
@@ -252,24 +256,24 @@ class LoginController extends GetxController with WidgetsBindingObserver {
   }
 
   Future<void> _oidcDiscovery() async {
-    print("oidc: discovery");
+    developer.log("oidc: discovery", name: 'seraph.login');
     final dio = Dio(BaseOptions(baseUrl: settingsController.serverUrl.value));
     try {
       final response = await dio.get('/auth/config');
       final issuer = response.data['Issuer'];
       final clientId = response.data['AppClientId'];
       if (issuer == null) {
-        print('no authentication');
+        developer.log('no authentication', name: 'seraph.login');
         settingsController.setOidc('', '');
         init('', '');
       } else {
-        print('yes authentication');
+        developer.log('yes authentication', name: 'seraph.login');
         settingsController.setOidc(issuer, clientId);
         init(issuer, clientId);
       }
     } catch (err, stack) {
-      print('oidc: discovery failed: $err');
-      print(stack);
+      developer.log('oidc: discovery failed: $err',
+          name: 'seraph.login', error: err, stackTrace: stack);
       Get.snackbar('Connection failed', 'Failed to connect to server: $err',
         backgroundColor: Colors.amber[800],
         isDismissible: true
@@ -282,21 +286,21 @@ class LoginController extends GetxController with WidgetsBindingObserver {
     if (_manager == null) {
       return;
     }
-    print("oidc: login");
+    developer.log("oidc: login", name: 'seraph.login');
     final newUser = await _manager?.loginAuthorizationCodeFlow();
-    print("oidc: login complete");
-    print(newUser);
+    developer.log("oidc: login complete", name: 'seraph.login');
+    developer.log('$newUser', name: 'seraph.login');
   }
 
   Future<void> logout() async {
     if (_manager == null) {
       return;
     }
-    print("oidc: logout");
+    developer.log("oidc: logout", name: 'seraph.login');
     await _manager?.logout();
     _currentUser.value = null;
     _isSpaceAdmin.value = false;
-    print("oidc: logout complete");
+    developer.log("oidc: logout complete", name: 'seraph.login');
   }
 
   Future<void> refreshTokenIfNeeded({bool force = false}) async {

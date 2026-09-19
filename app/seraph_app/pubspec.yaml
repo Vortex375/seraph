@@ -27,6 +27,11 @@ dependencies:
   flutter_secure_storage: ^10.0.0
   get: ^4.7.2
   get_storage: ^2.1.1
+  # Used directly by ChatService for the streamed chat-reply request (dio
+  # doesn't expose a raw byte-stream response the way http.Client.send does).
+  # Was previously only a transitive dependency - pinned explicitly so it
+  # doesn't silently disappear if that transitive path changes.
+  http: ^1.6.0
   media_kit: ^1.1.11 # Primary package.
   media_kit_video: ^2.0.1 # For video rendering.
   media_kit_libs_video: ^1.0.5 # Native video dependencies.

@@ -1,4 +1,6 @@
 
+import 'dart:developer' as developer;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -99,19 +101,19 @@ class SettingsController extends GetxController {
   }
 
   void setThemeMode(ThemeMode value) {
-    print('set theme mode: $value');
+    developer.log('set theme mode: $value', name: 'seraph.settings');
     _themeMode.value = value;
     _box.write(_keyThemeMode, value.name);
   }
 
   void setServerUrl(String value) {
-    print('set server url: $value');
+    developer.log('set server url: $value', name: 'seraph.settings');
     _serverUrl.value = value;
     _box.write(_keyServerUrl, value);
   }
 
   void setServerUrlConfirmed(bool value) {
-    print('set server url confirmed: $value');
+    developer.log('set server url confirmed: $value', name: 'seraph.settings');
     if (_serverUrlConfirmed.value != value) {
       // reset the oidc issuer
       setOidc(null, null);
@@ -121,14 +123,14 @@ class SettingsController extends GetxController {
   }
 
   void setFileBrowserViewMode(String value) {
-    print('set file browser view mode: $value');
+    developer.log('set file browser view mode: $value', name: 'seraph.settings');
     _fileBrowserViewMode.value = value;
     _box.write(_keyFileBrowserViewMode, value);
   }
 
   void setOidc(String? issuer, String? clientId) {
-    print('set oidc issuer: $issuer');
-    print('set oidc client id: $clientId');
+    developer.log('set oidc issuer: $issuer', name: 'seraph.settings');
+    developer.log('set oidc client id: $clientId', name: 'seraph.settings');
     _oidcClientId.value = clientId;
     _oidcIssuer.value = issuer;
     _box.write(_keyOidcIssuer, issuer);

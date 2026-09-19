@@ -1,5 +1,6 @@
 
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
@@ -53,7 +54,7 @@ class AudioPlayerController extends GetxController {
 
     subscriptions.add(audioHandler.customEvent.listen((event) {
       if (event == 'refreshToken') {
-        print("ping from audio_handler: refreshing token");
+        developer.log("ping from audio_handler: refreshing token", name: 'seraph.media_player');
         loginController.refreshTokenIfNeeded();
       }
     }));

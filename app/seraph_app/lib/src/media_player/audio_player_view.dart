@@ -9,7 +9,7 @@ class AudioPlayerView extends StatelessWidget {
   
   const AudioPlayerView({super.key});
 
-  format(Duration d) => d.toString().split('.').first.padLeft(8, "0");
+  String format(Duration d) => d.toString().split('.').first.padLeft(8, "0");
 
   @override
   Widget build(BuildContext context) {

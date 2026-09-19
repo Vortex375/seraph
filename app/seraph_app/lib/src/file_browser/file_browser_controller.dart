@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -74,7 +75,7 @@ class FileBrowserController extends GetxController {
       _status.value = files.isEmpty ? RxStatus.empty() : RxStatus.success();
     } catch (err) {
       _showError(err.toString());
-      print("Error: $err");
+      developer.log("Error: $err", name: 'seraph.file_browser', error: err);
       _status.value = RxStatus.error();
     }
   }

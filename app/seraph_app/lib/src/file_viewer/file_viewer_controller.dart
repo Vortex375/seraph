@@ -1,5 +1,6 @@
 
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -34,12 +35,12 @@ class FileViewerController extends GetxController {
     _themeMode = settings.themeMode.value;
     initialIndex = fileBrowserController.openItemIndex.value;
     if (initialIndex == -1) {
-      print("NO FILE");
+      developer.log("NO FILE", name: 'seraph.file_viewer');
       initialIndex = 0;
       scheduleMicrotask(() async {
         String? path = Get.parameters['path'];
         if (path != null) {
-          print("for path: ${path}");
+          developer.log("for path: $path", name: 'seraph.file_viewer');
           File? file = await fileService.stat(path);
           if (file != null) {
             // stat returns broken path, it seems, so fix it

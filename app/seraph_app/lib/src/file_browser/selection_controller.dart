@@ -29,19 +29,19 @@ class SelectionController extends GetxController {
     }
   }
 
-  clearSelection() {
+  void clearSelection() {
     _selectedItems.clear();
   }
 
-  add(String s) {
+  void add(String s) {
     _selectedItems.add(s);
   }
 
-  remove(String s) {
+  void remove(String s) {
     _selectedItems.remove(s);
   }
 
-  isSelected(String? s) {
+  bool isSelected(String? s) {
     if (s == null) {
       return false;
     }
