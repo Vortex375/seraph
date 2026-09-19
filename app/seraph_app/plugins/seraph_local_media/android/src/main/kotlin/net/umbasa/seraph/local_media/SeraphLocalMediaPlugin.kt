@@ -13,6 +13,7 @@ import android.os.Looper
 import android.provider.MediaStore
 import android.provider.Settings
 import android.util.Size
+import android.view.WindowManager
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.engine.plugins.FlutterPlugin
@@ -112,6 +113,10 @@ class SeraphLocalMediaPlugin : FlutterPlugin, ActivityAware, PluginRegistry.Requ
                 }
                 "loadThumbnail" -> handleLoadThumbnail(call, result)
                 "loadOriginal" -> handleLoadOriginal(call, result)
+                "setBrightnessBoost" -> {
+                    setBrightnessBoost(call.arguments as? Boolean == true)
+                    result.success(null)
+                }
                 else -> result.notImplemented()
             }
         }
@@ -533,6 +538,28 @@ class SeraphLocalMediaPlugin : FlutterPlugin, ActivityAware, PluginRegistry.Requ
             } catch (e: Exception) {
                 runOnUiThread { result.success(null) }
             }
+        }
+    }
+
+    /**
+     * Full screen brightness while a photo viewer is open, back to the system
+     * value on exit. Window-scoped (`WindowManager.LayoutParams`), so it dies
+     * with the Activity - there is no way to strand the device at full
+     * brightness, and no permission is needed.
+     *
+     * No-op without an Activity, like `openAppSettings`: a background backup
+     * engine has no window to brighten.
+     *
+     * ponytail: this is the SDR half of the "Google Photos pop" effect. The
+     * other half is Ultra HDR gainmap rendering, which Flutter's Android
+     * backend cannot draw (flutter/flutter#127852) - that needs a native
+     * platform-view viewer, deliberately not built here.
+     */
+    private fun setBrightnessBoost(on: Boolean) {
+        val window = activity?.window ?: return
+        window.attributes = window.attributes.apply {
+            screenBrightness =
+                if (on) 1f else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
         }
     }
 

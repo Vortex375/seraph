@@ -13,6 +13,7 @@ import 'package:seraph_app/src/gallery/local/local_image_loader.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_upload_backend.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_upload_service.dart';
+import 'package:seraph_app/src/util.dart';
 
 /// A gallery photo, full screen.
 ///
@@ -84,6 +85,7 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
     });
     controller.ensureRangeLoaded(
         widget.initialIndex - 1, widget.initialIndex + 1);
+    setBrightnessBoost(true);
   }
 
   @override
@@ -92,6 +94,7 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
     // rest of the app in immersive mode (a targeted fix the file viewer is
     // missing; see the spec's "Out of Scope" note).
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    setBrightnessBoost(false);
     _pageController.dispose();
     _currentIndex.dispose();
     _transformController.dispose();
