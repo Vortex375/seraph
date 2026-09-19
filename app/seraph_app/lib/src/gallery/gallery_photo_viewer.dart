@@ -491,13 +491,22 @@ class _GalleryPhotoPageState extends State<GalleryPhotoPage> {
   /// bytes have arrived - the swap happens without cross-fade, per the
   /// spec's load sequence. No InteractiveViewer here: the native view owns
   /// the transform, and a Flutter-side one would fight it for the pinch.
+  ///
+  /// The native view must fill the PAGE, not the Stack's intrinsic size: a
+  /// Stack sizes itself to its non-positioned children - the thumbnail,
+  /// which is square (512x512) and on this portrait screen narrower than
+  /// the page - so the platform view would only cover that square. A
+  /// landscape photo's thumbnail is WIDER than the screen, the Stack gets
+  /// clamped to full width and the bug hides; a portrait one isn't, and
+  /// the photo letterboxes at the thumbnail's width. [SizedBox.expand]
+  /// gives the Stack the page's full size regardless of the thumbnail.
   Widget _buildNative({
     required bool hasCloud,
     String? providerId,
     String? path,
   }) {
     final bytes = _bytes;
-    return Center(
+    return SizedBox.expand(
       child: Stack(
         alignment: Alignment.center,
         children: [

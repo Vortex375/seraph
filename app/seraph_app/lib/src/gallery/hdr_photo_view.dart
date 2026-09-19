@@ -135,11 +135,20 @@ class _HdrPhotoViewState extends State<HdrPhotoView> {
       surfaceFactory: (context, controller) => AndroidViewSurface(
         controller: controller as AndroidViewController,
         hitTestBehavior: PlatformViewHitTestBehavior.opaque,
-        // Empty on purpose: a gesture reaches the platform view only when no
-        // Flutter recognizer claims it (see the class doc) - that contract
-        // is the whole gesture split, and no Flutter-side transform is ever
-        // applied here.
-        gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{},
+        // A scale recognizer here is what makes pinch-to-zoom work: the
+        // surface's recognizers join a gesture-arena TEAM with the surface
+        // itself as captain, so when the scale recognizer claims a pinch
+        // the whole arena is handed to the platform view and the native
+        // view sees every pointer. Without it, an empty set only receives
+        // gestures nobody else claims - and the surrounding PageView's
+        // drag recognizer out-competes any pinch with horizontal spread.
+        // A one-finger swipe never satisfies the scale recognizer, so its
+        // rejection leaves the arena to the PageView: paging still works.
+        // Once zoomed in, the pager's physics go NeverScrollable and the
+        // native view is the last contender standing: it pans.
+        gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{
+          Factory<OneSequenceGestureRecognizer>(ScaleGestureRecognizer.new),
+        },
       ),
       onCreatePlatformView: (params) {
         // Per-view callback channel, keyed by the platform view id - never

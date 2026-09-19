@@ -60,6 +60,13 @@ class HdrPhotoImageView(
     private val main = Handler(Looper.getMainLooper())
     private val imageView = ImageView(context)
 
+    // The decoded bitmap's width/height ratio, set when the decode lands.
+    // The pan clamp needs it: the photo is drawn FIT-CENTER inside the
+    // view, so the content rect is smaller than the view on at least one
+    // axis, and clamping against the VIEW's size would let the photo be
+    // dragged far past its own edge (exposing whatever sits behind it).
+    private var bitmapAspect = 0f
+
     // One decode per view; nothing else ever queues on it, so a single
     // background thread is all the executor this needs.
     private val decoder = Executors.newSingleThreadExecutor()
@@ -83,7 +90,12 @@ class HdrPhotoImageView(
                     main.post { channel.invokeMethod("decodeError", null) }
                     null
                 } ?: return@execute
-                main.post { imageView.setImageBitmap(bitmap) }
+                main.post {
+                    imageView.setImageBitmap(bitmap)
+                    // Used by the pan clamp: see [bitmapAspect].
+                    bitmapAspect =
+                        bitmap.width.toFloat() / bitmap.height.toFloat()
+                }
             }
         }
 
@@ -150,16 +162,38 @@ class HdrPhotoImageView(
     }
 
     /**
-     * Applies scale about the view's centre plus a clamped translation: the
-     * content's edges sit at `centre(1-s)+tx` and `centre(1+s)+tx`, so
-     * keeping the photo covering the view means `|t| <= (s-1)*dimension/2`
-     * on each axis. Back at 1x the clamp zeroes the translation - exactly
-     * fit-center again - and the zoom report re-enables paging.
+     * Applies scale about the view's centre plus a clamped translation.
+     *
+     * The photo is drawn FIT-CENTER, so the content rect is
+     * `viewSize * min(1, viewAspect/bitmapAspect)`-ish - smaller than the
+     * view on at least one axis. An axis can pan only once the SCALED
+     * content exceeds the view on that axis (the behaviour every photo
+     * viewer has): the free slack per axis is
+     * `(scaledContentSize - viewSize) / 2`, split evenly either side of
+     * centre, and zero pins the photo's centre to the view's. Back at 1x
+     * every axis is slack-free, so the clamp IS fit-center again, and the
+     * zoom report re-enables paging.
      */
     private fun setTransform(s: Float, tx: Float, ty: Float) {
         val clamped = s.coerceIn(1f, MAX_SCALE)
-        val maxTx = (clamped - 1f) * imageView.width / 2f
-        val maxTy = (clamped - 1f) * imageView.height / 2f
+        val w = imageView.width.toFloat()
+        val h = imageView.height.toFloat()
+        var contentW = w
+        var contentH = h
+        if (bitmapAspect > 0f && w > 0f && h > 0f) {
+            val viewAspect = w / h
+            if (bitmapAspect > viewAspect) {
+                // Photo wider than the view: it fills the width, the
+                // HEIGHT is letterboxed.
+                contentH = w / bitmapAspect
+            } else {
+                // Photo taller (or matching): fills the height, the WIDTH
+                // is pillarboxed.
+                contentW = h * bitmapAspect
+            }
+        }
+        val maxTx = ((contentW * clamped - w) / 2f).coerceAtLeast(0f)
+        val maxTy = ((contentH * clamped - h) / 2f).coerceAtLeast(0f)
         scale = clamped
         imageView.scaleX = clamped
         imageView.scaleY = clamped
