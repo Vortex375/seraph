@@ -5,15 +5,21 @@ allprojects {
     }
 }
 
-rootProject.buildDir = "../build"
+// Gradle 9 removed `Project.buildDir` (deprecated since 8.0) in favour of the
+// lazy `layout.buildDirectory`. This mirrors Flutter's current template: the
+// path is resolved relative to the DEFAULT build directory (`android/build`),
+// so "../../build" lands on `app/seraph_app/build` - the same location the old
+// `rootProject.buildDir = "../build"` produced.
+def newBuildDir = rootProject.layout.buildDirectory.dir("../../build").get()
+rootProject.layout.buildDirectory.value(newBuildDir)
 
 subprojects {
-    project.buildDir = "${rootProject.buildDir}/${project.name}"
+    project.layout.buildDirectory.value(newBuildDir.dir(project.name))
 }
 subprojects {
     project.evaluationDependsOn(":app")
 }
 
 tasks.register("clean", Delete) {
-    delete rootProject.buildDir
+    delete rootProject.layout.buildDirectory
 }

@@ -34,16 +34,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "net.umbasa.seraph.app"
         // You can update the following values to match your application needs.
         // For more information, see: https://docs.flutter.dev/deployment/android#reviewing-the-gradle-build-configuration.
-        minSdkVersion = 34
         minSdk = 34
         targetSdk = flutter.targetSdkVersion
         versionCode = flutterVersionCode.toInteger()
@@ -61,16 +56,22 @@ android {
         }
     }
 
-    packagingOptions {
+    // `packagingOptions` was the AGP 8 spelling; AGP 9 uses `packaging`. This
+    // block was also duplicated verbatim - the second copy was a no-op.
+    // useLegacyPackaging keeps .so files uncompressed-extracted at install
+    // time, matching android:extractNativeLibs="true" in AndroidManifest.xml.
+    packaging {
         jniLibs {
-            useLegacyPackaging true
+            useLegacyPackaging = true
         }
     }
+}
 
-    packagingOptions {
-        jniLibs {
-            useLegacyPackaging true
-        }
+// Kotlin's `kotlinOptions` block is superseded by the `kotlin { compilerOptions }`
+// DSL, which is what Flutter's current template generates.
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
 }
 

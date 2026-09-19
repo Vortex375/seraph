@@ -18,8 +18,10 @@ buildscript {
     dependencies {
         // Match the host app's AGP / Kotlin versions (android/settings.gradle)
         // so the plugin module builds against the same toolchain the app does.
-        classpath 'com.android.tools.build:gradle:8.13.0'
-        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.20'
+        // These MUST be kept in lockstep with settings.gradle - a mismatch puts
+        // two AGP versions on the build classpath.
+        classpath 'com.android.tools.build:gradle:9.1.0'
+        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.0'
     }
 }
 
@@ -45,8 +47,9 @@ android {
     // compileSdk/minSdk match the host app (android/app/build.gradle:
     // flutter.compileSdkVersion, minSdk 34). Hard-coded rather than reading
     // the `flutter` ext because path-dependency plugin modules do not get
-    // the app's Flutter extension applied.
-    compileSdk 35
+    // the app's Flutter extension applied - which is why this drifted to 35
+    // while the app moved to 36 with Flutter 3.47.5.
+    compileSdk 36
 
     defaultConfig {
         minSdk 34
@@ -56,9 +59,11 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+}
 
-    kotlinOptions {
-        jvmTarget = '17'
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
 }
 
