@@ -18,11 +18,13 @@ RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go b
 
 # Build the flutter app for web
 FROM --platform=$BUILDPLATFORM ubuntu:24.04 AS flutter
-RUN apt-get update && apt-get install -y --no-install-recommends git curl xz-utils ca-certificates && rm -rf /var/lib/apt/lists/*
-# ponytail: tarball version pinned twice (URL + below); cirruslabs images stopped at 3.44.0
-RUN curl -fsSL "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.47.5-stable.tar.xz" | tar -xJ -C /opt
+RUN apt-get update && apt-get install -y --no-install-recommends git curl unzip xz-utils ca-certificates && rm -rf /var/lib/apt/lists/*
+# ponytail: version pinned once here; no official arm64 tarball exists, so a
+# shallow clone of the release tag + arch-native precache is the only
+# multi-platform path. Swap back to the x64-only tarball if single-platform.
+RUN git clone --depth 1 --branch 3.47.5 https://github.com/flutter/flutter.git /opt/flutter
 ENV PATH=/opt/flutter/bin:$PATH
-RUN git config --global --add safe.directory /opt/flutter
+RUN git config --global --add safe.directory /opt/flutter && flutter precache --web --no-android --no-universal
 WORKDIR /app
 RUN flutter precache --web
 # Copy the pubspec and the path-dependency plugin it references before pub get,
