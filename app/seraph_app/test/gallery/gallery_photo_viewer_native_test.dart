@@ -64,7 +64,7 @@ void main() {
       if (call.method == 'setHdrColorMode') {
         colorModeCalls.add(call.arguments as bool);
       }
-      // Everything else (setBrightnessBoost) is accepted and ignored.
+      // Everything else on the channel is accepted and ignored.
       return null;
     });
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger

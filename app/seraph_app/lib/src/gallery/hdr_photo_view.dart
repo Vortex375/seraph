@@ -82,9 +82,9 @@ class _HdrPhotoViewState extends State<HdrPhotoView> {
   static const _viewType = 'seraph/hdr_photo';
 
   // Outbound colour-mode calls ride the shared local-media channel - the
-  // same activity-bound handler setBrightnessBoost uses, and outbound calls
-  // never touch the inbound handler slot AndroidLocalSource owns (see its
-  // class doc).
+  // same activity-bound handler the scan and load calls use, and outbound
+  // calls never touch the inbound handler slot AndroidLocalSource owns (see
+  // its class doc).
   static const _localMedia = MethodChannel('seraph/local_media');
 
   MethodChannel? _viewChannel;
@@ -110,8 +110,8 @@ class _HdrPhotoViewState extends State<HdrPhotoView> {
     try {
       await _localMedia.invokeMethod<void>('setHdrColorMode', hdr);
     } on PlatformException {
-      // As setBrightnessBoost: a device that refuses it still shows the
-      // photo - tonemapped, but shown.
+      // A device that refuses it still shows the photo - tonemapped, but
+      // shown.
     } on MissingPluginException {
       // No plugin on this engine (tests, headless).
     }

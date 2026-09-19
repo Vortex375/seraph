@@ -291,7 +291,10 @@ cannot carry HDR — the platform-view shape is the established way to do this.
 - **Videos and non-image media** in the viewer — unchanged.
 - **Screenshot fidelity.** Screenshots of HDR content come back tonemapped to
   SDR; a platform limitation, accepted (as in the spike).
-- **The brightness boost.** Already ships in the viewer; nothing to do.
+- **The brightness boost.** Removed: with the native HDR path live, forcing
+  screen brightness to full is redundant and would confound verifying that
+  HDR is actually engaged (a photo that "pops" could be the boost, not the
+  gain map). It was the SDR stand-in while the HDR path did not exist.
 
 ## Further Notes
 

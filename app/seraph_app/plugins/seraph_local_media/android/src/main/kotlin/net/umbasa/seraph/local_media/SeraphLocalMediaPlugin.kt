@@ -14,7 +14,6 @@ import android.os.Looper
 import android.provider.MediaStore
 import android.provider.Settings
 import android.util.Size
-import android.view.WindowManager
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.engine.plugins.FlutterPlugin
@@ -118,10 +117,6 @@ class SeraphLocalMediaPlugin : FlutterPlugin, ActivityAware, PluginRegistry.Requ
                 }
                 "loadThumbnail" -> handleLoadThumbnail(call, result)
                 "loadOriginal" -> handleLoadOriginal(call, result)
-                "setBrightnessBoost" -> {
-                    setBrightnessBoost(call.arguments as? Boolean == true)
-                    result.success(null)
-                }
                 "setHdrColorMode" -> handleSetHdrColorMode(call, result)
                 else -> result.notImplemented()
             }
@@ -553,37 +548,17 @@ class SeraphLocalMediaPlugin : FlutterPlugin, ActivityAware, PluginRegistry.Requ
         }
     }
 
-    /**
-     * Full screen brightness while a photo viewer is open, back to the system
-     * value on exit. Window-scoped (`WindowManager.LayoutParams`), so it dies
-     * with the Activity - there is no way to strand the device at full
-     * brightness, and no permission is needed.
-     *
-     * No-op without an Activity, like `openAppSettings`: a background backup
-     * engine has no window to brighten.
-     *
-     * ponytail: this is the SDR half of the "Google Photos pop" effect. The
-     * other half is Ultra HDR gainmap rendering, which Flutter's Android
-     * backend cannot draw (flutter/flutter#127852) - that needs a native
-     * platform-view viewer, deliberately not built here.
-     */
-    private fun setBrightnessBoost(on: Boolean) {
-        val window = activity?.window ?: return
-        window.attributes = window.attributes.apply {
-            screenBrightness =
-                if (on) 1f else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
-        }
-    }
-
     // --- HDR photo viewer (.scratch/hdr-photo-viewer/spec.md) --------------
 
     /**
      * `Window.setColorMode(COLOR_MODE_HDR)` while the gallery photo viewer's
      * native path has a live view, `COLOR_MODE_DEFAULT` when the last one
-     * closes - the enter/exit shape the brightness boost uses, via the same
-     * Activity access. No ratio polling, no display listeners; the spike's
-     * measurement plumbing does not ship. No-op without an Activity, same
-     * shape as [setBrightnessBoost].
+     * closes - window-scoped via the plugin's Activity access. No-op
+     * without an Activity, like `openAppSettings`: a background backup
+     * engine has no window to change. Removed alongside it: the old SDR
+     * brightness boost (`setBrightnessBoost`) - the HDR path makes it
+     * redundant, and leaving it on would confound testing whether HDR is
+     * actually engaged.
      */
     private fun handleSetHdrColorMode(call: MethodCall, result: MethodChannel.Result) {
         val hdr = call.arguments as? Boolean == true
