@@ -9,6 +9,7 @@ import 'package:seraph_app/src/file_browser/file_browser_controller.dart';
 import 'package:seraph_app/src/file_browser/file_service.dart';
 import 'package:seraph_app/src/media_player/audio_player_controller.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
+import 'package:seraph_app/src/util.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webdav_client/webdav_client.dart';
 
@@ -32,6 +33,7 @@ class FileViewerController extends GetxController {
     final FileService fileService = Get.find();
 
     _themeMode = settings.themeMode.value;
+    setBrightnessBoost(true);
     initialIndex = fileBrowserController.openItemIndex.value;
     if (initialIndex == -1) {
       print("NO FILE");
@@ -77,6 +79,7 @@ class FileViewerController extends GetxController {
     super.onClose();
     /* restore original theme mode */
     Get.changeThemeMode(_themeMode ?? ThemeMode.system);
+    setBrightnessBoost(false);
     pageController.dispose();
     transformationController.dispose();
   }
