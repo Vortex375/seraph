@@ -23,3 +23,10 @@ plugins {
 }
 
 include ":app"
+
+// The seraph_local_media path plugin (its Android library lives under
+// plugins/seraph_local_media/android). `flutter pub get` adds it to
+// .flutter-plugins-dependencies; `flutter plugin loader` then includes the
+// module here, so an explicit `include ":seraph_local_media"` is not needed
+// and would duplicate the loader's own include. Kept as a comment so the
+// presence of this plugin is visible at a glance.

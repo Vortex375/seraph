@@ -88,6 +88,17 @@ func toIoError(err error) IoError {
 	if errors.Is(err, fs.ErrNotExist) {
 		return IoError{err.Error(), "ErrNotExist"}
 	}
+	// Some providers (and os.Mkdir on a missing parent before the PathError
+	// unwrap was made to satisfy fs.ErrNotExist on every Go version) return an
+	// error that os.IsNotExist recognises but errors.Is(err, fs.ErrNotExist)
+	// does not - notably a bare syscall.ENOENT not wrapped in an *os.PathError,
+	// or a provider-specific error type whose Is-targeting predates the
+	// io/fs sentinel. Mapping those to the same "ErrNotExist" class is what
+	// keeps webdav_client's mkdirAll (which keys its segment walk off the 409
+	// the gateway returns for ErrNotExist) working across every provider.
+	if os.IsNotExist(err) {
+		return IoError{err.Error(), "ErrNotExist"}
+	}
 	if errors.Is(err, fs.ErrClosed) {
 		return IoError{err.Error(), "ErrClosed"}
 	}
@@ -102,7 +113,7 @@ func NewFileProviderServer(p ServerParams, providerId string, fileSystem webdav.
 	if p.Js != nil {
 		cfg := jetstream.StreamConfig{
 			Name:     events.FileInfoStream,
-			Subjects: []string{events.FileProviderFileInfoTopic},
+			Subjects: []string{events.FileProviderFileInfoTopic, events.FileProviderFileRemovedTopic},
 		}
 
 		_, err := p.Js.CreateOrUpdateStream(context.Background(), cfg)
@@ -235,6 +246,17 @@ func (s *FileProviderServer) handleMkdir(ctx context.Context, uid string, req *M
 	err := s.fs.Mkdir(ctx, req.Name, req.Perm)
 	if err == nil {
 		s.log.Debug("mkdir", "uid", uid, "req", req)
+		// A new directory is a new entry the file-indexer should know about
+		// (a PROPFIND on the parent, a backfill walking the tree, a gallery
+		// rescan's walkDir - all discover it via Stat/Readdir, but a freshly
+		// created dir would otherwise stay invisible until someone happens to
+		// list its parent). Publish a FileInfoEvent so the indexer upserts it
+		// immediately, the same way a Stat of an existing dir would.
+		if fi, statErr := s.fs.Stat(ctx, req.Name); statErr == nil {
+			if pubErr := s.publishFileInfoEvent(ctx, req.Name, fi, nil); pubErr != nil {
+				s.log.Error("failed to publish file info event after mkdir", "uid", uid, "req", req, "error", pubErr)
+			}
+		}
 	} else {
 		s.log.Debug("mkdir failed", "uid", uid, "req", req, "error", err)
 	}
@@ -266,7 +288,7 @@ func (s *FileProviderServer) handleOpenFile(ctx context.Context, uid string, req
 	response := OpenFileResponse{}
 	if err == nil {
 		fileId := uuid.New()
-		err = newServerFile(ctx, uid, fileId, req.Name, file, s)
+		err = newServerFile(ctx, uid, fileId, req.Name, file, s, flag)
 		if err == nil {
 			response.FileId = fileId.String()
 		} else {
@@ -299,6 +321,9 @@ func (s *FileProviderServer) handleRemoveALl(ctx context.Context, uid string, re
 	err := s.fs.RemoveAll(ctx, req.Name)
 	if err == nil {
 		s.log.Debug("removeAll", "uid", uid, "req", req)
+		if pubErr := s.publishFileRemovedEvent(ctx, req.Name); pubErr != nil {
+			s.log.Error("failed to publish file removed event", "uid", uid, "req", req, "error", pubErr)
+		}
 	} else {
 		s.log.Debug("removeAll failed", "uid", uid, "req", req, "error", err)
 	}
@@ -328,6 +353,21 @@ func (s *FileProviderServer) handleRename(ctx context.Context, uid string, req *
 	err := s.fs.Rename(ctx, req.OldName, req.NewName)
 	if err == nil {
 		s.log.Debug("rename", "uid", uid, "req", req)
+		if pubErr := s.publishFileRemovedEvent(ctx, req.OldName); pubErr != nil {
+			s.log.Error("failed to publish file removed event", "uid", uid, "req", req, "error", pubErr)
+		}
+		// The target is now a new or changed file (the staging->target
+		// rename of an atomic PUT, or a user-initiated MOVE). Without a
+		// FileInfoEvent for NewName the file-indexer never sees it, no
+		// FileChangedEvent is published, and the gallery never ingests -
+		// exactly the "uploads don't appear until manual rescan" bug. Stat
+		// the new path and publish, the same way handleStat does for an
+		// explicit Stat.
+		if fi, statErr := s.fs.Stat(ctx, req.NewName); statErr == nil {
+			if pubErr := s.publishFileInfoEvent(ctx, req.NewName, fi, nil); pubErr != nil {
+				s.log.Error("failed to publish file info event after rename", "uid", uid, "req", req, "error", pubErr)
+			}
+		}
 	} else {
 		s.log.Debug("rename failed", "uid", uid, "req", req, "error", err)
 	}
@@ -387,6 +427,22 @@ func (s *FileProviderServer) publishFileInfoEvent(ctx context.Context, path stri
 	}
 	fileInfoEventData, _ := fileInfoEvent.Marshal()
 	return s.nc.Publish(fmt.Sprintf(events.FileProviderFileInfoTopicPattern, s.providerId), fileInfoEventData)
+}
+
+func (s *FileProviderServer) publishFileRemovedEvent(ctx context.Context, path string) error {
+	ev := events.FileRemovedEvent{
+		Event: events.Event{
+			ID:      uuid.NewString(),
+			Version: 1,
+		},
+		ProviderID: s.providerId,
+		Path:       ensureAbsolutePath(path),
+	}
+	data, err := ev.Marshal()
+	if err != nil {
+		return fmt.Errorf("error while marshalling FileRemovedEvent: %w", err)
+	}
+	return s.nc.Publish(fmt.Sprintf(events.FileProviderFileRemovedTopicPattern, s.providerId), data)
 }
 
 func ensureAbsolutePath(p string) string {

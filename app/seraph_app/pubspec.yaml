@@ -13,6 +13,13 @@ dependencies:
   dio: ^5.7.0
   flutter:
     sdk: flutter
+  # Local path-dependency plugin: registers the `seraph/local_media` Android
+  # MethodChannel on EVERY FlutterEngine (MainActivity's, the foreground-task
+  # engine, and the workmanager engine) so background backup's `loadOriginal`
+  # stops throwing MissingPluginException. See
+  # plugins/seraph_local_media/lib/seraph_local_media.dart.
+  seraph_local_media:
+    path: plugins/seraph_local_media
   flutter_breadcrumb: ^1.0.1
   flutter_localizations:
     sdk: flutter
@@ -35,12 +42,19 @@ dependencies:
   audio_service_mpris: ^0.2.0
   google_fonts: ^8.1.0
   url_launcher: ^6.3.1
+  drift: ^2.34.3
+  path: ^1.9.1
+  sqlite3: ^3.5.0
+  flutter_foreground_task: ^10.0.0
+  workmanager: ^0.10.6
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
 
   flutter_lints: ^6.0.0
+  drift_dev: ^2.34.0
+  build_runner: ^2.15.1
 
 flutter:
   uses-material-design: true

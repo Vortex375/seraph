@@ -162,6 +162,38 @@ func (f *atomicPutFs) OpenFile(ctx context.Context, name string, flag int, perm 
 	put.staged = true
 
 	staging := path.Join(path.Dir(name), stagingName())
+
+	// Ensure the destination's parent directory exists before opening the
+	// staging file. The fileprovider.Client's OpenFile is lazy (it defers the
+	// real open to the first Read/Write), so an OpenFile against a path whose
+	// parent collection is missing does NOT fail here - it fails later, inside
+	// io.Copy, where golang.org/x/net/webdav's handlePut maps a copy error to
+	// 405 Method Not Allowed rather than the 409 Conflict it returns when
+	// OpenFile itself fails with ENOENT. That 405 is indistinguishable, to a
+	// WebDAV client, from "this resource cannot be written at all", so
+	// webdav_client's mkdirAll (which only walks segments on a 409) treats it
+	// as "the directory exists" and the upload fails on every retry - the
+	// symptom every background backup upload showed.
+	//
+	// Creating the parent here makes the staging OpenFile's eventual Write-time
+	// open succeed regardless of whether the client ran mkdirAll first, and
+	// mirrors what webdav_client's own wdWriteWithBytes does client-side - so
+	// the server is robust to clients that don't, or that bail out of
+	// mkdirAll early on an unexpected status.
+	if dir := path.Dir(name); dir != "" && dir != "/" && dir != "." {
+		if err := f.FileSystem.Mkdir(ctx, dir, 0777); err != nil && !errors.Is(err, fs.ErrExist) {
+			// A missing intermediate parent surfaces as "does not exist" at the
+			// deepest missing level; golang.org/x/net/webdav's Mkdir has no
+			// recursive form, so walk up the missing chain from the leaf,
+			// creating each level. This keeps the staging open self-sufficient
+			// rather than depending on a client-side mkdirAll whose 405-vs-409
+			// status mapping is exactly what failed on the phone.
+			if err := mkdirAll(ctx, f.FileSystem, dir); err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	file, err := f.FileSystem.OpenFile(ctx, staging, flag, perm)
 	if err != nil {
 		return nil, err
@@ -442,4 +474,64 @@ func (s *stagingSweeper) sweep(ctx context.Context, fsys webdav.FileSystem, dir 
 			s.log.Info("removed orphaned staging file", "path", orphan)
 		}
 	}
+}
+
+// mkdirAll creates the directory at name and any missing intermediate parent
+// directories, like os.MkdirAll but over a webdav.FileSystem. The
+// golang.org/x/net/webdav FileSystem interface has no recursive Mkdir, so this
+// walks from the leaf upward, creating each level and treating "already
+// exists" (fs.ErrExist) as success - the same semantics webdav_client's own
+// client-side mkdirAll relies on, applied server-side so the staging OpenFile
+// is self-sufficient regardless of whether the client ran mkdirAll.
+//
+// Used by [atomicPutFs.OpenFile] to guarantee the destination's parent
+// collection exists before a staging file is opened in it, which is what
+// makes a PUT to a path whose intermediate dirs do not exist yet succeed
+// (rather than surfacing a Write-time ENOENT as a 405 from handlePut).
+func mkdirAll(ctx context.Context, vfs webdav.FileSystem, name string) error {
+	// Build the chain of missing ancestors bottom-up. Stat first so the
+	// common case (everything exists) costs a single round-trip; only on a
+	// missing ancestor does the walk begin.
+	_, err := vfs.Stat(ctx, name)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+
+	// Collect the missing segments from the leaf up to (but not including)
+	// the first existing ancestor.
+	var missing []string
+	dir := name
+	for dir != "" && dir != "/" && dir != "." {
+		if err := vfs.Mkdir(ctx, dir, 0777); err == nil {
+			break
+		} else if errors.Is(err, fs.ErrExist) {
+			break
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			// Some other error (permission, read-only, ...): report it; a
+			// missing intermediate ancestor would also surface here as
+			// ErrNotExist, which the next loop iteration's own Mkdir on the
+			// parent will retry.
+			missing = append(missing, dir)
+		} else {
+			missing = append(missing, dir)
+		}
+		parent := path.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+
+	// Create the missing levels top-down so each Mkdir has an existing
+	// parent; collecting bottom-up then reversing is what makes a deep
+	// missing chain a single pass rather than one Stat per level.
+	for i := len(missing) - 1; i >= 0; i-- {
+		if err := vfs.Mkdir(ctx, missing[i], 0777); err != nil && !errors.Is(err, fs.ErrExist) {
+			return err
+		}
+	}
+	return nil
 }

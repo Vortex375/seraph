@@ -25,6 +25,7 @@ import (
 	"umbasa.net/seraph/api-gateway/agents"
 	"umbasa.net/seraph/api-gateway/auth"
 	"umbasa.net/seraph/api-gateway/download"
+	"umbasa.net/seraph/api-gateway/gallery"
 	"umbasa.net/seraph/api-gateway/gateway"
 	"umbasa.net/seraph/api-gateway/jobs"
 	"umbasa.net/seraph/api-gateway/preview"
@@ -55,6 +56,7 @@ func main() {
 		logging.FxLogger(),
 
 		download.Module,
+		gallery.Module,
 		jobs.Module,
 		preview.Module,
 		search.Module,

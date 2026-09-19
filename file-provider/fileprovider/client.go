@@ -309,7 +309,16 @@ func (c *client) Stat(ctx context.Context, name string) (os.FileInfo, error) {
 	err = ioError(resp.Error)
 
 	if err != nil {
-		c.log.Error("stat failed", "uid", request.Uid, "req", request.Request, "error", err)
+		if errors.Is(err, os.ErrNotExist) {
+			// "not found" is the expected, routine outcome of an
+			// existence-check Stat() (e.g. the thumbnailer's "does this
+			// Thumbnail already exist" check before creating one) - logging
+			// it at Error floods the log with non-problems and buries
+			// genuine failures.
+			c.log.Debug("stat: not found", "uid", request.Uid, "req", request.Request)
+		} else {
+			c.log.Error("stat failed", "uid", request.Uid, "req", request.Request, "error", err)
+		}
 		return nil, err
 	}
 

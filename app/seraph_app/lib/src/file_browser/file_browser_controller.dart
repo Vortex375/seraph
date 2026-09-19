@@ -1,4 +1,3 @@
-
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -12,7 +11,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:webdav_client/webdav_client.dart';
 
 class FileBrowserController extends GetxController {
-  
   final Rx<List<File>> _files = Rx([]);
   final Rx<RxStatus> _status = RxStatus.empty().obs;
   final Rx<String> _path = ''.obs;
@@ -28,7 +26,7 @@ class FileBrowserController extends GetxController {
 
   bool _first = true;
 
-  Widget Function()? _previewFactory; 
+  Widget Function()? _previewFactory;
 
   void setPath(String path) {
     scheduleMicrotask(() {
@@ -53,9 +51,9 @@ class FileBrowserController extends GetxController {
 
   Future<void> loadFiles() async {
     final FileService fileService = Get.find();
-    
+
     _status.value = RxStatus.loading();
-    
+
     List<File> files;
     try {
       files = await fileService.readDir(_path.value);
@@ -83,13 +81,23 @@ class FileBrowserController extends GetxController {
 
   void openItem(File item) {
     final ShareController shareController = Get.find();
-    
+
     if (!_status.value.isLoading && (item.isDir ?? false)) {
-      Get.offNamed('${shareController.shareMode.value ? ShareController.routeName : FileBrowserView.routeName}?path=$_path/${item.name}');
+      Get.offNamed(
+          '${shareController.shareMode.value ? ShareController.routeName : FileBrowserView.routeName}?path=$_path/${item.name}');
     } else {
       _openItemIndex.value = files.value.indexOf(item);
       Get.toNamed('${FileViewerView.routeName}?path=$_path/${item.name}');
     }
+  }
+
+  /// Clears the "which file in the current listing the viewer opened on"
+  /// cursor. Opening the file viewer directly - outside the browser, as the
+  /// gallery does - must not inherit a stale index from an earlier
+  /// in-browser open, or it would show that old listing's file instead of
+  /// the one asked for.
+  void resetOpenItem() {
+    _openItemIndex.value = -1;
   }
 
   Future<void> download() async {
@@ -114,8 +122,6 @@ class FileBrowserController extends GetxController {
 
   void _showError(String error) {
     Get.snackbar('Load failed', error,
-        backgroundColor: Colors.amber[800],
-        isDismissible: true
-      );
+        backgroundColor: Colors.amber[800], isDismissible: true);
   }
 }

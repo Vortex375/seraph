@@ -59,6 +59,14 @@ the web UI see the same set. Because Seraph reads Capture Date from the photo
 itself, photos that arrive by any route at all — SMB copy, web upload, another
 phone — sort into their correct place in history.
 
+The device half is chosen the same way. A phone's media store is not a photo
+library — it is camera photos alongside downloads, screenshots, sticker caches
+and app artwork — so the user picks which folders on the phone count as photos:
+its **Local Folders**. These are known only to the device that holds them, and
+they are purely a filter on what the gallery shows and counts. Nothing on the
+phone is moved, uploaded or deleted by picking them, and the phone is still
+scanned in full regardless of them.
+
 On Android, the user additionally configures **Sync Pairs**: a folder on the
 phone maps to a folder in Seraph, and everything under it is uploaded, relative
 path preserved, in the background, on the constraints the user picks (unmetered,
@@ -118,6 +126,22 @@ Android-only in this iteration.
 29. As a photo owner sharing a folder with another user, I want each of us to see that folder's photos in our own gallery without the other's folders leaking in, so that a shared family folder works and nothing else is shared.
 30. As a photo owner whose access to a space is revoked, I want the photos from that space to stop appearing in my gallery, so that access control is not bypassed by the gallery.
 31. As a Seraph administrator, I want re-pointing a space at a different file provider to be picked up by the gallery, so that reorganising storage does not leave the gallery serving stale locations.
+
+### Local Folders
+
+*(Numbered from the end of the list rather than inserted in sequence: stories 1–103
+are referenced by number from tickets, code comments and the design notes, and
+renumbering them would silently invalidate every one of those references.)*
+
+104. As an Android photo owner, I want to choose which folders on my phone appear in Gallery Mode, so that screenshots, downloads and sticker caches do not pollute my photo timeline.
+105. As an Android photo owner, I want my camera folders included out of the box, so that the gallery is useful before I configure anything.
+106. As an Android photo owner, I want to see how many photos each folder on my phone holds before I decide, so that I am choosing from evidence rather than from a folder name.
+107. As an Android photo owner, I want selecting and deselecting a folder to take effect immediately, so that curating the gallery is a decision I can reverse in a second rather than a rescan I have to wait out.
+108. As an Android photo owner, I want a folder I deselect to still be listed so I can select it again, so that hiding a folder is never a one-way door.
+109. As an Android photo owner, I want photos from unselected folders excluded from the backed-up and not-backed-up counts, so that the one number I am asked to trust describes the photos I actually care about.
+110. As an Android photo owner, I want a photo that is in Seraph to stay in my gallery even when I deselect the phone folder it also sits in, so that hiding a device folder never hides photos I have already backed up.
+111. As an Android photo owner, I want my choice of folders to stay on this phone, so that configuring one device does not reconfigure another.
+112. As an Android photo owner, I want the folders on my phone scanned regardless of which ones I display, so that a display preference can never be the reason a photo went un-backed-up.
 
 ### Capture Date
 
@@ -230,7 +254,10 @@ before any upload logic depends on them.
   chronological grid. **Thumbnail warming belongs in this phase** — a cloud-only
   gallery is exactly where cold thumbnails hurt most.
 - **Phase 2 — device side, Android.** Local media integration, device items in
-  the mirror, the merged view, the three Availability states.
+  the mirror, the merged view, the three Availability states. Local Folder
+  selection was added to this phase after the rest of it shipped, on the
+  evidence of a real media store: an unfiltered device half made the merged
+  gallery worse, not better.
 - **Phase 3 — upload.** Sync Pairs, the headless engine, background scheduling,
   verification, the failure list.
 - **Phase 4 — space management.** Free-up-space via the Android trash, Erase
@@ -509,6 +536,54 @@ read a setting stored on a phone.**
 (puts user-facing configuration behind the indexer's boundary), and a
 server-side config file listing folder prefixes (the app could then not offer
 folder selection).
+
+### Local Folders — the device-side display filter
+
+The user picks which folders on the phone feed Gallery Mode. The picking lives
+beside the Gallery Source Folder configuration, on one screen with two sections
+— *In Seraph* and *On this device* — and the device section is absent entirely
+on platforms with no Local Source. Sync Pairs become a third section in phase 3.
+
+**Stored on the device, for the same reason Sync Pairs are.** A Local Folder
+names a path that exists on exactly one phone, so there is nothing a second
+device could usefully read. The argument that put Gallery Source Folders on the
+server — the thumbnail pre-generator is a backend consumer and cannot read a
+setting stored on a phone — has no counterpart here.
+
+**It is a filter, applied when the mirror is read, and nothing else.** The full
+media-store scan stays unfiltered and the mirror keeps a complete row set;
+selection is applied on the read path alone. That is what makes changing the
+selection instant and reversible, lets the folder list be enumerated from rows
+already in the mirror rather than by a second scan or a new platform call, and —
+the point that decides it — keeps dedup, local identity and, in phase 3, the
+upload queue and verification reading the whole device library. **Nothing about
+which folders a user cares to look at may reach the answer to "is this photo
+safe".**
+
+**Rejected:** filtering at import. Deselecting and reselecting a folder becomes a
+full rescan, a deselected folder stops being enumerable and so cannot be
+recovered, and a display preference ends up on the path that decides what gets
+backed up.
+
+**One rule governs what the filter does:** an unselected Local Folder makes a
+row's device copy invisible, and **the row then behaves exactly as though the
+device copy did not exist**. A Device only photo in an unselected folder leaves
+the gallery. A Synced photo whose device copy sits in an unselected folder
+displays, badges and counts as Cloud only. Display, Availability, the
+Availability filter and the backed-up counts all read the result of that single
+predicate, so they cannot drift into disagreeing with one another.
+
+**The default is the camera folders** — `DCIM` and everything under it — seeded
+once on first run with every other folder off. Defaulting to everything
+reproduces the pollution this exists to fix; defaulting to nothing makes a fresh
+install's gallery look broken. A folder that appears later is off unless it is
+under `DCIM`. The seed runs once and the user's selection is never re-derived
+from it afterwards.
+
+**Phase 3 constraint:** a Sync Pair's Local Source is implicitly selected. A
+folder being backed up while hidden from the gallery is not a coherent state —
+the same rule as "a Sync Pair's Seraph folder is automatically a Gallery Source
+Folder", from the other side.
 
 ### Android first, behind a platform-neutral Local Source seam
 

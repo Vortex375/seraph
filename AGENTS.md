@@ -72,6 +72,13 @@ Location: `app/seraph_app/`
 - Run a single test: `flutter test test/widget_test.dart`
 - Analyze (lint): `flutter analyze` (uses `flutter_lints` via `analysis_options.yaml`)
 - Build (web, the real gate): `flutter build web --release --base-href=/app/`
+- Build (release APK): `flutter build apk` — **mandatory when the change touches
+  anything under `android/`** (native code, manifests, gradle, plugins, or the
+  Flutter-to-native channel/plugin wiring). The web build does not exercise any
+  Android build target, so an Android-only break (a malformed plugin manifest, a
+  Kotlin compile error, a missing gradle module) goes undetected by `flutter
+  build web` and `flutter analyze` alike. Do not accept a change that touches
+  `android/` on the web build alone; gate it on the APK build as well.
 
 **`flutter analyze` clean does not mean the code builds.** Analyze has passed on code
 that broke the web build. Do not accept a Dart change — and do not resolve a Dart

@@ -51,6 +51,7 @@ func main() {
 			viper.SetDefault("thumbnailer.parallel", runtime.NumCPU())
 			viper.SetDefault("thumbnailer.maxImageWidth", thumbnailer.DefaultMaxImageWidth)
 			viper.SetDefault("thumbnailer.maxImageHeight", thumbnailer.DefaultMaxImageHeight)
+			viper.SetDefault("thumbnailer.warmSize", thumbnailer.DefaultWarmSize)
 
 			providerId := viper.GetString("thumbnailer.providerId")
 			path := viper.GetString("thumbnailer.path")
@@ -58,12 +59,14 @@ func main() {
 			parallel := viper.GetInt("thumbnailer.parallel")
 			maxImageWidth := viper.GetInt("thumbnailer.maxImageWidth")
 			maxImageHeight := viper.GetInt("thumbnailer.maxImageHeight")
+			warmSize := viper.GetInt("thumbnailer.warmSize")
 
 			params.Options = &thumbnailer.Options{
 				JpegQuality:    jpegQuality,
 				Parallel:       parallel,
 				MaxImageWidth:  maxImageWidth,
 				MaxImageHeight: maxImageHeight,
+				WarmSize:       warmSize,
 			}
 
 			if providerId == "" {

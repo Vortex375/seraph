@@ -18,6 +18,12 @@
 
 package fileindexer
 
+import (
+	"context"
+
+	"umbasa.net/seraph/events"
+)
+
 // Exported for tests only: lets the integration test run explain() against
 // the exact filter and sort the production query path uses, so the query
 // plan assertion cannot drift away from the real query.
@@ -26,3 +32,11 @@ var (
 	BuildDescendantsFilter = buildDescendantsFilter
 	ListSort               = listSort
 )
+
+// Exported for tests only: lets the removal-signal integration test drive
+// the readdir-complete path directly to assert it is a no-op for files a
+// prior removal signal already deleted, without having to synthesize a full
+// FileInfoEvent/readdir sequence through the consumer.
+func ConsumerHandleReaddirComplete(c Consumer, ctx context.Context, file *File, readDir *events.ReadDir) error {
+	return c.(*consumer).handleReaddirComplete(ctx, file, readDir)
+}

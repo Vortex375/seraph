@@ -70,8 +70,17 @@ _Avoid_: camera folder, DCIM, local album
 **Gallery Source Folder**:
 A folder in Seraph whose photos appear in Gallery Mode. Every Sync Pair's Seraph
 folder is one; further ones can be added on their own, for photos Seraph holds
-but no device uploads. They belong to the user, not to a device.
+but no device uploads. They belong to the user, not to a device. Its device-side
+counterpart is a Local Folder.
 _Avoid_: gallery folder, album, watched folder
+
+**Local Folder**:
+A folder on this device whose photos appear in Gallery Mode — the device-side
+counterpart of a Gallery Source Folder, and unlike it, known only to the device
+that holds it. Selecting Local Folders decides what the gallery displays and
+what it counts as backed up; it never moves, uploads or deletes a file, and it
+never changes what the device is scanned for.
+_Avoid_: album, bucket, device album, camera roll, watched folder, local source
 
 **Upload**:
 The one-way transfer of a Gallery Item from device to Seraph. Seraph never

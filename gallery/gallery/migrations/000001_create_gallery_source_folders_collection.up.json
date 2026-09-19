@@ -1,0 +1,25 @@
+[
+  {
+    "create": "gallerySourceFolders"
+  },
+  {
+    "createIndexes": "gallerySourceFolders",
+    "indexes": [
+      {
+        "key": {
+          "userId": 1
+        },
+        "name": "gallerySourceFolders_userId_idx"
+      },
+      {
+        "key": {
+          "userId": 1,
+          "spaceProviderId": 1,
+          "path": 1
+        },
+        "name": "gallerySourceFolders_userId_spaceProviderId_path_idx",
+        "unique": true
+      }
+    ]
+  }
+]

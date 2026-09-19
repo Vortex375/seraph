@@ -1,3 +1,7 @@
+import 'dart:typed_data';
+
+import 'package:dio/dio.dart';
+import 'package:seraph_app/src/gallery/gallery_tile.dart' show galleryThumbnailSize;
 import 'package:seraph_app/src/login/login_controller.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
 import 'package:seraph_app/src/share/share_controller.dart';
@@ -45,14 +49,40 @@ class FileService {
     }
   }
 
+  /// Reactive refresh-and-retry for the file browser's own WebDAV calls. The
+  /// gateway answers an expired access token with HTTP 403 (the SAME status
+  /// a read-only Space produces), and [LoginController]'s proactive refresh
+  /// triggers (cold start, resume, 30s audio timer) do not cover every
+  /// case - a user browsing files in the foreground for longer than the
+  /// access-token's lifetime (5 minutes, for the test realm) with no resume
+  /// and no audio playing hits an expired token. This catches that: on a
+  /// 401/403 [DioException], force-refreshes the token and retries [op]
+  /// once. The retry reads the fresh bearer via [getRequestHeaders] (which
+  /// reads [loginController.currentUser], set synchronously by the forced
+  /// [refreshTokenIfNeeded]); a second failure of any kind propagates as-is.
+  Future<T> _withTokenRecovery<T>(Future<T> Function() op) async {
+    try {
+      return await op();
+    } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      if (status == 401 || status == 403) {
+        await loginController.refreshTokenIfNeeded(force: true);
+        return await op();
+      }
+      rethrow;
+    }
+  }
+
   Future<List<File>> readDir(String path) async {
     Client? c = client;
     if (c == null) {
       return [];
     }
-    final headers = await getRequestHeaders();
-    c.setHeaders(headers);
-    return c.readDir(path);
+    return _withTokenRecovery(() async {
+      final headers = await getRequestHeaders();
+      c.setHeaders(headers);
+      return c.readDir(path);
+    });
   }
 
   Future<File?> stat(String path) async {
@@ -60,9 +90,55 @@ class FileService {
     if (c == null) {
       return null;
     }
-    final headers = await getRequestHeaders();
-    c.setHeaders(headers);
-    return c.readProps(path);
+    return _withTokenRecovery(() async {
+      final headers = await getRequestHeaders();
+      c.setHeaders(headers);
+      return c.readProps(path);
+    });
+  }
+
+  /// PUTs [data] to [path], creating any missing intermediate WebDAV
+  /// collections on the way - the `webdav_client` package's own
+  /// `Client.write` already retries a 409 with `mkdirAll` before the PUT
+  /// (`wdWriteWithBytes`/`_createParent` in `webdav_dio.dart`), so callers
+  /// get "missing folders are created on demand" for free rather than this
+  /// method walking the path itself.
+  ///
+  /// Throws (a [Client] is required - see [stat]'s null-client case) when no
+  /// server is configured, and propagates whatever the server responded with
+  /// otherwise - including a 403 on a read-only Space - so a caller such as
+  /// [GalleryUploadService](../gallery/mirror/gallery_upload_service.dart)
+  /// can translate the failure into a comprehensible reason instead of it
+  /// being swallowed here.
+  Future<void> writeBytes(String path, Uint8List data) async {
+    Client? c = client;
+    if (c == null) {
+      throw StateError('Not connected to a server');
+    }
+    await _withTokenRecovery(() async {
+      final headers = await getRequestHeaders();
+      c.setHeaders(headers);
+      await c.write(path, data);
+    });
+  }
+
+  /// Deletes the file (or collection) at [path].
+  ///
+  /// Throws (a [Client] is required - see [stat]'s null-client case) when no
+  /// server is configured, and propagates whatever the server responded with
+  /// otherwise - including a 404, which
+  /// [WebDavGalleryUploadBackend](../gallery/mirror/webdav_gallery_upload_backend.dart)
+  /// translates into "already gone, not an error" rather than surfacing it.
+  Future<void> removeFile(String path) async {
+    Client? c = client;
+    if (c == null) {
+      throw StateError('Not connected to a server');
+    }
+    await _withTokenRecovery(() async {
+      final headers = await getRequestHeaders();
+      c.setHeaders(headers);
+      await c.remove(path);
+    });
   }
 
   String getFileUrl(String path) {
@@ -94,8 +170,13 @@ class FileService {
   }
 
   Image getPreviewImage(String path, int w, int h) {
+    // [w]/[h] size the rendered widget only. The server is always asked for
+    // galleryThumbnailSize, the one size the thumbnailer pre-warms (see
+    // gallery_tile.dart) - anything else would miss the warmed thumbnail and
+    // make the thumbnailer decode the full source image again. BoxFit.cover
+    // scales the (aspect-preserving) warmed thumb to the widget box.
     final headers = getRequestHeadersSync();
-    return Image.network(getPreviewUrl(path, w, h),
+    return Image.network(getPreviewUrl(path, galleryThumbnailSize, galleryThumbnailSize),
       headers: headers,
       fit: BoxFit.cover,
       width: w.toDouble(),

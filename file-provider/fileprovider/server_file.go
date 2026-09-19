@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -27,6 +28,12 @@ type serverFile struct {
 	fileName string
 	file     webdav.File
 	server   *FileProviderServer
+	// flag is the OpenFile flag the file was opened with. Close uses it to
+	// decide whether to publish a FileInfoEvent: only files opened for
+	// writing (O_WRONLY/O_RDWR/O_APPEND/O_CREATE/O_TRUNC) change the file's
+	// bytes, so only those warrant an event on close. A read-only close
+	// publishes nothing - the file's state did not change.
+	flag int
 
 	requestSub    *nats.Subscription
 	requestChan   chan *nats.Msg
@@ -34,7 +41,7 @@ type serverFile struct {
 	channelClosed bool
 }
 
-func newServerFile(ctx context.Context, uid string, fileId uuid.UUID, fileName string, file webdav.File, server *FileProviderServer) error {
+func newServerFile(ctx context.Context, uid string, fileId uuid.UUID, fileName string, file webdav.File, server *FileProviderServer, flag int) error {
 	fileTopic := FileProviderFileTopicPrefix + fileId.String()
 
 	requestChan := make(chan *nats.Msg, nats.DefaultSubPendingMsgsLimit)
@@ -50,6 +57,7 @@ func newServerFile(ctx context.Context, uid string, fileId uuid.UUID, fileName s
 		fileName:    fileName,
 		file:        file,
 		server:      server,
+		flag:        flag,
 		requestSub:  requestSub,
 		requestChan: requestChan,
 	}
@@ -128,6 +136,24 @@ func (f *serverFile) handleClose(ctx context.Context, uid string, fileId string,
 	err := f.closeFile()
 	if err == nil {
 		f.server.log.Debug("fileClose", "uid", uid, "fileId", fileId)
+		// Publish a FileInfoEvent for files opened for writing. Close is the
+		// commit point: the file's bytes are finalized and ModTime is set, so
+		// the file-indexer can upsert and publish a FileChangedEvent for the
+		// gallery to ingest. Without this, a file written via OpenFile+Write
+		//+Close (the non-atomic PUT path, or any direct write) would stay
+		// invisible to the gallery until someone happens to Stat it.
+		//
+		// Read-only closes publish nothing - the file's state did not change.
+		// O_RDONLY (0) on its own does not imply write, but O_WRONLY/O_RDWR/
+		// O_APPEND/O_CREATE/O_TRUNC all do. Checking any of the write flags
+		// covers every "this file was modified" case.
+		if isWriteFlag(f.flag) {
+			if fi, statErr := f.server.fs.Stat(ctx, f.fileName); statErr == nil {
+				if pubErr := f.server.publishFileInfoEvent(ctx, f.fileName, fi, nil); pubErr != nil {
+					f.server.log.Error("failed to publish file info event on close", "uid", uid, "fileId", fileId, "path", f.fileName, "error", pubErr)
+				}
+			}
+		}
 	} else {
 		f.server.log.Error("fileClose failed", "uid", uid, "fileId", fileId, "error", err)
 	}
@@ -138,6 +164,16 @@ func (f *serverFile) handleClose(ctx context.Context, uid string, fileId string,
 			Error: toIoError(err),
 		},
 	}
+}
+
+// isWriteFlag reports whether the given OpenFile flag includes a write
+// intent: the file's bytes may have changed and a FileInfoEvent on close is
+// warranted. os.O_RDONLY (0) alone is read-only; any of O_WRONLY, O_RDWR,
+// O_APPEND, O_CREATE, or O_TRUNC implies the file was (or could have been)
+// written to.
+func isWriteFlag(flag int) bool {
+	const writeFlags = os.O_WRONLY | os.O_RDWR | os.O_APPEND | os.O_CREATE | os.O_TRUNC
+	return flag&writeFlags != 0
 }
 
 func (f *serverFile) handleRead(ctx context.Context, uid string, fileId string, req *FileReadRequest) *FileProviderFileResponse {

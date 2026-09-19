@@ -15,7 +15,7 @@ declined permission must not disable the feature.
 
 **Blocked by:** 15
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] The permission request is preceded by an explanation of what access is used for
 - [ ] With full access, the gallery behaves as in the previous ticket
@@ -25,3 +25,51 @@ declined permission must not disable the feature.
 - [ ] With access denied, the cloud-only gallery works fully and the device half is absent rather than broken
 - [ ] Changing the grant while the app is running is picked up without requiring a restart
 - [ ] Covered at the app's mirror seam by driving the fake Local Source through each grant state and asserting on what the gallery reports about coverage
+
+## Comments
+
+### Implementer report (commit 4cbee28)
+
+An explanation-first photo permission flow and Android 14 partial-grant degraded
+mode, on top of ticket 15's Local Source seam.
+
+- `LocalSource` (`local_media_item.dart`) gained
+  `LocalPermissionStatus {unsupported, granted, partial, denied}`,
+  `permissionStatus()`, `requestPermission()`, `openAppSettings()`; implemented in
+  `AndroidLocalSource` and passed through `LocalScanService`.
+- `MainActivity.kt` checks/requests `READ_MEDIA_IMAGES` and
+  `READ_MEDIA_VISUAL_USER_SELECTED` together — what makes Android 14 offer its
+  three-way dialog — resolves via `onRequestPermissionsResult`, and opens app
+  settings. `handleFullScan` now accepts partial access too; previously it
+  silently returned empty under a partial grant, an actual bug within this
+  ticket's scope. `AndroidManifest.xml` declares the new permission.
+- `GalleryGridController` tracks `localPermission`, refreshes it every `reload()`,
+  and exposes `requestLocalPermission()` / `openLocalPermissionSettings()`.
+- `GalleryView` shows an explanation banner before the first request (dismissible)
+  and a persistent, non-dismissible warning under a partial grant with "Choose
+  more photos" / "Allow full access"; the summary bar states what it cannot see
+  under a partial grant. `WidgetsBindingObserver` re-syncs on app resume, so a
+  grant changed in system Settings is picked up without a restart.
+- Tests: `FakeLocalSource` now drives permission state; new coverage in
+  `gallery_grid_controller_test.dart`, `local_scan_service_test.dart`,
+  `android_local_source_test.dart` and `gallery_view_test.dart` exercising all
+  four grant states at the mirror seam.
+
+`flutter test` 167/167, `flutter analyze` 45 pre-existing issues (none new),
+`flutter build web --release` and `flutter build apk --debug` both succeed.
+
+Decisions the ticket did not settle:
+
+1. Re-requesting after a partial grant and "open settings" are offered as two
+   separate buttons, because Android's re-request only reopens the selection
+   picker — there is no dialog path back to "allow all" once partial is granted.
+2. "Denied" is not distinguishable from "never asked" at the OS level, so the
+   explanation banner reappears each app launch after a decline rather than being
+   silenced. No extra persistence was added for that.
+
+### Verifier verdict
+
+APPROVED — diff checked against every acceptance criterion, including the
+governing constraint that no summary or badge implies completeness under a
+partial grant, and that the denied path leaves the cloud-only gallery working.
+Tests, analyze, web build and Android debug build all run against commit 4cbee28.

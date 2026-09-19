@@ -9,6 +9,7 @@ use (
 	./file-provider
 	./file-provider-dir
 	./file-provider-smb
+	./gallery
 	./jobs
 	./log-viewer
 	./logging
@@ -22,3 +23,5 @@ use (
 	./tracing
 	./util
 )
+
+replace github.com/hirochachacha/go-smb2 => ./vendor-forks/go-smb2

@@ -1,0 +1,25 @@
+[
+  {
+    "create": "galleryPhotos"
+  },
+  {
+    "createIndexes": "galleryPhotos",
+    "indexes": [
+      {
+        "key": {
+          "providerId": 1,
+          "path": 1
+        },
+        "name": "galleryPhotos_providerId_path_idx",
+        "unique": true
+      },
+      {
+        "key": {
+          "capturedAt": -1,
+          "_id": 1
+        },
+        "name": "galleryPhotos_capturedAt_id_idx"
+      }
+    ]
+  }
+]
