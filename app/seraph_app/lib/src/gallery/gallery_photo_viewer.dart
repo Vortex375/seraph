@@ -11,6 +11,7 @@ import 'package:seraph_app/src/gallery/gallery_tile.dart';
 import 'package:seraph_app/src/gallery/gallery_view.dart';
 import 'package:seraph_app/src/gallery/hdr_photo_view.dart';
 import 'package:seraph_app/src/gallery/local/local_image_loader.dart';
+import 'package:seraph_app/src/gallery/web_photo_view.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_upload_backend.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_upload_service.dart';
@@ -412,8 +413,8 @@ class _GalleryPhotoPageState extends State<GalleryPhotoPage> {
       return _DeviceOnlyPhoto(item: widget.item);
     }
 
-    final child = hdrPhotoNativeAvailable
-        ? HdrPhotoPage(
+    final child = useWebPhotoView
+        ? HdrPhotoPageWeb(
             fetch: _fetchBytes,
             onToggleUi: widget.onToggleUi,
             onZoomChanged: (z) => widget.isZoomedIn.value = z,
@@ -428,7 +429,25 @@ class _GalleryPhotoPageState extends State<GalleryPhotoPage> {
             thumbnail: _thumbnailImage(
                 hasCloud: hasCloud, providerId: providerId, path: path),
           )
-        : _buildFlutter(hasCloud: hasCloud, providerId: providerId, path: path);
+        : hdrPhotoNativeAvailable
+            ? HdrPhotoPage(
+                fetch: _fetchBytes,
+                onToggleUi: widget.onToggleUi,
+                onZoomChanged: (z) => widget.isZoomedIn.value = z,
+                onResetZoom: () {
+                  widget.isZoomedIn.value = false;
+                  // The native view owns its transform; clear any zoom the
+                  // thumbnail's InteractiveViewer accumulated so the pager
+                  // is never stranded on NeverScrollableScrollPhysics
+                  // while nothing is zoomed.
+                  widget.transformationController.value =
+                      Matrix4.identity();
+                },
+                thumbnail: _thumbnailImage(
+                    hasCloud: hasCloud, providerId: providerId, path: path),
+              )
+            : _buildFlutter(
+                hasCloud: hasCloud, providerId: providerId, path: path);
 
     // The outer tap toggles the chrome in the Flutter path (and while the
     // native path is still on its thumbnail); once the native view is

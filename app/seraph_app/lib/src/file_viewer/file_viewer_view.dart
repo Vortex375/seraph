@@ -6,6 +6,7 @@ import 'package:seraph_app/src/file_viewer/file_viewer_controller.dart';
 import 'package:seraph_app/src/gallery/gallery_tile.dart'
     show galleryThumbnailSize;
 import 'package:seraph_app/src/gallery/hdr_photo_view.dart';
+import 'package:seraph_app/src/gallery/web_photo_view.dart';
 import 'package:seraph_app/src/media_player/media_bottom_bar.dart';
 import 'package:seraph_app/src/media_player/video_player_controller.dart';
 
@@ -52,6 +53,33 @@ class FileViewerView extends StatelessWidget{
         itemBuilder: (context, index) {
           final file = controller.files[index];
           if (fileService.isImageFile(file)) {
+            // Web: the browser's own image pipeline renders the gain map -
+            // an <img> over the fetched bytes (spec: the web counterpart of
+            // the native platform view). No Hero (approved), and the tap
+            // detector sits here because the web element claims no taps.
+            if (useWebPhotoView) {
+              return GestureDetector(
+                onTap: controller.toggleUiVisible,
+                child: HdrPhotoPageWeb(
+                  fetch: () => fileService.fetchFileBytes(file.path!),
+                  onToggleUi: controller.toggleUiVisible,
+                  onZoomChanged: (z) => controller.isZoomedIn.value = z,
+                  onResetZoom: () {
+                    controller.isZoomedIn.value = false;
+                    controller.transformationController.value =
+                        Matrix4.identity();
+                  },
+                  thumbnail: Image.network(
+                    fileService.getPreviewUrl(file.path!,
+                        galleryThumbnailSize, galleryThumbnailSize),
+                    headers: fileService.getRequestHeadersSync(),
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) =>
+                        const SizedBox.shrink(),
+                  ),
+                ),
+              );
+            }
             // Android: the native HDR platform view - the same path the
             // gallery viewer uses (spec: the file viewer's WebDAV fetch is
             // the only difference, and fetchFileBytes provides it). No

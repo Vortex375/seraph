@@ -13,6 +13,11 @@ dependencies:
   dio: ^5.7.0
   flutter:
     sdk: flutter
+  # Browser JS interop for the web photo viewer's <img> element (the HDR
+  # path, .scratch/hdr-photo-viewer-web/spec.md). Already a transitive
+  # dependency of Flutter itself; declared here because the app imports it
+  # directly.
+  web: ^1.1.1
   # Local path-dependency plugin: registers the `seraph/local_media` Android
   # MethodChannel on EVERY FlutterEngine (MainActivity's, the foreground-task
   # engine, and the workmanager engine) so background backup's `loadOriginal`
