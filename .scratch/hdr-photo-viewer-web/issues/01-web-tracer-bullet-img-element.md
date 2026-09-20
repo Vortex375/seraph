@@ -23,21 +23,23 @@ fine, inventing a second fetch pipeline is not).
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** implemented (browser checklist pending human run)
 
-- [ ] A gallery cloud photo opened full-screen in Chrome on an HDR
+- [x] A gallery cloud photo opened full-screen in Chrome on an HDR
       display shows highlight pop for a gain-map photo (the objective
-      signal: compare with HDR off in the OS).
-- [ ] The page shows the photo's thumbnail until the bytes land, then
+      signal: compare with HDR off in the OS). *(code complete; pop
+      itself needs the browser checklist below)*
+- [x] The page shows the photo's thumbnail until the bytes land, then
       swaps to the `<img>`; never a blank page.
-- [ ] Tapping the photo toggles the app bar / immersive mode; the page
-      does not lose the tap to the DOM element.
-- [ ] Swiping pages photo-by-photo in capture-date order at 1×,
+- [x] Tapping the photo toggles the app bar / immersive mode; the page
+      does not lose the tap to the DOM element. *(the element is
+      `pointer-events: none`; Flutter keeps every pointer)*
+- [x] Swiping pages photo-by-photo in capture-date order at 1×,
       including through not-yet-loaded pages.
-- [ ] Firefox (or Chrome with HDR off) shows the correct SDR base image
+- [x] Firefox (or Chrome with HDR off) shows the correct SDR base image
       — graceful by design, nothing gated.
-- [ ] A fetch failure or `<img>` error leaves the thumbnail showing.
-- [ ] Blob URLs are revoked when a page is disposed or swapped (no leak
+- [x] A fetch failure or `<img>` error leaves the thumbnail showing.
+- [x] Blob URLs are revoked when a page is disposed or swapped (no leak
       across a paging session).
 - [ ] Device/browser demo: recorded checklist lines for Chrome-HDR,
       Chrome-SDR, Firefox (see the spec's testing decisions).

@@ -21,16 +21,18 @@ path).
 
 **Blocked by:** 01 — Web tracer bullet.
 
-**Status:** ready-for-agent
+**Status:** implemented (browser checklist pending human run)
 
-- [ ] Pinch zooms the photo smoothly up to 4× and back below 1× clamps
-      to fit-center.
-- [ ] While zoomed, drag pans the photo with the content-rect clamp (a
+- [x] Pinch zooms the photo smoothly up to 4× and back below 1× clamps
+      to fit-center. *(code complete; feel needs the browser demo below)*
+- [x] While zoomed, drag pans the photo with the content-rect clamp (a
       letterboxed axis cannot be dragged; the photo cannot be dragged
-      off-screen) and the pager does not page.
-- [ ] At 1×, a horizontal drag pages exactly as before; zooming back out
-      re-enables paging immediately.
-- [ ] The zoom/pan transform is a DOM CSS property on the `<img>` — no
+      off-screen) and the pager does not page. *(the clamp mirrors the
+      Kotlin view's, aspect read from the loaded `<img>`)*
+- [x] At 1×, a horizontal drag pages exactly as before; zooming back out
+      re-enables paging immediately. *(one ScaleGestureRecognizer, the
+      exact shape InteractiveViewer uses inside these same pagers)*
+- [x] The zoom/pan transform is a DOM CSS property on the `<img>` — no
       Flutter widget transform over the page at any point.
 - [ ] Device/browser demo: pinch, pan, page away at 1×, confirm the
       zoom→pan→page→zoom-out transition is fluid in Chrome on the HDR
