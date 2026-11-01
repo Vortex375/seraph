@@ -424,6 +424,11 @@ func (d *dataset) resolve(lat, lon float64) *Place {
 
 // placeFor builds the Place a locality resolves to, filling in the country
 // and region names from the dataset's dictionaries.
+//
+// Admin1Code is exposed in GeoNames' "CC.code" form ("PT.14"), as the spec
+// keys it - the dataset stores the bare per-city code ("14"), which is only
+// unique within a country, so it is qualified with the country code here.
+// The lookup key for the region's name is the same "CC.code" form.
 func (d *dataset) placeFor(l *locality) *Place {
 	p := &Place{
 		CountryCode: l.cc,
@@ -433,6 +438,7 @@ func (d *dataset) placeFor(l *locality) *Place {
 	}
 	p.Country = d.countryName(l.cc)
 	if l.admin1 != "" {
+		p.Admin1Code = l.cc + "." + l.admin1
 		p.Admin1 = d.admin1Names[l.cc+"."+l.admin1]
 	}
 	return p

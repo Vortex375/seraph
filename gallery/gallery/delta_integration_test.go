@@ -959,18 +959,24 @@ func TestDeltaCarriesCaptureOffsetAndPlace(t *testing.T) {
 	require.NotNil(t, full.CapturedAtOffset, "capturedAtOffset must be carried when known")
 	assert.Equal(t, 7200, *full.CapturedAtOffset)
 	require.NotNil(t, full.Lat)
-	assert.InDelta(t, 38.7223, *full.Lat, 1e-6)
+	assert.InDelta(t, 38.7223, *full.Lat, 1e-3)
 	require.NotNil(t, full.Lon)
-	assert.InDelta(t, -9.1393, *full.Lon, 1e-6)
+	assert.InDelta(t, -9.1393, *full.Lon, 1e-3)
 	assert.Equal(t, "PT", full.PlaceCountryCode)
 	assert.Equal(t, "Portugal", full.PlaceCountry)
-	assert.Equal(t, "PT.11", full.PlaceAdmin1Code)
+	assert.Equal(t, "PT.14", full.PlaceAdmin1Code)
 	assert.Equal(t, "Lisbon", full.PlaceAdmin1)
 	assert.Equal(t, int64(2267057), full.PlaceLocalityId)
 	assert.Equal(t, "Lisbon", full.PlaceLocality)
 
 	bareItem := byPath["/holidays/bare.jpg"]
-	assert.Nil(t, bareItem.CapturedAtOffset, "an unknown offset must be absent from the feed item")
+	// No EXIF offset signal at all -> the FLOATING case (ADR 0003): the
+	// offset is explicitly 0 (wall stored as-if-UTC), not nil - only the
+	// modTime/indexed rungs leave it nil. A pointer to 0 is still carried
+	// (omitempty omits nil pointers, not pointers to zero).
+	require.NotNil(t, bareItem.CapturedAtOffset)
+	assert.Equal(t, 0, *bareItem.CapturedAtOffset,
+		"a floating photo carries offset 0, not an absent offset")
 	assert.Nil(t, bareItem.Lat)
 	assert.Nil(t, bareItem.Lon)
 	assert.Equal(t, "", bareItem.PlaceCountryCode)

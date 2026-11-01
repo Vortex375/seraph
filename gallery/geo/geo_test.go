@@ -40,6 +40,10 @@ func TestResolveKnownPoints(t *testing.T) {
 		wantCountry     string
 		wantLocality    string
 		wantAdmin1      string
+		// the region code in GeoNames' "CC.code" form, when the place has a
+		// region at all - the same form the spec keys the mirror's place
+		// filter by
+		wantAdmin1Code string
 	}{
 		{
 			name:            "city centre: Lisbon",
@@ -51,7 +55,8 @@ func TestResolveKnownPoints(t *testing.T) {
 			// sections are excluded from the dataset)
 			wantLocality: "Lisbon",
 			// admin1CodesASCII's ASCII name for Lisbon district
-			wantAdmin1: "Lisbon",
+			wantAdmin1:     "Lisbon",
+			wantAdmin1Code: "PT.14",
 		},
 		{
 			name:            "border town west of the Rhine: Strasbourg",
@@ -137,6 +142,9 @@ func TestResolveKnownPoints(t *testing.T) {
 			}
 			if tc.wantAdmin1 != "" && p.Admin1 != tc.wantAdmin1 {
 				t.Errorf("admin1: got %q, want %q", p.Admin1, tc.wantAdmin1)
+			}
+			if tc.wantAdmin1Code != "" && p.Admin1Code != tc.wantAdmin1Code {
+				t.Errorf("admin1 code: got %q, want the CC.code form %q", p.Admin1Code, tc.wantAdmin1Code)
 			}
 			if tc.wantLocality == "" && p.Locality != "" {
 				t.Errorf("expected no locality, got %q", p.Locality)

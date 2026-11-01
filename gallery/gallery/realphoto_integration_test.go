@@ -72,10 +72,17 @@ func TestRealWorldPixelPhotoExtractionIsExtracted(t *testing.T) {
 	// The Capture Date must come from EXIF, not from ModTime.
 	assert.Equal(t, gallery.CaptureDateSourceExif, photo.CapturedAtSource,
 		"a real Pixel photo with DateTimeOriginal must sort by its EXIF date, not by upload time")
-	// Pixel 6 DateTimeOriginal: 2024:03:08 20:01:41 (UTC parse, see exifCaptureDate).
-	want := time.Date(2024, 3, 8, 20, 1, 41, 0, time.UTC).Unix()
+	// Pixel 6 DateTimeOriginal: 2024:03:08 20:01:41 ZONELESS WALL TIME. This
+	// camera also records OffsetTimeOriginal (+01:00 - it was taken in CET),
+	// so per ADR 0003 the stored Capture Date is the TRUE INSTANT: the wall
+	// clock minus the offset, and the offset is carried alongside it.
+	wall := time.Date(2024, 3, 8, 20, 1, 41, 0, time.UTC).Unix()
+	want := wall - 3600
 	assert.Equal(t, want, photo.CapturedAt,
-		"capturedAt must be the EXIF DateTimeOriginal, not the event ModTime (%d)", modTime)
+		"capturedAt must be the EXIF wall time minus the recorded offset (true instant), not the wall time itself or the event ModTime (%d)", modTime)
+	require.NotNil(t, photo.CapturedAtOffset)
+	assert.Equal(t, 3600, *photo.CapturedAtOffset,
+		"the camera's own OffsetTimeOriginal (+01:00) must be carried through")
 	// Real dimensions from a full-resolution Pixel 6 shot.
 	assert.NotZero(t, photo.Width)
 	assert.NotZero(t, photo.Height)
