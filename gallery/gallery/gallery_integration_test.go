@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -50,14 +51,36 @@ var mongoUrl string
 var migrations gallery.Migrations
 var v *viper.Viper
 
+// setupOnce/setupErr make the integration environment LAZY: setup runs at
+// the first test that actually needs it (requireIntegration), so pure unit
+// tests (metadata/exif fixture tests and the like) run - and integration
+// tests skip with a clear reason - on a machine with no Docker daemon,
+// instead of the whole package panicking in TestMain before any test ran.
+var (
+	setupOnce sync.Once
+	setupErr  error
+)
+
 func TestMain(m *testing.M) {
-	setup()
 	code := m.Run()
 	shutdown()
 	os.Exit(code)
 }
 
-func setup() {
+// requireIntegration brings up the shared integration environment on first
+// use and skips the calling test when it cannot be brought up (no Docker
+// daemon, no container runtime). Every integration test calls this first.
+func requireIntegration(t *testing.T) {
+	t.Helper()
+	setupOnce.Do(func() {
+		setupErr = setup()
+	})
+	if setupErr != nil {
+		t.Skipf("integration environment unavailable: %v", setupErr)
+	}
+}
+
+func setup() error {
 	opts := &server.Options{
 		JetStream: true,
 		StoreDir:  os.TempDir(),
@@ -65,12 +88,12 @@ func setup() {
 	var err error
 	natsServer, err = server.NewServer(opts)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("embedded NATS: %w", err)
 	}
 
 	natsServer.Start()
 	if !natsServer.ReadyForConnections(10 * time.Second) {
-		panic("embedded NATS server did not become ready")
+		return fmt.Errorf("embedded NATS server did not become ready")
 	}
 
 	req := testcontainers.ContainerRequest{
@@ -83,12 +106,12 @@ func setup() {
 		Started:          true,
 	})
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("starting mongo testcontainer (is Docker available?): %w", err)
 	}
 
 	endpoint, err := mongoContainer.Endpoint(context.Background(), "")
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("mongo testcontainer endpoint: %w", err)
 	}
 
 	mongoUrl = fmt.Sprintf("mongodb://%s/", endpoint)
@@ -99,8 +122,9 @@ func setup() {
 
 	migrations, err = gallery.NewMigrations(v)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("migrations: %w", err)
 	}
+	return nil
 }
 
 func shutdown() {
@@ -169,6 +193,19 @@ func startGalleryProvider(t *testing.T, accessible map[string][]string) (*nats.C
 		nc.Close()
 	})
 
+	subscribeSpaceResolve(t, nc, accessible)
+
+	return nc, db
+}
+
+// subscribeSpaceResolve installs the stub Space resolver every gallery test
+// needs (Space -> physical provider mapping), as its own helper so tests
+// that must prepare the read model BEFORE the provider starts (the metadata
+// sweep runs at boot and would otherwise race the seeding) can reuse the
+// same stub without starting the provider first.
+func subscribeSpaceResolve(t *testing.T, nc *nats.Conn, accessible map[string][]string) {
+	t.Helper()
+
 	sub, err := nc.Subscribe(spaces.SpaceResolveTopic, func(msg *nats.Msg) {
 		req := spaces.SpaceResolveRequest{}
 		json.Unmarshal(msg.Data, &req)
@@ -195,8 +232,6 @@ func startGalleryProvider(t *testing.T, accessible map[string][]string) (*nats.C
 	if err := nc.Flush(); err != nil {
 		t.Fatal(err)
 	}
-
-	return nc, db
 }
 
 func crud(t *testing.T, nc *nats.Conn, req *gallery.GallerySourceFolderCrudRequest) *gallery.GallerySourceFolderCrudResponse {
@@ -218,6 +253,8 @@ func clearSourceFolders(t *testing.T, db *mongo.Database) {
 }
 
 func TestListAddRemoveSourceFolders(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -287,6 +324,8 @@ func TestListAddRemoveSourceFolders(t *testing.T) {
 }
 
 func TestAddSourceFolderIsIdempotent(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -326,6 +365,8 @@ func TestAddSourceFolderIsIdempotent(t *testing.T) {
 }
 
 func TestAddSourceFolderWithoutAccessIsRefused(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -363,6 +404,8 @@ func TestAddSourceFolderWithoutAccessIsRefused(t *testing.T) {
 }
 
 func TestSourceFoldersAreScopedPerUser(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 		"lino": {"photos"},
@@ -424,6 +467,8 @@ func TestSourceFoldersAreScopedPerUser(t *testing.T) {
 // is a configuration change only: it deletes the configuration document and
 // sends no message to any other service.
 func TestRemoveTouchesNoFileProvider(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -478,6 +523,8 @@ func TestRemoveTouchesNoFileProvider(t *testing.T) {
 }
 
 func TestInvalidRequests(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})

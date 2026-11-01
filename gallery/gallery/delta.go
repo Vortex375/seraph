@@ -290,12 +290,15 @@ func deltaItemFor(row deltaRow, folders []resolvedFolder) (GalleryDeltaItem, boo
 		}, true
 	}
 
-	return GalleryDeltaItem{
+	item := GalleryDeltaItem{
 		ProviderId:       spaceProviderId,
 		Path:             spacePath,
 		Seq:              p.Seq,
 		CapturedAt:       p.CapturedAt,
 		CapturedAtSource: p.CapturedAtSource,
+		CapturedAtOffset: p.CapturedAtOffset,
+		Lat:              p.Lat,
+		Lon:              p.Lon,
 		Width:            p.Width,
 		Height:           p.Height,
 		Orientation:      p.Orientation,
@@ -303,7 +306,18 @@ func deltaItemFor(row deltaRow, folders []resolvedFolder) (GalleryDeltaItem, boo
 		Mime:             p.Mime,
 		Unsupported:      p.Unsupported,
 		MetadataPending:  p.MetadataPending,
-	}, true
+	}
+
+	if p.Place != nil {
+		item.PlaceCountryCode = p.Place.CountryCode
+		item.PlaceCountry = p.Place.Country
+		item.PlaceAdmin1Code = p.Place.Admin1Code
+		item.PlaceAdmin1 = p.Place.Admin1
+		item.PlaceLocalityId = p.Place.LocalityId
+		item.PlaceLocality = p.Place.Locality
+	}
+
+	return item, true
 }
 
 // nextDeltaRows pulls the next batch of candidates strictly after seq pos and

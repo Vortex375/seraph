@@ -368,12 +368,14 @@ func (g *GalleryProvider) markDeleted(ctx context.Context, providerId string, fi
 // tension), so it unconditionally wins and heals the placeholder, regardless
 // of which of the two arrived first.
 func (g *GalleryProvider) upsertPhoto(ctx context.Context, ev *events.FileChangedEvent) error {
-	meta, capturedAt, capturedAtSource, err := g.extractForEvent(ctx, ev)
+	meta, capturedAt, capturedAtOffset, capturedAtSource, err := g.extractForEvent(ctx, ev)
 	if err != nil {
 		return err
 	}
 
 	now := time.Now().Unix()
+
+	lat, lon, place := resolvePhotoPlace(meta)
 
 	err = g.withSequence(ctx, func(seq int64) error {
 		filter := bson.M{"providerId": ev.ProviderID, "path": ev.Path}
@@ -382,6 +384,7 @@ func (g *GalleryProvider) upsertPhoto(ctx context.Context, ev *events.FileChange
 				"providerId":       ev.ProviderID,
 				"path":             ev.Path,
 				"capturedAt":       capturedAt,
+				"capturedAtOffset": capturedAtOffset,
 				"capturedAtSource": capturedAtSource,
 				"width":            meta.Width,
 				"height":           meta.Height,
@@ -391,6 +394,11 @@ func (g *GalleryProvider) upsertPhoto(ctx context.Context, ev *events.FileChange
 				"unsupported":      meta.Unsupported,
 				"deleted":          false,
 				"metadataPending":  false,
+				"metadataVersion":  currentMetadataVersion,
+				"lat":              lat,
+				"lon":              lon,
+				"place":            place,
+				"geoVersion":       geoVersionFor(place),
 				"seq":              seq,
 			},
 			// IndexedAt/CapturedAt-when-falling-back-to-indexed must only be
@@ -430,24 +438,24 @@ func (g *GalleryProvider) upsertPhoto(ctx context.Context, ev *events.FileChange
 // failure) is reported as an error so the caller leaves the event unacked
 // for redelivery - that is a transient/infra failure, not "this file is not
 // a supported photo".
-func (g *GalleryProvider) extractForEvent(ctx context.Context, ev *events.FileChangedEvent) (photoMetadata, int64, string, error) {
+func (g *GalleryProvider) extractForEvent(ctx context.Context, ev *events.FileChangedEvent) (photoMetadata, int64, *int, string, error) {
 	client := fileprovider.NewFileProviderClient(ev.ProviderID, g.nc, g.logging)
 	defer client.Close()
 
 	f, err := client.OpenFile(ctx, ev.Path, os.O_RDONLY, 0)
 	if err != nil {
-		return photoMetadata{}, 0, "", fmt.Errorf("opening %s/%s: %w", ev.ProviderID, ev.Path, err)
+		return photoMetadata{}, 0, nil, "", fmt.Errorf("opening %s/%s: %w", ev.ProviderID, ev.Path, err)
 	}
 	defer f.Close()
 
 	buf, err := bufferAll(f)
 	if err != nil {
-		return photoMetadata{}, 0, "", fmt.Errorf("reading %s/%s: %w", ev.ProviderID, ev.Path, err)
+		return photoMetadata{}, 0, nil, "", fmt.Errorf("reading %s/%s: %w", ev.ProviderID, ev.Path, err)
 	}
 
 	meta := extractMetadata(buf)
 
-	capturedAt, capturedAtSource, exifReason := resolveCaptureDate(buf, ev)
+	capturedAt, capturedAtOffset, capturedAtSource, exifReason := resolveCaptureDate(buf, ev)
 
 	// Log the outcome of every extraction so a missing EXIF capture date is
 	// distinguishable from "extraction never ran": the rung that won is
@@ -458,7 +466,7 @@ func (g *GalleryProvider) extractForEvent(ctx context.Context, ev *events.FileCh
 	if capturedAtSource == CaptureDateSourceExif {
 		g.log.Debug("gallery: extracted capture date from EXIF",
 			"providerId", ev.ProviderID, "path", ev.Path,
-			"capturedAt", capturedAt,
+			"capturedAt", capturedAt, "capturedAtOffset", capturedAtOffset,
 			"width", meta.Width, "height", meta.Height,
 			"orientation", meta.Orientation, "unsupported", meta.Unsupported)
 	} else {
@@ -469,7 +477,7 @@ func (g *GalleryProvider) extractForEvent(ctx context.Context, ev *events.FileCh
 			"unsupported", meta.Unsupported)
 	}
 
-	return meta, capturedAt, capturedAtSource, nil
+	return meta, capturedAt, capturedAtOffset, capturedAtSource, nil
 }
 
 // resolveCaptureDate implements the Capture Date fallback chain: EXIF
@@ -492,18 +500,29 @@ func (g *GalleryProvider) extractForEvent(ctx context.Context, ev *events.FileCh
 // exifReason is non-empty whenever the EXIF rung is tried but does not win,
 // so the caller (extractForEvent) can log it for diagnosis. It is empty when
 // EXIF succeeds and when EXIF is not tried at all (Seek failed).
-func resolveCaptureDate(r *bytes.Reader, ev *events.FileChangedEvent) (capturedAt int64, capturedAtSource, exifReason string) {
+func resolveCaptureDate(r *bytes.Reader, ev *events.FileChangedEvent) (capturedAt int64, capturedAtOffset *int, capturedAtSource, exifReason string) {
 	if _, err := r.Seek(0, io.SeekStart); err == nil {
-		t, ok, reason := exifCaptureDate(r)
+		t, offset, ok, reason := exifCaptureDate(r)
 		if ok {
-			return t.Unix(), CaptureDateSourceExif, ""
+			captured := t.Unix()
+			if offset != nil {
+				// Capture Date is stored as a TRUE INSTANT whenever the
+				// photo allowed the offset at its place of capture to be
+				// determined: the EXIF wall clock (parsed above as UTC)
+				// moved back by the offset. The app reconstructs the wall
+				// clock with capturedAt + capturedAtOffset - see ADR 0003.
+				captured -= int64(*offset)
+			}
+			return captured, offset, CaptureDateSourceExif, ""
 		}
 		exifReason = reason
 	}
 
 	if ev.ModTime != 0 {
-		return ev.ModTime, CaptureDateSourceModTime, exifReason
+		// a true instant as reported by the File Provider: no offset to
+		// apply, none known
+		return ev.ModTime, nil, CaptureDateSourceModTime, exifReason
 	}
 
-	return time.Now().Unix(), CaptureDateSourceIndexed, exifReason
+	return time.Now().Unix(), nil, CaptureDateSourceIndexed, exifReason
 }

@@ -5,6 +5,7 @@ import 'package:seraph_app/src/gallery/local/local_scan_service.dart';
 import 'package:seraph_app/src/gallery/local/local_source.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
+import 'package:seraph_app/src/gallery/gallery_item_display.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_sync_service.dart';
 
 /// The gallery's list, as the grid and the full-screen viewer both see it.
@@ -102,12 +103,12 @@ class GalleryGridController extends GetxController {
   /// the mirror regardless - this is information, not an error state.
   final Rxn<String> syncError = Rxn<String>();
 
-  /// The Availability filter currently applied to [totalCount] and every
-  /// loaded page - ticket 15's "filtered to items that are not backed up,
-  /// and to Cloud only items". Ordering is never affected by this; only
-  /// membership.
-  final Rx<GalleryAvailabilityFilter> filter =
-      Rx<GalleryAvailabilityFilter>(GalleryAvailabilityFilter.all);
+  /// The filter currently applied to [totalCount] and every loaded page:
+  /// Availability (ticket 15's "filtered to items that are not backed up,
+  /// and to Cloud only items"), plus the gallery-metadata feature's optional
+  /// capture-date range and Place. Ordering is never affected by any of
+  /// them; only membership.
+  final Rx<GalleryFilter> filter = Rx<GalleryFilter>(const GalleryFilter());
 
   /// How many items are Device only, Synced and Cloud only, over the WHOLE
   /// gallery regardless of [filter] - the "one number to trust" summary.
@@ -225,34 +226,96 @@ class GalleryGridController extends GetxController {
     await _loadPage(0);
   }
 
-  /// Walks the mirror's `capturedAt` int column once, converting each value
-  /// to a local [DateTime] with the identical conversion the displayed label
-  /// uses, and emits a [_MonthBoundary] whenever the (year, month) changes
-  /// from the previous item. Empty for an empty collection; a single entry at
-  /// index 0 for a single-month collection.
+  /// Walks the mirror's `capturedAt` (+ offset) columns once, converting
+  /// each value to the capture WALL TIME with the identical conversion the
+  /// displayed label uses ([galleryCaptureWallTime] - ADR 0003), and emits a
+  /// [_MonthBoundary] whenever the (year, month) changes from the previous
+  /// item. Empty for an empty collection; a single entry at index 0 for a
+  /// single-month collection.
   Future<List<_MonthBoundary>> _buildMonthBoundaries(
-      GalleryAvailabilityFilter filterValue) async {
+      GalleryFilter filterValue) async {
     final column = await mirror.capturedAtColumn(filter: filterValue);
     final boundaries = <_MonthBoundary>[];
     for (var i = 0; i < column.length; i++) {
-      final date = DateTime.fromMillisecondsSinceEpoch(column[i] * 1000);
+      final date = galleryCaptureWallTime(column[i].$1, column[i].$2);
       final last = boundaries.isEmpty ? null : boundaries.last;
       if (last == null || last.year != date.year || last.month != date.month) {
-        boundaries.add(_MonthBoundary(
-            startIndex: i, year: date.year, month: date.month));
+        boundaries.add(
+            _MonthBoundary(startIndex: i, year: date.year, month: date.month));
       }
     }
     return boundaries;
   }
 
-  /// Changes the Availability filter and reloads. A no-op if [value] is
-  /// already the active filter, so a repeated tap on the same filter chip
-  /// does not re-read the mirror for nothing.
-  Future<void> setFilter(GalleryAvailabilityFilter value) async {
+  /// Replaces the whole filter and reloads. A no-op if [value] is already
+  /// the active filter, so a repeated tap on the same filter chip does not
+  /// re-read the mirror for nothing.
+  Future<void> setFilter(GalleryFilter value) async {
     if (filter.value == value) {
       return;
     }
     filter.value = value;
+    await reload();
+  }
+
+  /// Changes only the Availability half of the filter and reloads - what
+  /// the app bar's Availability menu does. The date range and Place (the
+  /// gallery-metadata feature) are left untouched, since they combine.
+  Future<void> setAvailability(GalleryAvailabilityFilter value) async {
+    if (filter.value.availability == value) {
+      return;
+    }
+    filter.value = filter.value.copyWith(availability: value);
+    await reload();
+  }
+
+  /// Sets the capture-date range (inclusive whole days, in capture wall
+  /// time - ADR 0003) and reloads. Either end may be null for an open-ended
+  /// range; passing both null clears it.
+  Future<void> setDateRange(DateTime? from, DateTime? to) async {
+    if (from == null && to == null) {
+      return clearDateRange();
+    }
+    filter.value = filter.value
+        .copyWith(capturedFrom: from, capturedTo: to, clearDateRange: false);
+    await reload();
+  }
+
+  /// Removes the date range and reloads.
+  Future<void> clearDateRange() async {
+    if (filter.value.capturedFrom == null && filter.value.capturedTo == null) {
+      return;
+    }
+    filter.value = filter.value.copyWith(clearDateRange: true);
+    await reload();
+  }
+
+  /// Sets the Place filter (ticket 06) and reloads.
+  Future<void> setPlace(GalleryPlaceFilter place) async {
+    if (filter.value.place == place) {
+      return;
+    }
+    filter.value = filter.value.copyWith(place: place);
+    await reload();
+  }
+
+  /// Removes the Place filter and reloads.
+  Future<void> clearPlace() async {
+    if (filter.value.place == null) {
+      return;
+    }
+    filter.value = filter.value.copyWith(clearPlace: true);
+    await reload();
+  }
+
+  /// Clears every part of the filter at once - the "clear filters" action
+  /// of the empty-filtered state, restoring the full gallery exactly the
+  /// way clearing the Availability filter always has.
+  Future<void> clearFilters() async {
+    if (!filter.value.isActive) {
+      return;
+    }
+    filter.value = const GalleryFilter();
     await reload();
   }
 

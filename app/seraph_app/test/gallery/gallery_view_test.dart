@@ -903,6 +903,72 @@ void main() {
         grid.gridDelegate as SliverGridDelegateWithFixedCrossAxisCount;
     expect(delegate.crossAxisCount, inInclusiveRange(2, 4));
   });
+
+  testWidgets(
+      'an active date range shows a removable chip; removing it '
+      'restores the unfiltered gallery', (tester) async {
+    await setUpGallery(itemCount: 6);
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    // populateMirror dates cluster around 2026; a wide range covers them all.
+    await controller.setDateRange(
+      DateTime.utc(2020, 1, 1),
+      DateTime.utc(2030, 12, 31),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(Chip), findsOneWidget,
+        reason: 'the active range shows as one chip above the grid');
+    expect(controller.filter.value.isActive, isTrue);
+
+    await tester.tap(find.byIcon(Icons.cancel));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(Chip), findsNothing);
+    expect(controller.filter.value.isActive, isFalse);
+    expect(controller.totalCount.value, 6);
+  });
+
+  testWidgets(
+      'the place search suggests the user\'s own places and picking '
+      'one sets a removable Place chip', (tester) async {
+    await setUpGallery();
+    await insertMirrorItem(db,
+        path: '/Photos/lisbon.jpg',
+        capturedAt: 1700000000,
+        placeCountryCode: 'PT',
+        placeCountry: 'Portugal',
+        placeAdmin1Code: 'PT.11',
+        placeAdmin1: 'Lisbon',
+        placeLocalityId: 2267057,
+        placeLocality: 'Lisbon');
+    await controller.reload();
+
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.travel_explore));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'por');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Portugal'), findsWidgets);
+    expect(find.text('Germany'), findsNothing);
+
+    await tester.tap(find.text('Portugal').first);
+    await tester.pumpAndSettle();
+
+    expect(controller.filter.value.place?.countryCode, 'PT');
+    expect(find.byType(Chip), findsOneWidget,
+        reason: 'the picked place shows as a removable chip above the grid');
+
+    await tester.tap(find.byIcon(Icons.cancel));
+    await tester.pumpAndSettle();
+    expect(controller.filter.value.place, isNull);
+    expect(find.byType(Chip), findsNothing);
+  });
 }
 
 String _monthName(int month) => const [

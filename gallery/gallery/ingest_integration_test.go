@@ -19,6 +19,8 @@
 package gallery_test
 
 import (
+	"umbasa.net/seraph/gallery/gallery/gallerytest"
+
 	"context"
 	"fmt"
 	"log/slog"
@@ -155,6 +157,8 @@ func clearPhotos(t *testing.T, db *mongo.Database) {
 // DateTimeOriginal, pixel dimensions and orientation recorded, and the
 // source of the date recorded as "exif".
 func TestPhotoWithExifCaptureDateIsIngested(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -174,7 +178,7 @@ func TestPhotoWithExifCaptureDateIsIngested(t *testing.T) {
 	assert.Equal(t, "", res.Error)
 
 	captureTime := time.Date(2019, 6, 15, 10, 20, 30, 0, time.UTC)
-	data := buildJPEGWithExif(t, 40, 30, "2019:06:15 10:20:30", 6)
+	data := gallerytest.BuildJPEGWithExif(t, 40, 30, "2019:06:15 10:20:30", 6)
 	physicalPath := "/mounted/photos/holidays/beach.jpg"
 	writeFixture(t, dir, physicalPath, data)
 
@@ -195,6 +199,8 @@ func TestPhotoWithExifCaptureDateIsIngested(t *testing.T) {
 // Capture Date fallback chain, and that modification time is recorded as
 // what it is (a fallback, not a real capture date) via CapturedAtSource.
 func TestPhotoWithoutExifFallsBackToModTime(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -211,7 +217,7 @@ func TestPhotoWithoutExifFallsBackToModTime(t *testing.T) {
 	})
 
 	// PNG carries no EXIF at all
-	data := buildPNG(t, 20, 10)
+	data := gallerytest.BuildPNG(t, 20, 10)
 	physicalPath := "/mounted/photos/holidays/screenshot.png"
 	writeFixture(t, dir, physicalPath, data)
 
@@ -231,6 +237,8 @@ func TestPhotoWithoutExifFallsBackToModTime(t *testing.T) {
 // Capture Date falls back to the time the item was first indexed rather than
 // being rejected.
 func TestPhotoWithoutExifOrModTimeFallsBackToIndexedTime(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -246,7 +254,7 @@ func TestPhotoWithoutExifOrModTimeFallsBackToIndexedTime(t *testing.T) {
 		Path:            "/holidays",
 	})
 
-	data := buildPNG(t, 20, 10)
+	data := gallerytest.BuildPNG(t, 20, 10)
 	physicalPath := "/mounted/photos/holidays/noexif.png"
 	writeFixture(t, dir, physicalPath, data)
 
@@ -265,6 +273,8 @@ func TestPhotoWithoutExifOrModTimeFallsBackToIndexedTime(t *testing.T) {
 // photo with an implausible embedded date is still stored, at rung one,
 // rather than being treated as invalid and falling through to a later rung.
 func TestNonsensicalExifDateIsStoredNotRejected(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -282,7 +292,7 @@ func TestNonsensicalExifDateIsStoredNotRejected(t *testing.T) {
 
 	// year 1902: a sensor-default-looking, implausible date, but a
 	// perfectly well-formed EXIF tag
-	data := buildJPEGWithExif(t, 10, 10, "1902:01:01 00:00:00", 0)
+	data := gallerytest.BuildJPEGWithExif(t, 10, 10, "1902:01:01 00:00:00", 0)
 	physicalPath := "/mounted/photos/holidays/weird.jpg"
 	writeFixture(t, dir, physicalPath, data)
 
@@ -298,6 +308,8 @@ func TestNonsensicalExifDateIsStoredNotRejected(t *testing.T) {
 // decode (not a recognized image format) is recorded with an "unsupported"
 // reason and still stored - it must still appear, not be omitted.
 func TestUndecodableFileIsStoredAsUnsupported(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -333,6 +345,8 @@ func TestUndecodableFileIsStoredAsUnsupported(t *testing.T) {
 // file fails for that item alone and does not stop the rest of the folder
 // from loading - a good file published alongside a bad one still ingests.
 func TestCorruptFileFailsAloneWithoutStoppingOthers(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -354,7 +368,7 @@ func TestCorruptFileFailsAloneWithoutStoppingOthers(t *testing.T) {
 	corruptPath := "/mounted/photos/holidays/truncated.jpg"
 	writeFixture(t, dir, corruptPath, corrupt)
 
-	good := buildJPEGWithExif(t, 12, 8, "2021:01:01 12:00:00", 1)
+	good := gallerytest.BuildJPEGWithExif(t, 12, 8, "2021:01:01 12:00:00", 1)
 	goodPath := "/mounted/photos/holidays/good.jpg"
 	writeFixture(t, dir, goodPath, good)
 
@@ -376,6 +390,8 @@ func TestCorruptFileFailsAloneWithoutStoppingOthers(t *testing.T) {
 // so this is observed as findPhoto still finding a document, but with
 // Deleted set.
 func TestDeletedEventRemovesPhotoFromListing(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -391,7 +407,7 @@ func TestDeletedEventRemovesPhotoFromListing(t *testing.T) {
 		Path:            "/holidays",
 	})
 
-	data := buildJPEGWithExif(t, 12, 8, "2018:05:05 08:00:00", 0)
+	data := gallerytest.BuildJPEGWithExif(t, 12, 8, "2018:05:05 08:00:00", 0)
 	physicalPath := "/mounted/photos/holidays/gone.jpg"
 	writeFixture(t, dir, physicalPath, data)
 
@@ -412,6 +428,8 @@ func TestDeletedEventRemovesPhotoFromListing(t *testing.T) {
 // - e.g. a live event racing a hypothetical backfill - must yield exactly one
 // document, not two.
 func TestSameFileArrivingTwiceProducesOneItem(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -427,7 +445,7 @@ func TestSameFileArrivingTwiceProducesOneItem(t *testing.T) {
 		Path:            "/holidays",
 	})
 
-	data := buildJPEGWithExif(t, 12, 8, "2018:05:05 08:00:00", 0)
+	data := gallerytest.BuildJPEGWithExif(t, 12, 8, "2018:05:05 08:00:00", 0)
 	physicalPath := "/mounted/photos/holidays/twice.jpg"
 	writeFixture(t, dir, physicalPath, data)
 
@@ -451,6 +469,8 @@ func TestSameFileArrivingTwiceProducesOneItem(t *testing.T) {
 // gallery item, and a folder named similarly (but not a real path prefix,
 // e.g. "/Photos2" vs "/Photos") must not match either.
 func TestEventsOutsideConfiguredFoldersAreIgnored(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -467,7 +487,7 @@ func TestEventsOutsideConfiguredFoldersAreIgnored(t *testing.T) {
 	})
 
 	// outside the configured folder entirely
-	data := buildJPEGWithExif(t, 12, 8, "2018:05:05 08:00:00", 0)
+	data := gallerytest.BuildJPEGWithExif(t, 12, 8, "2018:05:05 08:00:00", 0)
 	outsidePath := "/mounted/photos/documents/scan.jpg"
 	writeFixture(t, dir, outsidePath, data)
 	publishFileChanged(t, nc, "physical-photos", outsidePath, events.FileChangedEventCreated, int64(len(data)), time.Now().Unix(), "image/jpeg")
@@ -497,6 +517,8 @@ func TestEventsOutsideConfiguredFoldersAreIgnored(t *testing.T) {
 // well as the create/change branch. A non-dotfile file under the same folder
 // published alongside continues to ingest exactly as before.
 func TestDotfileEventsProduceNoPhoto(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -512,7 +534,7 @@ func TestDotfileEventsProduceNoPhoto(t *testing.T) {
 		Path:            "/holidays",
 	})
 
-	data := buildJPEGWithExif(t, 12, 8, "2018:05:05 08:00:00", 0)
+	data := gallerytest.BuildJPEGWithExif(t, 12, 8, "2018:05:05 08:00:00", 0)
 
 	// a Created event for a dotfile (e.g. a .DS_Store) under the folder
 	dotfileCreatedPath := "/mounted/photos/holidays/.DS_Store"
@@ -555,6 +577,8 @@ func TestDotfileEventsProduceNoPhoto(t *testing.T) {
 // users configuring the same physical folder cost one metadata extraction,
 // observed as one document rather than two.
 func TestTwoUsersSharingAFolderProduceOneReadModelDocument(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"family"},
 		"lino": {"family"},
@@ -579,7 +603,7 @@ func TestTwoUsersSharingAFolderProduceOneReadModelDocument(t *testing.T) {
 		Path:            "/",
 	})
 
-	data := buildJPEGWithExif(t, 12, 8, "2022:02:02 02:02:02", 0)
+	data := gallerytest.BuildJPEGWithExif(t, 12, 8, "2022:02:02 02:02:02", 0)
 	physicalPath := "/mounted/family/shared.jpg"
 	writeFixture(t, dir, physicalPath, data)
 	publishFileChanged(t, nc, "physical-family", physicalPath, events.FileChangedEventCreated, int64(len(data)), time.Now().Unix(), "image/jpeg")

@@ -109,15 +109,25 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
           name: 'Gallery',
           routeName: GalleryView.routeName,
           actions: [
+            IconButton(
+              icon: const Icon(Icons.date_range),
+              tooltip: 'Filter by date',
+              onPressed: _pickDateRange,
+            ),
+            IconButton(
+              icon: const Icon(Icons.travel_explore),
+              tooltip: 'Filter by place',
+              onPressed: _pickPlace,
+            ),
             Obx(() => PopupMenuButton<GalleryAvailabilityFilter>(
                   tooltip: 'Filter',
                   icon: Icon(
-                    controller.filter.value == GalleryAvailabilityFilter.all
-                        ? Icons.filter_list
-                        : Icons.filter_alt,
+                    controller.filter.value.isActive
+                        ? Icons.filter_alt
+                        : Icons.filter_list,
                   ),
-                  initialValue: controller.filter.value,
-                  onSelected: controller.setFilter,
+                  initialValue: controller.filter.value.availability,
+                  onSelected: controller.setAvailability,
                   itemBuilder: (context) => const [
                     PopupMenuItem(
                       value: GalleryAvailabilityFilter.all,
@@ -161,16 +171,16 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
         children: [
           _LocalPermissionBanner(controller: controller),
           _SummaryBar(controller: controller),
+          _FilterChipsBar(controller: controller),
           Expanded(
             child: Obx(() {
               if (controller.isLoading.value) {
                 return const Center(child: CircularProgressIndicator());
               }
               if (controller.totalCount.value == 0) {
-                if (controller.filter.value != GalleryAvailabilityFilter.all) {
+                if (controller.filter.value.isActive) {
                   return _EmptyFilterResult(
-                    onClearFilter: () =>
-                        controller.setFilter(GalleryAvailabilityFilter.all),
+                    onClearFilter: controller.clearFilters,
                   );
                 }
                 return _EmptyGallery(
@@ -185,6 +195,40 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
         ],
       ),
     );
+  }
+
+  /// The date-range action (the gallery-metadata feature): Flutter's own
+  /// `showDateRangePicker`, storing the picked days as the filter's capture-
+  /// date range. Reopening the picker preselects the active range.
+  Future<void> _pickDateRange() async {
+    final now = DateTime.now();
+    final current = controller.filter.value;
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(1970),
+      lastDate: DateTime(now.year + 1),
+      initialDateRange:
+          current.capturedFrom != null && current.capturedTo != null
+              ? DateTimeRange(
+                  start: current.capturedFrom!, end: current.capturedTo!)
+              : null,
+      helpText: 'Filter by capture date',
+    );
+    if (picked != null) {
+      await controller.setDateRange(picked.start, picked.end);
+    }
+  }
+
+  /// The place-search action (ticket 06): opens the suggestion dialog over
+  /// the mirror's own places; picking one sets the Place filter.
+  Future<void> _pickPlace() async {
+    final picked = await showDialog<GalleryPlaceFilter>(
+      context: context,
+      builder: (_) => _PlaceSearchDialog(mirror: controller.mirror),
+    );
+    if (picked != null) {
+      await controller.setPlace(picked);
+    }
   }
 
   Widget _buildGrid(BuildContext context) {
@@ -701,10 +745,196 @@ class _LocalPermissionBannerState extends State<_LocalPermissionBanner> {
   }
 }
 
-/// Shown when an Availability filter narrows the gallery to nothing - distinct
-/// from [_EmptyGallery], which is about an empty gallery altogether, so the
-/// user is not told to go choose folders when the real fix is to clear a
-/// filter.
+/// The removable filter chips shown above the grid while any part of
+/// [GalleryFilter] is active - one chip per active part (Availability, date
+/// range, Place), each removing its own part when dismissed, and none of
+/// them touching the others (the parts combine).
+class _FilterChipsBar extends StatelessWidget {
+  const _FilterChipsBar({required this.controller});
+
+  final GalleryGridController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      final filter = controller.filter.value;
+      if (!filter.isActive) {
+        return const SizedBox.shrink();
+      }
+      final chips = <Widget>[];
+      if (filter.availability != GalleryAvailabilityFilter.all) {
+        chips.add(_chip(
+          switch (filter.availability) {
+            GalleryAvailabilityFilter.notBackedUp => 'Not backed up',
+            GalleryAvailabilityFilter.cloudOnly => 'Cloud only',
+            GalleryAvailabilityFilter.all => '',
+          },
+          onDeleted: () =>
+              controller.setAvailability(GalleryAvailabilityFilter.all),
+        ));
+      }
+      if (filter.capturedFrom != null || filter.capturedTo != null) {
+        chips.add(_chip(
+          _dateRangeLabel(context, filter),
+          onDeleted: controller.clearDateRange,
+        ));
+      }
+      final place = filter.place;
+      if (place != null) {
+        final label = place.label.isNotEmpty
+            ? place.label
+            : switch (place.level) {
+                GalleryPlaceLevel.country => place.countryCode ?? 'Place',
+                GalleryPlaceLevel.admin1 => place.admin1Code ?? 'Region',
+                GalleryPlaceLevel.locality => 'Place #${place.localityId}',
+              };
+        chips.add(_chip(label, onDeleted: controller.clearPlace));
+      }
+      return SizedBox(
+        height: 56,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          children: [
+            for (final chip in chips)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: chip,
+              ),
+          ],
+        ),
+      );
+    });
+  }
+
+  Widget _chip(String label, {required VoidCallback onDeleted}) => Chip(
+        label: Text(label),
+        onDeleted: onDeleted,
+      );
+
+  String _dateRangeLabel(BuildContext context, GalleryFilter filter) {
+    final localizations = MaterialLocalizations.of(context);
+    final from = filter.capturedFrom;
+    final to = filter.capturedTo;
+    if (from != null && to != null) {
+      return '${localizations.formatMediumDate(from)} – ${localizations.formatMediumDate(to)}';
+    }
+    final single = from ?? to!;
+    return 'Since ${localizations.formatMediumDate(single)}';
+  }
+}
+
+/// The place-search dialog (ticket 06): a text field over the mirror's own
+/// places, grouped Countries / Regions / Cities, each suggestion showing
+/// its photo count and - for regions and cities - its parent ("Bavaria,
+/// Germany"). Picking one pops with the [GalleryPlaceFilter] to apply. The
+/// mirror is handed in by the gallery view rather than looked up here - the
+/// dialog needs the mirror and nothing else, and passing it keeps this
+/// widget free of any dependency on how the view finds its controller.
+class _PlaceSearchDialog extends StatefulWidget {
+  const _PlaceSearchDialog({required this.mirror});
+
+  final GalleryMirror mirror;
+
+  @override
+  State<_PlaceSearchDialog> createState() => _PlaceSearchDialogState();
+}
+
+class _PlaceSearchDialogState extends State<_PlaceSearchDialog> {
+  static const _groupTitles = ['Countries', 'Regions', 'Cities'];
+  static const _levels = [
+    GalleryPlaceLevel.country,
+    GalleryPlaceLevel.admin1,
+    GalleryPlaceLevel.locality,
+  ];
+
+  final TextEditingController _text = TextEditingController();
+  late Future<List<List<GalleryPlaceSuggestion>>> _future = _fetch('');
+
+  Future<List<List<GalleryPlaceSuggestion>>> _fetch(String query) =>
+      Future.wait([
+        for (final level in _levels)
+          widget.mirror.placeSuggestions(level: level, query: query),
+      ]);
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480, maxHeight: 560),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: TextField(
+                controller: _text,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  hintText: 'Search places in your photos',
+                  prefixIcon: Icon(Icons.search),
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (query) {
+                  setState(() {
+                    _future = _fetch(query);
+                  });
+                },
+              ),
+            ),
+            Expanded(
+              child: FutureBuilder<List<List<GalleryPlaceSuggestion>>>(
+                future: _future,
+                builder: (context, snap) {
+                  if (!snap.hasData) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  return ListView(
+                    children: [
+                      for (var g = 0; g < snap.data!.length; g++)
+                        ..._group(_groupTitles[g], snap.data![g]),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _group(String title, List<GalleryPlaceSuggestion> suggestions) {
+    if (suggestions.isEmpty) {
+      return const [];
+    }
+    return [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+        child: Text(title, style: Theme.of(context).textTheme.titleSmall),
+      ),
+      for (final suggestion in suggestions)
+        ListTile(
+          title: Text(suggestion.name),
+          subtitle: suggestion.parentLabel.isEmpty
+              ? null
+              : Text(suggestion.parentLabel),
+          trailing: Text('${suggestion.photoCount}'),
+          onTap: () => Navigator.of(context).pop(suggestion.filter),
+        ),
+    ];
+  }
+
+  @override
+  void dispose() {
+    _text.dispose();
+    super.dispose();
+  }
+}
+
+/// Shown when the active filter (Availability, date range or Place) narrows
+/// the gallery to nothing - distinct from [_EmptyGallery], which is about an
+/// empty gallery altogether, so the user is not told to go choose folders
+/// when the real fix is to clear a filter.
 class _EmptyFilterResult extends StatelessWidget {
   const _EmptyFilterResult({required this.onClearFilter});
 

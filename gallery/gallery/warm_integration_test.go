@@ -19,6 +19,8 @@
 package gallery_test
 
 import (
+	"umbasa.net/seraph/gallery/gallery/gallerytest"
+
 	"context"
 	"encoding/json"
 	"fmt"
@@ -102,6 +104,8 @@ func waitForWarmCount(t *testing.T, w *warmWatcher, n int) {
 // asserted at the NATS boundary as a publish, not by inspecting internal
 // state.
 func TestWarmOnIngestDispatchesRequestOntoDurableQueue(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -119,7 +123,7 @@ func TestWarmOnIngestDispatchesRequestOntoDurableQueue(t *testing.T) {
 		Path:            "/holidays",
 	})
 
-	data := buildJPEGWithExif(t, 40, 30, "2019:06:15 10:20:30", 1)
+	data := gallerytest.BuildJPEGWithExif(t, 40, 30, "2019:06:15 10:20:30", 1)
 	physicalPath := "/mounted/photos/holidays/beach.jpg"
 	writeFixture(t, dir, physicalPath, data)
 
@@ -142,6 +146,8 @@ func TestWarmOnIngestDispatchesRequestOntoDurableQueue(t *testing.T) {
 // with an UnsupportedReason*) is not pointlessly dispatched to the
 // thumbnailer, which could only fail identically.
 func TestWarmIsNotDispatchedForAlreadyUnsupportedPhoto(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -181,6 +187,8 @@ func TestWarmIsNotDispatchedForAlreadyUnsupportedPhoto(t *testing.T) {
 // requires a durable queue rather than firing interactive requests at the
 // thumbnailer.
 func TestWarmOnBackfillDispatchesEveryPhotoWithNoSilentLosses(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -240,6 +248,8 @@ func TestWarmOnBackfillDispatchesEveryPhotoWithNoSilentLosses(t *testing.T) {
 // eliminated. What backfillUpsert's own no-op path must avoid is dispatching
 // AGAIN for a key it did not itself just insert.
 func TestWarmIsNotRedispatchedForAlreadyIngestedPhotoDuringBackfill(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -295,6 +305,8 @@ func TestWarmIsNotRedispatchedForAlreadyIngestedPhotoDuringBackfill(t *testing.T
 // ThumbnailWarmUnsupportedNotice's Reason against the corresponding
 // galleryPhotos document's Unsupported field.
 func TestUnsupportedNoticeFromThumbnailerRecordsReasonAgainstPhoto(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -311,7 +323,7 @@ func TestUnsupportedNoticeFromThumbnailerRecordsReasonAgainstPhoto(t *testing.T)
 	})
 
 	// ingest a normal, decodable photo first - Unsupported starts empty
-	data := buildJPEGWithExif(t, 12, 8, "2021:01:01 12:00:00", 1)
+	data := gallerytest.BuildJPEGWithExif(t, 12, 8, "2021:01:01 12:00:00", 1)
 	physicalPath := "/mounted/photos/holidays/later-flagged.jpg"
 	writeFixture(t, dir, physicalPath, data)
 	publishFileChanged(t, nc, "physical-photos", physicalPath, events.FileChangedEventCreated, int64(len(data)), time.Now().Unix(), "image/jpeg")
@@ -338,6 +350,8 @@ func TestUnsupportedNoticeFromThumbnailerRecordsReasonAgainstPhoto(t *testing.T)
 // reports back (e.g. deleted meanwhile) - this must not error the consumer
 // or panic; there is simply nothing to record the reason against.
 func TestUnsupportedNoticeForUnknownPhotoIsHarmless(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -360,7 +374,7 @@ func TestUnsupportedNoticeForUnknownPhotoIsHarmless(t *testing.T) {
 		SpaceProviderId: "photos",
 		Path:            "/holidays",
 	})
-	data := buildJPEGWithExif(t, 12, 8, "2021:01:01 12:00:00", 1)
+	data := gallerytest.BuildJPEGWithExif(t, 12, 8, "2021:01:01 12:00:00", 1)
 	physicalPath := "/mounted/photos/holidays/still-works.jpg"
 	writeFixture(t, dir, physicalPath, data)
 	publishFileChanged(t, nc, "physical-photos", physicalPath, events.FileChangedEventCreated, int64(len(data)), time.Now().Unix(), "image/jpeg")
@@ -390,6 +404,8 @@ func TestUnsupportedNoticeForUnknownPhotoIsHarmless(t *testing.T) {
 // that would churn the feed and re-deliver an unchanged document to every
 // mirror for nothing.
 func TestUnsupportedNoticeReachesAMirrorThatAlreadyPolledPastThePhoto(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})

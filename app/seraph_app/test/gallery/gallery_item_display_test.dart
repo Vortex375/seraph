@@ -78,8 +78,8 @@ void main() {
       await insertMirrorItem(db, path: '/Photos/a.jpg', capturedAt: 1622548800);
 
       final item = await single();
-      expect(item.capturedAtDateTime.toUtc(),
-          DateTime.utc(2021, 6, 1, 12, 0, 0));
+      expect(
+          item.capturedAtWallTime.toUtc(), DateTime.utc(2021, 6, 1, 12, 0, 0));
     });
 
     test('an unsupported item explains itself rather than being hidden',
@@ -87,9 +87,7 @@ void main() {
       await insertMirrorItem(db,
           path: '/Photos/raw.dng', capturedAt: 1000, unsupported: 'format');
       await insertMirrorItem(db,
-          path: '/Photos/broken.jpg',
-          capturedAt: 900,
-          unsupported: 'corrupt');
+          path: '/Photos/broken.jpg', capturedAt: 900, unsupported: 'corrupt');
       await insertMirrorItem(db,
           path: '/Photos/future.xyz',
           capturedAt: 800,
@@ -123,12 +121,13 @@ void main() {
       expect(item.fileName, 'beach.jpg');
       expect(item.folderPath, '/Holidays/2019/Crete');
       expect(item.folderDisplayPath, '/family-space/Holidays/2019/Crete');
-      expect(item.spaceDisplayPath, '/family-space/Holidays/2019/Crete/beach.jpg');
+      expect(
+          item.spaceDisplayPath, '/family-space/Holidays/2019/Crete/beach.jpg');
     });
 
     test('an item at the root of its space still names a folder', () async {
-      await insertMirrorItem(
-          db, providerId: 'space-a', path: '/top.jpg', capturedAt: 1000);
+      await insertMirrorItem(db,
+          providerId: 'space-a', path: '/top.jpg', capturedAt: 1000);
 
       final item = await single();
       expect(item.folderPath, '/');

@@ -86,6 +86,8 @@ func insertDotfile(t *testing.T, db *mongo.Database, providerId, path string) {
 // so the delta feed delivers its tombstone to every mirror exactly like a
 // live deletion would. Non-dotfile documents are not touched.
 func TestDotfileSweepTombstonesPreExistingDotfiles(t *testing.T) {
+	requireIntegration(t)
+
 	// manual lifecycle: dotfile documents must be seeded BEFORE Start() so
 	// the sweep goroutine (launched by Start()) finds them - exactly the
 	// pre-existing-leak state the sweep exists to clean up.
@@ -190,6 +192,8 @@ func TestDotfileSweepTombstonesPreExistingDotfiles(t *testing.T) {
 // completed and verifying a restart leaves it untombstoned - the marker is
 // honoured, so the sweep is a no-op on the second start.
 func TestDotfileSweepDoesNotReRunAfterMarkerSet(t *testing.T) {
+	requireIntegration(t)
+
 	// manual lifecycle: this test drives two Start/Stop cycles against the
 	// same Mongo database, mirroring TestSequenceMonotonicAcrossSimulatedRestart.
 	provider, nc, db := getGalleryProvider(t)

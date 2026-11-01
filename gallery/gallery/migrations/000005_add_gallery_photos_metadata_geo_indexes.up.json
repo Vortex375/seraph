@@ -1,0 +1,21 @@
+[
+  {
+    "createIndexes": "galleryPhotos",
+    "indexes": [
+      {
+        "key": {
+          "metadataVersion": 1,
+          "_id": 1
+        },
+        "name": "galleryPhotos_metadataVersion_id_idx"
+      },
+      {
+        "key": {
+          "geoVersion": 1,
+          "_id": 1
+        },
+        "name": "galleryPhotos_geoVersion_id_idx"
+      }
+    ]
+  }
+]

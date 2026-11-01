@@ -257,6 +257,149 @@ enum GalleryAvailabilityFilter {
   cloudOnly,
 }
 
+/// Which Place level a [GalleryPlaceFilter] (and a place suggestion) names.
+enum GalleryPlaceLevel { country, admin1, locality }
+
+/// The Place half of [GalleryFilter]: exactly one of country / region /
+/// city, identified the way the mirror stores them - country and region by
+/// code ([placeCountryCode], and [placeAdmin1Code] in the GeoNames
+/// "CC.code" form), city by GeoNames id ([placeLocalityId]). The ids/codes
+/// are exactly what the mirror's place columns hold, so the predicate is a
+/// plain indexed equality - photos without a Place (null columns) never
+/// match.
+///
+/// [label] is display-only - the filter chip's text - carried so the UI
+/// does not have to re-derive a name it already showed as a suggestion.
+class GalleryPlaceFilter {
+  const GalleryPlaceFilter({
+    required this.level,
+    this.label = '',
+    this.countryCode,
+    this.admin1Code,
+    this.localityId,
+  });
+
+  const GalleryPlaceFilter.country(String code, {String label = ''})
+      : this(level: GalleryPlaceLevel.country, label: label, countryCode: code);
+
+  const GalleryPlaceFilter.admin1(String code, {String label = ''})
+      : this(level: GalleryPlaceLevel.admin1, label: label, admin1Code: code);
+
+  const GalleryPlaceFilter.locality(int id, {String label = ''})
+      : this(level: GalleryPlaceLevel.locality, label: label, localityId: id);
+
+  final GalleryPlaceLevel level;
+
+  /// Display-only name for the filter chip.
+  final String label;
+  final String? countryCode;
+  final String? admin1Code;
+  final int? localityId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is GalleryPlaceFilter &&
+      other.level == level &&
+      other.countryCode == countryCode &&
+      other.admin1Code == admin1Code &&
+      other.localityId == localityId;
+
+  @override
+  int get hashCode => Object.hash(level, countryCode, admin1Code, localityId);
+}
+
+/// The ONE filter value object the gallery's read path takes
+/// (the gallery-metadata feature): Availability, an optional inclusive date
+/// range in capture wall time, and an optional Place - combinable in any
+/// mix, always membership-only (ordering never changes). Replaces the bare
+/// [GalleryAvailabilityFilter] the read path took before.
+class GalleryFilter {
+  const GalleryFilter({
+    this.availability = GalleryAvailabilityFilter.all,
+    this.capturedFrom,
+    this.capturedTo,
+    this.place,
+  });
+
+  const GalleryFilter.all() : this();
+
+  final GalleryAvailabilityFilter availability;
+
+  /// Inclusive whole days, in CAPTURE WALL TIME (ADR 0003): a photo taken
+  /// at 23:30 in +02:00 belongs to the wall day it shows the user, not to
+  /// whatever UTC instant that is.
+  final DateTime? capturedFrom;
+  final DateTime? capturedTo;
+
+  final GalleryPlaceFilter? place;
+
+  /// True when anything at all is being filtered - what the UI uses to
+  /// switch to the "no photos match this filter" empty state and to decide
+  /// whether filter chips are shown.
+  bool get isActive =>
+      availability != GalleryAvailabilityFilter.all ||
+      capturedFrom != null ||
+      capturedTo != null ||
+      place != null;
+
+  GalleryFilter copyWith({
+    GalleryAvailabilityFilter? availability,
+    DateTime? capturedFrom,
+    DateTime? capturedTo,
+    GalleryPlaceFilter? place,
+    bool clearDateRange = false,
+    bool clearPlace = false,
+  }) =>
+      GalleryFilter(
+        availability: availability ?? this.availability,
+        capturedFrom:
+            clearDateRange ? null : (capturedFrom ?? this.capturedFrom),
+        capturedTo: clearDateRange ? null : (capturedTo ?? this.capturedTo),
+        place: clearPlace ? null : (place ?? this.place),
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is GalleryFilter &&
+      other.availability == availability &&
+      other.capturedFrom == capturedFrom &&
+      other.capturedTo == capturedTo &&
+      other.place == place;
+
+  @override
+  int get hashCode =>
+      Object.hash(availability, capturedFrom, capturedTo, place);
+}
+
+/// One place suggestion in the gallery's place search (ticket 06): a
+/// country, region or city that occurs in the user's OWN photos, with its
+/// photo count - drawn from the mirror under the same Local Folder
+/// visibility the grid shows, never from a global gazetteer.
+class GalleryPlaceSuggestion {
+  const GalleryPlaceSuggestion({
+    required this.level,
+    required this.filter,
+    required this.name,
+    required this.parentLabel,
+    required this.photoCount,
+  });
+
+  final GalleryPlaceLevel level;
+
+  /// The filter picking this suggestion applies.
+  final GalleryPlaceFilter filter;
+
+  /// The place's own name ("Portugal", "Bavaria", "Lisbon").
+  final String name;
+
+  /// The parent place's name for regions and cities ("Germany", or
+  /// "Portugal" for a city) - empty for countries.
+  final String parentLabel;
+
+  /// How many of the user's visible photos carry this Place.
+  final int photoCount;
+}
+
 /// How many Gallery Items are backed up and how many are not - the single
 /// number ticket 15 asks the gallery to show ("one number to trust rather
 /// than a feeling", user story 17).
@@ -305,7 +448,18 @@ class GalleryMirrorPage {
 /// it returns" - applying feed pages and reading them back are both here,
 /// independent of how the pages arrived over the wire.
 class GalleryMirror {
-  GalleryMirror(this._db);
+  GalleryMirror(this._db, {int Function()? deviceUtcOffsetSeconds})
+      : _deviceUtcOffsetSeconds = deviceUtcOffsetSeconds;
+
+  /// The device's CURRENT UTC offset, in seconds - the COALESCE fallback
+  /// for mirror rows whose [GalleryItems.capturedAtOffset] is null (see
+  /// [GalleryFilter]'s date range). Injectable so tests can pin it instead
+  /// of depending on the test machine's zone.
+  final int Function()? _deviceUtcOffsetSeconds;
+
+  int deviceOffsetSeconds() =>
+      _deviceUtcOffsetSeconds?.call() ??
+      DateTime.now().timeZoneOffset.inSeconds;
 
   final GalleryMirrorDatabase _db;
 
@@ -425,6 +579,15 @@ class GalleryMirror {
             seq: Value(item.seq),
             capturedAt: Value(item.capturedAt),
             capturedAtSource: Value(item.capturedAtSource),
+            capturedAtOffset: Value(item.capturedAtOffset),
+            lat: Value(item.lat),
+            lon: Value(item.lon),
+            placeCountryCode: Value(_placeText(item.placeCountryCode)),
+            placeCountry: Value(_placeText(item.placeCountry)),
+            placeAdmin1Code: Value(_placeText(item.placeAdmin1Code)),
+            placeAdmin1: Value(_placeText(item.placeAdmin1)),
+            placeLocalityId: Value(_placeId(item.placeLocalityId)),
+            placeLocality: Value(_placeText(item.placeLocality)),
             width: Value(item.width),
             height: Value(item.height),
             orientation: Value(item.orientation),
@@ -469,6 +632,15 @@ class GalleryMirror {
               path: Value(item.path),
               seq: Value(item.seq),
               capturedAtSource: Value(item.capturedAtSource),
+              capturedAtOffset: Value(item.capturedAtOffset),
+              lat: Value(item.lat),
+              lon: Value(item.lon),
+              placeCountryCode: Value(_placeText(item.placeCountryCode)),
+              placeCountry: Value(_placeText(item.placeCountry)),
+              placeAdmin1Code: Value(_placeText(item.placeAdmin1Code)),
+              placeAdmin1: Value(_placeText(item.placeAdmin1)),
+              placeLocalityId: Value(_placeId(item.placeLocalityId)),
+              placeLocality: Value(_placeText(item.placeLocality)),
               width: Value(item.width),
               height: Value(item.height),
               orientation: Value(item.orientation),
@@ -481,7 +653,10 @@ class GalleryMirror {
               uploadState: const Value(null),
               // capturedAt deliberately NOT rewritten - same rule as every
               // other merge in this class: the device row that already
-              // existed keeps its timeline position.
+              // existed keeps its timeline position. The capture-time
+              // offset and the location columns ARE written: they come
+              // from the cloud row's own extraction and the device never
+              // had anything to contradict them with.
             ));
           } else {
             // Verification CONTRADICTS what this device expected. [origin]
@@ -549,6 +724,15 @@ class GalleryMirror {
             path: Value(item.path),
             seq: Value(item.seq),
             capturedAtSource: Value(item.capturedAtSource),
+            capturedAtOffset: Value(item.capturedAtOffset),
+            lat: Value(item.lat),
+            lon: Value(item.lon),
+            placeCountryCode: Value(_placeText(item.placeCountryCode)),
+            placeCountry: Value(_placeText(item.placeCountry)),
+            placeAdmin1Code: Value(_placeText(item.placeAdmin1Code)),
+            placeAdmin1: Value(_placeText(item.placeAdmin1)),
+            placeLocalityId: Value(_placeId(item.placeLocalityId)),
+            placeLocality: Value(_placeText(item.placeLocality)),
             width: Value(item.width),
             height: Value(item.height),
             orientation: Value(item.orientation),
@@ -575,8 +759,7 @@ class GalleryMirror {
             .get();
         GalleryItem? deviceMatch;
         for (final candidate in heuristicCandidates) {
-          if (_coveringSyncPair(
-                  syncPairs, candidate.localRelativePath ?? '') ==
+          if (_coveringSyncPair(syncPairs, candidate.localRelativePath ?? '') ==
               null) {
             deviceMatch = candidate;
             break;
@@ -592,6 +775,15 @@ class GalleryMirror {
             path: Value(item.path),
             seq: Value(item.seq),
             capturedAtSource: Value(item.capturedAtSource),
+            capturedAtOffset: Value(item.capturedAtOffset),
+            lat: Value(item.lat),
+            lon: Value(item.lon),
+            placeCountryCode: Value(_placeText(item.placeCountryCode)),
+            placeCountry: Value(_placeText(item.placeCountry)),
+            placeAdmin1Code: Value(_placeText(item.placeAdmin1Code)),
+            placeAdmin1: Value(_placeText(item.placeAdmin1)),
+            placeLocalityId: Value(_placeId(item.placeLocalityId)),
+            placeLocality: Value(_placeText(item.placeLocality)),
             width: Value(item.width),
             height: Value(item.height),
             orientation: Value(item.orientation),
@@ -615,6 +807,15 @@ class GalleryMirror {
                 seq: Value(item.seq),
                 capturedAt: item.capturedAt,
                 capturedAtSource: Value(item.capturedAtSource),
+                capturedAtOffset: Value(item.capturedAtOffset),
+                lat: Value(item.lat),
+                lon: Value(item.lon),
+                placeCountryCode: Value(_placeText(item.placeCountryCode)),
+                placeCountry: Value(_placeText(item.placeCountry)),
+                placeAdmin1Code: Value(_placeText(item.placeAdmin1Code)),
+                placeAdmin1: Value(_placeText(item.placeAdmin1)),
+                placeLocalityId: Value(_placeId(item.placeLocalityId)),
+                placeLocality: Value(_placeText(item.placeLocality)),
                 width: Value(item.width),
                 height: Value(item.height),
                 orientation: Value(item.orientation),
@@ -920,8 +1121,8 @@ class GalleryMirror {
               capturedAt: capturedAt,
               capturedAtSource: Value(capturedAtSource),
               size: Value(item.size),
-              localFirstSeenAt: Value(
-                  nowMillis ?? DateTime.now().millisecondsSinceEpoch),
+              localFirstSeenAt:
+                  Value(nowMillis ?? DateTime.now().millisecondsSinceEpoch),
             ),
           );
       return;
@@ -1077,7 +1278,10 @@ class GalleryMirror {
     final withinSource = relativePath.startsWith(pair.localFolderPath)
         ? relativePath.substring(pair.localFolderPath.length)
         : '';
-    return (pair.spaceProviderId, _joinSeraphPath(pair.path, '$withinSource$displayName'));
+    return (
+      pair.spaceProviderId,
+      _joinSeraphPath(pair.path, '$withinSource$displayName')
+    );
   }
 
   /// The inverse of [_expectedRemotePath]: given a cloud item's [remotePath],
@@ -1323,8 +1527,7 @@ class GalleryMirror {
         .write(GalleryItemsCompanion(
       uploadTargetProviderId: Value(providerId),
       uploadTargetPath: Value(path),
-      uploadState:
-          Value(viaPut ? _uploadStateUploaded : _uploadStateAssumed),
+      uploadState: Value(viaPut ? _uploadStateUploaded : _uploadStateAssumed),
     ));
     return rows > 0;
   }
@@ -1365,8 +1568,7 @@ class GalleryMirror {
         .get();
     return [
       for (final row in rows)
-        if (_coveringSyncPair(pairs, row.localRelativePath ?? '') != null)
-          row,
+        if (_coveringSyncPair(pairs, row.localRelativePath ?? '') != null) row,
     ];
   }
 
@@ -1480,14 +1682,12 @@ class GalleryMirror {
   /// this seam uses. Never silently dropped (this IS the list that makes it
   /// visible) and never retried automatically ([itemsPendingUpload] excludes
   /// these rows outright) - only [retryFailedUpload] moves a row out of it.
-  Future<List<GalleryItem>> failedUploadItems() => (_db.select(
-          _db.galleryItems)
+  Future<List<GalleryItem>> failedUploadItems() => (_db.select(_db.galleryItems)
         ..where((t) =>
             t.origin.equals(_originDevice) &
             t.uploadFailureBucket.equals(_uploadFailureBucketPermanent))
         ..orderBy([
-          (t) =>
-              OrderingTerm(expression: t.capturedAt, mode: OrderingMode.desc)
+          (t) => OrderingTerm(expression: t.capturedAt, mode: OrderingMode.desc)
         ]))
       .get();
 
@@ -1594,7 +1794,6 @@ class GalleryMirror {
     ));
     return attempts;
   }
-
 
   /// The single [SyncRunState] row - [GallerySyncEngine]'s only channel to
   /// the UI (see that table's class doc). An idle, all-zero snapshot when no
@@ -1742,8 +1941,8 @@ class GalleryMirror {
   /// the next attempt is not blocked forever" criterion).
   Future<void> releaseTokenRefreshLock({required String holder}) async {
     await (_db.delete(_db.tokenRefreshLock)
-          ..where((t) =>
-              t.id.equals(tokenRefreshLockId) & t.holder.equals(holder)))
+          ..where(
+              (t) => t.id.equals(tokenRefreshLockId) & t.holder.equals(holder)))
         .go();
   }
 
@@ -1814,8 +2013,7 @@ class GalleryMirror {
   /// failure alike.
   Future<void> releaseSyncRunLock({required String holder}) async {
     await (_db.delete(_db.syncRunLock)
-          ..where(
-              (t) => t.id.equals(syncRunLockId) & t.holder.equals(holder)))
+          ..where((t) => t.id.equals(syncRunLockId) & t.holder.equals(holder)))
         .go();
   }
 
@@ -1844,8 +2042,8 @@ class GalleryMirror {
         continue;
       }
 
-      final expected = _expectedRemotePath(
-          pair, relativePath, row.localDisplayName ?? '');
+      final expected =
+          _expectedRemotePath(pair, relativePath, row.localDisplayName ?? '');
       final cloudMatch = await (_db.select(_db.galleryItems)
             ..where((t) =>
                 t.origin.equals(_originCloud) &
@@ -1917,9 +2115,11 @@ class GalleryMirror {
   /// the server listing's order), with a total row count. Works with no
   /// network - it is a plain local query.
   ///
-  /// [filter] restricts which rows are included (ticket 15's Availability
-  /// filter) without ever changing their relative order - Availability is
-  /// shown, and now filterable, but it never fragments the ordering.
+  /// [filter] restricts which rows are included - Availability (ticket 15),
+  /// an optional capture-date range and an optional Place (the gallery-
+  /// metadata feature), combined by [_filterPredicate] - without ever
+  /// changing their relative order: filters are membership-only and never
+  /// fragment the ordering.
   ///
   /// Ticket 29's Local Folder selection is applied here too, folded into the
   /// same [filter] machinery rather than as a separate step - see
@@ -1927,7 +2127,7 @@ class GalleryMirror {
   Future<GalleryMirrorPage> queryPage({
     int offset = 0,
     int limit = 100,
-    GalleryAvailabilityFilter filter = GalleryAvailabilityFilter.all,
+    GalleryFilter filter = const GalleryFilter(),
   }) async {
     final unselectedFolders = await _unselectedFolders();
 
@@ -1937,8 +2137,7 @@ class GalleryMirror {
         (t) => OrderingTerm(expression: t.id, mode: OrderingMode.desc),
       ])
       ..limit(limit, offset: offset)
-      ..where((t) =>
-          _visibilityPredicates(t, unselectedFolders).forFilter(filter));
+      ..where((t) => _filterPredicate(t, unselectedFolders, filter));
 
     final rows = await query.get();
     final items =
@@ -1959,7 +2158,7 @@ class GalleryMirror {
   Future<List<GalleryItem>> queryItems({
     int offset = 0,
     int limit = 100,
-    GalleryAvailabilityFilter filter = GalleryAvailabilityFilter.all,
+    GalleryFilter filter = const GalleryFilter(),
   }) async {
     final unselectedFolders = await _unselectedFolders();
 
@@ -1969,8 +2168,7 @@ class GalleryMirror {
         (t) => OrderingTerm(expression: t.id, mode: OrderingMode.desc),
       ])
       ..limit(limit, offset: offset)
-      ..where((t) =>
-          _visibilityPredicates(t, unselectedFolders).forFilter(filter));
+      ..where((t) => _filterPredicate(t, unselectedFolders, filter));
 
     final rows = await query.get();
     return rows.map((r) => _presentedItem(r, unselectedFolders)).toList();
@@ -2029,57 +2227,257 @@ class GalleryMirror {
     return _Visibility(
       deviceOnly: t.origin.equals(_originDevice) & folderSelected,
       synced: t.origin.equals(_originBoth) & folderSelected,
-      cloudOnly:
-          t.origin.equals(_originCloud) | (t.origin.equals(_originBoth) & folderUnselected),
+      cloudOnly: t.origin.equals(_originCloud) |
+          (t.origin.equals(_originBoth) & folderUnselected),
     );
   }
 
-   /// Every visible item's Capture Date, in the grid's exact order
-   /// (`capturedAt DESC, id DESC`) and under the same visibility predicate as
-   /// [queryItems] - the column the gallery scrubber's month-boundary map is
-   /// built from in a single read.
-   ///
-   /// Returns the raw epoch-seconds ints rather than [DateTime]s so the
-   /// local-time conversion happens once, in the controller, with the
-   /// identical code path as `GalleryItemDisplay.capturedAtDateTime`
-   /// (`DateTime.fromMillisecondsSinceEpoch(capturedAt * 1000)`). Grouping in
-   /// SQLite with `strftime(..., 'unixepoch')` would group in UTC, which can
-   /// disagree with the local-time label by a month around midnight and is
-   /// fragile under DST; reading the int column and converting in Dart keeps
-   /// the boundary map and the label on the same conversion, so they can
-   /// never disagree. The read is a covered scan on the existing
-   /// `idx_gallery_items_captured_at_id` index (the column is in the index, so
-   /// no table access is needed) and transfers one int per item.
-   Future<List<int>> capturedAtColumn({
-     GalleryAvailabilityFilter filter = GalleryAvailabilityFilter.all,
-   }) async {
-     final unselectedFolders = await _unselectedFolders();
-     final column = _db.galleryItems.capturedAt;
-     final query = _db.selectOnly(_db.galleryItems)
-       ..addColumns([column])
-       ..orderBy([
-         OrderingTerm(
-             expression: _db.galleryItems.capturedAt,
-             mode: OrderingMode.desc),
-         OrderingTerm(
-             expression: _db.galleryItems.id, mode: OrderingMode.desc),
-       ])
-       ..where(_visibilityPredicates(_db.galleryItems, unselectedFolders)
-           .forFilter(filter));
-     final rows = await query.get();
-    return rows.map((r) => r.read(column)!).toList();
+  /// The one predicate the whole read path applies: Local Folder visibility
+  /// + Availability + the optional date range + the optional Place of
+  /// [filter]. Shared by [queryPage]/[queryItems]/[totalCount]/
+  /// [capturedAtColumn] so the grid, the count and the scrubber can never
+  /// disagree about what the active filter means.
+  Expression<bool> _filterPredicate(
+    $GalleryItemsTable t,
+    Set<String> unselectedFolders,
+    GalleryFilter filter,
+  ) {
+    var predicate = _visibilityPredicates(t, unselectedFolders)
+        .forFilter(filter.availability);
+    if (filter.capturedFrom != null || filter.capturedTo != null) {
+      predicate = predicate & _dateRangePredicate(t, filter);
+    }
+    final place = filter.place;
+    if (place != null) {
+      predicate = predicate & _placePredicate(t, place);
+    }
+    return predicate;
   }
 
-   /// The total number of items currently in the mirror, optionally
-  /// restricted by Availability. Ticket 29's Local Folder selection is
-  /// already folded into what "restricted by Availability" means - see
-  /// [_visibilityPredicates].
-  Future<int> totalCount({
-    GalleryAvailabilityFilter filter = GalleryAvailabilityFilter.all,
+  /// The date-range half of [GalleryFilter]: inclusive whole days in CAPTURE
+  /// WALL TIME (ADR 0003) - a photo taken at 23:30 in +02:00 belongs to the
+  /// wall day it shows the user, not to whatever UTC instant that is.
+  ///
+  /// The wall time is computed in SQL as
+  /// `captured_at + COALESCE(captured_at_offset, <device's current offset>)`
+  /// and compared against the day bounds; [GalleryFilter.capturedFrom]/
+  /// [capturedTo] are wall-clock dates whose year/month/day are used (the
+  /// range covers every wall moment from the start of [capturedFrom]'s day
+  /// to the end of [capturedTo]'s day).
+  ///
+  /// ponytail: a single device offset (the current one) stands in for
+  /// rows whose capture offset is unknown, instead of per-instant DST -
+  /// only those rows can be an hour off at a DST boundary; per-row
+  /// handling if anyone notices.
+  Expression<bool> _dateRangePredicate(
+      $GalleryItemsTable t, GalleryFilter filter) {
+    final wall = t.capturedAt +
+        coalesce<int>([t.capturedAtOffset, Constant(deviceOffsetSeconds())]);
+    Expression<bool>? predicate;
+    final from = filter.capturedFrom;
+    if (from != null) {
+      final start = DateTime.utc(from.year, from.month, from.day);
+      predicate =
+          wall.isBiggerOrEqualValue(start.millisecondsSinceEpoch ~/ 1000);
+    }
+    final to = filter.capturedTo;
+    if (to != null) {
+      final end =
+          DateTime.utc(to.year, to.month, to.day).add(const Duration(days: 1));
+      final endPred =
+          wall.isSmallerThanValue(end.millisecondsSinceEpoch ~/ 1000);
+      predicate = predicate == null ? endPred : predicate & endPred;
+    }
+    return predicate!;
+  }
+
+  /// The Place half of [GalleryFilter]: an indexed equality on the mirror
+  /// column the [GalleryPlaceFilter.level] names - photos without a Place
+  /// (null columns) never match, per the filter's contract.
+  Expression<bool> _placePredicate(
+      $GalleryItemsTable t, GalleryPlaceFilter place) {
+    switch (place.level) {
+      case GalleryPlaceLevel.country:
+        return t.placeCountryCode.equals(place.countryCode!);
+      case GalleryPlaceLevel.admin1:
+        return t.placeAdmin1Code.equals(place.admin1Code!);
+      case GalleryPlaceLevel.locality:
+        return t.placeLocalityId.equals(place.localityId!);
+    }
+  }
+
+  /// Place suggestions for the gallery's place search (ticket 06): the
+  /// distinct [level]-places that occur in the user's OWN photos, with a
+  /// photo count each - drawn from the mirror under the same Local Folder
+  /// visibility the grid shows (never from a global gazetteer), restricted
+  /// to rows whose Place is known, matching [query] as a case-insensitive
+  /// substring of the place's name, ordered by photo count (then name, for
+  /// a deterministic tie-break).
+  ///
+  /// Regions and cities carry their parent's name in
+  /// [GalleryPlaceSuggestion.parentLabel] ("Bavaria, Germany"), which is why
+  /// the grouping keys include the parent columns.
+  Future<List<GalleryPlaceSuggestion>> placeSuggestions({
+    required GalleryPlaceLevel level,
+    String query = '',
+    int limit = 15,
   }) async {
     final unselectedFolders = await _unselectedFolders();
-    return _countMatching((t) =>
-        _visibilityPredicates(t, unselectedFolders).forFilter(filter));
+    final items = _db.galleryItems;
+    final countExp = items.id.count();
+
+    final Expression<String> nameExp;
+    final Expression<String>? parentExp;
+    final List<Expression<Object>> groupKeys;
+    switch (level) {
+      case GalleryPlaceLevel.country:
+        nameExp = items.placeCountry;
+        parentExp = null;
+        groupKeys = [items.placeCountryCode, nameExp];
+      case GalleryPlaceLevel.admin1:
+        nameExp = items.placeAdmin1;
+        parentExp = items.placeCountry;
+        groupKeys = [items.placeAdmin1Code, nameExp, parentExp];
+      case GalleryPlaceLevel.locality:
+        nameExp = items.placeLocality;
+        parentExp = items.placeCountry;
+        groupKeys = [
+          items.placeLocalityId,
+          nameExp,
+          items.placeAdmin1,
+          parentExp
+        ];
+    }
+
+    var predicate = _visibilityPredicates(items, unselectedFolders)
+        .forFilter(GalleryAvailabilityFilter.all);
+    // Only rows with a known Place can suggest one; [_placeText]/[_placeId]
+    // never write empty strings or non-positive ids, so a non-null key
+    // column means a real Place.
+    predicate = predicate &
+        switch (level) {
+          GalleryPlaceLevel.country => items.placeCountryCode.isNotNull(),
+          GalleryPlaceLevel.admin1 => items.placeAdmin1Code.isNotNull(),
+          GalleryPlaceLevel.locality => items.placeLocalityId.isNotNull(),
+        };
+    final text = query.trim();
+    if (text.isNotEmpty) {
+      // Case-insensitive substring (SQLite's LIKE is ASCII-case-insensitive).
+      // Wildcard characters in the typed text are stripped rather than
+      // escaped - the suggestion search is a name finder, not a pattern
+      // matcher, and LIKE has no ESCAPE clause through drift's API.
+      final cleaned = text.replaceAll('%', '').replaceAll('_', '');
+      predicate = predicate & nameExp.contains(cleaned);
+    }
+
+    final select = _db.selectOnly(items)
+      ..addColumns([...groupKeys, countExp])
+      ..where(predicate)
+      ..groupBy(groupKeys)
+      ..orderBy([
+        OrderingTerm(expression: countExp, mode: OrderingMode.desc),
+        OrderingTerm(expression: nameExp, mode: OrderingMode.asc),
+      ])
+      ..limit(limit);
+
+    final rows = await select.get();
+    final suggestions = <GalleryPlaceSuggestion>[];
+    for (final row in rows) {
+      final name = row.read(nameExp);
+      if (name == null || name.isEmpty) {
+        continue;
+      }
+      final parent = parentExp == null ? '' : (row.read(parentExp) ?? '');
+      switch (level) {
+        case GalleryPlaceLevel.country:
+          final code = row.read(items.placeCountryCode);
+          if (code == null || code.isEmpty) {
+            continue;
+          }
+          suggestions.add(GalleryPlaceSuggestion(
+            level: level,
+            filter: GalleryPlaceFilter.country(code, label: name),
+            name: name,
+            parentLabel: '',
+            photoCount: row.read(countExp) ?? 0,
+          ));
+        case GalleryPlaceLevel.admin1:
+          final code = row.read(items.placeAdmin1Code);
+          if (code == null || code.isEmpty) {
+            continue;
+          }
+          suggestions.add(GalleryPlaceSuggestion(
+            level: level,
+            filter: GalleryPlaceFilter.admin1(code, label: name),
+            name: name,
+            parentLabel: parent,
+            photoCount: row.read(countExp) ?? 0,
+          ));
+        case GalleryPlaceLevel.locality:
+          final id = row.read(items.placeLocalityId);
+          if (id == null || id <= 0) {
+            continue;
+          }
+          suggestions.add(GalleryPlaceSuggestion(
+            level: level,
+            filter: GalleryPlaceFilter.locality(id, label: name),
+            name: name,
+            parentLabel: parent,
+            photoCount: row.read(countExp) ?? 0,
+          ));
+      }
+    }
+    return suggestions;
+  }
+
+  /// Every visible item's Capture Date - WITH its capture-time offset, so
+  /// the caller can apply the wall-time rule (ADR 0003) - in the grid's
+  /// exact order (`capturedAt DESC, id DESC`) and under the same visibility
+  /// predicate as [queryItems]; the columns the gallery scrubber's
+  /// month-boundary map is built from in a single read.
+  ///
+  /// Returns the raw epoch-seconds int and the offset (null when unknown)
+  /// rather than a [DateTime] so the wall-time conversion happens once, in
+  /// the controller, with the identical code path as
+  /// `GalleryItemDisplay.capturedAtWallTime` ([galleryCaptureWallTime]).
+  /// Grouping in SQLite with `strftime(..., 'unixepoch')` would group in
+  /// UTC, which can disagree with the label by a month around midnight and
+  /// is fragile under DST; reading the int columns and converting in Dart
+  /// keeps the boundary map and the label on the same conversion, so they
+  /// can never disagree. The read is a scan on the existing
+  /// `idx_gallery_items_captured_at_id` index (the column is in the index,
+  /// so no table access is needed) and transfers two ints per item.
+  Future<List<(int, int?)>> capturedAtColumn({
+    GalleryFilter filter = const GalleryFilter(),
+  }) async {
+    final unselectedFolders = await _unselectedFolders();
+    final items = _db.galleryItems;
+    final capturedAtExp = items.capturedAt;
+    final offsetExp = items.capturedAtOffset;
+    final query = _db.selectOnly(items)
+      ..addColumns([capturedAtExp, offsetExp])
+      ..orderBy([
+        OrderingTerm(expression: capturedAtExp, mode: OrderingMode.desc),
+        OrderingTerm(expression: items.id, mode: OrderingMode.desc),
+      ])
+      ..where(_filterPredicate(items, unselectedFolders, filter));
+    final rows = await query.get();
+    return rows
+        .map((r) => (r.read(capturedAtExp)!, r.read(offsetExp)))
+        .toList();
+  }
+
+  /// The total number of items currently in the mirror, restricted by
+  /// [filter] (Availability, date range, Place - the same predicate
+  /// [queryPage]/[queryItems] apply, so the count and the grid can never
+  /// disagree). Ticket 29's Local Folder selection is already folded into
+  /// what "restricted" means - see [_visibilityPredicates].
+  Future<int> totalCount({
+    GalleryFilter filter = const GalleryFilter(),
+  }) async {
+    final unselectedFolders = await _unselectedFolders();
+    return _countMatching(
+        (t) => _filterPredicate(t, unselectedFolders, filter));
   }
 
   /// How many items are Device only, Synced and Cloud only right now - the
@@ -2206,6 +2604,14 @@ class GalleryMirror {
     return unselected;
   }
 }
+
+/// Place fields arrive flattened from the feed with "" / 0 meaning "none";
+/// the mirror stores null for none, so the place filter's equality
+/// predicates and the suggestions' GROUP BY (ticket 06) see exactly one
+/// representation of "no place" - a photo without a Place never matches a
+/// place filter and never appears in suggestions.
+String? _placeText(String v) => v.isEmpty ? null : v;
+int? _placeId(int v) => v <= 0 ? null : v;
 
 /// The three visibility predicates [GalleryMirror._visibilityPredicates]
 /// builds for one read - see that method's doc for what each one means and

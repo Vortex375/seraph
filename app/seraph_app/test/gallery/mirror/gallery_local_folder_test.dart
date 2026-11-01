@@ -65,7 +65,8 @@ void main() {
       expect(byPath['Pictures/Screenshots/']!.photoCount, 1);
     });
 
-    test('the default is the camera folders: DCIM selected, everything else '
+    test(
+        'the default is the camera folders: DCIM selected, everything else '
         'not - before any explicit choice is ever made', () async {
       await mirror.applyLocalScan([
         localMediaItem(relativePath: 'DCIM/Camera/', displayName: 'a.jpg'),
@@ -109,7 +110,8 @@ void main() {
       expect(byPath['Download/'], isFalse);
     });
 
-    test('a folder can be deselected and reselected, and stays listed either '
+    test(
+        'a folder can be deselected and reselected, and stays listed either '
         'way', () async {
       await mirror.applyLocalScan([
         localMediaItem(relativePath: 'DCIM/Camera/', displayName: 'a.jpg'),
@@ -163,7 +165,9 @@ void main() {
       expect(await mirror.queryItems(), isEmpty);
       expect(await mirror.totalCount(), 0);
       expect(
-          await mirror.totalCount(filter: GalleryAvailabilityFilter.notBackedUp),
+          await mirror.totalCount(
+              filter: GalleryFilter(
+                  availability: GalleryAvailabilityFilter.notBackedUp)),
           0);
 
       final summary = await mirror.availabilitySummary();
@@ -241,15 +245,17 @@ void main() {
       expect(item.path, '/Photos/a.jpg');
 
       // Under the Cloud only filter:
-      final cloudOnly =
-          await mirror.queryItems(filter: GalleryAvailabilityFilter.cloudOnly);
+      final cloudOnly = await mirror.queryItems(
+          filter:
+              GalleryFilter(availability: GalleryAvailabilityFilter.cloudOnly));
       expect(cloudOnly, hasLength(1));
       expect(cloudOnly.single.path, '/Photos/a.jpg');
 
       // Never under "not backed up" - the device copy being hidden must not
       // make an otherwise-synced photo look un-backed-up.
       final notBackedUp = await mirror.queryItems(
-          filter: GalleryAvailabilityFilter.notBackedUp);
+          filter: GalleryFilter(
+              availability: GalleryAvailabilityFilter.notBackedUp));
       expect(notBackedUp, isEmpty);
 
       // And the counts:
@@ -287,10 +293,12 @@ void main() {
       ]);
 
       final all = await mirror.queryItems();
-      final notBackedUp =
-          await mirror.queryItems(filter: GalleryAvailabilityFilter.notBackedUp);
-      final cloudOnly =
-          await mirror.queryItems(filter: GalleryAvailabilityFilter.cloudOnly);
+      final notBackedUp = await mirror.queryItems(
+          filter: GalleryFilter(
+              availability: GalleryAvailabilityFilter.notBackedUp));
+      final cloudOnly = await mirror.queryItems(
+          filter:
+              GalleryFilter(availability: GalleryAvailabilityFilter.cloudOnly));
       final summary = await mirror.availabilitySummary();
 
       expect(all, hasLength(2),
@@ -299,14 +307,19 @@ void main() {
       expect(notBackedUp, hasLength(summary.notBackedUp));
       expect(cloudOnly, hasLength(summary.cloudOnly));
       expect(
-          await mirror.totalCount(filter: GalleryAvailabilityFilter.notBackedUp),
+          await mirror.totalCount(
+              filter: GalleryFilter(
+                  availability: GalleryAvailabilityFilter.notBackedUp)),
           summary.notBackedUp);
       expect(
-          await mirror.totalCount(filter: GalleryAvailabilityFilter.cloudOnly),
+          await mirror.totalCount(
+              filter: GalleryFilter(
+                  availability: GalleryAvailabilityFilter.cloudOnly)),
           summary.cloudOnly);
     });
 
-    test('the full media-store scan keeps seeing an unselected folder - '
+    test(
+        'the full media-store scan keeps seeing an unselected folder - '
         'applyLocalScan removes a row only when the FILE is gone, never '
         'because its folder is unselected', () async {
       final item = localMediaItem(
@@ -334,7 +347,8 @@ void main() {
       expect(rawAfter, isEmpty);
     });
 
-    test('setLocalFolderSelected never touches GalleryItems, only the '
+    test(
+        'setLocalFolderSelected never touches GalleryItems, only the '
         'selection table', () async {
       await mirror.applyLocalScan([
         localMediaItem(relativePath: 'DCIM/Camera/', displayName: 'a.jpg'),

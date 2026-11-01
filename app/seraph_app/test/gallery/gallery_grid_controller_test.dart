@@ -223,9 +223,9 @@ void main() {
       for (var i = 0; i < expected.length; i++) {
         final known = controller.knownDateAt(i);
         expect(known, isNotNull, reason: 'index $i');
-        expect(known!.year, expected[i].capturedAtDateTime.year,
+        expect(known!.year, expected[i].capturedAtWallTime.year,
             reason: 'index $i');
-        expect(known.month, expected[i].capturedAtDateTime.month,
+        expect(known.month, expected[i].capturedAtWallTime.month,
             reason: 'index $i');
       }
     });
@@ -254,7 +254,8 @@ void main() {
       // previous month. Derive everything from the same conversion.
       final justPastMidnight = DateTime(2026, 3, 1, 0, 30, 0);
       final previousDay = justPastMidnight.subtract(const Duration(days: 1));
-      final justPastMidnightEpoch = justPastMidnight.millisecondsSinceEpoch ~/ 1000;
+      final justPastMidnightEpoch =
+          justPastMidnight.millisecondsSinceEpoch ~/ 1000;
       final previousDayEpoch = previousDay.millisecondsSinceEpoch ~/ 1000;
 
       // Newer first: the just-past-midnight item is at index 0, the previous
@@ -278,7 +279,8 @@ void main() {
       expect(newMonthDate.month, justPastMidnight.month);
       expect(prevMonthDate!.year, previousDay.year);
       expect(prevMonthDate.month, previousDay.month);
-      expect(galleryMonthLabel(newMonthDate) != galleryMonthLabel(prevMonthDate),
+      expect(
+          galleryMonthLabel(newMonthDate) != galleryMonthLabel(prevMonthDate),
           isTrue,
           reason: 'the two items must fall in different months locally');
     });
@@ -458,16 +460,16 @@ void main() {
       await pumpEventQueue();
       expect(controller.totalCount.value, 2);
 
-      await controller.setFilter(GalleryAvailabilityFilter.notBackedUp);
+      await controller.setAvailability(GalleryAvailabilityFilter.notBackedUp);
       expect(controller.totalCount.value, 1);
       expect(
           controller.itemAt(0)!.availability, GalleryAvailability.deviceOnly);
 
-      await controller.setFilter(GalleryAvailabilityFilter.cloudOnly);
+      await controller.setAvailability(GalleryAvailabilityFilter.cloudOnly);
       expect(controller.totalCount.value, 1);
       expect(controller.itemAt(0)!.path, '/Photos/cloud.jpg');
 
-      await controller.setFilter(GalleryAvailabilityFilter.all);
+      await controller.setAvailability(GalleryAvailabilityFilter.all);
       expect(controller.totalCount.value, 2);
     });
 
@@ -781,6 +783,105 @@ void main() {
         expect(source.incrementalScanCount, 0,
             reason: 'the throttled call never even reaches the incremental '
                 'scan path');
+      });
+    });
+
+    group('the metadata filter methods (date range + place)', () {
+      // Wall-clock epoch seconds for 2024-05-10 12:00 UTC - the frame the
+      // date-range predicate speaks (ADR 0003). Items are inserted with
+      // offset 0 / no offset, so wall time == this UTC clock here.
+      int wall(int year, int month, int day, [int hour = 0]) =>
+          DateTime.utc(year, month, day, hour).millisecondsSinceEpoch ~/ 1000;
+
+      test('setDateRange narrows the gallery and clearDateRange restores it',
+          () async {
+        await insertMirrorItem(db,
+            path: '/Photos/in.jpg', capturedAt: wall(2024, 5, 5, 12));
+        await insertMirrorItem(db,
+            path: '/Photos/out.jpg', capturedAt: wall(2024, 6, 5, 12));
+
+        final controller = GalleryGridController(mirror: mirror);
+        await controller.open();
+        expect(controller.totalCount.value, 2);
+
+        await controller.setDateRange(
+          DateTime.utc(2024, 5, 1),
+          DateTime.utc(2024, 5, 31),
+        );
+        expect(controller.totalCount.value, 1);
+        expect(controller.itemAt(0)!.path, '/Photos/in.jpg');
+        expect(controller.filter.value.isActive, isTrue);
+
+        await controller.clearDateRange();
+        expect(controller.totalCount.value, 2);
+        expect(controller.filter.value.isActive, isFalse);
+      });
+
+      test('setDateRange with both ends null clears the range', () async {
+        await insertMirrorItem(db, path: '/Photos/a.jpg', capturedAt: 1000);
+
+        final controller = GalleryGridController(mirror: mirror);
+        await controller.open();
+
+        await controller.setDateRange(
+            DateTime.utc(2024, 5, 1), DateTime.utc(2024, 5, 31));
+        expect(controller.totalCount.value, 0);
+
+        await controller.setDateRange(null, null);
+        expect(controller.totalCount.value, 1);
+        expect(controller.filter.value.capturedFrom, isNull);
+        expect(controller.filter.value.capturedTo, isNull);
+      });
+
+      test('setPlace narrows to that place and clearPlace restores it',
+          () async {
+        await insertMirrorItem(db,
+            path: '/Photos/lisbon.jpg',
+            capturedAt: 1000,
+            placeCountryCode: 'PT',
+            placeCountry: 'Portugal');
+        await insertMirrorItem(db,
+            path: '/Photos/berlin.jpg',
+            capturedAt: 2000,
+            placeCountryCode: 'DE',
+            placeCountry: 'Germany');
+        await insertMirrorItem(db,
+            path: '/Photos/unknown.jpg', capturedAt: 3000);
+
+        final controller = GalleryGridController(mirror: mirror);
+        await controller.open();
+        expect(controller.totalCount.value, 3);
+
+        await controller
+            .setPlace(GalleryPlaceFilter.country('PT', label: 'Portugal'));
+        expect(controller.totalCount.value, 1);
+        expect(controller.itemAt(0)!.path, '/Photos/lisbon.jpg');
+
+        await controller.clearPlace();
+        expect(controller.totalCount.value, 3);
+      });
+
+      test('clearFilters clears every part at once', () async {
+        await insertMirrorItem(db,
+            path: '/Photos/in.jpg',
+            capturedAt: wall(2024, 5, 5, 12),
+            placeCountryCode: 'PT',
+            placeCountry: 'Portugal');
+        await insertMirrorItem(db, path: '/Photos/out.jpg', capturedAt: 1000);
+
+        final controller = GalleryGridController(mirror: mirror);
+        await controller.open();
+
+        await controller.setAvailability(GalleryAvailabilityFilter.notBackedUp);
+        await controller.setDateRange(
+            DateTime.utc(2024, 5, 1), DateTime.utc(2024, 5, 31));
+        await controller.setPlace(GalleryPlaceFilter.country('PT'));
+        expect(controller.filter.value.isActive, isTrue);
+        expect(controller.totalCount.value, 0);
+
+        await controller.clearFilters();
+        expect(controller.totalCount.value, 2);
+        expect(controller.filter.value.isActive, isFalse);
       });
     });
   });

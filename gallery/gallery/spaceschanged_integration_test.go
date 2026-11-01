@@ -19,6 +19,8 @@
 package gallery_test
 
 import (
+	"umbasa.net/seraph/gallery/gallery/gallerytest"
+
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -321,6 +323,8 @@ func startGalleryProviderWithStubSpaces(t *testing.T) (*nats.Conn, *mongo.Databa
 // the NEW physical path is accepted (produces a read-model item), and one at
 // the OLD physical path is no longer accepted.
 func TestIngestionFollowsRePointedSpace(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db, stub := startGalleryProviderWithStubSpaces(t)
 	clearSourceFolders(t, db)
 	clearPhotos(t, db)
@@ -338,7 +342,7 @@ func TestIngestionFollowsRePointedSpace(t *testing.T) {
 	dirOld := startFileProvider(t, "physical-old")
 	dirNew := startFileProvider(t, "physical-new")
 
-	data := buildJPEGWithExif(t, 12, 8, "2020:01:01 00:00:00", 0)
+	data := gallerytest.BuildJPEGWithExif(t, 12, 8, "2020:01:01 00:00:00", 0)
 
 	// sanity: before re-pointing, the OLD physical path is what ingestion
 	// accepts
@@ -384,6 +388,8 @@ func TestIngestionFollowsRePointedSpace(t *testing.T) {
 // anything for the query path to be correct; it is the ingestion side this
 // ticket's cache invalidation is actually for.)
 func TestIngestionStopsAfterAccessRevoked(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db, stub := startGalleryProviderWithStubSpaces(t)
 	clearSourceFolders(t, db)
 	clearPhotos(t, db)
@@ -416,6 +422,8 @@ func TestIngestionStopsAfterAccessRevoked(t *testing.T) {
 // user's whole listing - a second, unrelated, still-valid folder keeps
 // working.
 func TestDeletedSpaceLeavesFolderHarmlesslyUnresolvable(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db, stub := startGalleryProviderWithStubSpaces(t)
 	clearSourceFolders(t, db)
 	clearPhotos(t, db)
@@ -463,7 +471,7 @@ func TestDeletedSpaceLeavesFolderHarmlesslyUnresolvable(t *testing.T) {
 	// stopped too
 	dir := startFileProvider(t, "physical-gone")
 	newFile := "/mounted/gone/after-delete.jpg"
-	data := buildJPEGWithExif(t, 10, 10, "2021:01:01 00:00:00", 0)
+	data := gallerytest.BuildJPEGWithExif(t, 10, 10, "2021:01:01 00:00:00", 0)
 	writeFixture(t, dir, newFile, data)
 	publishFileChanged(t, nc, "physical-gone", newFile, events.FileChangedEventCreated, int64(len(data)), time.Now().Unix(), "image/jpeg")
 
@@ -481,6 +489,8 @@ func TestDeletedSpaceLeavesFolderHarmlesslyUnresolvable(t *testing.T) {
 // sanity check) must produce at least one - proving the harness would have
 // caught a naive "refresh on every event" implementation.
 func TestSpaceChangedForUnreferencedSpaceIsIgnoredCheaply(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db, stub := startGalleryProviderWithStubSpaces(t)
 	clearSourceFolders(t, db)
 	clearPhotos(t, db)

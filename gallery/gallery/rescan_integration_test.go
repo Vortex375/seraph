@@ -19,6 +19,8 @@
 package gallery_test
 
 import (
+	"umbasa.net/seraph/gallery/gallery/gallerytest"
+
 	"context"
 	"fmt"
 	"mime"
@@ -224,6 +226,8 @@ func waitForRescanFinished(t *testing.T, db *mongo.Database, folderId any) {
 // Provider tree, proving this is a genuine re-scan and not a re-read of the
 // (here: entirely absent) index.
 func TestRescanFindsPhotosMissingFromIndex(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -245,7 +249,7 @@ func TestRescanFindsPhotosMissingFromIndex(t *testing.T) {
 	// written straight to disk: no FileChangedEvent, no File Index entry -
 	// exactly "photos copied in over SMB that never showed up" from the
 	// ticket's own framing
-	data := buildJPEGWithExif(t, 16, 12, "2022:05:04 09:08:07", 0)
+	data := gallerytest.BuildJPEGWithExif(t, 16, 12, "2022:05:04 09:08:07", 0)
 	physicalPath := "/mounted/photos/holidays/untracked.jpg"
 	writeFixture(t, dir, physicalPath, data)
 
@@ -272,6 +276,8 @@ func TestRescanFindsPhotosMissingFromIndex(t *testing.T) {
 // happens (files are still Stat/Readdir'd - see the fileInfoEvents assertion)
 // but nothing downstream reacts to it, because nothing actually changed.
 func TestRescanOfUpToDateFolderChangesNothing(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -290,7 +296,7 @@ func TestRescanOfUpToDateFolderChangesNothing(t *testing.T) {
 	require.Equal(t, "", res.Error)
 	folderId := res.SourceFolder[0].Id
 
-	data := buildJPEGWithExif(t, 8, 8, "2018:01:01 00:00:00", 0)
+	data := gallerytest.BuildJPEGWithExif(t, 8, 8, "2018:01:01 00:00:00", 0)
 	physicalPath := "/mounted/photos/holidays/steady.jpg"
 	writeFixture(t, dir, physicalPath, data)
 
@@ -359,6 +365,8 @@ const rescanRaceSubdirs = 200
 // Without the guard in startRescan this test fails with exactly 2x the
 // expected count, which is what makes it worth its runtime.
 func TestRescanTwiceInQuickSuccessionRunsOneScan(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -380,7 +388,7 @@ func TestRescanTwiceInQuickSuccessionRunsOneScan(t *testing.T) {
 	// a wide, shallow tree: one directory per photo, so the walk spends most
 	// of its time on directory round trips rather than on ingestion
 	for i := 0; i < rescanRaceSubdirs; i++ {
-		data := buildPNG(t, 4, 4)
+		data := gallerytest.BuildPNG(t, 4, 4)
 		writeFixture(t, dir, fmt.Sprintf("/mounted/photos/holidays/sub%03d/pic.png", i), data)
 	}
 
@@ -421,6 +429,8 @@ func TestRescanTwiceInQuickSuccessionRunsOneScan(t *testing.T) {
 // folder must not prevent LIST from answering - the walk runs entirely in
 // the background, sharing no lock with query handling.
 func TestRescanDoesNotBlockGalleryQueries(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -440,7 +450,7 @@ func TestRescanDoesNotBlockGalleryQueries(t *testing.T) {
 	folderId := res.SourceFolder[0].Id
 
 	for i := 0; i < 20; i++ {
-		data := buildPNG(t, 4, 4)
+		data := gallerytest.BuildPNG(t, 4, 4)
 		writeFixture(t, dir, fmt.Sprintf("/mounted/photos/holidays/pic%d.png", i), data)
 	}
 
@@ -470,6 +480,8 @@ func TestRescanDoesNotBlockGalleryQueries(t *testing.T) {
 // another user's folder by guessing its id, mirroring
 // TestSourceFoldersAreScopedPerUser's coverage of REMOVE.
 func TestRescanIsScopedToOwningUser(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 		"lino": {"photos"},
@@ -522,6 +534,8 @@ func primeRescanBaseline(t *testing.T, nc *nats.Conn, db *mongo.Database, userId
 // written, the indexer already knows this file, so the second rescan's walk
 // is provably silent and only the healing pass remains.
 func TestRescanHealsMetadataPendingPhotos(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -532,7 +546,7 @@ func TestRescanHealsMetadataPendingPhotos(t *testing.T) {
 	newStubFileIndexer(t, nc)
 
 	physicalPath := "/mounted/photos/holidays/pending.jpg"
-	data := buildJPEGWithExif(t, 20, 15, "2016:02:02 02:02:02", 3)
+	data := gallerytest.BuildJPEGWithExif(t, 20, 15, "2016:02:02 02:02:02", 3)
 	writeFixture(t, dir, physicalPath, data)
 
 	res := crud(t, nc, &gallery.GallerySourceFolderCrudRequest{
@@ -595,6 +609,8 @@ func TestRescanHealsMetadataPendingPhotos(t *testing.T) {
 // the guard, not an incidental "the file is gone" failure, is what has to keep
 // the tombstone intact.
 func TestRescanDoesNotResurrectADeletedPendingPhoto(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -605,7 +621,7 @@ func TestRescanDoesNotResurrectADeletedPendingPhoto(t *testing.T) {
 	newStubFileIndexer(t, nc)
 
 	physicalPath := "/mounted/photos/holidays/tombstoned.jpg"
-	data := buildJPEGWithExif(t, 10, 10, "2019:03:03 03:03:03", 0)
+	data := gallerytest.BuildJPEGWithExif(t, 10, 10, "2019:03:03 03:03:03", 0)
 	writeFixture(t, dir, physicalPath, data)
 
 	res := crud(t, nc, &gallery.GallerySourceFolderCrudRequest{

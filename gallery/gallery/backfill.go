@@ -329,6 +329,7 @@ func (g *GalleryProvider) backfillUpsert(ctx context.Context, entry events.FileI
 				"orientation":      0,
 				"unsupported":      "",
 				"metadataPending":  true,
+				"metadataVersion":  0,
 				"seq":              seq,
 			},
 		}

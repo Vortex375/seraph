@@ -78,7 +78,8 @@ extension GalleryItemDisplay on GalleryItem {
   /// together for both origins (`_upsertLocalItem`), never off [origin]
   /// itself, so this can never disagree with whether there is actually
   /// something to ask the Local Source for.
-  bool get hasLocalCopy => localRelativePath != null && localDisplayName != null;
+  bool get hasLocalCopy =>
+      localRelativePath != null && localDisplayName != null;
 
   /// A human-readable version of the server's `unsupported` reason code
   /// (`gallery/gallery/photo_entities.go`, `UnsupportedReason*`). An
@@ -126,13 +127,25 @@ extension GalleryItemDisplay on GalleryItem {
     return displayWidth / displayHeight;
   }
 
-  /// The item's Capture Date.
+  /// The item's Capture Date, as the wall clock showed it WHERE THE PHOTO
+  /// WAS TAKEN (ADR 0003).
   ///
   /// The wire value is epoch SECONDS - the gallery service derives it with
-  /// `time.Time.Unix()` (`gallery/gallery/ingest.go`, `resolveCaptureDate`)
-  /// and the mirror stores what the feed sent, unconverted.
-  DateTime get capturedAtDateTime =>
-      DateTime.fromMillisecondsSinceEpoch(capturedAt * 1000);
+  /// `time.Time.Unix()` (`gallery/gallery/ingest.go`,
+  /// `resolveCaptureDate`) and the mirror stores what the feed sent,
+  /// unconverted. When the server determined the UTC offset at the place
+  /// of capture ([capturedAtOffset] non-null), [capturedAt] is a TRUE
+  /// instant and the wall time is `capturedAt + capturedAtOffset` read as
+  /// UTC - identical on every device, and identical to what a device copy
+  /// of the same photo shows. When the offset is null the value is
+  /// rendered in the device's local zone, as before.
+  ///
+  /// The one display helper for capture time: the viewer's label, the
+  /// grid's day headers and the scrubber's month boundaries all go through
+  /// this (or [galleryCaptureWallTime], which this delegates to), so they
+  /// can never disagree about a day or month boundary.
+  DateTime get capturedAtWallTime =>
+      galleryCaptureWallTime(capturedAt, capturedAtOffset);
 
   /// True when the Capture Date came from the photo's own EXIF
   /// DateTimeOriginal rather than from a fallback rung of the chain, so the
@@ -190,6 +203,25 @@ extension GalleryItemDisplay on GalleryItem {
   /// The item's full location, provider included: what the preview and
   /// download endpoints take as their `p` parameter.
   String get spaceDisplayPath => '/${providerId ?? ''}${path ?? ''}';
+}
+
+/// The wall-clock [DateTime] a Capture Date reads as, per ADR 0003: with a
+/// known UTC offset, `capturedAt + offset` read as UTC (the offset is in
+/// SECONDS - the unit the server stores and the feed carries); without one,
+/// the instant in the device's local zone.
+///
+/// A top-level function rather than only an extension getter because the
+/// grid controller needs the same conversion for the scrubber's
+/// month-boundary map, where it holds raw column values rather than a
+/// [GalleryItem].
+DateTime galleryCaptureWallTime(int capturedAtSeconds, int? offsetSeconds) {
+  if (offsetSeconds == null) {
+    return DateTime.fromMillisecondsSinceEpoch(capturedAtSeconds * 1000);
+  }
+  return DateTime.fromMillisecondsSinceEpoch(
+    (capturedAtSeconds + offsetSeconds) * 1000,
+    isUtc: true,
+  );
 }
 
 const List<String> _monthNames = [

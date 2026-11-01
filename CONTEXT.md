@@ -50,8 +50,16 @@ _Avoid_: sync status, state, location
 When a photo was taken, as opposed to when its file was written or uploaded.
 The ordering key of Gallery Mode, read from the photo itself; where the photo
 does not say, Seraph falls back to the file's modification time, and failing
-that, to when Seraph first saw it.
+that, to when Seraph first saw it. Stored as a true instant plus, where the
+photo allows it, the UTC offset at the place of capture, so every device
+shows the time the clock showed where the photo was taken (ADR 0003).
 _Avoid_: date taken, timestamp, modification time, upload date
+
+**Place**:
+The city, region and country a photo was taken in, resolved offline from its
+coordinates against an embedded GeoNames/Natural Earth dataset — never a
+raw coordinate, never an address, never looked up online.
+_Avoid_: location, address, geotag
 
 **Sync Pair**:
 A configured mapping from one Local Source on a device to one folder in Seraph.

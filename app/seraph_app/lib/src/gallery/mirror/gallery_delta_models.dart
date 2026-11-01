@@ -17,6 +17,9 @@ class GalleryDeltaItem {
     required this.tombstone,
     this.capturedAt = 0,
     this.capturedAtSource = '',
+    this.capturedAtOffset,
+    this.lat,
+    this.lon,
     this.width = 0,
     this.height = 0,
     this.orientation = 0,
@@ -24,6 +27,12 @@ class GalleryDeltaItem {
     this.mime = '',
     this.unsupported = '',
     this.metadataPending = false,
+    this.placeCountryCode = '',
+    this.placeCountry = '',
+    this.placeAdmin1Code = '',
+    this.placeAdmin1 = '',
+    this.placeLocalityId = 0,
+    this.placeLocality = '',
   });
 
   final String providerId;
@@ -33,6 +42,16 @@ class GalleryDeltaItem {
 
   final int capturedAt;
   final String capturedAtSource;
+
+  /// Seconds east of UTC at the place of capture, when the photo itself
+  /// recorded one (ADR 0003); null when unknown. [capturedAt] is a true
+  /// instant whenever this is non-null.
+  final int? capturedAtOffset;
+
+  /// The photo's WGS84 coordinates, null when there is no usable GPS fix.
+  final double? lat;
+  final double? lon;
+
   final int width;
   final int height;
   final int orientation;
@@ -40,6 +59,15 @@ class GalleryDeltaItem {
   final String mime;
   final String unsupported;
   final bool metadataPending;
+
+  /// The Place (CONTEXT.md), flattened exactly as the server flattens it:
+  /// empty strings / 0 when nothing resolved.
+  final String placeCountryCode;
+  final String placeCountry;
+  final String placeAdmin1Code;
+  final String placeAdmin1;
+  final int placeLocalityId;
+  final String placeLocality;
 
   factory GalleryDeltaItem.fromJson(Map<String, dynamic> json) {
     return GalleryDeltaItem(
@@ -49,6 +77,9 @@ class GalleryDeltaItem {
       tombstone: json['tombstone'] as bool? ?? false,
       capturedAt: (json['capturedAt'] as num?)?.toInt() ?? 0,
       capturedAtSource: json['capturedAtSource'] as String? ?? '',
+      capturedAtOffset: (json['capturedAtOffset'] as num?)?.toInt(),
+      lat: (json['lat'] as num?)?.toDouble(),
+      lon: (json['lon'] as num?)?.toDouble(),
       width: (json['width'] as num?)?.toInt() ?? 0,
       height: (json['height'] as num?)?.toInt() ?? 0,
       orientation: (json['orientation'] as num?)?.toInt() ?? 0,
@@ -56,6 +87,12 @@ class GalleryDeltaItem {
       mime: json['mime'] as String? ?? '',
       unsupported: json['unsupported'] as String? ?? '',
       metadataPending: json['metadataPending'] as bool? ?? false,
+      placeCountryCode: json['placeCountryCode'] as String? ?? '',
+      placeCountry: json['placeCountry'] as String? ?? '',
+      placeAdmin1Code: json['placeAdmin1Code'] as String? ?? '',
+      placeAdmin1: json['placeAdmin1'] as String? ?? '',
+      placeLocalityId: (json['placeLocalityId'] as num?)?.toInt() ?? 0,
+      placeLocality: json['placeLocality'] as String? ?? '',
     );
   }
 }

@@ -296,8 +296,7 @@ class FakeGalleryUploadBackend implements GalleryUploadBackend {
   }
 
   @override
-  Future<void> put(
-      String spaceProviderId, String path, Uint8List bytes) async {
+  Future<void> put(String spaceProviderId, String path, Uint8List bytes) async {
     putCalls.add((spaceProviderId, path, bytes));
     onPut?.call();
     await onPutAsync?.call();
@@ -404,6 +403,15 @@ Future<void> insertMirrorItem(
   String mime = 'image/jpeg',
   String unsupported = '',
   bool metadataPending = false,
+  int? capturedAtOffset,
+  double? lat,
+  double? lon,
+  String placeCountryCode = '',
+  String placeCountry = '',
+  String placeAdmin1Code = '',
+  String placeAdmin1 = '',
+  int placeLocalityId = 0,
+  String placeLocality = '',
 }) async {
   await db.into(db.galleryItems).insertOnConflictUpdate(
         GalleryItemsCompanion.insert(
@@ -418,9 +426,26 @@ Future<void> insertMirrorItem(
           mime: Value(mime),
           unsupported: Value(unsupported),
           metadataPending: Value(metadataPending),
+          capturedAtOffset: Value(capturedAtOffset),
+          lat: Value(lat),
+          lon: Value(lon),
+          placeCountryCode: Value(_placeText(placeCountryCode)),
+          placeCountry: Value(_placeText(placeCountry)),
+          placeAdmin1Code: Value(_placeText(placeAdmin1Code)),
+          placeAdmin1: Value(_placeText(placeAdmin1)),
+          placeLocalityId: Value(_placeId(placeLocalityId)),
+          placeLocality: Value(_placeText(placeLocality)),
         ),
       );
 }
+
+/// The mirror's own empty-means-null rule for the place text columns - the
+/// same conversion [GalleryMirror] applies on the delta-feed write path, so
+/// a test helper that names a place and one that does not produce rows the
+/// filter predicates treat identically.
+String? _placeText(String v) => v.isEmpty ? null : v;
+
+int? _placeId(int v) => v <= 0 ? null : v;
 
 /// Fills the mirror with [count] items, one per day going back from
 /// [newestCapturedAt] (epoch seconds), newest first.

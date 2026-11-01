@@ -37,6 +37,8 @@ import (
 // extraction works against real-world JPEG/EXIF today, independent of the
 // hand-built fixture path the other tests rely on.
 func TestRealWorldPixelPhotoExtractionIsExtracted(t *testing.T) {
+	requireIntegration(t)
+
 	data, err := os.ReadFile("testdata/PXL_20240308_190141760.jpg")
 	require.NoError(t, err, "testdata/PXL_20240308_190141760.jpg must exist (see testdata/README)")
 	require.NotEmpty(t, data)

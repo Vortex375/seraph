@@ -45,7 +45,7 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
   }
 
   @override
-  int get schemaVersion => 13;
+  int get schemaVersion => 14;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -269,6 +269,33 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
               ],
             ));
           }
+          if (from < 14) {
+            // v14 (the gallery-metadata feature) added Capture-Date offset
+            // and location to [GalleryItems]: [capturedAtOffset] (seconds
+            // east of UTC at the place of capture, the display rule of
+            // ADR 0003), [lat]/[lon] (WGS84) and the six flattened
+            // place_* columns resolved offline from those coordinates.
+            // All nullable, all backfilled by the SERVER's metadata sweep
+            // bumping each photo's Seq so the normal delta sync fills them
+            // in - no client-side backfill - so existing rows correctly
+            // keep nulls until the feed delivers their re-extraction.
+            await m.addColumn(galleryItems, galleryItems.capturedAtOffset);
+            await m.addColumn(galleryItems, galleryItems.lat);
+            await m.addColumn(galleryItems, galleryItems.lon);
+            await m.addColumn(galleryItems, galleryItems.placeCountryCode);
+            await m.addColumn(galleryItems, galleryItems.placeCountry);
+            await m.addColumn(galleryItems, galleryItems.placeAdmin1Code);
+            await m.addColumn(galleryItems, galleryItems.placeAdmin1);
+            await m.addColumn(galleryItems, galleryItems.placeLocalityId);
+            await m.addColumn(galleryItems, galleryItems.placeLocality);
+
+            // Place-filter lookups (ticket 06's suggestions and predicates)
+            // group and match on each of the three levels; without these
+            // indexes every suggestion keystroke would be a table scan.
+            await m.createIndex(idxGalleryItemsPlaceCountryCode);
+            await m.createIndex(idxGalleryItemsPlaceAdmin1Code);
+            await m.createIndex(idxGalleryItemsPlaceLocalityId);
+          }
         },
         beforeOpen: (details) async {
           await customStatement('PRAGMA foreign_keys = ON');
@@ -376,6 +403,18 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
 @TableIndex(
   name: 'idx_gallery_items_upload_target',
   columns: {#uploadTargetProviderId, #uploadTargetPath},
+)
+@TableIndex(
+  name: 'idx_gallery_items_place_country_code',
+  columns: {#placeCountryCode},
+)
+@TableIndex(
+  name: 'idx_gallery_items_place_admin1_code',
+  columns: {#placeAdmin1Code},
+)
+@TableIndex(
+  name: 'idx_gallery_items_place_locality_id',
+  columns: {#placeLocalityId},
 )
 class GalleryItems extends Table {
   IntColumn get id => integer().autoIncrement()();
@@ -534,6 +573,36 @@ class GalleryItems extends Table {
   /// [GalleryUploadException.message] the failing attempt carried. Null
   /// whenever [uploadFailureBucket] is.
   TextColumn get uploadFailureReason => text().nullable()();
+
+  // --- Gallery metadata: capture-time offset, location and Place ---
+  // (schema v14, the gallery-metadata feature). All nullable: existing rows
+  // keep nulls until the server's metadata sweep re-extracts the photo and
+  // the delta sync delivers the result, and a photo without GPS has no
+  // location columns at all.
+
+  /// Seconds east of UTC at the place of capture, when the photo itself
+  /// recorded one (EXIF OffsetTimeOriginal or its GPS timestamp - ADR
+  /// 0003). Null when unknown. [capturedAt] is a true instant whenever
+  /// this is non-null; the display rule is
+  /// wall time = `capturedAt + capturedAtOffset`, rendered as UTC, and
+  /// `capturedAt` in the device's local zone when this is null.
+  IntColumn get capturedAtOffset => integer().nullable()();
+
+  /// The photo's WGS84 coordinates, null when the photo has no usable GPS
+  /// fix (or its location has not been extracted yet).
+  RealColumn get lat => real().nullable()();
+  RealColumn get lon => real().nullable()();
+
+  /// The Place (see CONTEXT.md), flattened one column per field rather
+  /// than as a JSON blob, so the place filter and the suggestions can be
+  /// plain indexed SQL. All empty-as-null: a photo without a resolved
+  /// Place has nulls in all six.
+  TextColumn get placeCountryCode => text().nullable()();
+  TextColumn get placeCountry => text().nullable()();
+  TextColumn get placeAdmin1Code => text().nullable()();
+  TextColumn get placeAdmin1 => text().nullable()();
+  IntColumn get placeLocalityId => integer().nullable()();
+  TextColumn get placeLocality => text().nullable()();
 
   @override
   List<Set<Column>> get uniqueKeys => [

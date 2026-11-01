@@ -19,6 +19,8 @@
 package gallery_test
 
 import (
+	"umbasa.net/seraph/gallery/gallery/gallerytest"
+
 	"bytes"
 	"testing"
 	"time"
@@ -32,7 +34,7 @@ import (
 // check that the fixture bytes are well-formed before relying on them in
 // the NATS-boundary integration tests.
 func TestExifFixtureIsDecodable(t *testing.T) {
-	data := buildJPEGWithExif(t, 8, 6, "2019:06:15 10:20:30", 6)
+	data := gallerytest.BuildJPEGWithExif(t, 8, 6, "2019:06:15 10:20:30", 6)
 
 	x, err := exif.Decode(bytes.NewReader(data))
 	if !assert.NoError(t, err) {
@@ -51,7 +53,7 @@ func TestExifFixtureIsDecodable(t *testing.T) {
 }
 
 func TestExifFixtureWithoutTagsHasNeitherDateNorOrientation(t *testing.T) {
-	data := buildJPEGWithExif(t, 8, 6, "", 0)
+	data := gallerytest.BuildJPEGWithExif(t, 8, 6, "", 0)
 
 	x, err := exif.Decode(bytes.NewReader(data))
 	if !assert.NoError(t, err) {
@@ -66,7 +68,7 @@ func TestExifFixtureWithoutTagsHasNeitherDateNorOrientation(t *testing.T) {
 }
 
 func TestPNGFixtureHasNoExif(t *testing.T) {
-	data := buildPNG(t, 5, 5)
+	data := gallerytest.BuildPNG(t, 5, 5)
 	_, err := exif.Decode(bytes.NewReader(data))
 	assert.Error(t, err)
 }

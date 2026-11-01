@@ -86,8 +86,7 @@ void main() {
       ]);
 
       final items = await mirror.queryItems();
-      expect(items, hasLength(1),
-          reason: 'the photo must appear exactly once');
+      expect(items, hasLength(1), reason: 'the photo must appear exactly once');
       expect(items.single.id, beforeId,
           reason: 'merging must not change the row - same timeline position');
       expect(items.single.availability, GalleryAvailability.synced);
@@ -234,7 +233,10 @@ void main() {
       await mirror.applyPage(GalleryDeltaResponse(
         items: [
           _cloudItem(
-              path: '/Photos/d.jpg', seq: 2, capturedAt: 111000, tombstone: true)
+              path: '/Photos/d.jpg',
+              seq: 2,
+              capturedAt: 111000,
+              tombstone: true)
         ],
         nextCursor: '',
         hasMore: false,
@@ -298,15 +300,19 @@ void main() {
       ]);
 
       final notBackedUp = await mirror.queryItems(
-          filter: GalleryAvailabilityFilter.notBackedUp);
+          filter: GalleryFilter(
+              availability: GalleryAvailabilityFilter.notBackedUp));
       expect(notBackedUp, hasLength(1));
       expect(notBackedUp.single.localDisplayName, 'device.jpg');
       expect(
-          await mirror.totalCount(filter: GalleryAvailabilityFilter.notBackedUp),
+          await mirror.totalCount(
+              filter: GalleryFilter(
+                  availability: GalleryAvailabilityFilter.notBackedUp)),
           1);
 
-      final cloudOnly =
-          await mirror.queryItems(filter: GalleryAvailabilityFilter.cloudOnly);
+      final cloudOnly = await mirror.queryItems(
+          filter:
+              GalleryFilter(availability: GalleryAvailabilityFilter.cloudOnly));
       expect(cloudOnly, hasLength(1));
       expect(cloudOnly.single.path, '/Photos/cloud.jpg');
 
@@ -364,7 +370,8 @@ void main() {
       await db.close();
     });
 
-    test('localGeneration defaults to 0 - "since the beginning", exactly '
+    test(
+        'localGeneration defaults to 0 - "since the beginning", exactly '
         'like the delta feed\'s since', () async {
       expect(await mirror.localGeneration(), 0);
     });
@@ -447,7 +454,8 @@ void main() {
               'deletion');
     });
 
-    test('re-applying the same item by identity is a no-op beyond the '
+    test(
+        're-applying the same item by identity is a no-op beyond the '
         'watermark', () async {
       final item = localMediaItem(
         relativePath: 'DCIM/Camera/',

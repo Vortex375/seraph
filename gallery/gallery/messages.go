@@ -220,6 +220,21 @@ type GalleryDeltaItem struct {
 	CapturedAt       int64  `json:"capturedAt"`
 	CapturedAtSource string `json:"capturedAtSource"`
 
+	// CapturedAtOffset is the UTC offset in seconds east of UTC at the
+	// place of capture, when the photo itself recorded one (see
+	// [gallery.GalleryPhoto.CapturedAtOffset] and ADR 0003). Absent (null)
+	// when unknown: the app then renders CapturedAt in its device's local
+	// zone. CapturedAt is a true instant whenever this is present.
+	CapturedAtOffset *int `json:"capturedAtOffset,omitempty"`
+
+	// Lat/Lon are the photo's WGS84 coordinates, absent when the photo has
+	// no usable GPS fix. Place is flattened into the six place* fields
+	// below, all empty when nothing resolved - MetadataVersion/GeoVersion
+	// are deliberately NOT carried: they are server-internal sweep
+	// bookkeeping, not mirror state.
+	Lat *float64 `json:"lat,omitempty"`
+	Lon *float64 `json:"lon,omitempty"`
+
 	Width       int `json:"width"`
 	Height      int `json:"height"`
 	Orientation int `json:"orientation"`
@@ -229,6 +244,13 @@ type GalleryDeltaItem struct {
 
 	Unsupported     string `json:"unsupported"`
 	MetadataPending bool   `json:"metadataPending"`
+
+	PlaceCountryCode string `json:"placeCountryCode"`
+	PlaceCountry     string `json:"placeCountry"`
+	PlaceAdmin1Code  string `json:"placeAdmin1Code"`
+	PlaceAdmin1      string `json:"placeAdmin1"`
+	PlaceLocalityId  int64  `json:"placeLocalityId"`
+	PlaceLocality    string `json:"placeLocality"`
 }
 
 // GalleryDeltaResponse carries one page of delta feed results.

@@ -295,6 +295,13 @@ func (g *GalleryProvider) Start() error {
 	// every other startup pass so Start() returns promptly.
 	g.startDotfileSweep(backfillCtx)
 
+	// background metadata sweep: re-extracts every photo still below the
+	// current extraction version (clearing MetadataPending as it goes) and
+	// re-resolves Places from stored coordinates below the current geo
+	// version - see runMetadataSweep's docs. Progress lives on the
+	// documents, so a restart resumes for free.
+	g.startMetadataSweep(backfillCtx)
+
 	return nil
 }
 

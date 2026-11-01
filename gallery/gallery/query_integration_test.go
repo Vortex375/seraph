@@ -71,6 +71,8 @@ func list(t *testing.T, nc *nats.Conn, req *gallery.GalleryListRequest) *gallery
 // requirement: a photo appearing in a configured folder shows up at the
 // position its Capture Date implies, newest first.
 func TestListReturnsPhotosInCaptureDateOrder(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -103,6 +105,8 @@ func TestListReturnsPhotosInCaptureDateOrder(t *testing.T) {
 // preview/download endpoints (providerId = the Space provider id, path =
 // folder.Path + remainder).
 func TestListTranslatesToSpacePaths(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -132,6 +136,8 @@ func TestListTranslatesToSpacePaths(t *testing.T) {
 // user's folders, and not physical files outside any of their own folders
 // even if some other user's folder happens to cover them.
 func TestListIsScopedToOwnSourceFoldersOnly(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 		"lino": {"vacation"},
@@ -175,6 +181,8 @@ func TestListIsScopedToOwnSourceFoldersOnly(t *testing.T) {
 // listing - the photos physically underneath it simply disappear from view,
 // with no separate permission check and no reverse mapping to keep in sync.
 func TestListExcludesFolderWhoseAccessWasRevoked(t *testing.T) {
+	requireIntegration(t)
+
 	accessible := map[string][]string{
 		"pino": {"photos"},
 	}
@@ -206,6 +214,8 @@ func TestListExcludesFolderWhoseAccessWasRevoked(t *testing.T) {
 // "unsupported" reason still appears in the listing rather than being
 // omitted - backup coverage and display are independent questions.
 func TestListIncludesUnsupportedItems(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -229,6 +239,8 @@ func TestListIncludesUnsupportedItems(t *testing.T) {
 // TestListExcludesDeletedPhotos covers: a photo flagged deleted by a
 // "deleted" file-change event does not appear in the listing.
 func TestListExcludesDeletedPhotos(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -257,6 +269,8 @@ func TestListExcludesDeletedPhotos(t *testing.T) {
 // ties on Capture Date, must yield each item exactly once - no skips, no
 // duplicates - using the keyset cursor rather than skip/limit.
 func TestListPagesStablyThroughThousandsWithTies(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -337,6 +351,8 @@ func TestListPagesStablyThroughThousandsWithTies(t *testing.T) {
 // cursor is a fixed position in (capturedAt, _id) space rather than an
 // offset that shifts as the underlying set changes.
 func TestListCursorContinuesAcrossConcurrentInsert(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})

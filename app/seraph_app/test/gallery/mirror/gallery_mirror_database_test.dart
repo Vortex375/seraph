@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:drift/drift.dart';
+import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
@@ -554,8 +554,8 @@ void main() {
       // rather than rejected.
       await (db.update(db.syncPairs)
             ..where((t) => t.localFolderPath.equals('DCIM/Camera/')))
-          .write(SyncPairsCompanion(removedAt: Value(DateTime.now()
-              .millisecondsSinceEpoch)));
+          .write(SyncPairsCompanion(
+              removedAt: Value(DateTime.now().millisecondsSinceEpoch)));
       await db.into(db.syncPairs).insert(
             SyncPairsCompanion.insert(
               localFolderPath: 'DCIM/Camera/',
@@ -953,6 +953,118 @@ void main() {
       final items = await db.select(db.galleryItems).get();
       expect(items, hasLength(1));
       expect(items.single.orientation, 1);
+    });
+
+    test(
+        'a v13 mirror upgrades to v14: capture offset, location and Place '
+        'columns and their indexes are added, existing rows keep nulls',
+        () async {
+      final file = File(p.join(tempDir.path, 'mirror.sqlite'));
+
+      // Simulate a device running the previous app version (schema v13, the
+      // gallery-metadata feature's immediate predecessor): the full
+      // gallery_items table WITHOUT the capture-offset, location and Place
+      // columns.
+      final v13Raw = sqlite3.sqlite3.open(file.path);
+      v13Raw.execute('''
+        CREATE TABLE "gallery_items" (
+          "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+          "origin" TEXT NOT NULL DEFAULT 'cloud',
+          "provider_id" TEXT NULL,
+          "path" TEXT NULL,
+          "seq" INTEGER NULL,
+          "local_relative_path" TEXT NULL,
+          "local_display_name" TEXT NULL,
+          "local_size" INTEGER NULL,
+          "local_date_taken" INTEGER NULL,
+          "captured_at" INTEGER NOT NULL,
+          "captured_at_source" TEXT NOT NULL DEFAULT '',
+          "width" INTEGER NOT NULL DEFAULT 0,
+          "height" INTEGER NOT NULL DEFAULT 0,
+          "orientation" INTEGER NOT NULL DEFAULT 0,
+          "size" INTEGER NOT NULL DEFAULT 0,
+          "mime" TEXT NOT NULL DEFAULT '',
+          "unsupported" TEXT NOT NULL DEFAULT '',
+          "metadata_pending" INTEGER NOT NULL DEFAULT 0 CHECK ("metadata_pending" IN (0, 1)),
+          "upload_state" TEXT NULL,
+          "upload_target_provider_id" TEXT NULL,
+          "upload_target_path" TEXT NULL,
+          "local_first_seen_at" INTEGER NULL,
+          "upload_attempts" INTEGER NOT NULL DEFAULT 0,
+          "upload_next_retry_at" INTEGER NULL,
+          "upload_failure_bucket" TEXT NULL,
+          "upload_failure_reason" TEXT NULL,
+          UNIQUE ("provider_id", "path")
+        );
+      ''');
+      v13Raw.execute('''
+        CREATE TABLE sync_cursors (
+          source TEXT NOT NULL PRIMARY KEY,
+          since INTEGER NOT NULL DEFAULT 0,
+          pending_cursor TEXT NULL
+        );
+      ''');
+      v13Raw.execute(
+        "INSERT INTO gallery_items (origin, provider_id, path, seq, captured_at) "
+        "VALUES ('cloud', 'space-a', '/Photos/old.jpg', 5, 1000);",
+      );
+      v13Raw.execute('PRAGMA user_version = 13;');
+      v13Raw.close();
+
+      final db = GalleryMirrorDatabase(NativeDatabase(file));
+      addTearDown(db.close);
+
+      // The pre-existing row survived, with nulls in every new column - the
+      // spec's "existing rows get nulls; the server sweep bumps their Seq, so
+      // the normal delta sync fills them in".
+      final items = await db.select(db.galleryItems).get();
+      expect(items, hasLength(1));
+      expect(items.single.path, '/Photos/old.jpg');
+      expect(items.single.capturedAtOffset, isNull);
+      expect(items.single.lat, isNull);
+      expect(items.single.lon, isNull);
+      expect(items.single.placeCountryCode, isNull);
+      expect(items.single.placeLocalityId, isNull);
+
+      // The v14 indexes exist.
+      final indexNames = await db
+          .customSelect("SELECT name FROM sqlite_master WHERE type='index' AND "
+              "tbl_name='gallery_items'")
+          .get();
+      final names = indexNames.map((r) => r.data['name']).toSet();
+      expect(
+          names,
+          containsAll(<String>[
+            'idx_gallery_items_place_country_code',
+            'idx_gallery_items_place_admin1_code',
+            'idx_gallery_items_place_locality_id',
+          ]));
+
+      // The upgraded schema accepts writes to the new columns - what the
+      // delta sync's next page does the moment the server sweep has bumped
+      // this photo's Seq.
+      await db.into(db.galleryItems).insertOnConflictUpdate(
+            GalleryItemsCompanion.insert(
+              providerId: const Value('space-a'),
+              path: const Value('/Photos/new.jpg'),
+              capturedAt: 2000,
+              capturedAtOffset: const Value(7200),
+              lat: const Value(38.7223),
+              lon: const Value(-9.1393),
+              placeCountryCode: const Value('PT'),
+              placeCountry: const Value('Portugal'),
+              placeAdmin1Code: const Value('PT.11'),
+              placeAdmin1: const Value('Lisbon'),
+              placeLocalityId: const Value(2267057),
+              placeLocality: const Value('Lisbon'),
+            ),
+          );
+      final written = await (db.select(db.galleryItems)
+            ..where((t) => t.path.equals('/Photos/new.jpg')))
+          .getSingle();
+      expect(written.capturedAtOffset, 7200);
+      expect(written.placeCountry, 'Portugal');
+      expect(written.placeLocality, 'Lisbon');
     });
   });
 }

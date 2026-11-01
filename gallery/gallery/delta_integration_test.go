@@ -19,6 +19,8 @@
 package gallery_test
 
 import (
+	"umbasa.net/seraph/gallery/gallery/gallerytest"
+
 	"context"
 	"encoding/json"
 	"fmt"
@@ -84,7 +86,7 @@ func deltaAll(t *testing.T, nc *nats.Conn, userId string, since int64) ([]galler
 // Seq).
 func createPhoto(t *testing.T, nc *nats.Conn, db *mongo.Database, dir, providerId, physicalPath string) *gallery.GalleryPhoto {
 	t.Helper()
-	data := buildJPEGWithExif(t, 12, 8, "2019:01:01 00:00:00", 0)
+	data := gallerytest.BuildJPEGWithExif(t, 12, 8, "2019:01:01 00:00:00", 0)
 	writeFixture(t, dir, physicalPath, data)
 	publishFileChanged(t, nc, providerId, physicalPath, events.FileChangedEventCreated, int64(len(data)), time.Now().Unix(), "image/jpeg")
 	return waitForPhoto(t, db, providerId, physicalPath)
@@ -95,6 +97,8 @@ func createPhoto(t *testing.T, nc *nats.Conn, db *mongo.Database, dir, providerI
 // (non-tombstone) item, so a mirror can build its entire local copy from the
 // feed alone with no separate listing call.
 func TestDeltaFromZeroYieldsWholeGallery(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -133,6 +137,8 @@ func TestDeltaFromZeroYieldsWholeGallery(t *testing.T) {
 // explicitly-demanded test: changes published BETWEEN two polls must all
 // appear in the second poll, and nothing from the first poll must reappear.
 func TestDeltaPollingFromLastSeenMissesNothingAndRepeatsNothing(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -183,6 +189,8 @@ func TestDeltaPollingFromLastSeenMissesNothingAndRepeatsNothing(t *testing.T) {
 // tombstone rather than silently disappearing from the feed, so a mirror
 // knows to remove it.
 func TestDeltaDeliversTombstoneOnDelete(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -225,6 +233,8 @@ func TestDeltaDeliversTombstoneOnDelete(t *testing.T) {
 // not once per change. This is what Seq living on the document (rather than
 // an append-only change log) is for.
 func TestDeltaChangedTwiceDeliveredOnceInCurrentState(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -252,12 +262,12 @@ func TestDeltaChangedTwiceDeliveredOnceInCurrentState(t *testing.T) {
 	// each with a distinct EXIF Capture Date, so the final state is
 	// distinguishable from both the original and the intermediate one. Waits
 	// below key off CapturedAt (and, finally, Seq) rather than Size/Mime:
-	// buildJPEGWithExif's fixtures can coincidentally share the same encoded
+	// gallerytest.BuildJPEGWithExif's fixtures can coincidentally share the same encoded
 	// byte length (same pixel dimensions, same solid-color content, same
 	// EXIF-string length), so Size is not a reliable "did the update land"
 	// signal here even though it is a perfectly good final-state assertion.
 	capturedAtV2 := time.Date(2019, 6, 6, 0, 0, 0, 0, time.UTC).Unix()
-	dataV2 := buildJPEGWithExif(t, 12, 8, "2019:06:06 00:00:00", 0)
+	dataV2 := gallerytest.BuildJPEGWithExif(t, 12, 8, "2019:06:06 00:00:00", 0)
 	writeFixture(t, dir, physicalPath, dataV2)
 	publishFileChanged(t, nc, "physical-photos", physicalPath, events.FileChangedEventChanged, int64(len(dataV2)), time.Now().Unix(), "image/jpeg")
 	waitForCondition(t, func() bool {
@@ -266,7 +276,7 @@ func TestDeltaChangedTwiceDeliveredOnceInCurrentState(t *testing.T) {
 	}, "first update never landed")
 
 	capturedAtV3 := time.Date(2020, 7, 7, 0, 0, 0, 0, time.UTC).Unix()
-	dataV3 := buildJPEGWithExif(t, 12, 8, "2020:07:07 00:00:00", 0)
+	dataV3 := gallerytest.BuildJPEGWithExif(t, 12, 8, "2020:07:07 00:00:00", 0)
 	writeFixture(t, dir, physicalPath, dataV3)
 	publishFileChanged(t, nc, "physical-photos", physicalPath, events.FileChangedEventChanged, int64(len(dataV3)), time.Now().Unix(), "image/jpeg")
 	waitForCondition(t, func() bool {
@@ -293,6 +303,8 @@ func TestDeltaChangedTwiceDeliveredOnceInCurrentState(t *testing.T) {
 // prefix-cache reject means an event for a physical path outside every
 // configured folder is never ingested at all.
 func TestDeltaFolderAdditionSurfacesAlreadyIngestedPhotos(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -366,6 +378,8 @@ func TestDeltaFolderAdditionSurfacesAlreadyIngestedPhotos(t *testing.T) {
 // photos it used to make visible, without any live file-change event ever
 // firing for them.
 func TestDeltaFolderRemovalTombstonesItsPhotos(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -410,6 +424,8 @@ func TestDeltaFolderRemovalTombstonesItsPhotos(t *testing.T) {
 // folder - the same access-control guarantee the listing provides, applied
 // to the feed.
 func TestDeltaScopedToOwnFoldersAndRevokedAccessStopsDelivery(t *testing.T) {
+	requireIntegration(t)
+
 	accessible := map[string][]string{
 		"pino": {"photos"},
 		"lino": {"vacation"},
@@ -452,7 +468,7 @@ func TestDeltaScopedToOwnFoldersAndRevokedAccessStopsDelivery(t *testing.T) {
 	// a live change happens after revocation - it must not be delivered to
 	// pino, since resolving pino's folders now fails
 	capturedAtV2 := time.Date(2019, 6, 6, 0, 0, 0, 0, time.UTC).Unix()
-	dataV2 := buildJPEGWithExif(t, 12, 8, "2019:06:06 00:00:00", 0)
+	dataV2 := gallerytest.BuildJPEGWithExif(t, 12, 8, "2019:06:06 00:00:00", 0)
 	writeFixture(t, dirPhotos, "/mounted/photos/mine.jpg", dataV2)
 	publishFileChanged(t, nc, "physical-photos", "/mounted/photos/mine.jpg", events.FileChangedEventChanged, int64(len(dataV2)), time.Now().Unix(), "image/jpeg")
 	waitForCondition(t, func() bool {
@@ -469,6 +485,8 @@ func TestDeltaScopedToOwnFoldersAndRevokedAccessStopsDelivery(t *testing.T) {
 // nothing about it depends on in-process state - and resuming from it still
 // yields the remaining items exactly once.
 func TestDeltaCursorSurvivesRestart(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -553,6 +571,8 @@ func pathFor(i int) string {
 // accident, when 60 concurrent writers happened to leave a poll's tail
 // sitting exactly on a page boundary.
 func TestDeltaPageBoundaryWithNothingBeyondDoesNotRegressCursor(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -609,6 +629,8 @@ func TestDeltaPageBoundaryWithNothingBeyondDoesNotRegressCursor(t *testing.T) {
 // nextSequence calls are genuinely "after a restart" rather than "alongside
 // another live instance."
 func TestSequenceMonotonicAcrossSimulatedRestart(t *testing.T) {
+	requireIntegration(t)
+
 	provider, nc, db := getGalleryProvider(t)
 	require.NoError(t, provider.Start())
 	clearSourceFolders(t, db)
@@ -713,6 +735,8 @@ func TestSequenceMonotonicAcrossSimulatedRestart(t *testing.T) {
 // The assertion below is therefore specifically "every photo arrived", not
 // merely "the feed returned something".
 func TestDeltaConcurrentWritersLoseNothing(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -737,7 +761,7 @@ func TestDeltaConcurrentWritersLoseNothing(t *testing.T) {
 	paths := make([]string, total)
 	for i := 0; i < total; i++ {
 		paths[i] = fmt.Sprintf("/mounted/photos/holidays/c-%03d.jpg", i)
-		writeFixture(t, dir, paths[i], buildJPEGWithExif(t, 12, 8, "2019:01:01 00:00:00", 0))
+		writeFixture(t, dir, paths[i], gallerytest.BuildJPEGWithExif(t, 12, 8, "2019:01:01 00:00:00", 0))
 	}
 
 	// the mirror a real client would keep: applied strictly from feed pages,
@@ -873,4 +897,86 @@ func TestDeltaConcurrentWritersLoseNothing(t *testing.T) {
 		spacePath := fmt.Sprintf("/holidays/c-%03d.jpg", i)
 		assert.Equal(t, 1, mirror[spacePath], "photo %s must be delivered exactly once, not %d times", spacePath, mirror[spacePath])
 	}
+}
+
+// TestDeltaCarriesCaptureOffsetAndPlace covers the gallery-metadata feed
+// contract: a delta item carries the photo's CapturedAtOffset (null when
+// unknown), its coordinates, and the Place flattened into the six place*
+// fields - and a photo with no GPS fix carries no offset/lat/lon and empty
+// place fields. This is the shape the app mirror's schema v14 columns are
+// filled from.
+func TestDeltaCarriesCaptureOffsetAndPlace(t *testing.T) {
+	requireIntegration(t)
+
+	nc, db := startGalleryProvider(t, map[string][]string{
+		"pino": {"photos"},
+	})
+	clearSourceFolders(t, db)
+	clearPhotos(t, db)
+	clearPendingTombstones(t, db)
+
+	dir := startFileProvider(t, "physical-photos")
+
+	crud(t, nc, &gallery.GallerySourceFolderCrudRequest{
+		Operation:       gallery.GallerySourceFolderOperationAdd,
+		UserId:          "pino",
+		SpaceProviderId: "photos",
+		Path:            "/holidays",
+	})
+
+	// A photo with the full chain: wall clock + OffsetTimeOriginal + GPS
+	// coordinates that resolve to Lisbon.
+	withEverything := gallerytest.BuildJPEGWithExifSpec(t, 12, 8, gallerytest.ExifFixtureSpec{
+		DateTimeOriginal:   "2021:07:05 14:30:00",
+		OffsetTimeOriginal: "+02:00",
+		GPS:                true,
+		Lat:                38.7223,
+		Lon:                -9.1393,
+		LatRef:             "N",
+		LonRef:             "W",
+	})
+	writeFixture(t, dir, "/mounted/photos/holidays/full.jpg", withEverything)
+	publishFileChanged(t, nc, "physical-photos", "/mounted/photos/holidays/full.jpg",
+		events.FileChangedEventCreated, int64(len(withEverything)), time.Now().Unix(), "image/jpeg")
+	waitForPhoto(t, db, "physical-photos", "/mounted/photos/holidays/full.jpg")
+
+	// A photo with no GPS and no OffsetTimeOriginal at all.
+	bare := gallerytest.BuildJPEGWithExif(t, 12, 8, "2019:01:01 00:00:00", 0)
+	writeFixture(t, dir, "/mounted/photos/holidays/bare.jpg", bare)
+	publishFileChanged(t, nc, "physical-photos", "/mounted/photos/holidays/bare.jpg",
+		events.FileChangedEventCreated, int64(len(bare)), time.Now().Unix(), "image/jpeg")
+	waitForPhoto(t, db, "physical-photos", "/mounted/photos/holidays/bare.jpg")
+
+	items, _ := deltaAll(t, nc, "pino", 0)
+	require.Len(t, items, 2)
+
+	byPath := make(map[string]gallery.GalleryDeltaItem)
+	for _, it := range items {
+		byPath[it.Path] = it
+	}
+
+	full := byPath["/holidays/full.jpg"]
+	require.NotNil(t, full.CapturedAtOffset, "capturedAtOffset must be carried when known")
+	assert.Equal(t, 7200, *full.CapturedAtOffset)
+	require.NotNil(t, full.Lat)
+	assert.InDelta(t, 38.7223, *full.Lat, 1e-6)
+	require.NotNil(t, full.Lon)
+	assert.InDelta(t, -9.1393, *full.Lon, 1e-6)
+	assert.Equal(t, "PT", full.PlaceCountryCode)
+	assert.Equal(t, "Portugal", full.PlaceCountry)
+	assert.Equal(t, "PT.11", full.PlaceAdmin1Code)
+	assert.Equal(t, "Lisbon", full.PlaceAdmin1)
+	assert.Equal(t, int64(2267057), full.PlaceLocalityId)
+	assert.Equal(t, "Lisbon", full.PlaceLocality)
+
+	bareItem := byPath["/holidays/bare.jpg"]
+	assert.Nil(t, bareItem.CapturedAtOffset, "an unknown offset must be absent from the feed item")
+	assert.Nil(t, bareItem.Lat)
+	assert.Nil(t, bareItem.Lon)
+	assert.Equal(t, "", bareItem.PlaceCountryCode)
+	assert.Equal(t, "", bareItem.PlaceCountry)
+	assert.Equal(t, "", bareItem.PlaceAdmin1Code)
+	assert.Equal(t, "", bareItem.PlaceAdmin1)
+	assert.Equal(t, int64(0), bareItem.PlaceLocalityId)
+	assert.Equal(t, "", bareItem.PlaceLocality)
 }

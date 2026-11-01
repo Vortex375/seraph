@@ -21,6 +21,7 @@ package gallery
 import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"umbasa.net/seraph/entities"
+	"umbasa.net/seraph/gallery/geo"
 )
 
 // Rungs of the Capture Date fallback chain, recorded alongside the value so
@@ -64,7 +65,13 @@ type GalleryPhotoPrototype struct {
 	ProviderId       entities.Definable[string]             `bson:"providerId" json:"providerId"`
 	Path             entities.Definable[string]             `bson:"path" json:"path"`
 	CapturedAt       entities.Definable[int64]              `bson:"capturedAt" json:"capturedAt"`
+	CapturedAtOffset entities.Definable[*int]               `bson:"capturedAtOffset" json:"capturedAtOffset"`
 	CapturedAtSource entities.Definable[string]             `bson:"capturedAtSource" json:"capturedAtSource"`
+	Lat              entities.Definable[*float64]           `bson:"lat" json:"lat"`
+	Lon              entities.Definable[*float64]           `bson:"lon" json:"lon"`
+	Place            entities.Definable[*geo.Place]         `bson:"place" json:"place"`
+	MetadataVersion  entities.Definable[int]                `bson:"metadataVersion" json:"metadataVersion"`
+	GeoVersion       entities.Definable[int]                `bson:"geoVersion" json:"geoVersion"`
 	Width            entities.Definable[int]                `bson:"width" json:"width"`
 	Height           entities.Definable[int]                `bson:"height" json:"height"`
 	Orientation      entities.Definable[int]                `bson:"orientation" json:"orientation"`
@@ -102,10 +109,46 @@ type GalleryPhoto struct {
 
 	// Capture Date: EXIF DateTimeOriginal -> file modification time -> time
 	// first indexed. Unix seconds (UTC).
+	//
+	// A true instant whenever the offset at the place of capture is known
+	// (CapturedAtOffset non-nil): the EXIF wall clock minus that offset.
+	// When CapturedAtOffset is nil (modTime/indexed rungs) CapturedAt is a
+	// true instant as reported. For a "floating" EXIF photo - no offset
+	// determinable - CapturedAtOffset is 0 and CapturedAt holds the wall
+	// clock as if UTC, so the app's display rule renders it unchanged. See
+	// ADR 0003 for the rule and the app-side display contract.
 	CapturedAt int64 `bson:"capturedAt" json:"capturedAt"`
+	// UTC offset in seconds east of UTC at the place of capture, when the
+	// photo itself allowed it to be determined (EXIF OffsetTimeOriginal, or
+	// derived from the GPS timestamp). Nil for the modTime/indexed rungs
+	// (true instants, no offset known) - the app then renders CapturedAt in
+	// the device's local zone.
+	CapturedAtOffset *int `bson:"capturedAtOffset" json:"capturedAtOffset"`
 	// which rung of the fallback chain produced CapturedAt: one of the
 	// CaptureDateSource* constants
 	CapturedAtSource string `bson:"capturedAtSource" json:"capturedAtSource"`
+
+	// the photo's WGS84 coordinates from EXIF GPS, nil when the photo has
+	// no usable fix ((0, 0) and out-of-range values count as absent - see
+	// extractLocation)
+	Lat *float64 `bson:"lat" json:"lat"`
+	Lon *float64 `bson:"lon" json:"lon"`
+
+	// where the photo was taken, resolved entirely offline from
+	// (Lat, Lon) by the gallery/geo package; nil when there are no
+	// coordinates or nothing resolved
+	Place *geo.Place `bson:"place" json:"place"`
+
+	// MetadataVersion is the version of the extraction pipeline that last
+	// processed this photo; the metadata sweep (sweep.go) re-extracts
+	// anything below the current value. Backfill writes 0, live ingestion
+	// and the sweep write the current version.
+	MetadataVersion int `bson:"metadataVersion" json:"metadataVersion"`
+
+	// GeoVersion is the version of the geo dataset/logic that last resolved
+	// this photo's Place; the sweep's second pass re-resolves stored
+	// coordinates from photos below it, without opening the file.
+	GeoVersion int `bson:"geoVersion" json:"geoVersion"`
 
 	// pixel dimensions as decoded from the file; 0 if not decodable
 	Width  int `bson:"width" json:"width"`

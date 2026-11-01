@@ -19,6 +19,8 @@
 package gallery_test
 
 import (
+	"umbasa.net/seraph/gallery/gallery/gallerytest"
+
 	"context"
 	"encoding/json"
 	"fmt"
@@ -214,6 +216,8 @@ func withProvider(providerId string, entries []events.FileIndexListEntry) []even
 // knows about makes them appear in the gallery listing, without any live
 // file-change event ever being published for them.
 func TestAddFolderBackfillsAlreadyIndexedPhotos(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -256,6 +260,8 @@ func TestAddFolderBackfillsAlreadyIndexedPhotos(t *testing.T) {
 // has many pages to walk. A slow/blocking stub responder (via beforeReply)
 // would stall ADD if backfill were on the request path; it must not.
 func TestAddReturnsPromptlyWhileBackfillRunsInBackground(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -299,6 +305,8 @@ func TestAddReturnsPromptlyWhileBackfillRunsInBackground(t *testing.T) {
 // and the live event's fuller extraction must win regardless of arrival
 // order, since it is strictly more informative than a backfill placeholder.
 func TestBackfillInterleavedWithLiveEventsProducesOneItem(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -319,7 +327,7 @@ func TestBackfillInterleavedWithLiveEventsProducesOneItem(t *testing.T) {
 	// page request comes in, so the live event and backfill's own upsert for
 	// the same key are genuinely interleaved rather than sequential
 	var once sync.Once
-	data := buildJPEGWithExif(t, 12, 8, "2021:03:03 03:03:03", 0)
+	data := gallerytest.BuildJPEGWithExif(t, 12, 8, "2021:03:03 03:03:03", 0)
 	writeFixture(t, dir, physicalPath, data)
 	stub.beforeReply = func(req events.FileIndexListRequest) {
 		once.Do(func() {
@@ -366,6 +374,8 @@ func TestBackfillInterleavedWithLiveEventsProducesOneItem(t *testing.T) {
 // restart would) resumes cleanly on the next Start() and produces exactly
 // one document per file, never two.
 func TestBackfillRestartDoesNotDuplicate(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -435,6 +445,8 @@ func TestBackfillRestartDoesNotDuplicate(t *testing.T) {
 // not double-count its photos in the listing, because the nested folder's
 // own backfill walks the same physical files again.
 func TestNestedFolderDoesNotDoubleBackfilledPhotos(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -504,6 +516,8 @@ func TestNestedFolderDoesNotDoubleBackfilledPhotos(t *testing.T) {
 // Provider running at all - must still succeed, proving backfill never
 // tries to open the files it backfills.
 func TestBackfillNeverContactsFileProvider(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -543,6 +557,8 @@ func TestBackfillNeverContactsFileProvider(t *testing.T) {
 // same page continue to backfill exactly as before. The filter is applied in
 // the backfill result loop, alongside the existing IsDir skip.
 func TestBackfillSkipsDotfileEntries(t *testing.T) {
+	requireIntegration(t)
+
 	nc, db := startGalleryProvider(t, map[string][]string{
 		"pino": {"photos"},
 	})
@@ -598,6 +614,8 @@ func TestBackfillSkipsDotfileEntries(t *testing.T) {
 // and (b) a nested folder's own backfill re-walking a file an outer folder
 // already covered.
 func TestBackfillDoesNotDowngradeALiveHealedItem(t *testing.T) {
+	requireIntegration(t)
+
 	exifCapturedAt := time.Date(2007, 8, 9, 10, 11, 12, 0, time.UTC).Unix()
 	// a deliberately much LATER modification time, so a downgrade moves the
 	// photo to a visibly wrong position rather than being indistinguishable
@@ -608,7 +626,7 @@ func TestBackfillDoesNotDowngradeALiveHealedItem(t *testing.T) {
 	// document healed to a real EXIF Capture Date.
 	healLive := func(t *testing.T, nc *nats.Conn, db *mongo.Database, dir string, physicalPath string) {
 		t.Helper()
-		data := buildJPEGWithExif(t, 12, 8, "2007:08:09 10:11:12", 1)
+		data := gallerytest.BuildJPEGWithExif(t, 12, 8, "2007:08:09 10:11:12", 1)
 		writeFixture(t, dir, physicalPath, data)
 		publishFileChanged(t, nc, "physical-photos", physicalPath, events.FileChangedEventCreated, int64(len(data)), backfillModTime, "image/jpeg")
 

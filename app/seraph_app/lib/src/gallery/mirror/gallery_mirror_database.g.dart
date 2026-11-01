@@ -183,6 +183,58 @@ class $GalleryItemsTable extends GalleryItems
   late final GeneratedColumn<String> uploadFailureReason =
       GeneratedColumn<String>('upload_failure_reason', aliasedName, true,
           type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _capturedAtOffsetMeta =
+      const VerificationMeta('capturedAtOffset');
+  @override
+  late final GeneratedColumn<int> capturedAtOffset = GeneratedColumn<int>(
+      'captured_at_offset', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _latMeta = const VerificationMeta('lat');
+  @override
+  late final GeneratedColumn<double> lat = GeneratedColumn<double>(
+      'lat', aliasedName, true,
+      type: DriftSqlType.double, requiredDuringInsert: false);
+  static const VerificationMeta _lonMeta = const VerificationMeta('lon');
+  @override
+  late final GeneratedColumn<double> lon = GeneratedColumn<double>(
+      'lon', aliasedName, true,
+      type: DriftSqlType.double, requiredDuringInsert: false);
+  static const VerificationMeta _placeCountryCodeMeta =
+      const VerificationMeta('placeCountryCode');
+  @override
+  late final GeneratedColumn<String> placeCountryCode = GeneratedColumn<String>(
+      'place_country_code', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _placeCountryMeta =
+      const VerificationMeta('placeCountry');
+  @override
+  late final GeneratedColumn<String> placeCountry = GeneratedColumn<String>(
+      'place_country', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _placeAdmin1CodeMeta =
+      const VerificationMeta('placeAdmin1Code');
+  @override
+  late final GeneratedColumn<String> placeAdmin1Code = GeneratedColumn<String>(
+      'place_admin1_code', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _placeAdmin1Meta =
+      const VerificationMeta('placeAdmin1');
+  @override
+  late final GeneratedColumn<String> placeAdmin1 = GeneratedColumn<String>(
+      'place_admin1', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _placeLocalityIdMeta =
+      const VerificationMeta('placeLocalityId');
+  @override
+  late final GeneratedColumn<int> placeLocalityId = GeneratedColumn<int>(
+      'place_locality_id', aliasedName, true,
+      type: DriftSqlType.int, requiredDuringInsert: false);
+  static const VerificationMeta _placeLocalityMeta =
+      const VerificationMeta('placeLocality');
+  @override
+  late final GeneratedColumn<String> placeLocality = GeneratedColumn<String>(
+      'place_locality', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
   @override
   List<GeneratedColumn> get $columns => [
         id,
@@ -210,7 +262,16 @@ class $GalleryItemsTable extends GalleryItems
         uploadAttempts,
         uploadNextRetryAt,
         uploadFailureBucket,
-        uploadFailureReason
+        uploadFailureReason,
+        capturedAtOffset,
+        lat,
+        lon,
+        placeCountryCode,
+        placeCountry,
+        placeAdmin1Code,
+        placeAdmin1,
+        placeLocalityId,
+        placeLocality
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -361,6 +422,56 @@ class $GalleryItemsTable extends GalleryItems
           uploadFailureReason.isAcceptableOrUnknown(
               data['upload_failure_reason']!, _uploadFailureReasonMeta));
     }
+    if (data.containsKey('captured_at_offset')) {
+      context.handle(
+          _capturedAtOffsetMeta,
+          capturedAtOffset.isAcceptableOrUnknown(
+              data['captured_at_offset']!, _capturedAtOffsetMeta));
+    }
+    if (data.containsKey('lat')) {
+      context.handle(
+          _latMeta, lat.isAcceptableOrUnknown(data['lat']!, _latMeta));
+    }
+    if (data.containsKey('lon')) {
+      context.handle(
+          _lonMeta, lon.isAcceptableOrUnknown(data['lon']!, _lonMeta));
+    }
+    if (data.containsKey('place_country_code')) {
+      context.handle(
+          _placeCountryCodeMeta,
+          placeCountryCode.isAcceptableOrUnknown(
+              data['place_country_code']!, _placeCountryCodeMeta));
+    }
+    if (data.containsKey('place_country')) {
+      context.handle(
+          _placeCountryMeta,
+          placeCountry.isAcceptableOrUnknown(
+              data['place_country']!, _placeCountryMeta));
+    }
+    if (data.containsKey('place_admin1_code')) {
+      context.handle(
+          _placeAdmin1CodeMeta,
+          placeAdmin1Code.isAcceptableOrUnknown(
+              data['place_admin1_code']!, _placeAdmin1CodeMeta));
+    }
+    if (data.containsKey('place_admin1')) {
+      context.handle(
+          _placeAdmin1Meta,
+          placeAdmin1.isAcceptableOrUnknown(
+              data['place_admin1']!, _placeAdmin1Meta));
+    }
+    if (data.containsKey('place_locality_id')) {
+      context.handle(
+          _placeLocalityIdMeta,
+          placeLocalityId.isAcceptableOrUnknown(
+              data['place_locality_id']!, _placeLocalityIdMeta));
+    }
+    if (data.containsKey('place_locality')) {
+      context.handle(
+          _placeLocalityMeta,
+          placeLocality.isAcceptableOrUnknown(
+              data['place_locality']!, _placeLocalityMeta));
+    }
     return context;
   }
 
@@ -427,6 +538,24 @@ class $GalleryItemsTable extends GalleryItems
           DriftSqlType.string, data['${effectivePrefix}upload_failure_bucket']),
       uploadFailureReason: attachedDatabase.typeMapping.read(
           DriftSqlType.string, data['${effectivePrefix}upload_failure_reason']),
+      capturedAtOffset: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}captured_at_offset']),
+      lat: attachedDatabase.typeMapping
+          .read(DriftSqlType.double, data['${effectivePrefix}lat']),
+      lon: attachedDatabase.typeMapping
+          .read(DriftSqlType.double, data['${effectivePrefix}lon']),
+      placeCountryCode: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}place_country_code']),
+      placeCountry: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}place_country']),
+      placeAdmin1Code: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}place_admin1_code']),
+      placeAdmin1: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}place_admin1']),
+      placeLocalityId: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}place_locality_id']),
+      placeLocality: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}place_locality']),
     );
   }
 
@@ -578,6 +707,30 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
   /// [GalleryUploadException.message] the failing attempt carried. Null
   /// whenever [uploadFailureBucket] is.
   final String? uploadFailureReason;
+
+  /// Seconds east of UTC at the place of capture, when the photo itself
+  /// recorded one (EXIF OffsetTimeOriginal or its GPS timestamp - ADR
+  /// 0003). Null when unknown. [capturedAt] is a true instant whenever
+  /// this is non-null; the display rule is
+  /// wall time = `capturedAt + capturedAtOffset`, rendered as UTC, and
+  /// `capturedAt` in the device's local zone when this is null.
+  final int? capturedAtOffset;
+
+  /// The photo's WGS84 coordinates, null when the photo has no usable GPS
+  /// fix (or its location has not been extracted yet).
+  final double? lat;
+  final double? lon;
+
+  /// The Place (see CONTEXT.md), flattened one column per field rather
+  /// than as a JSON blob, so the place filter and the suggestions can be
+  /// plain indexed SQL. All empty-as-null: a photo without a resolved
+  /// Place has nulls in all six.
+  final String? placeCountryCode;
+  final String? placeCountry;
+  final String? placeAdmin1Code;
+  final String? placeAdmin1;
+  final int? placeLocalityId;
+  final String? placeLocality;
   const GalleryItem(
       {required this.id,
       required this.origin,
@@ -604,7 +757,16 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
       required this.uploadAttempts,
       this.uploadNextRetryAt,
       this.uploadFailureBucket,
-      this.uploadFailureReason});
+      this.uploadFailureReason,
+      this.capturedAtOffset,
+      this.lat,
+      this.lon,
+      this.placeCountryCode,
+      this.placeCountry,
+      this.placeAdmin1Code,
+      this.placeAdmin1,
+      this.placeLocalityId,
+      this.placeLocality});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -663,6 +825,33 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
     if (!nullToAbsent || uploadFailureReason != null) {
       map['upload_failure_reason'] = Variable<String>(uploadFailureReason);
     }
+    if (!nullToAbsent || capturedAtOffset != null) {
+      map['captured_at_offset'] = Variable<int>(capturedAtOffset);
+    }
+    if (!nullToAbsent || lat != null) {
+      map['lat'] = Variable<double>(lat);
+    }
+    if (!nullToAbsent || lon != null) {
+      map['lon'] = Variable<double>(lon);
+    }
+    if (!nullToAbsent || placeCountryCode != null) {
+      map['place_country_code'] = Variable<String>(placeCountryCode);
+    }
+    if (!nullToAbsent || placeCountry != null) {
+      map['place_country'] = Variable<String>(placeCountry);
+    }
+    if (!nullToAbsent || placeAdmin1Code != null) {
+      map['place_admin1_code'] = Variable<String>(placeAdmin1Code);
+    }
+    if (!nullToAbsent || placeAdmin1 != null) {
+      map['place_admin1'] = Variable<String>(placeAdmin1);
+    }
+    if (!nullToAbsent || placeLocalityId != null) {
+      map['place_locality_id'] = Variable<int>(placeLocalityId);
+    }
+    if (!nullToAbsent || placeLocality != null) {
+      map['place_locality'] = Variable<String>(placeLocality);
+    }
     return map;
   }
 
@@ -718,6 +907,29 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
       uploadFailureReason: uploadFailureReason == null && nullToAbsent
           ? const Value.absent()
           : Value(uploadFailureReason),
+      capturedAtOffset: capturedAtOffset == null && nullToAbsent
+          ? const Value.absent()
+          : Value(capturedAtOffset),
+      lat: lat == null && nullToAbsent ? const Value.absent() : Value(lat),
+      lon: lon == null && nullToAbsent ? const Value.absent() : Value(lon),
+      placeCountryCode: placeCountryCode == null && nullToAbsent
+          ? const Value.absent()
+          : Value(placeCountryCode),
+      placeCountry: placeCountry == null && nullToAbsent
+          ? const Value.absent()
+          : Value(placeCountry),
+      placeAdmin1Code: placeAdmin1Code == null && nullToAbsent
+          ? const Value.absent()
+          : Value(placeAdmin1Code),
+      placeAdmin1: placeAdmin1 == null && nullToAbsent
+          ? const Value.absent()
+          : Value(placeAdmin1),
+      placeLocalityId: placeLocalityId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(placeLocalityId),
+      placeLocality: placeLocality == null && nullToAbsent
+          ? const Value.absent()
+          : Value(placeLocality),
     );
   }
 
@@ -755,6 +967,15 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
           serializer.fromJson<String?>(json['uploadFailureBucket']),
       uploadFailureReason:
           serializer.fromJson<String?>(json['uploadFailureReason']),
+      capturedAtOffset: serializer.fromJson<int?>(json['capturedAtOffset']),
+      lat: serializer.fromJson<double?>(json['lat']),
+      lon: serializer.fromJson<double?>(json['lon']),
+      placeCountryCode: serializer.fromJson<String?>(json['placeCountryCode']),
+      placeCountry: serializer.fromJson<String?>(json['placeCountry']),
+      placeAdmin1Code: serializer.fromJson<String?>(json['placeAdmin1Code']),
+      placeAdmin1: serializer.fromJson<String?>(json['placeAdmin1']),
+      placeLocalityId: serializer.fromJson<int?>(json['placeLocalityId']),
+      placeLocality: serializer.fromJson<String?>(json['placeLocality']),
     );
   }
   @override
@@ -788,6 +1009,15 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
       'uploadNextRetryAt': serializer.toJson<int?>(uploadNextRetryAt),
       'uploadFailureBucket': serializer.toJson<String?>(uploadFailureBucket),
       'uploadFailureReason': serializer.toJson<String?>(uploadFailureReason),
+      'capturedAtOffset': serializer.toJson<int?>(capturedAtOffset),
+      'lat': serializer.toJson<double?>(lat),
+      'lon': serializer.toJson<double?>(lon),
+      'placeCountryCode': serializer.toJson<String?>(placeCountryCode),
+      'placeCountry': serializer.toJson<String?>(placeCountry),
+      'placeAdmin1Code': serializer.toJson<String?>(placeAdmin1Code),
+      'placeAdmin1': serializer.toJson<String?>(placeAdmin1),
+      'placeLocalityId': serializer.toJson<int?>(placeLocalityId),
+      'placeLocality': serializer.toJson<String?>(placeLocality),
     };
   }
 
@@ -817,7 +1047,16 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
           int? uploadAttempts,
           Value<int?> uploadNextRetryAt = const Value.absent(),
           Value<String?> uploadFailureBucket = const Value.absent(),
-          Value<String?> uploadFailureReason = const Value.absent()}) =>
+          Value<String?> uploadFailureReason = const Value.absent(),
+          Value<int?> capturedAtOffset = const Value.absent(),
+          Value<double?> lat = const Value.absent(),
+          Value<double?> lon = const Value.absent(),
+          Value<String?> placeCountryCode = const Value.absent(),
+          Value<String?> placeCountry = const Value.absent(),
+          Value<String?> placeAdmin1Code = const Value.absent(),
+          Value<String?> placeAdmin1 = const Value.absent(),
+          Value<int?> placeLocalityId = const Value.absent(),
+          Value<String?> placeLocality = const Value.absent()}) =>
       GalleryItem(
         id: id ?? this.id,
         origin: origin ?? this.origin,
@@ -862,6 +1101,25 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
         uploadFailureReason: uploadFailureReason.present
             ? uploadFailureReason.value
             : this.uploadFailureReason,
+        capturedAtOffset: capturedAtOffset.present
+            ? capturedAtOffset.value
+            : this.capturedAtOffset,
+        lat: lat.present ? lat.value : this.lat,
+        lon: lon.present ? lon.value : this.lon,
+        placeCountryCode: placeCountryCode.present
+            ? placeCountryCode.value
+            : this.placeCountryCode,
+        placeCountry:
+            placeCountry.present ? placeCountry.value : this.placeCountry,
+        placeAdmin1Code: placeAdmin1Code.present
+            ? placeAdmin1Code.value
+            : this.placeAdmin1Code,
+        placeAdmin1: placeAdmin1.present ? placeAdmin1.value : this.placeAdmin1,
+        placeLocalityId: placeLocalityId.present
+            ? placeLocalityId.value
+            : this.placeLocalityId,
+        placeLocality:
+            placeLocality.present ? placeLocality.value : this.placeLocality,
       );
   GalleryItem copyWithCompanion(GalleryItemsCompanion data) {
     return GalleryItem(
@@ -920,6 +1178,28 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
       uploadFailureReason: data.uploadFailureReason.present
           ? data.uploadFailureReason.value
           : this.uploadFailureReason,
+      capturedAtOffset: data.capturedAtOffset.present
+          ? data.capturedAtOffset.value
+          : this.capturedAtOffset,
+      lat: data.lat.present ? data.lat.value : this.lat,
+      lon: data.lon.present ? data.lon.value : this.lon,
+      placeCountryCode: data.placeCountryCode.present
+          ? data.placeCountryCode.value
+          : this.placeCountryCode,
+      placeCountry: data.placeCountry.present
+          ? data.placeCountry.value
+          : this.placeCountry,
+      placeAdmin1Code: data.placeAdmin1Code.present
+          ? data.placeAdmin1Code.value
+          : this.placeAdmin1Code,
+      placeAdmin1:
+          data.placeAdmin1.present ? data.placeAdmin1.value : this.placeAdmin1,
+      placeLocalityId: data.placeLocalityId.present
+          ? data.placeLocalityId.value
+          : this.placeLocalityId,
+      placeLocality: data.placeLocality.present
+          ? data.placeLocality.value
+          : this.placeLocality,
     );
   }
 
@@ -951,7 +1231,16 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
           ..write('uploadAttempts: $uploadAttempts, ')
           ..write('uploadNextRetryAt: $uploadNextRetryAt, ')
           ..write('uploadFailureBucket: $uploadFailureBucket, ')
-          ..write('uploadFailureReason: $uploadFailureReason')
+          ..write('uploadFailureReason: $uploadFailureReason, ')
+          ..write('capturedAtOffset: $capturedAtOffset, ')
+          ..write('lat: $lat, ')
+          ..write('lon: $lon, ')
+          ..write('placeCountryCode: $placeCountryCode, ')
+          ..write('placeCountry: $placeCountry, ')
+          ..write('placeAdmin1Code: $placeAdmin1Code, ')
+          ..write('placeAdmin1: $placeAdmin1, ')
+          ..write('placeLocalityId: $placeLocalityId, ')
+          ..write('placeLocality: $placeLocality')
           ..write(')'))
         .toString();
   }
@@ -983,7 +1272,16 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
         uploadAttempts,
         uploadNextRetryAt,
         uploadFailureBucket,
-        uploadFailureReason
+        uploadFailureReason,
+        capturedAtOffset,
+        lat,
+        lon,
+        placeCountryCode,
+        placeCountry,
+        placeAdmin1Code,
+        placeAdmin1,
+        placeLocalityId,
+        placeLocality
       ]);
   @override
   bool operator ==(Object other) =>
@@ -1014,7 +1312,16 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
           other.uploadAttempts == this.uploadAttempts &&
           other.uploadNextRetryAt == this.uploadNextRetryAt &&
           other.uploadFailureBucket == this.uploadFailureBucket &&
-          other.uploadFailureReason == this.uploadFailureReason);
+          other.uploadFailureReason == this.uploadFailureReason &&
+          other.capturedAtOffset == this.capturedAtOffset &&
+          other.lat == this.lat &&
+          other.lon == this.lon &&
+          other.placeCountryCode == this.placeCountryCode &&
+          other.placeCountry == this.placeCountry &&
+          other.placeAdmin1Code == this.placeAdmin1Code &&
+          other.placeAdmin1 == this.placeAdmin1 &&
+          other.placeLocalityId == this.placeLocalityId &&
+          other.placeLocality == this.placeLocality);
 }
 
 class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
@@ -1044,6 +1351,15 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
   final Value<int?> uploadNextRetryAt;
   final Value<String?> uploadFailureBucket;
   final Value<String?> uploadFailureReason;
+  final Value<int?> capturedAtOffset;
+  final Value<double?> lat;
+  final Value<double?> lon;
+  final Value<String?> placeCountryCode;
+  final Value<String?> placeCountry;
+  final Value<String?> placeAdmin1Code;
+  final Value<String?> placeAdmin1;
+  final Value<int?> placeLocalityId;
+  final Value<String?> placeLocality;
   const GalleryItemsCompanion({
     this.id = const Value.absent(),
     this.origin = const Value.absent(),
@@ -1071,6 +1387,15 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
     this.uploadNextRetryAt = const Value.absent(),
     this.uploadFailureBucket = const Value.absent(),
     this.uploadFailureReason = const Value.absent(),
+    this.capturedAtOffset = const Value.absent(),
+    this.lat = const Value.absent(),
+    this.lon = const Value.absent(),
+    this.placeCountryCode = const Value.absent(),
+    this.placeCountry = const Value.absent(),
+    this.placeAdmin1Code = const Value.absent(),
+    this.placeAdmin1 = const Value.absent(),
+    this.placeLocalityId = const Value.absent(),
+    this.placeLocality = const Value.absent(),
   });
   GalleryItemsCompanion.insert({
     this.id = const Value.absent(),
@@ -1099,6 +1424,15 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
     this.uploadNextRetryAt = const Value.absent(),
     this.uploadFailureBucket = const Value.absent(),
     this.uploadFailureReason = const Value.absent(),
+    this.capturedAtOffset = const Value.absent(),
+    this.lat = const Value.absent(),
+    this.lon = const Value.absent(),
+    this.placeCountryCode = const Value.absent(),
+    this.placeCountry = const Value.absent(),
+    this.placeAdmin1Code = const Value.absent(),
+    this.placeAdmin1 = const Value.absent(),
+    this.placeLocalityId = const Value.absent(),
+    this.placeLocality = const Value.absent(),
   }) : capturedAt = Value(capturedAt);
   static Insertable<GalleryItem> custom({
     Expression<int>? id,
@@ -1127,6 +1461,15 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
     Expression<int>? uploadNextRetryAt,
     Expression<String>? uploadFailureBucket,
     Expression<String>? uploadFailureReason,
+    Expression<int>? capturedAtOffset,
+    Expression<double>? lat,
+    Expression<double>? lon,
+    Expression<String>? placeCountryCode,
+    Expression<String>? placeCountry,
+    Expression<String>? placeAdmin1Code,
+    Expression<String>? placeAdmin1,
+    Expression<int>? placeLocalityId,
+    Expression<String>? placeLocality,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -1158,6 +1501,15 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
         'upload_failure_bucket': uploadFailureBucket,
       if (uploadFailureReason != null)
         'upload_failure_reason': uploadFailureReason,
+      if (capturedAtOffset != null) 'captured_at_offset': capturedAtOffset,
+      if (lat != null) 'lat': lat,
+      if (lon != null) 'lon': lon,
+      if (placeCountryCode != null) 'place_country_code': placeCountryCode,
+      if (placeCountry != null) 'place_country': placeCountry,
+      if (placeAdmin1Code != null) 'place_admin1_code': placeAdmin1Code,
+      if (placeAdmin1 != null) 'place_admin1': placeAdmin1,
+      if (placeLocalityId != null) 'place_locality_id': placeLocalityId,
+      if (placeLocality != null) 'place_locality': placeLocality,
     });
   }
 
@@ -1187,7 +1539,16 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
       Value<int>? uploadAttempts,
       Value<int?>? uploadNextRetryAt,
       Value<String?>? uploadFailureBucket,
-      Value<String?>? uploadFailureReason}) {
+      Value<String?>? uploadFailureReason,
+      Value<int?>? capturedAtOffset,
+      Value<double?>? lat,
+      Value<double?>? lon,
+      Value<String?>? placeCountryCode,
+      Value<String?>? placeCountry,
+      Value<String?>? placeAdmin1Code,
+      Value<String?>? placeAdmin1,
+      Value<int?>? placeLocalityId,
+      Value<String?>? placeLocality}) {
     return GalleryItemsCompanion(
       id: id ?? this.id,
       origin: origin ?? this.origin,
@@ -1216,6 +1577,15 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
       uploadNextRetryAt: uploadNextRetryAt ?? this.uploadNextRetryAt,
       uploadFailureBucket: uploadFailureBucket ?? this.uploadFailureBucket,
       uploadFailureReason: uploadFailureReason ?? this.uploadFailureReason,
+      capturedAtOffset: capturedAtOffset ?? this.capturedAtOffset,
+      lat: lat ?? this.lat,
+      lon: lon ?? this.lon,
+      placeCountryCode: placeCountryCode ?? this.placeCountryCode,
+      placeCountry: placeCountry ?? this.placeCountry,
+      placeAdmin1Code: placeAdmin1Code ?? this.placeAdmin1Code,
+      placeAdmin1: placeAdmin1 ?? this.placeAdmin1,
+      placeLocalityId: placeLocalityId ?? this.placeLocalityId,
+      placeLocality: placeLocality ?? this.placeLocality,
     );
   }
 
@@ -1303,6 +1673,33 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
       map['upload_failure_reason'] =
           Variable<String>(uploadFailureReason.value);
     }
+    if (capturedAtOffset.present) {
+      map['captured_at_offset'] = Variable<int>(capturedAtOffset.value);
+    }
+    if (lat.present) {
+      map['lat'] = Variable<double>(lat.value);
+    }
+    if (lon.present) {
+      map['lon'] = Variable<double>(lon.value);
+    }
+    if (placeCountryCode.present) {
+      map['place_country_code'] = Variable<String>(placeCountryCode.value);
+    }
+    if (placeCountry.present) {
+      map['place_country'] = Variable<String>(placeCountry.value);
+    }
+    if (placeAdmin1Code.present) {
+      map['place_admin1_code'] = Variable<String>(placeAdmin1Code.value);
+    }
+    if (placeAdmin1.present) {
+      map['place_admin1'] = Variable<String>(placeAdmin1.value);
+    }
+    if (placeLocalityId.present) {
+      map['place_locality_id'] = Variable<int>(placeLocalityId.value);
+    }
+    if (placeLocality.present) {
+      map['place_locality'] = Variable<String>(placeLocality.value);
+    }
     return map;
   }
 
@@ -1334,7 +1731,16 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
           ..write('uploadAttempts: $uploadAttempts, ')
           ..write('uploadNextRetryAt: $uploadNextRetryAt, ')
           ..write('uploadFailureBucket: $uploadFailureBucket, ')
-          ..write('uploadFailureReason: $uploadFailureReason')
+          ..write('uploadFailureReason: $uploadFailureReason, ')
+          ..write('capturedAtOffset: $capturedAtOffset, ')
+          ..write('lat: $lat, ')
+          ..write('lon: $lon, ')
+          ..write('placeCountryCode: $placeCountryCode, ')
+          ..write('placeCountry: $placeCountry, ')
+          ..write('placeAdmin1Code: $placeAdmin1Code, ')
+          ..write('placeAdmin1: $placeAdmin1, ')
+          ..write('placeLocalityId: $placeLocalityId, ')
+          ..write('placeLocality: $placeLocality')
           ..write(')'))
         .toString();
   }
@@ -3760,6 +4166,15 @@ abstract class _$GalleryMirrorDatabase extends GeneratedDatabase {
   late final Index idxGalleryItemsUploadTarget = Index(
       'idx_gallery_items_upload_target',
       'CREATE INDEX idx_gallery_items_upload_target ON gallery_items (upload_target_provider_id, upload_target_path)');
+  late final Index idxGalleryItemsPlaceCountryCode = Index(
+      'idx_gallery_items_place_country_code',
+      'CREATE INDEX idx_gallery_items_place_country_code ON gallery_items (place_country_code)');
+  late final Index idxGalleryItemsPlaceAdmin1Code = Index(
+      'idx_gallery_items_place_admin1_code',
+      'CREATE INDEX idx_gallery_items_place_admin1_code ON gallery_items (place_admin1_code)');
+  late final Index idxGalleryItemsPlaceLocalityId = Index(
+      'idx_gallery_items_place_locality_id',
+      'CREATE INDEX idx_gallery_items_place_locality_id ON gallery_items (place_locality_id)');
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -3776,7 +4191,10 @@ abstract class _$GalleryMirrorDatabase extends GeneratedDatabase {
         idxGalleryItemsLocalIdentity,
         idxGalleryItemsOriginSizeCapturedAt,
         idxGalleryItemsCapturedAtId,
-        idxGalleryItemsUploadTarget
+        idxGalleryItemsUploadTarget,
+        idxGalleryItemsPlaceCountryCode,
+        idxGalleryItemsPlaceAdmin1Code,
+        idxGalleryItemsPlaceLocalityId
       ];
 }
 
@@ -3808,6 +4226,15 @@ typedef $$GalleryItemsTableCreateCompanionBuilder = GalleryItemsCompanion
   Value<int?> uploadNextRetryAt,
   Value<String?> uploadFailureBucket,
   Value<String?> uploadFailureReason,
+  Value<int?> capturedAtOffset,
+  Value<double?> lat,
+  Value<double?> lon,
+  Value<String?> placeCountryCode,
+  Value<String?> placeCountry,
+  Value<String?> placeAdmin1Code,
+  Value<String?> placeAdmin1,
+  Value<int?> placeLocalityId,
+  Value<String?> placeLocality,
 });
 typedef $$GalleryItemsTableUpdateCompanionBuilder = GalleryItemsCompanion
     Function({
@@ -3837,6 +4264,15 @@ typedef $$GalleryItemsTableUpdateCompanionBuilder = GalleryItemsCompanion
   Value<int?> uploadNextRetryAt,
   Value<String?> uploadFailureBucket,
   Value<String?> uploadFailureReason,
+  Value<int?> capturedAtOffset,
+  Value<double?> lat,
+  Value<double?> lon,
+  Value<String?> placeCountryCode,
+  Value<String?> placeCountry,
+  Value<String?> placeAdmin1Code,
+  Value<String?> placeAdmin1,
+  Value<int?> placeLocalityId,
+  Value<String?> placeLocality,
 });
 
 class $$GalleryItemsTableFilterComposer
@@ -3937,6 +4373,37 @@ class $$GalleryItemsTableFilterComposer
   ColumnFilters<String> get uploadFailureReason => $composableBuilder(
       column: $table.uploadFailureReason,
       builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get capturedAtOffset => $composableBuilder(
+      column: $table.capturedAtOffset,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get lat => $composableBuilder(
+      column: $table.lat, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get lon => $composableBuilder(
+      column: $table.lon, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get placeCountryCode => $composableBuilder(
+      column: $table.placeCountryCode,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get placeCountry => $composableBuilder(
+      column: $table.placeCountry, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get placeAdmin1Code => $composableBuilder(
+      column: $table.placeAdmin1Code,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get placeAdmin1 => $composableBuilder(
+      column: $table.placeAdmin1, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get placeLocalityId => $composableBuilder(
+      column: $table.placeLocalityId,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get placeLocality => $composableBuilder(
+      column: $table.placeLocality, builder: (column) => ColumnFilters(column));
 }
 
 class $$GalleryItemsTableOrderingComposer
@@ -4037,6 +4504,39 @@ class $$GalleryItemsTableOrderingComposer
   ColumnOrderings<String> get uploadFailureReason => $composableBuilder(
       column: $table.uploadFailureReason,
       builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get capturedAtOffset => $composableBuilder(
+      column: $table.capturedAtOffset,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get lat => $composableBuilder(
+      column: $table.lat, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<double> get lon => $composableBuilder(
+      column: $table.lon, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get placeCountryCode => $composableBuilder(
+      column: $table.placeCountryCode,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get placeCountry => $composableBuilder(
+      column: $table.placeCountry,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get placeAdmin1Code => $composableBuilder(
+      column: $table.placeAdmin1Code,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get placeAdmin1 => $composableBuilder(
+      column: $table.placeAdmin1, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get placeLocalityId => $composableBuilder(
+      column: $table.placeLocalityId,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get placeLocality => $composableBuilder(
+      column: $table.placeLocality,
+      builder: (column) => ColumnOrderings(column));
 }
 
 class $$GalleryItemsTableAnnotationComposer
@@ -4125,6 +4625,33 @@ class $$GalleryItemsTableAnnotationComposer
 
   GeneratedColumn<String> get uploadFailureReason => $composableBuilder(
       column: $table.uploadFailureReason, builder: (column) => column);
+
+  GeneratedColumn<int> get capturedAtOffset => $composableBuilder(
+      column: $table.capturedAtOffset, builder: (column) => column);
+
+  GeneratedColumn<double> get lat =>
+      $composableBuilder(column: $table.lat, builder: (column) => column);
+
+  GeneratedColumn<double> get lon =>
+      $composableBuilder(column: $table.lon, builder: (column) => column);
+
+  GeneratedColumn<String> get placeCountryCode => $composableBuilder(
+      column: $table.placeCountryCode, builder: (column) => column);
+
+  GeneratedColumn<String> get placeCountry => $composableBuilder(
+      column: $table.placeCountry, builder: (column) => column);
+
+  GeneratedColumn<String> get placeAdmin1Code => $composableBuilder(
+      column: $table.placeAdmin1Code, builder: (column) => column);
+
+  GeneratedColumn<String> get placeAdmin1 => $composableBuilder(
+      column: $table.placeAdmin1, builder: (column) => column);
+
+  GeneratedColumn<int> get placeLocalityId => $composableBuilder(
+      column: $table.placeLocalityId, builder: (column) => column);
+
+  GeneratedColumn<String> get placeLocality => $composableBuilder(
+      column: $table.placeLocality, builder: (column) => column);
 }
 
 class $$GalleryItemsTableTableManager extends RootTableManager<
@@ -4180,6 +4707,15 @@ class $$GalleryItemsTableTableManager extends RootTableManager<
             Value<int?> uploadNextRetryAt = const Value.absent(),
             Value<String?> uploadFailureBucket = const Value.absent(),
             Value<String?> uploadFailureReason = const Value.absent(),
+            Value<int?> capturedAtOffset = const Value.absent(),
+            Value<double?> lat = const Value.absent(),
+            Value<double?> lon = const Value.absent(),
+            Value<String?> placeCountryCode = const Value.absent(),
+            Value<String?> placeCountry = const Value.absent(),
+            Value<String?> placeAdmin1Code = const Value.absent(),
+            Value<String?> placeAdmin1 = const Value.absent(),
+            Value<int?> placeLocalityId = const Value.absent(),
+            Value<String?> placeLocality = const Value.absent(),
           }) =>
               GalleryItemsCompanion(
             id: id,
@@ -4208,6 +4744,15 @@ class $$GalleryItemsTableTableManager extends RootTableManager<
             uploadNextRetryAt: uploadNextRetryAt,
             uploadFailureBucket: uploadFailureBucket,
             uploadFailureReason: uploadFailureReason,
+            capturedAtOffset: capturedAtOffset,
+            lat: lat,
+            lon: lon,
+            placeCountryCode: placeCountryCode,
+            placeCountry: placeCountry,
+            placeAdmin1Code: placeAdmin1Code,
+            placeAdmin1: placeAdmin1,
+            placeLocalityId: placeLocalityId,
+            placeLocality: placeLocality,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
@@ -4236,6 +4781,15 @@ class $$GalleryItemsTableTableManager extends RootTableManager<
             Value<int?> uploadNextRetryAt = const Value.absent(),
             Value<String?> uploadFailureBucket = const Value.absent(),
             Value<String?> uploadFailureReason = const Value.absent(),
+            Value<int?> capturedAtOffset = const Value.absent(),
+            Value<double?> lat = const Value.absent(),
+            Value<double?> lon = const Value.absent(),
+            Value<String?> placeCountryCode = const Value.absent(),
+            Value<String?> placeCountry = const Value.absent(),
+            Value<String?> placeAdmin1Code = const Value.absent(),
+            Value<String?> placeAdmin1 = const Value.absent(),
+            Value<int?> placeLocalityId = const Value.absent(),
+            Value<String?> placeLocality = const Value.absent(),
           }) =>
               GalleryItemsCompanion.insert(
             id: id,
@@ -4264,9 +4818,22 @@ class $$GalleryItemsTableTableManager extends RootTableManager<
             uploadNextRetryAt: uploadNextRetryAt,
             uploadFailureBucket: uploadFailureBucket,
             uploadFailureReason: uploadFailureReason,
+            capturedAtOffset: capturedAtOffset,
+            lat: lat,
+            lon: lon,
+            placeCountryCode: placeCountryCode,
+            placeCountry: placeCountry,
+            placeAdmin1Code: placeAdmin1Code,
+            placeAdmin1: placeAdmin1,
+            placeLocalityId: placeLocalityId,
+            placeLocality: placeLocality,
           ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map((e) => (
+                    e.readTable<$GalleryItemsTable, GalleryItem>(table),
+                    BaseReferences<_$GalleryMirrorDatabase, $GalleryItemsTable,
+                        GalleryItem>(db, table, e)
+                  ))
               .toList(),
           prefetchHooksCallback: null,
         ));
@@ -4411,7 +4978,11 @@ class $$SyncCursorsTableTableManager extends RootTableManager<
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map((e) => (
+                    e.readTable<$SyncCursorsTable, SyncCursor>(table),
+                    BaseReferences<_$GalleryMirrorDatabase, $SyncCursorsTable,
+                        SyncCursor>(db, table, e)
+                  ))
               .toList(),
           prefetchHooksCallback: null,
         ));
@@ -4586,7 +5157,11 @@ class $$CachedThumbnailsTableTableManager extends RootTableManager<
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map((e) => (
+                    e.readTable<$CachedThumbnailsTable, CachedThumbnail>(table),
+                    BaseReferences<_$GalleryMirrorDatabase,
+                        $CachedThumbnailsTable, CachedThumbnail>(db, table, e)
+                  ))
               .toList(),
           prefetchHooksCallback: null,
         ));
@@ -4720,7 +5295,14 @@ class $$LocalFolderSelectionsTableTableManager extends RootTableManager<
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map((e) => (
+                    e.readTable<$LocalFolderSelectionsTable,
+                        LocalFolderSelection>(table),
+                    BaseReferences<
+                        _$GalleryMirrorDatabase,
+                        $LocalFolderSelectionsTable,
+                        LocalFolderSelection>(db, table, e)
+                  ))
               .toList(),
           prefetchHooksCallback: null,
         ));
@@ -4907,7 +5489,11 @@ class $$SyncPairsTableTableManager extends RootTableManager<
             removedAt: removedAt,
           ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map((e) => (
+                    e.readTable<$SyncPairsTable, SyncPairRow>(table),
+                    BaseReferences<_$GalleryMirrorDatabase, $SyncPairsTable,
+                        SyncPairRow>(db, table, e)
+                  ))
               .toList(),
           prefetchHooksCallback: null,
         ));
@@ -5196,7 +5782,11 @@ class $$SyncRunStateTableTableManager extends RootTableManager<
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map((e) => (
+                    e.readTable<$SyncRunStateTable, SyncRunStateData>(table),
+                    BaseReferences<_$GalleryMirrorDatabase, $SyncRunStateTable,
+                        SyncRunStateData>(db, table, e)
+                  ))
               .toList(),
           prefetchHooksCallback: null,
         ));
@@ -5357,7 +5947,14 @@ class $$TokenRefreshLockTableTableManager extends RootTableManager<
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map((e) => (
+                    e.readTable<$TokenRefreshLockTable, TokenRefreshLockData>(
+                        table),
+                    BaseReferences<
+                        _$GalleryMirrorDatabase,
+                        $TokenRefreshLockTable,
+                        TokenRefreshLockData>(db, table, e)
+                  ))
               .toList(),
           prefetchHooksCallback: null,
         ));
@@ -5518,7 +6115,11 @@ class $$SyncRunLockTableTableManager extends RootTableManager<
             rowid: rowid,
           ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map((e) => (
+                    e.readTable<$SyncRunLockTable, SyncRunLockData>(table),
+                    BaseReferences<_$GalleryMirrorDatabase, $SyncRunLockTable,
+                        SyncRunLockData>(db, table, e)
+                  ))
               .toList(),
           prefetchHooksCallback: null,
         ));

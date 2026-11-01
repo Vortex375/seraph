@@ -226,7 +226,7 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
                     // boundary map can answer synchronously and which is
                     // never wrong (a photo on the 25th is still in August).
                     final item = controller.itemAt(index);
-                    final exact = item?.capturedAtDateTime;
+                    final exact = item?.capturedAtWallTime;
                     final month = controller.knownDateAt(index);
                     final label = exact != null
                         ? galleryDayLabel(exact)
@@ -440,8 +440,7 @@ class _GalleryPhotoPageState extends State<GalleryPhotoPage> {
                   // thumbnail's InteractiveViewer accumulated so the pager
                   // is never stranded on NeverScrollableScrollPhysics
                   // while nothing is zoomed.
-                  widget.transformationController.value =
-                      Matrix4.identity();
+                  widget.transformationController.value = Matrix4.identity();
                 },
                 thumbnail: _thumbnailImage(
                     hasCloud: hasCloud, providerId: providerId, path: path),
@@ -777,7 +776,7 @@ class GalleryPhotoDetails extends StatelessWidget {
       _DetailRow(
         Icons.event_outlined,
         item.captureDateSourceLabel,
-        galleryDayLabel(item.capturedAtDateTime),
+        galleryDayLabel(item.capturedAtWallTime),
       ),
       if (item.displayWidth > 0 && item.displayHeight > 0)
         _DetailRow(Icons.aspect_ratio_outlined, 'Dimensions',
@@ -786,6 +785,11 @@ class GalleryPhotoDetails extends StatelessWidget {
         _DetailRow(Icons.sd_storage_outlined, 'Size', _formatBytes(item.size)),
       if (item.mime.isNotEmpty)
         _DetailRow(Icons.description_outlined, 'Type', item.mime),
+      // The photo's Place, when the server resolved one - "locality, admin1,
+      // country", skipping the parts it does not have. No coordinates, no
+      // map: a Place is a name, not a pin (the gallery-metadata spec).
+      if (_placeLabel(item) case final place?)
+        _DetailRow(Icons.place_outlined, 'Place', place),
       _DetailRow(Icons.info_outline, 'Availability', item.availabilityLabel),
     ];
 
@@ -813,6 +817,23 @@ class GalleryPhotoDetails extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The details sheet's Place line for [item]: "locality, admin1,
+/// country", skipping empty parts - or null when the item has no Place at
+/// all (no row at all in the sheet, per the no-Place-no-line rule).
+/// Named for the domain concept (CONTEXT.md: a photo's **Place**), not the
+/// avoided synonym.
+String? _placeLabel(GalleryItem item) {
+  final parts = [
+    item.placeLocality,
+    item.placeAdmin1,
+    item.placeCountry,
+  ].whereType<String>().where((part) => part.isNotEmpty).toList();
+  if (parts.isEmpty) {
+    return null;
+  }
+  return parts.join(', ');
 }
 
 class _DetailRow {
