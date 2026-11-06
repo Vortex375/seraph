@@ -68,6 +68,37 @@ class FileBrowserGridView extends StatelessWidget {
                   Positioned.fill(
                     child: icon
                   ),
+                  if ((item.isDir ?? false) || fileService.isAudioFile(item))
+                    Positioned(
+                      top: 4,
+                      right: 4,
+                      child: Material(
+                        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
+                        shape: const CircleBorder(),
+                        child: PopupMenuButton<String>(
+                          icon: const Icon(Icons.more_vert),
+                          tooltip: 'Actions',
+                          onSelected: (value) => Get.find<FileBrowserController>()
+                              .enqueue([item], playNext: value == 'next'),
+                          itemBuilder: (_) => const [
+                            PopupMenuItem(
+                              value: 'next',
+                              child: Row(children: [
+                                Icon(Icons.playlist_play),
+                                Expanded(child: Text('Play next')),
+                              ]),
+                            ),
+                            PopupMenuItem(
+                              value: 'add',
+                              child: Row(children: [
+                                Icon(Icons.queue_music),
+                                Expanded(child: Text('Add to queue')),
+                              ]),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   Align(
                     alignment: Alignment.bottomLeft,
                     child: _withBackground(context, selectionController.isSelecting.value, InkWell(

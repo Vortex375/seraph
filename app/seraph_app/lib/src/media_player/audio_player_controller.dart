@@ -11,12 +11,14 @@ import 'package:path/path.dart' as p;
 class AudioPlayerController extends GetxController {
 
   final RxList<String> playlist = RxList([]);
+  final RxList<MediaItem> queueItems = RxList([]);
   final RxInt currentIndex = RxInt(-1);
   final Rx<MediaItem?> currentMediaItem = Rx(null);
   final RxBool open = false.obs;
   final RxBool playing = false.obs;
   final RxBool buffering = false.obs;
   final Rx<Duration> position = Rx(const Duration());
+  final Rx<Duration> bufferedPosition = Rx(const Duration());
 
   late List<StreamSubscription> subscriptions;
 
@@ -29,6 +31,7 @@ class AudioPlayerController extends GetxController {
 
     subscriptions.add(audioHandler.queue.listen((queue) {
       playlist(queue.map((e) => e.id).toList());
+      queueItems(queue);
     }));
 
     subscriptions.add(audioHandler.playbackState.listen((state) {
@@ -36,6 +39,7 @@ class AudioPlayerController extends GetxController {
       currentIndex(state.queueIndex);
       open(state.processingState != AudioProcessingState.idle);
       position(state.position);
+      bufferedPosition(state.bufferedPosition);
       buffering(state.processingState == AudioProcessingState.buffering);
 
       if (state.processingState == AudioProcessingState.error) {
@@ -96,6 +100,54 @@ class AudioPlayerController extends GetxController {
   Future<void> seek(Duration position) async {
     final MyAudioHandler audioHandler = Get.find();
     await audioHandler.seek(position);
+  }
+
+  Future<void> skipTo(int index) async {
+    final MyAudioHandler audioHandler = Get.find();
+    await audioHandler.skipToQueueItem(index);
+  }
+
+  Future<void> move(int from, int to) async {
+    final MyAudioHandler audioHandler = Get.find();
+    await audioHandler.customAction(
+        MyAudioHandler.moveQueueItemAction, {'from': from, 'to': to});
+  }
+
+  Future<void> removeAt(int index) async {
+    final MyAudioHandler audioHandler = Get.find();
+    await audioHandler.removeQueueItemAt(index);
+  }
+
+  /// Adds [files] after the playing track (play next) or at the end. When
+  /// nothing is playing, playback starts at the first added track.
+  Future<void> enqueue(List<String> files, {required bool playNext}) async {
+    if (files.isEmpty) {
+      return;
+    }
+    final FileService fileService = Get.find();
+    final items = files
+        .map((f) => MediaItem(id: fileService.getFileUrl(f), title: p.basename(f)))
+        .toList();
+    final MyAudioHandler audioHandler = Get.find();
+
+    final nothingPlaying = !open.value || currentIndex.value < 0;
+    final firstIndex = playNext
+        ? (nothingPlaying ? 0 : currentIndex.value + 1)
+        : queueItems.length;
+
+    if (playNext) {
+      var index = firstIndex;
+      for (final item in items) {
+        await audioHandler.insertQueueItem(index++, item);
+      }
+    } else {
+      await audioHandler.addQueueItems(items);
+    }
+
+    if (nothingPlaying) {
+      await audioHandler.skipToQueueItem(firstIndex);
+      await audioHandler.play();
+    }
   }
 
   Future<void> next() async {

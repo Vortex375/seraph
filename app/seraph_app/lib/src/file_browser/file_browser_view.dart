@@ -6,11 +6,13 @@ import 'package:seraph_app/src/app_bar/app_bar.dart';
 import 'package:seraph_app/src/file_browser/file_browser_controller.dart';
 import 'package:seraph_app/src/file_browser/file_browser_grid_view.dart';
 import 'package:seraph_app/src/file_browser/file_browser_list_view.dart';
+import 'package:seraph_app/src/file_browser/file_service.dart';
 import 'package:seraph_app/src/file_browser/selection_controller.dart';
 import 'package:seraph_app/src/media_player/media_bottom_bar.dart';
 import 'package:seraph_app/src/search/search_view.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
 import 'package:seraph_app/src/share/share_controller.dart';
+import 'package:webdav_client/webdav_client.dart';
 
 class FileBrowserView extends StatelessWidget {
 
@@ -18,8 +20,23 @@ class FileBrowserView extends StatelessWidget {
   
   const FileBrowserView({super.key});
 
-  List<BreadCrumbItem> _breadCrumbItems(String path) {
-    final ShareController shareController = Get.find();
+  List<File> _selectedFiles(
+      FileBrowserController controller, SelectionController selectionController) {
+    return controller.files.value
+        .where((f) => selectionController.isSelected(f.path))
+        .toList();
+  }
+
+  Future<void> _enqueueSelected(
+      FileBrowserController controller,
+      SelectionController selectionController,
+      {required bool playNext}) async {
+    final files = _selectedFiles(controller, selectionController);
+    await controller.enqueue(files, playNext: playNext);
+    selectionController.clearSelection();
+  }
+
+  List<BreadCrumbItem> _breadCrumbItems(String path) {    final ShareController shareController = Get.find();
 
     if (!path.startsWith("/")) {
       path = "/$path";
@@ -96,6 +113,32 @@ class FileBrowserView extends StatelessWidget {
             foregroundColor: Theme.of(context).colorScheme.onPrimary,
             title: Text('${selectionController.numSelected} Selected'),
             leading: IconButton(onPressed: selectionController.clearSelection, icon: const Icon(Icons.cancel)),
+            actions: [
+              Obx(() {
+                final fileService = Get.find<FileService>();
+                final selected = _selectedFiles(controller, selectionController);
+                final hasAudio = selected.any(
+                    (f) => (f.isDir ?? false) || fileService.isAudioFile(f));
+                return Row(children: [
+                  IconButton(
+                    icon: const Icon(Icons.playlist_play),
+                    tooltip: 'Play next',
+                    onPressed: hasAudio
+                        ? () => _enqueueSelected(controller, selectionController,
+                            playNext: true)
+                        : null,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.queue_music),
+                    tooltip: 'Add to queue',
+                    onPressed: hasAudio
+                        ? () => _enqueueSelected(controller, selectionController,
+                            playNext: false)
+                        : null,
+                  ),
+                ]);
+              }),
+            ],
             bottom: PreferredSize(
               preferredSize: const Size.fromHeight(32),
               child: Column(

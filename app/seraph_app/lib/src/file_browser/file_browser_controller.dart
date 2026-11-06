@@ -7,6 +7,7 @@ import 'package:get/get.dart';
 import 'package:seraph_app/src/file_browser/file_browser_view.dart';
 import 'package:seraph_app/src/file_browser/file_service.dart';
 import 'package:seraph_app/src/file_viewer/file_viewer_view.dart';
+import 'package:seraph_app/src/media_player/audio_player_controller.dart';
 import 'package:seraph_app/src/share/share_controller.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webdav_client/webdav_client.dart';
@@ -107,6 +108,53 @@ class FileBrowserController extends GetxController {
       await launchUrl(Uri.parse(fileService.getDownloadUrl(_path.value)),
           webOnlyWindowName: '_blank');
     }
+  }
+
+  /// Sends [items] to the player's queue: an audio file directly, a folder
+  /// through one non-recursive listing of its own audio files in name order.
+  /// Non-audio files are ignored.
+  Future<void> enqueue(List<File> items, {required bool playNext}) async {
+    final fileService = Get.find<FileService>();
+    final player = Get.find<AudioPlayerController>();
+    final paths = <String>[];
+    var sawFolder = false;
+
+    for (final item in items) {
+      if (item.isDir ?? false) {
+        sawFolder = true;
+        final path = item.path;
+        if (path == null) {
+          continue;
+        }
+        try {
+          final children = await fileService.readDir(path);
+          final audio = children.where(fileService.isAudioFile).toList()
+            ..sort((a, b) => (a.name ?? '').compareTo(b.name ?? ''));
+          paths.addAll(audio
+              .map((f) => f.path)
+              .whereType<String>()
+              .where((p) => p.isNotEmpty));
+        } catch (err) {
+          developer.log("Error reading folder $path: $err",
+              name: 'seraph.file_browser', error: err);
+        }
+      } else if (fileService.isAudioFile(item) && item.path != null) {
+        paths.add(item.path!);
+      }
+    }
+
+    if (paths.isEmpty) {
+      Get.snackbar('Nothing added',
+          sawFolder ? 'The folder has no audio files' : 'No audio files selected',
+          backgroundColor: Colors.amber[800], isDismissible: true);
+      return;
+    }
+
+    await player.enqueue(paths, playNext: playNext);
+    Get.snackbar(
+        playNext ? 'Play next' : 'Added to queue',
+        paths.length == 1 ? '1 track added' : '${paths.length} tracks added',
+        isDismissible: true);
   }
 
   void setPreviewWidgetFactory(Widget Function()? factory) {

@@ -131,8 +131,24 @@ class MyApp extends StatelessWidget {
           // Define a light and dark color theme. Then, read the user's
           // preferred ThemeMode (light, dark, or system default) from the
           // SettingsController to display the correct theme.
-          theme: ThemeData(useMaterial3: true),
-          darkTheme: ThemeData.dark(useMaterial3: true),
+          // year2023: false opts the slider and progress indicators into the
+          // current Material 3 (December 2023) design - see the audio player
+          // seek bar / mini player (ticket 01).
+          theme: ThemeData(
+            useMaterial3: true,
+            // ignore: deprecated_member_use
+            sliderTheme: const SliderThemeData(year2023: false),
+            // ignore: deprecated_member_use
+            progressIndicatorTheme: const ProgressIndicatorThemeData(year2023: false),
+          ),
+          darkTheme: ThemeData(
+            brightness: Brightness.dark,
+            useMaterial3: true,
+            // ignore: deprecated_member_use
+            sliderTheme: const SliderThemeData(year2023: false),
+            // ignore: deprecated_member_use
+            progressIndicatorTheme: const ProgressIndicatorThemeData(year2023: false),
+          ),
           themeMode: settingsController.themeMode.value,
 
           initialRoute: shareController.shareMode.value

@@ -74,7 +74,27 @@ class FileBrowserListView extends StatelessWidget{
                         Expanded(child: Text('Share')),
                       ],
                     )
-                  )
+                  ),
+                  if ((item.isDir ?? false) || fileService.isAudioFile(item)) ...[
+                    PopupMenuItem(
+                      onTap: () => Get.find<FileBrowserController>().enqueue([item], playNext: true),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.playlist_play),
+                          Expanded(child: Text('Play next')),
+                        ],
+                      )
+                    ),
+                    PopupMenuItem(
+                      onTap: () => Get.find<FileBrowserController>().enqueue([item], playNext: false),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.queue_music),
+                          Expanded(child: Text('Add to queue')),
+                        ],
+                      )
+                    ),
+                  ],
                 ]
               )),
             onTap: () {

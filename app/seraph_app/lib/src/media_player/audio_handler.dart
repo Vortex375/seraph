@@ -4,15 +4,42 @@ import 'dart:developer' as developer;
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:seraph_app/src/media_player/authenticated_audio_source.dart';
+import 'package:seraph_app/src/media_player/queue_model.dart';
 
 class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
+
+  static const String moveQueueItemAction = 'moveQueueItem';
 
   AudioPlayer? _player;
   List<StreamSubscription> _subscriptions = [];
 
   int _queuePosition = 0;
 
+  final QueueModel<MediaItem> _queueModel = const QueueModel<MediaItem>();
+
   Timer? _stopTimer;
+
+  QueueState<MediaItem> get _state => QueueState(queue.value, _queuePosition);
+
+  /// Publishes the model's new order and current index to audio_service. The
+  /// playing entry stays the same for append/insert/move, so its [MediaItem]
+  /// is not replaced and playback is not interrupted.
+  void _publish(QueueState<MediaItem> state) {
+    _queuePosition = state.currentIndex;
+    queue.add(state.entries);
+    if (state.currentIndex >= 0 && state.currentIndex < state.entries.length) {
+      final current = state.entries[state.currentIndex];
+      final existing = mediaItem.value;
+      // Keep the duration the player already reported for the same entry;
+      // queue entries themselves carry no duration.
+      mediaItem.add(existing != null && existing.id == current.id
+          ? current.copyWith(duration: existing.duration)
+          : current);
+      playbackState.add(playbackState.value.copyWith(queueIndex: state.currentIndex));
+    } else {
+      mediaItem.add(null);
+    }
+  }
 
   AudioPlayer _getPlayer() {
     _stopTimer?.cancel();
@@ -84,10 +111,13 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   }
 
   Future<void> _load(AudioPlayer player) async {
+    if (queue.value.isEmpty) {
+      return;
+    }
     try {
       await player.setAudioSources(
         queue.value.map(audioSourceFor).toList(),
-        initialIndex: _queuePosition,
+        initialIndex: _queuePosition.clamp(0, queue.value.length - 1),
       );
     } on PlayerException catch (err) {
       // already reported through errorStream
@@ -126,16 +156,108 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   @override
   Future<void> updateQueue(List<MediaItem> queue) async {
-    await super.updateQueue(queue);
-    _queuePosition = 0;
-    // the next play() loads the new queue at the then-current position
+    // The file viewer's Play button keeps its behaviour: replace the queue and
+    // load it lazily on the next play().
+    final next = _queueModel.replace(_state, queue, 0);
+    _publish(next);
     await _player?.stop();
     await _player?.clearAudioSources();
   }
 
   @override
+  Future<void> addQueueItems(List<MediaItem> mediaItems) async {
+    if (mediaItems.isEmpty) {
+      return;
+    }
+    final next = _queueModel.append(_state, mediaItems);
+    _publish(next);
+    final player = _player;
+    if (player != null && player.audioSource != null) {
+      await player.addAudioSources(mediaItems.map(audioSourceFor).toList());
+    }
+  }
+
+  @override
+  Future<void> insertQueueItem(int index, MediaItem mediaItem) async {
+    final at = index.clamp(0, queue.value.length);
+    final entries = [...queue.value]..insert(at, mediaItem);
+    var current = _queuePosition;
+    if (current < 0) {
+      current = 0;
+    } else if (at <= current) {
+      current++;
+    }
+    _publish(QueueState(entries, current));
+    final player = _player;
+    if (player != null && player.audioSource != null) {
+      await player.insertAudioSource(at, audioSourceFor(mediaItem));
+    }
+  }
+
+  @override
+  Future<void> removeQueueItemAt(int index) async {
+    if (index < 0 || index >= queue.value.length) {
+      return;
+    }
+    final oldCurrent = _queuePosition;
+    final wasPlaying = _player?.playing ?? false;
+    final next = _queueModel.removeAt(_state, index);
+    _publish(next);
+    if (next.entries.isEmpty) {
+      // Emptying the queue stops the player and dismisses the notification.
+      await stop();
+      return;
+    }
+
+    final player = _player;
+    if (player == null || player.audioSource == null) {
+      return;
+    }
+    await player.removeAudioSourceAt(index);
+    if (index == oldCurrent) {
+      // Continue with the entry that is now current.
+      await player.seek(Duration.zero, index: next.currentIndex);
+      if (wasPlaying) {
+        unawaited(player.play());
+      }
+    }
+  }
+
+  /// audio_service has no standard move action, so the queue view uses
+  /// [customAction] with [moveQueueItemAction].
+  Future<void> moveQueueItem(int from, int to) async {
+    final length = queue.value.length;
+    if (from < 0 || from >= length || to < 0 || to >= length || from == to) {
+      return;
+    }
+    _publish(_queueModel.move(_state, from, to));
+    final player = _player;
+    if (player != null && player.audioSource != null) {
+      await player.moveAudioSource(from, to);
+    }
+  }
+
+  @override
+  Future<dynamic> customAction(String name, [Map<String, dynamic>? extras]) async {
+    if (name == moveQueueItemAction) {
+      final from = extras?['from'];
+      final to = extras?['to'];
+      if (from is int && to is int) {
+        await moveQueueItem(from, to);
+      }
+      return null;
+    }
+    return super.customAction(name, extras);
+  }
+
+  @override
   Future<void> skipToQueueItem(int index) async {
+    if (index < 0 || index >= queue.value.length) {
+      return;
+    }
     _queuePosition = index;
+    mediaItem.add(queue.value[index]);
+    playbackState.add(playbackState.value.copyWith(queueIndex: index));
     final player = _player;
     if (player == null || player.audioSource == null) {
       return;
