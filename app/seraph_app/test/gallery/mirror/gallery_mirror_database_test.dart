@@ -83,12 +83,16 @@ void main() {
       // ...and the new column is there with its default.
       expect(items.single.orientation, 0);
 
-      // The sync cursor also survived - this is what makes a restart not
-      // re-fetch the whole gallery after an upgrade.
-      final cursor = await (db.select(db.syncCursors)
-            ..where((t) => t.source.equals('server')))
-          .getSingle();
-      expect(cursor.since, 5);
+      // The v1 ladder preserves the sync cursor - which is what makes a
+      // restart not re-fetch the whole gallery after an upgrade - up to the
+      // v14 step, which resets the SERVER feed cursor on purpose (see its
+      // comment in the migration).
+      // The v14 step of the ladder (gallery-metadata) deliberately resets
+      // the SERVER feed cursor: a pre-14 mirror sits past every sequence the
+      // feed would ever re-deliver, so its pre-feature rows would otherwise
+      // keep null place/capture-offset columns forever. Local cursors are
+      // untouched.
+      expect(await GalleryMirror(db).since(), 0);
 
       // The upgraded schema also accepts writes to the new column.
       await db.into(db.galleryItems).insertOnConflictUpdate(
@@ -172,14 +176,19 @@ void main() {
       addTearDown(db.close);
 
       // The pre-existing row and its sync cursor survived - neither a new
-      // index nor a new table may ever cost a user a full gallery re-fetch.
+      // index nor a new table may ever cost a user a full gallery re-fetch
+      // EXCEPT the one deliberate exception: the final (v14) ladder step
+      // resets the server feed cursor so the gallery-metadata feature can
+      // backfill already-synced rows.
       final items = await db.select(db.galleryItems).get();
       expect(items, hasLength(1));
       expect(items.single.path, '/Photos/a.jpg');
-      final cursor = await (db.select(db.syncCursors)
-            ..where((t) => t.source.equals('server')))
-          .getSingle();
-      expect(cursor.since, 5);
+      // The v14 step of the ladder (gallery-metadata) deliberately resets
+      // the SERVER feed cursor: a pre-14 mirror sits past every sequence the
+      // feed would ever re-deliver, so its pre-feature rows would otherwise
+      // keep null place/capture-offset columns forever. Local cursors are
+      // untouched.
+      expect(await GalleryMirror(db).since(), 0);
 
       // All three indexes now exist, queryable straight from SQLite's
       // own schema table rather than assumed from the migration not
@@ -218,7 +227,7 @@ void main() {
 
     test(
         'an app upgrade from v5 creates the ticket-18 Sync Pairs table '
-        'without losing existing rows, the sync cursor, or the Local Folder '
+        'without losing existing rows or the Local Folder selection '
         'selection table', () async {
       final file = File(p.join(tempDir.path, 'mirror.sqlite'));
 
@@ -292,10 +301,12 @@ void main() {
       final items = await db.select(db.galleryItems).get();
       expect(items, hasLength(1));
       expect(items.single.path, '/Photos/a.jpg');
-      final cursor = await (db.select(db.syncCursors)
-            ..where((t) => t.source.equals('server')))
-          .getSingle();
-      expect(cursor.since, 5);
+      // The v14 step of the ladder (gallery-metadata) deliberately resets
+      // the SERVER feed cursor: a pre-14 mirror sits past every sequence the
+      // feed would ever re-deliver, so its pre-feature rows would otherwise
+      // keep null place/capture-offset columns forever. Local cursors are
+      // untouched.
+      expect(await GalleryMirror(db).since(), 0);
       final selections = await db.select(db.localFolderSelections).get();
       expect(selections, hasLength(1));
       expect(selections.single.selected, isTrue);
@@ -318,7 +329,7 @@ void main() {
 
     test(
         'an app upgrade from v6 adds the ticket-20 verification columns and '
-        'index without losing existing rows, the sync cursor, or the Sync '
+        'index without losing existing rows or the Sync '
         'Pairs table', () async {
       final file = File(p.join(tempDir.path, 'mirror.sqlite'));
 
@@ -408,10 +419,12 @@ void main() {
       expect(items.single.uploadTargetProviderId, null);
       expect(items.single.uploadTargetPath, null);
 
-      final cursor = await (db.select(db.syncCursors)
-            ..where((t) => t.source.equals('server')))
-          .getSingle();
-      expect(cursor.since, 5);
+      // The v14 step of the ladder (gallery-metadata) deliberately resets
+      // the SERVER feed cursor: a pre-14 mirror sits past every sequence the
+      // feed would ever re-deliver, so its pre-feature rows would otherwise
+      // keep null place/capture-offset columns forever. Local cursors are
+      // untouched.
+      expect(await GalleryMirror(db).since(), 0);
       final pairs = await db.select(db.syncPairs).get();
       expect(pairs, hasLength(1));
       expect(pairs.single.localFolderPath, 'DCIM/Camera/');
@@ -543,10 +556,12 @@ void main() {
       expect(items, hasLength(1));
       expect(items.single.path, '/Photos/a.jpg');
 
-      final cursor = await (db.select(db.syncCursors)
-            ..where((t) => t.source.equals('server')))
-          .getSingle();
-      expect(cursor.since, 5);
+      // The v14 step of the ladder (gallery-metadata) deliberately resets
+      // the SERVER feed cursor: a pre-14 mirror sits past every sequence the
+      // feed would ever re-deliver, so its pre-feature rows would otherwise
+      // keep null place/capture-offset columns forever. Local cursors are
+      // untouched.
+      expect(await GalleryMirror(db).since(), 0);
 
       // The old UNIQUE(local_folder_path) constraint is gone: a second row
       // for the SAME local folder - what a retarget produces, an old
@@ -1008,15 +1023,28 @@ void main() {
         "INSERT INTO gallery_items (origin, provider_id, path, seq, captured_at) "
         "VALUES ('cloud', 'space-a', '/Photos/old.jpg', 5, 1000);",
       );
+      // The delta-feed cursor sits at 5 (mid-feed, with a pending page
+      // cursor too, to model a poll interrupted mid-page): every sequence
+      // this device has already consumed will never be re-delivered, so
+      // without a cursor reset the new columns stay null on this row
+      // forever. A second, non-server cursor must survive untouched.
+      v13Raw.execute(
+        "INSERT INTO sync_cursors (source, since, pending_cursor) "
+        "VALUES ('server', 5, '/page-3');",
+      );
+      v13Raw.execute(
+        "INSERT INTO sync_cursors (source, since) VALUES ('sync-throttle', 999);",
+      );
       v13Raw.execute('PRAGMA user_version = 13;');
       v13Raw.close();
 
       final db = GalleryMirrorDatabase(NativeDatabase(file));
       addTearDown(db.close);
 
-      // The pre-existing row survived, with nulls in every new column - the
-      // spec's "existing rows get nulls; the server sweep bumps their Seq, so
-      // the normal delta sync fills them in".
+      // The pre-existing row survived, with nulls in every new column. The
+      // columns fill in on the very next sync, because the migration reset
+      // the delta-feed cursor (a pre-upgrade mirror sits PAST every sequence
+      // the sweep would bump, so waiting for the sweep cannot heal it).
       final items = await db.select(db.galleryItems).get();
       expect(items, hasLength(1));
       expect(items.single.path, '/Photos/old.jpg');
@@ -1025,6 +1053,18 @@ void main() {
       expect(items.single.lon, isNull);
       expect(items.single.placeCountryCode, isNull);
       expect(items.single.placeLocalityId, isNull);
+
+      final mirror = GalleryMirror(db);
+      expect(await mirror.since(), 0,
+          reason: 'the server delta-feed cursor must reset so the next sync '
+              're-reads every item - including already-consumed sequences - '
+              'and fills the new columns into pre-existing rows');
+      final throttle = await (db.select(db.syncCursors)
+            ..where((t) => t.source.equals('sync-throttle')))
+          .getSingle();
+      expect(throttle.since, 999,
+          reason: 'only the server feed cursor resets; local cursors (scan '
+              'watermark, full-scan, throttle) must survive the upgrade');
 
       // The v14 indexes exist.
       final indexNames = await db
@@ -1065,6 +1105,154 @@ void main() {
       expect(written.capturedAtOffset, 7200);
       expect(written.placeCountry, 'Portugal');
       expect(written.placeLocality, 'Lisbon');
+    });
+
+    test(
+        'a v14 mirror - one that already ran the feature schema WITHOUT the '
+        'cursor reset, exactly what a device that installed the v14 build in '
+        'that window has on disk - upgrades to v15: its rows survive and the '
+        'server feed cursor resets so their null place columns backfill',
+        () async {
+      final file = File(p.join(tempDir.path, 'mirror.sqlite'));
+
+      // A v14 database: the FULL current gallery_items table, place columns
+      // included, but a server feed cursor parked at 7 - past every sequence
+      // the feed will ever re-deliver - so its row's place columns stay null
+      // no matter how long it syncs. This is precisely the state the first
+      // v14 build left on devices that synced before their photos had place
+      // data: schema-wise current, data-wise missing the feature.
+      final v14Raw = sqlite3.sqlite3.open(file.path);
+      v14Raw.execute('''
+        CREATE TABLE "gallery_items" (
+          "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+          "origin" TEXT NOT NULL DEFAULT 'cloud',
+          "provider_id" TEXT NULL,
+          "path" TEXT NULL,
+          "seq" INTEGER NULL,
+          "local_relative_path" TEXT NULL,
+          "local_display_name" TEXT NULL,
+          "local_size" INTEGER NULL,
+          "local_date_taken" INTEGER NULL,
+          "captured_at" INTEGER NOT NULL,
+          "captured_at_source" TEXT NOT NULL DEFAULT '',
+          "width" INTEGER NOT NULL DEFAULT 0,
+          "height" INTEGER NOT NULL DEFAULT 0,
+          "orientation" INTEGER NOT NULL DEFAULT 0,
+          "size" INTEGER NOT NULL DEFAULT 0,
+          "mime" TEXT NOT NULL DEFAULT '',
+          "unsupported" TEXT NOT NULL DEFAULT '',
+          "metadata_pending" INTEGER NOT NULL DEFAULT 0 CHECK ("metadata_pending" IN (0, 1)),
+          "upload_state" TEXT NULL,
+          "upload_target_provider_id" TEXT NULL,
+          "upload_target_path" TEXT NULL,
+          "local_first_seen_at" INTEGER NULL,
+          "upload_attempts" INTEGER NOT NULL DEFAULT 0,
+          "upload_next_retry_at" INTEGER NULL,
+          "upload_failure_bucket" TEXT NULL,
+          "upload_failure_reason" TEXT NULL,
+          "captured_at_offset" INTEGER NULL,
+          "lat" REAL NULL,
+          "lon" REAL NULL,
+          "place_country_code" TEXT NULL,
+          "place_country" TEXT NULL,
+          "place_admin1_code" TEXT NULL,
+          "place_admin1" TEXT NULL,
+          "place_locality_id" INTEGER NULL,
+          "place_locality" TEXT NULL,
+          UNIQUE ("provider_id", "path")
+        );
+      ''');
+      v14Raw.execute('''
+        CREATE TABLE sync_cursors (
+          source TEXT NOT NULL PRIMARY KEY,
+          since INTEGER NOT NULL DEFAULT 0,
+          pending_cursor TEXT NULL
+        );
+      ''');
+      v14Raw.execute('''
+        CREATE TABLE cached_thumbnails (
+          provider_id TEXT NOT NULL,
+          path TEXT NOT NULL,
+          size INTEGER NOT NULL,
+          bytes BLOB NOT NULL,
+          fetched_at INTEGER NOT NULL,
+          PRIMARY KEY (provider_id, path, size)
+        );
+      ''');
+      v14Raw.execute('''
+        CREATE TABLE local_folder_selections (
+          folder_path TEXT NOT NULL PRIMARY KEY,
+          selected INTEGER NOT NULL
+        );
+      ''');
+      v14Raw.execute('''
+        CREATE TABLE sync_pairs (
+          id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+          local_folder_path TEXT NOT NULL,
+          space_provider_id TEXT NOT NULL,
+          path TEXT NOT NULL,
+          created_at INTEGER NOT NULL DEFAULT 0,
+          removed_at INTEGER NULL
+        );
+      ''');
+      v14Raw.execute('''
+        CREATE TABLE sync_run_state (
+          id TEXT NOT NULL PRIMARY KEY,
+          status TEXT NOT NULL,
+          total_items INTEGER NOT NULL DEFAULT 0,
+          completed_items INTEGER NOT NULL DEFAULT 0,
+          failed_items INTEGER NOT NULL DEFAULT 0,
+          total_bytes INTEGER NOT NULL DEFAULT 0,
+          completed_bytes INTEGER NOT NULL DEFAULT 0,
+          last_success_at INTEGER NULL,
+          last_error TEXT NULL,
+          updated_at INTEGER NOT NULL DEFAULT 0
+        );
+      ''');
+      v14Raw.execute('''
+        CREATE TABLE token_refresh_lock (
+          id TEXT NOT NULL PRIMARY KEY,
+          holder TEXT NOT NULL,
+          acquired_at INTEGER NOT NULL,
+          expires_at INTEGER NOT NULL
+        );
+      ''');
+      v14Raw.execute(
+        "INSERT INTO gallery_items (origin, provider_id, path, seq, captured_at) "
+        "VALUES ('cloud', 'space-a', '/Photos/pre-feature.jpg', 7, 1000);",
+      );
+      v14Raw.execute(
+        "INSERT INTO sync_cursors (source, since, pending_cursor) "
+        "VALUES ('server', 7, '/page-9');",
+      );
+      v14Raw.execute(
+        "INSERT INTO sync_cursors (source, since) VALUES ('sync-throttle', 555);",
+      );
+      v14Raw.execute('PRAGMA user_version = 14;');
+      v14Raw.close();
+
+      final db = GalleryMirrorDatabase(NativeDatabase(file));
+      addTearDown(db.close);
+
+      // The row survived - the reset re-reads the feed, it deletes nothing -
+      // still with null place columns (the NEXT sync fills those).
+      final items = await db.select(db.galleryItems).get();
+      expect(items, hasLength(1));
+      expect(items.single.path, '/Photos/pre-feature.jpg');
+      expect(items.single.placeCountryCode, isNull);
+
+      // The whole point: the feed cursor reset despite the database already
+      // being at v14, so the next sync re-reads every consumed sequence and
+      // the delta sync's applyPage writes the place columns in.
+      expect(await GalleryMirror(db).since(), 0,
+          reason: 'a v14 mirror parked past every sequence would otherwise '
+              'never receive place data for its pre-feature rows');
+
+      // Non-server cursors untouched, as everywhere else in the ladder.
+      final throttle = await (db.select(db.syncCursors)
+            ..where((t) => t.source.equals('sync-throttle')))
+          .getSingle();
+      expect(throttle.since, 555);
     });
   });
 }

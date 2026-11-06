@@ -45,7 +45,7 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
   }
 
   @override
-  int get schemaVersion => 14;
+  int get schemaVersion => 15;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -275,10 +275,14 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
             // east of UTC at the place of capture, the display rule of
             // ADR 0003), [lat]/[lon] (WGS84) and the six flattened
             // place_* columns resolved offline from those coordinates.
-            // All nullable, all backfilled by the SERVER's metadata sweep
-            // bumping each photo's Seq so the normal delta sync fills them
-            // in - no client-side backfill - so existing rows correctly
-            // keep nulls until the feed delivers their re-extraction.
+            // All nullable. Backfill is deliberately server-shaped, not
+            // client-shaped: the migration itself writes nothing - but the
+            // delta-feed cursor reset that makes the backfill actually reach
+            // already-synced rows lives in the `from < 15` step below, and
+            // applies to every pre-15 database, this one included.
+            await (delete(syncCursors)
+                  ..where((t) => t.source.equals('server')))
+                .go();
             await m.addColumn(galleryItems, galleryItems.capturedAtOffset);
             await m.addColumn(galleryItems, galleryItems.lat);
             await m.addColumn(galleryItems, galleryItems.lon);
@@ -295,6 +299,30 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
             await m.createIndex(idxGalleryItemsPlaceCountryCode);
             await m.createIndex(idxGalleryItemsPlaceAdmin1Code);
             await m.createIndex(idxGalleryItemsPlaceLocalityId);
+          }
+          if (from < 15) {
+            // The gallery-metadata feature's backfill, made real. A mirror
+            // that synced a photo BEFORE that photo's place data was
+            // published sits PAST its sequence in the delta feed: the feed
+            // never re-delivers consumed sequences, and the server's
+            // metadata sweep only bumps a photo's Seq when its metadata
+            // actually changes - so an already-correct photo is never
+            // bumped again either. Such a row would keep null place and
+            // capture-offset columns forever, and the Place suggestions the
+            // feature is built on would come up empty. Resetting the
+            // SERVER feed cursor makes the next sync re-read the whole
+            // feed; upserts are idempotent, so the cost is one extra pass,
+            // once, per upgrading device.
+            //
+            // This lives in its own version step rather than inside the v14
+            // block on purpose: devices that installed the v14 build during
+            // the window before the reset existed have ALREADY migrated off
+            // v13, so gating the reset on `from < 14` would never run for
+            // exactly the mirrors that need it. Every pre-15 database gets
+            // the reset; every v15+ database never re-runs it.
+            await (delete(syncCursors)
+                  ..where((t) => t.source.equals('server')))
+                .go();
           }
         },
         beforeOpen: (details) async {
