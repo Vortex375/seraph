@@ -335,10 +335,10 @@ class LoginController extends GetxController with WidgetsBindingObserver {
     // [force] is the reactive-refresh entry point: [withTokenRecovery]
     // (gallery_upload_backend.dart) calls this with `force: true` after a
     // 401/403 to refresh an already-expired access token and let the caller
-    // retry with the fresh one - the safety net the proactive (resume /
-    // audio-timer) triggers cannot guarantee covers every case, since the
+    // retry with the fresh one - the safety net the proactive (cold start /
+    // resume) triggers cannot guarantee covers every case, since the
     // access-token lifetime (5 minutes, for the test realm) can elapse
-    // while the app is in the foreground with no resume and no audio playing.
+    // while the app is in the foreground with no resume.
     //
     // The return value is set on [_currentUser] directly (not just via the
     // [userChanges()] listener, which fires asynchronously on the next

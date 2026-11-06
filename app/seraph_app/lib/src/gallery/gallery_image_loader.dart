@@ -126,7 +126,7 @@ class GalleryImageLoader {
 
   /// Reactive refresh-and-retry for the gallery's thumbnail and full-resolution
   /// image fetches - the safety net the proactive refresh triggers (cold
-  /// start, resume, 30s audio timer) cannot guarantee covers this path.
+  /// start, resume) cannot guarantee covers this path.
   ///
   /// The gateway answers an expired access token with HTTP 403 (the SAME
   /// status a genuinely read-only Space produces), and [LoginController]'s

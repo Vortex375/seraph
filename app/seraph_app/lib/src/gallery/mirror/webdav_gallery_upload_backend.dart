@@ -28,7 +28,7 @@ import 'package:seraph_app/src/gallery/mirror/gallery_upload_backend.dart';
 /// reads the bearer from [LoginController.currentUser] before every
 /// request (`getRequestHeaders` → `setHeaders`), so the retry automatically
 /// uses the just-refreshed access token - this is the reactive safety net
-/// the proactive (resume / audio-timer) refresh triggers alone cannot
+/// the proactive (cold start / resume) refresh triggers alone cannot
 /// guarantee covers the access token's short lifetime.
 class WebDavGalleryUploadBackend implements GalleryUploadBackend {
   WebDavGalleryUploadBackend(this.fileService);

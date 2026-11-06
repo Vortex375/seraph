@@ -180,8 +180,8 @@ const Set<int> tokenRecoveryStatuses = {401, 403};
 /// other mechanism guarantees a refresh happens BEFORE an access token's
 /// (short - 5 minutes, for the test realm) lifetime elapses. The headless
 /// sync isolate loads ONE token at session start and never refreshes
-/// mid-run; the main app only refreshes on cold start, resume, and a 30s
-/// audio timer (only while music plays). So both paths can - and do -
+/// mid-run; the main app only refreshes proactively on cold start and
+/// resume. So both paths can - and do -
 /// present an expired access token, the gateway answers 403, and
 /// [translateWebDavError] silently misclassifies a recoverable token
 /// failure as a permanent "read-only Space" failure. This helper is the

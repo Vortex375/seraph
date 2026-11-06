@@ -1,12 +1,10 @@
 
 import 'dart:async';
-import 'dart:developer' as developer;
 
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:seraph_app/src/file_browser/file_service.dart';
-import 'package:seraph_app/src/login/login_controller.dart';
 import 'package:seraph_app/src/media_player/audio_handler.dart';
 import 'package:path/path.dart' as p;
 
@@ -27,8 +25,6 @@ class AudioPlayerController extends GetxController {
     super.onInit();
 
     final MyAudioHandler audioHandler = Get.find();
-    final LoginController loginController = Get.find();
-    final FileService fileService = Get.find();
     subscriptions = [];
 
     subscriptions.add(audioHandler.queue.listen((queue) {
@@ -52,19 +48,13 @@ class AudioPlayerController extends GetxController {
       currentMediaItem(item);
     }));
 
-    subscriptions.add(audioHandler.customEvent.listen((event) {
-      if (event == 'refreshToken') {
-        developer.log("ping from audio_handler: refreshing token", name: 'seraph.media_player');
-        loginController.refreshTokenIfNeeded();
-      }
-    }));
-
-    subscriptions.add(loginController.currentUser.listen((user) async {
-      if (user != null) {
-        final headers = await fileService.getRequestHeaders();
-        audioHandler.customAction('setHeaders', headers);
-      }
-    }));
+    // the handler only publishes position on playback events; tick the
+    // (second-resolution) UI from audio_service's extrapolation, in Dart only
+    subscriptions.add(AudioService.createPositionStream(
+      steps: 1,
+      minPeriod: const Duration(seconds: 1),
+      maxPeriod: const Duration(seconds: 1),
+    ).listen((p) => position(p)));
   }
 
   @override
@@ -82,13 +72,11 @@ class AudioPlayerController extends GetxController {
 
   Future<void> setPlaylist(List<String> files, int position) async {
     final FileService fileService = Get.find();
-    final headers = await fileService.getRequestHeaders();
 
     final MyAudioHandler audioHandler = Get.find();
     await audioHandler.updateQueue(files.map((f) => MediaItem(
         id: fileService.getFileUrl(f), 
         title: p.basename(f),
-        extras: headers
       )
     ).toList());
 

@@ -18,8 +18,8 @@ DioException _dioErr(int status) =>
 /// refreshes, but neither the lock NOR any other mechanism guarantees a
 /// refresh happens BEFORE an access token's short (5-minute, for the test
 /// realm) lifetime elapses. The headless sync isolate loads ONE token at
-/// session start and never refreshes mid-run; the main app only refreshes on
-/// cold start, resume, and a 30s audio timer (only while music plays). So
+/// session start and never refreshes mid-run; the main app only refreshes
+/// proactively on cold start and resume. So
 /// both paths can present an expired access token, which the gateway answers
 /// with HTTP 403 - the SAME status a genuinely read-only Space produces - and
 /// [translateWebDavError] then misclassifies as a permanent "read-only"

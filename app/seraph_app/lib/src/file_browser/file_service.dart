@@ -57,25 +57,34 @@ class FileService {
   /// Reactive refresh-and-retry for the file browser's own WebDAV calls. The
   /// gateway answers an expired access token with HTTP 403 (the SAME status
   /// a read-only Space produces), and [LoginController]'s proactive refresh
-  /// triggers (cold start, resume, 30s audio timer) do not cover every
-  /// case - a user browsing files in the foreground for longer than the
-  /// access-token's lifetime (5 minutes, for the test realm) with no resume
-  /// and no audio playing hits an expired token. This catches that: on a
+  /// triggers (cold start, resume) do not cover every case - a user
+  /// browsing files in the foreground for longer than the access-token's
+  /// lifetime (5 minutes, for the test realm) with no resume hits an
+  /// expired token. This catches that: on a
   /// 401/403 [DioException], force-refreshes the token and retries [op]
   /// once. The retry reads the fresh bearer via [getRequestHeaders] (which
   /// reads [loginController.currentUser], set synchronously by the forced
   /// [refreshTokenIfNeeded]); a second failure of any kind propagates as-is.
-  Future<T> _withTokenRecovery<T>(Future<T> Function() op) async {
-    try {
-      return await op();
-    } on DioException catch (e) {
-      final status = e.response?.statusCode;
-      if (status == 401 || status == 403) {
-        await loginController.refreshTokenIfNeeded(force: true);
-        return await op();
-      }
-      rethrow;
-    }
+  Future<T> _withTokenRecovery<T>(Future<T> Function() op) =>
+      retryOnTokenFailure(op,
+          () => loginController.refreshTokenIfNeeded(force: true));
+
+  /// Streamed GET of [url] for the audio player's [AuthenticatedAudioSource]
+  /// (../media_player/authenticated_audio_source.dart), with the CURRENT
+  /// bearer read at call time - never one captured when the queue was built.
+  /// [range] is a full `Range` header value, or null for the whole file. The
+  /// caller owns refresh-and-retry (it wraps this in [retryOnTokenFailure]).
+  Future<Response<ResponseBody>> fetchFileStream(String url, String? range) async {
+    return dio.get<ResponseBody>(
+      url,
+      options: Options(
+        responseType: ResponseType.stream,
+        headers: {
+          ...await getRequestHeaders(),
+          if (range != null) 'Range': range,
+        },
+      ),
+    );
   }
 
   Future<List<File>> readDir(String path) async {
@@ -233,5 +242,23 @@ class FileService {
 
   bool isVideoFile(File file) {
     return file.mimeType?.startsWith("video/") ?? false;
+  }
+}
+
+/// Runs [op]; on a 401/403 [DioException] (the gateway's answer to an
+/// expired access token - see [FileService._withTokenRecovery]) calls
+/// [refreshToken] once and retries [op] once. A second failure of any kind,
+/// or any other first failure, propagates as-is.
+Future<T> retryOnTokenFailure<T>(
+    Future<T> Function() op, Future<void> Function() refreshToken) async {
+  try {
+    return await op();
+  } on DioException catch (e) {
+    final status = e.response?.statusCode;
+    if (status == 401 || status == 403) {
+      await refreshToken();
+      return await op();
+    }
+    rethrow;
   }
 }
