@@ -18,8 +18,36 @@
 #include <taglib/fileref.h>
 %}
 
+// std::string maps to a Go string by length, not strlen, so it can carry
+// binary data (see ByteVector::bytes below).
+%include <std_string.i>
+
 %include <taglib/taglib_export.h>
 %include <taglib/taglib.h>
+
+// SWIG maps a char* return through strlen, which truncates binary data
+// (e.g. a JPEG cover) at its first NUL byte - read ByteVectors via bytes().
+%extend TagLib::ByteVector {
+  std::string bytes() const {
+    return std::string($self->data(), $self->size());
+  }
+}
+
+// Embedded pictures (complex property "PICTURE"). List<VariantMap> is not
+// wrapped, so expose it by index; keys are "data", "mimeType",
+// "description" and "pictureType".
+%extend TagLib::FileRef {
+  unsigned int pictureCount() const {
+    return $self->complexProperties("PICTURE").size();
+  }
+  TagLib::Variant pictureProperty(unsigned int index, const TagLib::String &key) const {
+    const auto pictures = $self->complexProperties("PICTURE");
+    if (index >= pictures.size()) {
+      return TagLib::Variant();
+    }
+    return pictures[index].value(key);
+  }
+}
 
 // Forward declaration needed for friend function
 namespace TagLib { class Variant; }
