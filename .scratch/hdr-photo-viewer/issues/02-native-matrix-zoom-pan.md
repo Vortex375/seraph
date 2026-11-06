@@ -10,6 +10,12 @@ report — the same `isZoomedIn` shape the viewer has today — so zooming out
 immediately re-enables swiping. No double-tap zoom, no fling momentum: parity
 only.
 
+**Amended by 06** (gesture handling improvements, user-reported): the
+pinch-vs-swipe arbitration changed (a two-finger gesture is now claimed the
+moment the second finger lands, so it can never page) and double-tap zoom
+plus double-tap-drag zoom were added natively. The "no double-tap zoom" scope
+note above is superseded; see `06-gesture-handling-improvements.md`.
+
 **Blocked by:** 01 — Native photo view live in the gallery viewer (local
 photos).
 

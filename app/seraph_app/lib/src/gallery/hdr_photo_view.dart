@@ -20,6 +20,65 @@ bool hdrPhotoNativeForTest = false;
 /// keeps the existing Flutter rendering).
 bool get hdrPhotoNativeAvailable => hdrPhotoNativeForTest || isAndroidDevice;
 
+/// Claims the gesture arena for the platform view the moment a second touch
+/// pointer goes down over it.
+///
+/// Why this exists: the surrounding `PageView`'s horizontal drag recognizer
+/// accepts as soon as one pointer drifts [kTouchSlop] (18px) horizontally,
+/// while the team's [ScaleGestureRecognizer] accepts a pinch only once the
+/// two-finger span changes by [kScaleSlop] (18px) - and the span only starts
+/// growing when the second finger lands. A pinch whose first finger drifts
+/// even a little before the second lands therefore lets the pager win the
+/// arena first, and the photo pages instead of zooming. This recognizer
+/// accepts while the second pointer's arena is still open (the arena's
+/// eager-winner path), which resolves BOTH pointers' arenas in the team
+/// captain's favour: the platform view receives the complete two-finger
+/// stream, and the pager's drag recognizer never reaches its slop. A
+/// two-finger gesture over the photo can never page.
+///
+/// One-finger gestures never satisfy it (it only counts touch pointers), so
+/// swiping pages exactly as before, and a non-touch pointer (a mouse click
+/// while touching) does not turn a gesture into a pinch.
+class PinchClaimGestureRecognizer extends OneSequenceGestureRecognizer {
+  PinchClaimGestureRecognizer({super.debugOwner});
+
+  /// The touch pointers currently down over the platform view.
+  final Set<int> _touchPointers = <int>{};
+
+  @override
+  void handleEvent(PointerEvent event) {
+    if (event is PointerDownEvent) {
+      if (event.kind == PointerDeviceKind.touch) {
+        _touchPointers.add(event.pointer);
+        if (_touchPointers.length >= 2) {
+          // Two fingers down: this is a pinch (or a two-finger drag), and it
+          // belongs to the photo, not the pager. Accepting resolves every
+          // arena this recognizer is in - both pointers' - in the team
+          // captain's favour.
+          resolve(GestureDisposition.accepted);
+        }
+      }
+    } else if (event is PointerUpEvent || event is PointerCancelEvent) {
+      _touchPointers.remove(event.pointer);
+      stopTrackingIfPointerNoLongerDown(event);
+    }
+  }
+
+  @override
+  void didStopTrackingLastPointer(int pointer) {
+    _touchPointers.clear();
+  }
+
+  @override
+  void dispose() {
+    _touchPointers.clear();
+    super.dispose();
+  }
+
+  @override
+  String get debugDescription => 'pinch claim';
+}
+
 /// One full-screen photo rendered by a native Android `ImageView` hosted as
 /// a platform view (`.scratch/hdr-photo-viewer/spec.md`).
 ///
@@ -36,16 +95,22 @@ bool get hdrPhotoNativeAvailable => hdrPhotoNativeForTest || isAndroidDevice;
 /// Decisions"): photo [bytes] in as creation params; zoom-changed / tap /
 /// decode-error callbacks out; plus the window colour mode call
 /// (`setHdrColorMode` on the shared local-media channel) while any host is
-/// alive. The native view owns its transform - pinch zoom to 4x and clamped
-/// pan in the ImageView's view properties - and the gesture split comes for
-/// free from the arena: with an empty `gestureRecognizers` set, a gesture
-/// reaches the platform view only when no Flutter recognizer claims it
-/// (RenderAndroidView's contract). At 1x the surrounding `PageView`'s drag
-/// recognizer claims horizontal drags and pages; a pinch has no competitor,
-/// goes native, and zooming in - reported to the pager's physics gate -
-/// makes the native view the last one standing, so it pans. A zoomed-out
-/// report re-enables the pager's physics and paging works immediately. No
-/// Flutter-side transform is ever applied to the platform view.
+/// alive. The native view owns its transform - pinch zoom to 4x, clamped
+/// pan, and double-tap zoom, all in the ImageView's view properties - and
+/// the gesture split comes from the arena: the surface's recognizers form a
+/// gesture-arena TEAM with the platform view itself as captain, so when any
+/// of them claims a gesture the whole arena is handed to the platform view
+/// and the native view sees every pointer. The team holds two recognizers:
+/// [ScaleGestureRecognizer] claims pinches and, once zoomed in, the
+/// one-finger pans (the pager's physics go NeverScrollable on the zoom
+/// report, so the native view is then the last contender standing and pans
+/// live); [PinchClaimGestureRecognizer] claims any two-finger gesture the
+/// instant the second touch pointer lands, so a pinch can never lose the
+/// arena to the pager's horizontal drag and page instead of zooming. At 1x a
+/// one-finger swipe satisfies neither and still pages the `PageView`, and a
+/// zoomed-out report re-enables the pager's physics so paging works
+/// immediately. No Flutter-side transform is ever applied to the platform
+/// view.
 class HdrPhotoView extends StatefulWidget {
   const HdrPhotoView({
     super.key,
@@ -135,19 +200,33 @@ class _HdrPhotoViewState extends State<HdrPhotoView> {
       surfaceFactory: (context, controller) => AndroidViewSurface(
         controller: controller as AndroidViewController,
         hitTestBehavior: PlatformViewHitTestBehavior.opaque,
-        // A scale recognizer here is what makes pinch-to-zoom work: the
-        // surface's recognizers join a gesture-arena TEAM with the surface
-        // itself as captain, so when the scale recognizer claims a pinch
-        // the whole arena is handed to the platform view and the native
-        // view sees every pointer. Without it, an empty set only receives
-        // gestures nobody else claims - and the surrounding PageView's
-        // drag recognizer out-competes any pinch with horizontal spread.
-        // A one-finger swipe never satisfies the scale recognizer, so its
-        // rejection leaves the arena to the PageView: paging still works.
-        // Once zoomed in, the pager's physics go NeverScrollable and the
-        // native view is the last contender standing: it pans.
+        // The surface's recognizers join a gesture-arena TEAM with the
+        // surface itself as captain: when any of them claims a gesture, the
+        // whole arena is handed to the platform view and the native view
+        // sees every pointer.
+        //
+        // The scale recognizer claims pinches and, once zoomed in, the
+        // one-finger pans (focal-point slop) - the pager's physics go
+        // NeverScrollable on the zoom report, so the native view is then the
+        // last contender standing and pans live. At 1x a one-finger
+        // horizontal drag still beats it (the PageView's drag recognizer
+        // accepts at kTouchSlop, the scale recognizer only at span/focal
+        // slop), so paging works.
+        //
+        // The pinch-claim recognizer closes the remaining race: the pager's
+        // drag recognizer accepts after a single pointer drifts kTouchSlop
+        // horizontally, which a pinch produces as a side effect - often
+        // before the scale recognizer's own acceptance - so a pinch used to
+        // page instead of zooming. The claim recognizer accepts the moment a
+        // second touch pointer lands over the photo, before any drag
+        // threshold can fire, so a two-finger gesture always reaches the
+        // native view and never pages.
+        //
+        // Each factory is parameterized with its concrete recognizer type:
+        // the platform view asserts the factories' types are all distinct.
         gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{
-          Factory<OneSequenceGestureRecognizer>(ScaleGestureRecognizer.new),
+          Factory<ScaleGestureRecognizer>(ScaleGestureRecognizer.new),
+          Factory<PinchClaimGestureRecognizer>(PinchClaimGestureRecognizer.new),
         },
       ),
       onCreatePlatformView: (params) {

@@ -76,4 +76,9 @@ dependencies {
     // ContextCompat.checkSelfPermission / ActivityCompat.requestPermissions
     // (used by the permission half of the channel).
     implementation 'androidx.core:core-ktx:1.13.1'
+
+    // JVM unit tests for the pure parts of the HDR photo view (the
+    // double-tap-drag zoom mapping). The view itself is device-gated and has
+    // no Android test infrastructure; these tests need none.
+    testImplementation 'junit:junit:4.13.2'
 }

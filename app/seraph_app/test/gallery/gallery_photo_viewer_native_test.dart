@@ -50,6 +50,11 @@ void main() {
   /// The platform view id the (faked) engine assigned, once created.
   int? createdViewId;
 
+  /// `touch` calls the (faked) engine received for the platform view - the
+  /// pointer events Flutter dispatched to the native view after its gesture
+  /// team won the arena.
+  final touchCalls = <MethodCall>[];
+
   /// When non-null, the fake dio holds every full-resolution request until
   /// completed - the "slow download" of a cloud photo.
   Completer<void>? holdFetch;
@@ -76,6 +81,9 @@ void main() {
         case 'resize':
           final args = call.arguments as Map;
           return {'width': args['width'], 'height': args['height']};
+        case 'touch':
+          touchCalls.add(call);
+          return null;
         default:
           return null;
       }
@@ -101,6 +109,7 @@ void main() {
     PaintingBinding.instance.imageCache.clearLiveImages();
     colorModeCalls.clear();
     createdViewId = null;
+    touchCalls.clear();
     holdFetch = null;
     failFetch = false;
   });
@@ -331,6 +340,39 @@ void main() {
     );
     // The new page renders natively too.
     expect(find.byType(HdrPhotoView), findsOneWidget);
+  });
+
+  testWidgets(
+      'a two-finger pinch over the photo claims the gesture for the '
+      'platform view instead of paging', (tester) async {
+    await setUpGallery();
+    await openViewer(tester);
+    final pageController =
+        tester.widget<PageView>(find.byType(PageView)).controller!;
+
+    // A pinch whose first finger drifts a little before the second lands:
+    // past kTouchSlop (18px) of horizontal drift the pager's drag recognizer
+    // would win the arena and page - the pinch-claim recognizer must claim
+    // the gesture at the second finger's down, before any of that matters.
+    final center = tester.getCenter(find.byType(HdrPhotoView));
+    final first = await tester.startGesture(center, pointer: 1);
+    await first.moveBy(const Offset(-10, 0)); // drift before the second finger
+    final second =
+        await tester.startGesture(center + const Offset(40, 0), pointer: 2);
+    await first.moveBy(const Offset(-10, 0)); // 20px total: past drag slop
+    await second.moveBy(const Offset(10, 0)); // the spread of the pinch
+    await tester.pump();
+
+    expect(pageController.page, 0,
+        reason: 'a pinch must zoom, never page - the platform view claims '
+            'the gesture the moment the second finger lands');
+    expect(touchCalls, isNotEmpty,
+        reason: 'the two-finger gesture must reach the platform view');
+
+    await first.up();
+    await second.up();
+    await tester.pumpAndSettle();
+    expect(pageController.page, 0);
   });
 
   testWidgets(

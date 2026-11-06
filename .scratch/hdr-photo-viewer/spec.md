@@ -153,9 +153,23 @@ separate question, out of scope).
 
 ### Gestures
 
-- **The native view claims gestures only while zoomed.** At 1× it does not
-  intercept drags, so the Flutter `PageView` pages exactly as before; once
-  scaled past 1×, the native view consumes drag for panning.
+- **The native view claims gestures only while zoomed, and claims every
+  two-finger gesture.** At 1× a one-finger drag is not intercepted, so the
+  Flutter `PageView` pages exactly as before; once scaled past 1×, the native
+  view consumes drag for panning. A second touch pointer landing over the
+  photo is always claimed by the platform view (a Dart-side pinch-claim
+  recognizer accepts the gesture arena the moment the second finger lands),
+  so a pinch can never lose the arena to the pager's horizontal drag and page
+  instead of zooming — the user-reported finickiness this fixes.
+- **Double-tap zoom is native.** A clean double-tap animates between
+  fit-center and 2× about the tap point; a double-tap followed by a vertical
+  drag zooms continuously, measured from the tap point (the Google Maps
+  convention: dragging down zooms in, dragging up zooms out — the direction
+  is the same no matter where the double-tap happened), clamped to the 4×
+  maximum. Detection is the framework's `GestureDetector` double-tap
+  machinery (`OnDoubleTapListener`): a single tap is reported only after the
+  double-tap timeout elapses, so a double-tap never also toggles the chrome.
+  No fling momentum on the native pan — the current viewer has none.
 - **The native view reports state to Dart** over a channel: zoom
   entered/exited (the Dart side gates the `PageView`'s scroll physics on it —
   the same `isZoomedIn` shape as today), tap (toggles chrome), and decode
@@ -165,8 +179,6 @@ separate question, out of scope).
   change listener, and a second `setMethodCallHandler` on the same channel
   name would steal it. Per-view channel identity (keyed by the platform view
   id) keeps multiple views from cross-talking during a page swipe.
-- **No new gestures beyond parity.** No double-tap zoom, no fling momentum on
-  the native pan — the current viewer has neither.
 
 ### Paging and lifecycle
 
@@ -267,14 +279,22 @@ cannot carry HDR — the platform-view shape is the established way to do this.
 - **Prior art:** the gallery view widget tests and the Local Source's fake
   platform-channel tests are the pattern to follow; the existing
   token-recovery tests show how fetch failure/retry is simulated.
-- **The native Kotlin side is device-gated and deliberately not covered by
-  automation** — the repo has no on-device/emulator test infrastructure for
-  plugins, and the spike set the precedent. Its acceptance is a recorded
-  device checklist: gain-map photo renders with pop; `getHdrSdrRatio()` > 1
-  while the viewer is open and 1 after exit; 1× swipe pages; pinch zooms and
-  pans; zoomed drag does not page; tap toggles chrome; details sheet opens
-  over the photo; cloud-only photo renders; non-gain-map photo renders
-  normally; exiting the viewer restores SDR behaviour.
+- **The native Kotlin side is device-gated for its view wiring** — the repo
+  has no on-device/emulator test infrastructure for plugins, and the spike
+  set the precedent. Its acceptance is a recorded device checklist: gain-map
+  photo renders with pop; `getHdrSdrRatio()` > 1 while the viewer is open and
+  1 after exit; 1× swipe pages; pinch zooms and pans; a pinch whose first
+  finger drifts before the second lands still zooms (never pages); zoomed
+  drag does not page; tap toggles chrome; double-tap zooms in/out animated
+  about the tap point; double-tap followed by a vertical drag zooms
+  continuously from the tap point (down zooms in, up zooms out, same
+  direction wherever the double-tap happened) and does not toggle on
+  release; a double-tap-drag up at 1× is a no-op; details sheet opens over
+  the photo; cloud-only photo renders;
+  non-gain-map photo renders normally; exiting the viewer restores SDR
+  behaviour. The one piece of non-trivial custom Kotlin math — the
+  double-tap-drag zoom mapping — is a pure function, unit-tested on the JVM
+  (`src/test/kotlin`, plain JUnit, no Robolectric).
 
 ## Out of Scope
 
@@ -286,8 +306,9 @@ cannot carry HDR — the platform-view shape is the established way to do this.
 - **Grid and thumbnails.** Tiles stay SDR; only the full-screen viewer goes
   native.
 - **HCPP.** Not revisited here; the manifest decision is recorded above.
-- **Per-photo zoom memory, double-tap zoom, gesture changes** beyond parity
-  with the current viewer.
+- **Per-photo zoom memory and further gesture changes** beyond parity with
+  the current viewer. (Double-tap zoom and reliable pinch-vs-swipe arbitration
+  landed in issue 06 — they are in scope now, recorded under Gestures.)
 - **Videos and non-image media** in the viewer — unchanged.
 - **Screenshot fidelity.** Screenshots of HDR content come back tonemapped to
   SDR; a platform limitation, accepted (as in the spike).
