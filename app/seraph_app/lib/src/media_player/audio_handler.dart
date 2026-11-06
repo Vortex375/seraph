@@ -13,7 +13,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   AudioPlayer? _player;
   List<StreamSubscription> _subscriptions = [];
 
-  int _queuePosition = 0;
+  int _queuePosition = -1;
 
   final QueueModel<MediaItem> _queueModel = const QueueModel<MediaItem>();
 
@@ -256,7 +256,11 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       return;
     }
     _queuePosition = index;
-    mediaItem.add(queue.value[index]);
+    final current = queue.value[index];
+    final existing = mediaItem.value;
+    mediaItem.add(existing != null && existing.id == current.id
+        ? current.copyWith(duration: existing.duration)
+        : current);
     playbackState.add(playbackState.value.copyWith(queueIndex: index));
     final player = _player;
     if (player == null || player.audioSource == null) {

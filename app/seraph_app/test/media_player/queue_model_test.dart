@@ -47,6 +47,13 @@ void main() {
       expect(result.entries, ['x']);
       expect(result.currentIndex, 0);
     });
+
+    test('a stale current index on an empty queue is treated as nothing current',
+        () {
+      final result = model.playNext(state([], 0), ['x']);
+      expect(result.entries, ['x']);
+      expect(result.currentIndex, 0);
+    });
   });
 
   group('move', () {

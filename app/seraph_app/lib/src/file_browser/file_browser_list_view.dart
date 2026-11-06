@@ -59,44 +59,56 @@ class FileBrowserListView extends StatelessWidget{
                 Hero(tag: "preview:${item.path}", child: icon),
               ],
             ),
-            trailing: Obx(() => shareController.isShared(item.path!)
-            ? IconButton(
-              icon: const Icon(Icons.share), 
-              onPressed: () => shareController.editShare(shareController.getShareFor(item.path!)!)
-            )
-            : PopupMenuButton(
-                itemBuilder: (builder) => [
-                  PopupMenuItem(
-                    onTap: () => shareController.createShare(item),
-                    child: const Row(
-                      children: [
-                        Icon(Icons.share),
-                        Expanded(child: Text('Share')),
-                      ],
-                    )
+            trailing: Obx(() {
+              final shared = shareController.isShared(item.path!);
+              final canQueue =
+                  (item.isDir ?? false) || fileService.isAudioFile(item);
+              return Row(mainAxisSize: MainAxisSize.min, children: [
+                if (shared)
+                  IconButton(
+                    icon: const Icon(Icons.share),
+                    onPressed: () => shareController
+                        .editShare(shareController.getShareFor(item.path!)!),
                   ),
-                  if ((item.isDir ?? false) || fileService.isAudioFile(item)) ...[
-                    PopupMenuItem(
-                      onTap: () => Get.find<FileBrowserController>().enqueue([item], playNext: true),
-                      child: const Row(
-                        children: [
-                          Icon(Icons.playlist_play),
-                          Expanded(child: Text('Play next')),
-                        ],
-                      )
-                    ),
-                    PopupMenuItem(
-                      onTap: () => Get.find<FileBrowserController>().enqueue([item], playNext: false),
-                      child: const Row(
-                        children: [
-                          Icon(Icons.queue_music),
-                          Expanded(child: Text('Add to queue')),
-                        ],
-                      )
-                    ),
-                  ],
-                ]
-              )),
+                if (!shared || canQueue)
+                  PopupMenuButton(
+                    itemBuilder: (builder) => [
+                      if (!shared)
+                        PopupMenuItem(
+                          onTap: () => shareController.createShare(item),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.share),
+                              Expanded(child: Text('Share')),
+                            ],
+                          ),
+                        ),
+                      if (canQueue) ...[
+                        PopupMenuItem(
+                          onTap: () => Get.find<FileBrowserController>()
+                              .enqueue([item], playNext: true),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.playlist_play),
+                              Expanded(child: Text('Play next')),
+                            ],
+                          ),
+                        ),
+                        PopupMenuItem(
+                          onTap: () => Get.find<FileBrowserController>()
+                              .enqueue([item], playNext: false),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.queue_music),
+                              Expanded(child: Text('Add to queue')),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+              ]);
+            }),
             onTap: () {
               final FileBrowserController controller = Get.find();
               if (hasPreview) {

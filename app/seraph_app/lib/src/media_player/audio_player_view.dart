@@ -21,6 +21,10 @@ class _AudioPlayerViewState extends State<AudioPlayerView> {
   /// release.
   Duration? _dragPosition;
 
+  /// Stable across rebuilds - a fresh [GlobalKey] each build would dispose the
+  /// slider mid-drag.
+  final GlobalKey _dismissKey = GlobalKey();
+
   String format(Duration d) => d.toString().split('.').first.padLeft(8, "0");
 
   @override
@@ -28,7 +32,7 @@ class _AudioPlayerViewState extends State<AudioPlayerView> {
     final AudioPlayerController controller = Get.find();
 
     return Dismissible(
-      key: GlobalKey(),
+      key: _dismissKey,
       direction: DismissDirection.down,
       onDismissed: (dir) => Get.back(),
       child: Scaffold(

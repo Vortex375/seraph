@@ -12,7 +12,7 @@ class QueueView extends StatefulWidget {
 }
 
 class _QueueViewState extends State<QueueView> {
-  static const double _rowExtent = 64;
+  static const double _rowExtent = 56;
 
   late final ScrollController _scrollController;
 
@@ -37,6 +37,7 @@ class _QueueViewState extends State<QueueView> {
 
     return Obx(() {
       final items = controller.queueItems;
+      final current = controller.currentIndex.value;
       return Column(
         children: [
           Padding(
@@ -56,15 +57,22 @@ class _QueueViewState extends State<QueueView> {
                 : ReorderableListView.builder(
                     scrollController: _scrollController,
                     buildDefaultDragHandles: false,
+                    itemExtent: _rowExtent,
                     itemCount: items.length,
                     onReorderItem: (oldIndex, newIndex) {
                       controller.move(oldIndex, newIndex);
                     },
                     itemBuilder: (context, index) {
                       final item = items[index];
-                      final playing = index == controller.currentIndex.value;
+                      final playing = index == current;
+                      var occurrence = 0;
+                      for (var i = 0; i < index; i++) {
+                        if (items[i].id == item.id) {
+                          occurrence++;
+                        }
+                      }
                       return Dismissible(
-                        key: ValueKey('queue-$index-${item.id}'),
+                        key: ValueKey('queue-${item.id}-$occurrence'),
                         direction: DismissDirection.endToStart,
                         background: Container(
                           color: Theme.of(context).colorScheme.errorContainer,
@@ -72,7 +80,12 @@ class _QueueViewState extends State<QueueView> {
                           padding: const EdgeInsets.only(right: 24),
                           child: const Icon(Icons.delete),
                         ),
-                        onDismissed: (_) => controller.removeAt(index),
+                        onDismissed: (_) async {
+                          await controller.removeAt(index);
+                          if (mounted && controller.queueItems.isEmpty) {
+                            Navigator.of(this.context).pop();
+                          }
+                        },
                         child: ListTile(
                           selected: playing,
                           selectedTileColor:

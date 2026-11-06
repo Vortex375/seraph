@@ -17,9 +17,11 @@ class QueueModel<T> {
     if (added.isEmpty) {
       return state;
     }
+    final hasCurrent =
+        state.currentIndex >= 0 && state.currentIndex < state.entries.length;
     return QueueState(
       [...state.entries, ...added],
-      state.currentIndex < 0 ? 0 : state.currentIndex,
+      hasCurrent ? state.currentIndex : 0,
     );
   }
 
@@ -27,9 +29,11 @@ class QueueModel<T> {
     if (added.isEmpty) {
       return state;
     }
-    final at = state.currentIndex < 0 ? 0 : state.currentIndex + 1;
+    final hasCurrent =
+        state.currentIndex >= 0 && state.currentIndex < state.entries.length;
+    final at = hasCurrent ? state.currentIndex + 1 : 0;
     final entries = [...state.entries]..insertAll(at, added);
-    return QueueState(entries, state.currentIndex < 0 ? 0 : state.currentIndex);
+    return QueueState(entries, hasCurrent ? state.currentIndex : 0);
   }
 
   QueueState<T> move(QueueState<T> state, int from, int to) {
