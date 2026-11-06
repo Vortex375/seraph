@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:seraph_app/src/file_browser/file_service.dart';
 import 'package:seraph_app/src/media_player/audio_handler.dart';
+import 'package:seraph_app/src/media_player/audio_tags.dart';
 import 'package:path/path.dart' as p;
 
 class AudioPlayerController extends GetxController {
@@ -27,6 +28,8 @@ class AudioPlayerController extends GetxController {
     super.onInit();
 
     final MyAudioHandler audioHandler = Get.find();
+    final FileService fileService = Get.find();
+    audioHandler.artHeaders = fileService.getRequestHeadersSync;
     subscriptions = [];
 
     subscriptions.add(audioHandler.queue.listen((queue) {
@@ -50,6 +53,9 @@ class AudioPlayerController extends GetxController {
     subscriptions.add(audioHandler.mediaItem.listen((item) {
       currentMediaItem.firstRebuild = true; // required because of stupid operator== on MediaItem
       currentMediaItem(item);
+      if (item != null) {
+        ensureTags(item);
+      }
     }));
 
     // the handler only publishes position on playback events; tick the
@@ -69,20 +75,50 @@ class AudioPlayerController extends GetxController {
     }
   }
 
+  /// Tags already fetched (or found missing: null) per file URL, for the app
+  /// session. Fetched lazily - for the playing item and for queue rows as
+  /// they are built - never for the whole queue at once.
+  final Map<String, Future<AudioTags?>> _tags = {};
+
+  /// Applies [item]'s tags to the queue and the notification, fetching them
+  /// once per file. Safe to call from a build method: an item that already
+  /// carries its tags is left alone (applying updates the queue, which
+  /// rebuilds the rows that call this).
+  void ensureTags(MediaItem item) {
+    final path = mediaItemPath(item);
+    if (path == null || item.extras?[taggedExtra] == true) {
+      return;
+    }
+    final FileService fileService = Get.find();
+    final MyAudioHandler audioHandler = Get.find();
+    // a cached result is re-applied: the file may have been queued again
+    (_tags[item.id] ??= fileService.getAudioTags(path)).then((tags) {
+      if (tags != null) {
+        audioHandler.applyTags(item.id, tags);
+      }
+    });
+  }
+
+  /// A queue entry for file [path]: id is the streamed URL, the title the file
+  /// name until tags arrive.
+  MediaItem _mediaItemFor(String path) {
+    final FileService fileService = Get.find();
+    return MediaItem(
+      id: fileService.getFileUrl(path),
+      title: p.basename(path),
+      artUri: Uri.parse(fileService.getAlbumArtUrl(path)),
+      extras: {'path': path},
+    );
+  }
+
   Future<void> closePlayer() async {
     final MyAudioHandler audioHandler = Get.find();
     await audioHandler.stop();
   }
 
   Future<void> setPlaylist(List<String> files, int position) async {
-    final FileService fileService = Get.find();
-
     final MyAudioHandler audioHandler = Get.find();
-    await audioHandler.updateQueue(files.map((f) => MediaItem(
-        id: fileService.getFileUrl(f), 
-        title: p.basename(f),
-      )
-    ).toList());
+    await audioHandler.updateQueue(files.map(_mediaItemFor).toList());
 
     await audioHandler.skipToQueueItem(position);
   }
@@ -124,10 +160,7 @@ class AudioPlayerController extends GetxController {
     if (files.isEmpty) {
       return;
     }
-    final FileService fileService = Get.find();
-    final items = files
-        .map((f) => MediaItem(id: fileService.getFileUrl(f), title: p.basename(f)))
-        .toList();
+    final items = files.map(_mediaItemFor).toList();
     final MyAudioHandler audioHandler = Get.find();
 
     final nothingPlaying = !open.value || currentIndex.value < 0;

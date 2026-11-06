@@ -20,6 +20,7 @@ package thumbnailer
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -375,7 +376,15 @@ func (t *Thumbnailer) handleRequest(ctx context.Context, limiter util.Limiter, r
 	defer file.Close()
 
 	start := time.Now()
+	// the image to thumbnail: the file itself, or an audio file's album art
+	var source io.ReadSeeker = file
 	imageConfig, format, err := image.DecodeConfig(file)
+	if errors.Is(err, image.ErrFormat) {
+		if art, ok := t.albumArt(ctx, fs, req.ProviderID, req.Path); ok {
+			source = bytes.NewReader(art)
+			imageConfig, format, err = image.DecodeConfig(source)
+		}
+	}
 	if err != nil {
 		t.log.Error("error while reading image metadata", "provider", req.ProviderID, "path", req.Path, "error", err)
 		if errors.Is(err, image.ErrFormat) {
@@ -399,7 +408,7 @@ func (t *Thumbnailer) handleRequest(ctx context.Context, limiter util.Limiter, r
 		return
 	}
 
-	_, err = file.Seek(0, io.SeekStart)
+	_, err = source.Seek(0, io.SeekStart)
 	if err != nil {
 		t.log.Error("error while accessing source file", "provider", req.ProviderID, "path", req.Path, "error", err)
 		resp.Error = "error while accessing source file" + err.Error()
@@ -408,7 +417,7 @@ func (t *Thumbnailer) handleRequest(ctx context.Context, limiter util.Limiter, r
 
 	start = time.Now()
 	// use large buffer size for improved performance (default is only 4096 bytes)
-	reader := bufio.NewReaderSize(file, bufferSize)
+	reader := bufio.NewReaderSize(source, bufferSize)
 	sourceImage, err := imaging.Decode(reader, imaging.AutoOrientation(true))
 	if err != nil {
 		t.log.Error("error while decoding source image", "provider", req.ProviderID, "path", req.Path, "error", err)

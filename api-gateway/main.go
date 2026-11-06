@@ -23,6 +23,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.uber.org/fx"
 	"umbasa.net/seraph/api-gateway/agents"
+	"umbasa.net/seraph/api-gateway/audio"
 	"umbasa.net/seraph/api-gateway/auth"
 	"umbasa.net/seraph/api-gateway/download"
 	"umbasa.net/seraph/api-gateway/gallery"
@@ -52,6 +53,7 @@ func main() {
 		servicediscovery.Module,
 		gateway.Module,
 		agents.Module,
+		audio.Module,
 		auth.Module,
 		logging.FxLogger(),
 

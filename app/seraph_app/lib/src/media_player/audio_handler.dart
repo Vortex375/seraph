@@ -3,6 +3,7 @@ import 'dart:developer' as developer;
 
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:seraph_app/src/media_player/audio_tags.dart';
 import 'package:seraph_app/src/media_player/authenticated_audio_source.dart';
 import 'package:seraph_app/src/media_player/queue_model.dart';
 
@@ -32,12 +33,57 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       final existing = mediaItem.value;
       // Keep the duration the player already reported for the same entry;
       // queue entries themselves carry no duration.
-      mediaItem.add(existing != null && existing.id == current.id
+      _setMediaItem(existing != null && existing.id == current.id
           ? current.copyWith(duration: existing.duration)
           : current);
       playbackState.add(playbackState.value.copyWith(queueIndex: state.currentIndex));
     } else {
       mediaItem.add(null);
+    }
+  }
+
+  /// Headers for loading [MediaItem.artUri] (the current bearer); set by the
+  /// controller. Read on every publish: Android's notification fetches the
+  /// art itself, and a token captured when the queue was built has long
+  /// expired by the time a later track plays.
+  Map<String, String> Function()? artHeaders;
+
+  void _setMediaItem(MediaItem? item) {
+    final headers = artHeaders;
+    if (item == null || item.artUri == null || headers == null) {
+      mediaItem.add(item);
+      return;
+    }
+    // copyWith has no artHeaders (and drops them)
+    mediaItem.add(MediaItem(
+      id: item.id,
+      title: item.title,
+      album: item.album,
+      artist: item.artist,
+      genre: item.genre,
+      duration: item.duration,
+      artUri: item.artUri,
+      artHeaders: headers(),
+      playable: item.playable,
+      displayTitle: item.displayTitle,
+      displaySubtitle: item.displaySubtitle,
+      displayDescription: item.displayDescription,
+      rating: item.rating,
+      extras: item.extras,
+    ));
+  }
+
+  /// Applies [tags] to every queue entry of file URL [id] (a file may be
+  /// queued twice) and, when one of them is playing, to [mediaItem] - which
+  /// updates the notification and lock screen. Entries are replaced, never
+  /// mutated: [MediaItem]'s equality would hide the change.
+  void applyTags(String id, AudioTags tags) {
+    queue.add([
+      for (final entry in queue.value) entry.id == id ? tags.applyTo(entry) : entry
+    ]);
+    final current = mediaItem.value;
+    if (current != null && current.id == id) {
+      _setMediaItem(tags.applyTo(current));
     }
   }
 
@@ -55,11 +101,11 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       player.currentIndexStream.listen((index) {
         if (index != null && index < queue.value.length) {
           _queuePosition = index;
-          mediaItem.add(queue.value[index].copyWith(duration: player.duration));
+          _setMediaItem(queue.value[index].copyWith(duration: player.duration));
         }
       }),
       player.durationStream.listen((duration) {
-        mediaItem.add(mediaItem.value?.copyWith(duration: duration));
+        _setMediaItem(mediaItem.value?.copyWith(duration: duration));
       }),
       player.errorStream.listen((err) {
         developer.log("playback error: $err", name: 'seraph.media_player', error: err);
@@ -258,7 +304,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     _queuePosition = index;
     final current = queue.value[index];
     final existing = mediaItem.value;
-    mediaItem.add(existing != null && existing.id == current.id
+    _setMediaItem(existing != null && existing.id == current.id
         ? current.copyWith(duration: existing.duration)
         : current);
     playbackState.add(playbackState.value.copyWith(queueIndex: index));

@@ -2,6 +2,8 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:seraph_app/src/media_player/audio_player_controller.dart';
+import 'package:seraph_app/src/media_player/album_art.dart';
+import 'package:seraph_app/src/media_player/audio_tags.dart';
 import 'package:seraph_app/src/media_player/queue_view.dart';
 
 class AudioPlayerView extends StatefulWidget {
@@ -74,7 +76,40 @@ class _AudioPlayerViewState extends State<AudioPlayerView> {
               mainAxisAlignment: MainAxisAlignment.center,
               spacing: 4,
               children: [
-                Obx(() => Text(controller.currentMediaItem.value?.title ?? 'No Media')),
+                Obx(() {
+                  final item = controller.currentMediaItem.value;
+                  final textTheme = Theme.of(context).textTheme;
+                  final subtitle = [item?.artist, item?.album].whereType<String>().join(' · ');
+                  final details = item == null ? '' : trackDetails(item);
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Column(
+                      children: [
+                        LayoutBuilder(builder: (context, constraints) => AlbumArt(
+                          item: item,
+                          size: constraints.maxWidth.clamp(0, 320).toDouble(),
+                        )),
+                        const SizedBox(height: 24),
+                        Text(item?.title ?? 'No Media',
+                            style: textTheme.titleLarge,
+                            textAlign: TextAlign.center,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis),
+                        if (subtitle.isNotEmpty)
+                          Text(subtitle,
+                              style: textTheme.titleMedium,
+                              textAlign: TextAlign.center,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis),
+                        if (details.isNotEmpty)
+                          Text(details,
+                              style: textTheme.bodySmall,
+                              textAlign: TextAlign.center),
+                        const SizedBox(height: 8),
+                      ],
+                    ),
+                  );
+                }),
                 Obx(() {
                   final duration = controller.currentMediaItem.value?.duration;
                   final shown = _dragPosition ?? controller.position.value;

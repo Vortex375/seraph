@@ -22,20 +22,17 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"path"
 	"strconv"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/nats-io/nats.go"
 	"go.uber.org/fx"
 	"umbasa.net/seraph/api-gateway/auth"
 	"umbasa.net/seraph/api-gateway/gateway-handler"
+	"umbasa.net/seraph/api-gateway/resourcefile"
 	"umbasa.net/seraph/file-provider/fileprovider"
 	"umbasa.net/seraph/logging"
 	"umbasa.net/seraph/messaging"
-	"umbasa.net/seraph/shares/shares"
-	"umbasa.net/seraph/spaces/spaces"
 	"umbasa.net/seraph/thumbnailer/thumbnailer"
 	"umbasa.net/seraph/util"
 )
@@ -61,21 +58,21 @@ type Result struct {
 }
 
 type previewHandler struct {
-	logger      *logging.Logger
-	log         *slog.Logger
-	nc          *nats.Conn
-	auth        auth.Auth
-	authHandler func(*gin.Context) bool
+	logger   *logging.Logger
+	log      *slog.Logger
+	nc       *nats.Conn
+	auth     auth.Auth
+	resolver *resourcefile.Resolver
 }
 
 func New(p Params) Result {
 	return Result{
 		Handler: &previewHandler{
-			logger:      p.Log,
-			log:         p.Log.GetLogger("preview"),
-			nc:          p.Nc,
-			auth:        p.Auth,
-			authHandler: p.Auth.AuthMiddleware(false, ""),
+			logger:   p.Log,
+			log:      p.Log.GetLogger("preview"),
+			nc:       p.Nc,
+			auth:     p.Auth,
+			resolver: resourcefile.New(p.Log, p.Nc, p.Auth),
 		},
 	}
 }
@@ -83,82 +80,9 @@ func New(p Params) Result {
 func (h *previewHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup, publicApiGroup *gin.RouterGroup) {
 	app.GET("preview", func(ctx *gin.Context) {
 		var err error
-		parameterP := ctx.Query("p")
-		parameterS := ctx.Query("s")
-
-		if parameterP != "" && parameterS != "" {
-			h.log.Error("both 'p' and 's' specified - only one can be used")
-			ctx.AbortWithStatus(http.StatusBadRequest)
+		providerId, filePath, ok := h.resolver.Resolve(ctx)
+		if !ok {
 			return
-		}
-
-		if parameterP == "" && parameterS == "" {
-			h.log.Error("missing 'p' or 's' parameter")
-			ctx.AbortWithStatus(http.StatusBadRequest)
-			return
-		}
-
-		var providerId, filePath string
-		if parameterS != "" {
-			shareId, sharePath := getProviderAndPath(parameterS)
-			resolveReq := shares.ShareResolveRequest{
-				ShareId: shareId,
-				Path:    sharePath,
-			}
-			resolveRes := shares.ShareResolveResponse{}
-			err = messaging.Request(ctx.Request.Context(), h.nc, shares.ShareResolveTopic, messaging.Json(&resolveReq), messaging.Json(&resolveRes))
-			if err != nil {
-				h.log.Error("While retrieving preview: error while resolving share", "error", err)
-				ctx.AbortWithStatus(http.StatusInternalServerError)
-				return
-			}
-			if resolveRes.Error != "" {
-				h.log.Error("While retrieving preview: error while resolving share", "error", resolveRes.Error)
-				ctx.AbortWithStatus(http.StatusInternalServerError)
-				return
-			}
-			if resolveRes.ProviderId == "" {
-				ctx.AbortWithStatus(http.StatusNotFound)
-				return
-			}
-
-			providerId = resolveRes.ProviderId
-			filePath = resolveRes.Path
-		} else {
-			if !h.authHandler(ctx) {
-				return
-			}
-
-			spaceProviderId, spacePath := getProviderAndPath(parameterP)
-			if spaceProviderId == "" || spacePath == "" {
-				h.log.Error("path must include providerId and path resp. filename")
-				ctx.AbortWithStatus(http.StatusBadRequest)
-				return
-			}
-
-			resolveReq := spaces.SpaceResolveRequest{
-				UserId:          h.auth.GetUserId(ctx.Request.Context()),
-				SpaceProviderId: spaceProviderId,
-			}
-			resolveRes := spaces.SpaceResolveResponse{}
-			err = messaging.Request(ctx.Request.Context(), h.nc, spaces.SpaceResolveTopic, messaging.Json(&resolveReq), messaging.Json(&resolveRes))
-			if err != nil {
-				h.log.Error("While retrieving preview: error while resolving space", "error", err)
-				ctx.AbortWithStatus(http.StatusInternalServerError)
-				return
-			}
-			if resolveRes.Error != "" {
-				h.log.Error("While retrieving preview: error while resolving space", "error", resolveRes.Error)
-				ctx.AbortWithStatus(http.StatusInternalServerError)
-				return
-			}
-			if resolveRes.ProviderId == "" {
-				ctx.AbortWithStatus(http.StatusNotFound)
-				return
-			}
-
-			providerId = resolveRes.ProviderId
-			filePath = path.Join(resolveRes.Path, spacePath)
 		}
 
 		var width, height int
@@ -223,18 +147,4 @@ func (h *previewHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup, publi
 			"Cache-Control": "max-age=604800",
 		})
 	})
-}
-
-func getProviderAndPath(p string) (string, string) {
-	split := strings.SplitN(strings.TrimPrefix(p, "/"), "/", 2)
-
-	if len(split) == 1 {
-		return split[0], ""
-	}
-
-	if len(split) == 2 {
-		return split[0], split[1]
-	}
-
-	return "", ""
 }

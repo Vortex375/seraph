@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:seraph_app/src/media_player/album_art.dart';
 import 'package:seraph_app/src/media_player/audio_player_controller.dart';
 
 /// The playing queue: tap a row to jump, drag the handle to reorder, swipe a
@@ -12,7 +13,7 @@ class QueueView extends StatefulWidget {
 }
 
 class _QueueViewState extends State<QueueView> {
-  static const double _rowExtent = 56;
+  static const double _rowExtent = 72; // two-line ListTile (title, artist)
 
   late final ScrollController _scrollController;
 
@@ -64,6 +65,7 @@ class _QueueViewState extends State<QueueView> {
                     },
                     itemBuilder: (context, index) {
                       final item = items[index];
+                      controller.ensureTags(item);
                       final playing = index == current;
                       var occurrence = 0;
                       for (var i = 0; i < index; i++) {
@@ -90,8 +92,13 @@ class _QueueViewState extends State<QueueView> {
                           selected: playing,
                           selectedTileColor:
                               Theme.of(context).colorScheme.surfaceContainerHighest,
-                          leading: Icon(playing ? Icons.volume_up : Icons.music_note),
+                          leading: playing
+                              ? const SizedBox(width: 40, height: 40, child: Icon(Icons.volume_up))
+                              : AlbumArt(item: item, size: 40),
                           title: Text(item.title, overflow: TextOverflow.ellipsis),
+                          subtitle: item.artist == null
+                              ? null
+                              : Text(item.artist!, overflow: TextOverflow.ellipsis),
                           onTap: () => controller.skipTo(index),
                           trailing: ReorderableDragStartListener(
                             index: index,

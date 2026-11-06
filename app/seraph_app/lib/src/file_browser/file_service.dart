@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:seraph_app/src/gallery/gallery_tile.dart' show galleryThumbnailSize;
 import 'package:seraph_app/src/login/login_controller.dart';
+import 'package:seraph_app/src/media_player/audio_tags.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
 import 'package:seraph_app/src/share/share_controller.dart';
 import 'package:seraph_app/src/util.dart';
@@ -209,13 +210,36 @@ class FileService {
     return Image.network(getFileUrl(path), headers: headers, loadingBuilder: loadingBuilder);
   }
 
-  String getPreviewUrl(String path, int w, int h) {
-    if (shareController.shareMode.value) {
-      return "${settingsController.serverUrl}/preview?s=$path&w=$w&h=$h";
-    } else {
-      return "${settingsController.serverUrl}/preview?p=$path&w=$w&h=$h";
+  /// The audio file's tags from the gateway's `/audio/tags`, or null when it
+  /// has none to give (not found, not audio, any failure) - callers fall
+  /// back to the file name. 401/403 force-refresh-and-retry as elsewhere.
+  Future<AudioTags?> getAudioTags(String path) async {
+    final url = Uri.parse('${settingsController.serverUrl}/audio/tags').replace(
+      queryParameters: {shareController.shareMode.value ? 's' : 'p': path},
+    );
+    try {
+      final response = await _withTokenRecovery(() async => dio.getUri<Map<String, dynamic>>(
+            url,
+            options: Options(headers: await getRequestHeaders()),
+          ));
+      final data = response.data;
+      return data == null ? null : AudioTags.fromJson(data);
+    } catch (_) {
+      return null;
     }
   }
+
+  String getPreviewUrl(String path, int w, int h) {
+    // encoded: file names may contain '&', '#' or '+'
+    final param = shareController.shareMode.value ? 's' : 'p';
+    return "${settingsController.serverUrl}/preview?$param=${Uri.encodeQueryComponent(path)}&w=$w&h=$h";
+  }
+
+  /// An audio file's album art (a Thumbnail of the audio file). One size
+  /// everywhere - notification, now playing, mini player, queue - so the
+  /// thumbnailer's cache is hit.
+  String getAlbumArtUrl(String path) =>
+      getPreviewUrl(path, galleryThumbnailSize, galleryThumbnailSize);
 
   Image getPreviewImage(String path, int w, int h) {
     // [w]/[h] size the rendered widget only. The server is always asked for

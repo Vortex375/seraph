@@ -1,0 +1,11 @@
+# The audio metadata service (audio-metadata) has no options of its own: it
+# reads tags and pictures for whichever file provider a request names.
+
+# Configure tracing via OpenTelemetry
+tracing:
+  # OPTIONAL (default: false)
+  # set to true to enable tracing
+  enabled: false
+  # OPTIONAL (default: 'audio-metadata')
+  # set the service name that appears in the traces
+  serviceName: audio-metadata

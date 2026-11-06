@@ -1,6 +1,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:seraph_app/src/media_player/album_art.dart';
 import 'package:seraph_app/src/media_player/audio_player_controller.dart';
 import 'package:seraph_app/src/media_player/audio_player_view.dart';
 
@@ -42,7 +43,23 @@ class MediaBottomBar extends StatelessWidget {
                         onPressed: controller.playing.value ? controller.pause : controller.play
                       )),
                       const SizedBox(width: 8),
-                      Expanded(child: Obx(() => Text(controller.currentMediaItem.value?.title ?? ''))),
+                      Obx(() => AlbumArt(item: controller.currentMediaItem.value, size: 40)),
+                      const SizedBox(width: 8),
+                      Expanded(child: Obx(() {
+                        final item = controller.currentMediaItem.value;
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(item?.title ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
+                            if (item?.artist case final String artist)
+                              Text(artist,
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis),
+                          ],
+                        );
+                      })),
                       const SizedBox(width: 8),
                       IconButton(onPressed: controller.closePlayer, icon: const Icon(Icons.close))
                     ]),

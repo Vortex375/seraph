@@ -16,6 +16,18 @@ RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go b
 RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go build -C file-provider-smb -o /out/file-provider-smb .
 RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go build -C log-viewer -o /out/log-viewer .
 
+# Build audio-metadata, the only cgo service: TagLib from Debian, built on the
+# target platform so the binary matches the runtime image's glibc.
+FROM golang:1.26.5 AS audio-metadata-build
+RUN apt-get update && apt-get install -y --no-install-recommends libtag-dev zlib1g-dev && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+COPY . .
+RUN --mount=type=cache,target=/go/pkg/mod CGO_ENABLED=1 go build -C audio-metadata -o /out/audio-metadata .
+# TagLib and zlib for the final image, staged under the multiarch directory
+# (x86_64-linux-gnu, aarch64-linux-gnu) they are loaded from.
+RUN set -e; multiarch=$(gcc -print-multiarch); mkdir -p /out/lib/$multiarch; \
+    cp -a /usr/lib/$multiarch/libtag.so.2* /usr/lib/$multiarch/libz.so.1* /out/lib/$multiarch/
+
 # Build the flutter app for web
 FROM --platform=$BUILDPLATFORM ubuntu:24.04 AS flutter
 RUN apt-get update && apt-get install -y --no-install-recommends git curl unzip xz-utils ca-certificates && rm -rf /var/lib/apt/lists/*
@@ -49,10 +61,13 @@ RUN npm run build
 FROM --platform=$BUILDPLATFORM alpine AS mime
 RUN apk add mailcap
 
-# Assemble everything
-FROM gcr.io/distroless/base-debian12
+# Assemble everything. Debian 13 runtime (glibc 2.41) for the Debian 13
+# audio-metadata build, with cc for its libstdc++ and TagLib's libraries.
+FROM gcr.io/distroless/cc-debian13
 COPY --from=mime /etc/mime.types /etc/mime.types
 COPY --from=build /out/api-gateway /out/file-indexer /out/thumbnailer /out/shares /out/spaces /out/gallery /out/jobs /out/file-provider-dir /out/file-provider-smb /out/log-viewer /bin
+COPY --from=audio-metadata-build /out/audio-metadata /bin/audio-metadata
+COPY --from=audio-metadata-build /out/lib/ /usr/lib/
 COPY --from=flutter /app/build/web /srv/app
 COPY --from=webapp /src/dist/seraph-web-app/browser /srv/webapp
 CMD ["api-gateway"]

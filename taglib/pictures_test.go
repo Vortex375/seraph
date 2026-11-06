@@ -70,3 +70,33 @@ func TestNonAsciiTagsReadAsUtf8(t *testing.T) {
 		})
 	}
 }
+
+func TestReadTags(t *testing.T) {
+	file, err := webdav.Dir(".").OpenFile(context.Background(), "test.mp3", os.O_RDONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream := NewWebdavFileStream("test.mp3", file)
+	defer stream.Delete()
+	ref := NewFileRef(stream)
+	defer DeleteFileRef(ref)
+
+	tags := ReadTags(ref)
+	assert.Equal(t, "The Title", tags.Title)
+	assert.Equal(t, "The Artist", tags.Artist)
+	assert.Equal(t, "The Album", tags.Album)
+	assert.Equal(t, "Booty Bass", tags.Genre)
+	assert.Equal(t, 42, tags.TrackNumber)
+	assert.Greater(t, tags.DurationMs, int64(0))
+
+	utf := ReadTags(openFileRef(t, "picture.flac"))
+	assert.Equal(t, "Jóga", utf.Title)
+	assert.Equal(t, "Homogenic", utf.Album)
+}
+
+func TestLeadingNumber(t *testing.T) {
+	assert.Equal(t, 2, leadingNumber("2/3"))
+	assert.Equal(t, 1, leadingNumber("1"))
+	assert.Equal(t, 0, leadingNumber(""))
+	assert.Equal(t, 0, leadingNumber("A"))
+}

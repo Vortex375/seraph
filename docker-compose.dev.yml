@@ -157,6 +157,19 @@ services:
       SERAPH_THUMBNAILER_PARALLEL: 8
       SERAPH_LOG_LEVEL: debug
 
+  audio-metadata:
+    image: seraph
+    restart: always
+    command: 
+      - audio-metadata
+    depends_on:
+      - nats
+    networks:
+      - internal
+    environment:
+      SERAPH_NATS_URL: nats://nats:4222
+      SERAPH_LOG_LEVEL: debug
+
   shares:
     image: seraph
     restart: always

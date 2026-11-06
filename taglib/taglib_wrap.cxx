@@ -13,9 +13,9 @@ extern
 #ifdef __cplusplus
   "C"
 #endif
-  void cgo_panic__taglib_a694ea421b08a5bb(const char*);
+  void cgo_panic__taglib_f208bd8fe051fa0d(const char*);
 static void _swig_gopanic(const char *p) {
-  cgo_panic__taglib_a694ea421b08a5bb(p);
+  cgo_panic__taglib_f208bd8fe051fa0d(p);
 }
 
 
@@ -410,172 +410,172 @@ SwigDirector_IOStream::SwigDirector_IOStream(int swig_p)
       go_val(swig_p), swig_mem(0)
 { }
 
-extern "C" void Swiggo_DeleteDirector_IOStream_taglib_a694ea421b08a5bb(intgo);
+extern "C" void Swiggo_DeleteDirector_IOStream_taglib_f208bd8fe051fa0d(intgo);
 SwigDirector_IOStream::~SwigDirector_IOStream()
 {
-  Swiggo_DeleteDirector_IOStream_taglib_a694ea421b08a5bb(go_val);
+  Swiggo_DeleteDirector_IOStream_taglib_f208bd8fe051fa0d(go_val);
   delete swig_mem;
 }
 
-extern "C" _gostring_ Swig_DirectorIOStream_callback_name_taglib_a694ea421b08a5bb(int);
+extern "C" _gostring_ Swig_DirectorIOStream_callback_name_taglib_f208bd8fe051fa0d(int);
 TagLib::FileName SwigDirector_IOStream::name() const {
   TagLib::FileName c_result = SwigValueInit< TagLib::FileName >() ;
   _gostring_ result;
   
-  result = Swig_DirectorIOStream_callback_name_taglib_a694ea421b08a5bb(go_val);
+  result = Swig_DirectorIOStream_callback_name_taglib_f208bd8fe051fa0d(go_val);
   c_result = (TagLib::FileName)result.p; 
   return c_result;
 }
 
-extern "C" TagLib::ByteVector *Swig_DirectorIOStream_callback_readBlock_taglib_a694ea421b08a5bb(int, long long length);
+extern "C" TagLib::ByteVector *Swig_DirectorIOStream_callback_readBlock_taglib_f208bd8fe051fa0d(int, long long length);
 TagLib::ByteVector SwigDirector_IOStream::readBlock(size_t length) {
   TagLib::ByteVector *result;
   long long swig_length;
   
   TagLib::ByteVector c_result;
   swig_length = (size_t)length; 
-  result = Swig_DirectorIOStream_callback_readBlock_taglib_a694ea421b08a5bb(go_val, swig_length);
+  result = Swig_DirectorIOStream_callback_readBlock_taglib_f208bd8fe051fa0d(go_val, swig_length);
   c_result = *(TagLib::ByteVector *)result; 
   return c_result;
 }
 
-extern "C" void Swig_DirectorIOStream_callback_writeBlock_taglib_a694ea421b08a5bb(int, TagLib::ByteVector *data);
+extern "C" void Swig_DirectorIOStream_callback_writeBlock_taglib_f208bd8fe051fa0d(int, TagLib::ByteVector *data);
 void SwigDirector_IOStream::writeBlock(TagLib::ByteVector const &data) {
   TagLib::ByteVector *swig_data;
   
   swig_data = (TagLib::ByteVector *)&data; 
-  Swig_DirectorIOStream_callback_writeBlock_taglib_a694ea421b08a5bb(go_val, swig_data);
+  Swig_DirectorIOStream_callback_writeBlock_taglib_f208bd8fe051fa0d(go_val, swig_data);
 }
 
-extern "C" void Swig_DirectorIOStream_callback_insert__SWIG_0_taglib_a694ea421b08a5bb(int, TagLib::ByteVector *data, off_t *start, long long replace);
+extern "C" void Swig_DirectorIOStream_callback_insert__SWIG_0_taglib_f208bd8fe051fa0d(int, TagLib::ByteVector *data, long long start, long long replace);
 void SwigDirector_IOStream::insert(TagLib::ByteVector const &data,TagLib::offset_t start,size_t replace) {
   TagLib::ByteVector *swig_data;
-  off_t *swig_start;
+  long long swig_start;
   long long swig_replace;
   
   swig_data = (TagLib::ByteVector *)&data; 
-  swig_start = new TagLib::offset_t(SWIG_STD_MOVE(start)); 
+  swig_start = (TagLib::offset_t)start; 
   swig_replace = (size_t)replace; 
-  Swig_DirectorIOStream_callback_insert__SWIG_0_taglib_a694ea421b08a5bb(go_val, swig_data, swig_start, swig_replace);
+  Swig_DirectorIOStream_callback_insert__SWIG_0_taglib_f208bd8fe051fa0d(go_val, swig_data, swig_start, swig_replace);
 }
 
-extern "C" void Swig_DirectorIOStream_callback_insert__SWIG_1_taglib_a694ea421b08a5bb(int, TagLib::ByteVector *data, off_t *start);
+extern "C" void Swig_DirectorIOStream_callback_insert__SWIG_1_taglib_f208bd8fe051fa0d(int, TagLib::ByteVector *data, long long start);
 void SwigDirector_IOStream::insert(TagLib::ByteVector const &data,TagLib::offset_t start) {
   TagLib::ByteVector *swig_data;
-  off_t *swig_start;
+  long long swig_start;
   
   swig_data = (TagLib::ByteVector *)&data; 
-  swig_start = new TagLib::offset_t(SWIG_STD_MOVE(start)); 
-  Swig_DirectorIOStream_callback_insert__SWIG_1_taglib_a694ea421b08a5bb(go_val, swig_data, swig_start);
+  swig_start = (TagLib::offset_t)start; 
+  Swig_DirectorIOStream_callback_insert__SWIG_1_taglib_f208bd8fe051fa0d(go_val, swig_data, swig_start);
 }
 
-extern "C" void Swig_DirectorIOStream_callback_insert__SWIG_2_taglib_a694ea421b08a5bb(int, TagLib::ByteVector *data);
+extern "C" void Swig_DirectorIOStream_callback_insert__SWIG_2_taglib_f208bd8fe051fa0d(int, TagLib::ByteVector *data);
 void SwigDirector_IOStream::insert(TagLib::ByteVector const &data) {
   TagLib::ByteVector *swig_data;
   
   swig_data = (TagLib::ByteVector *)&data; 
-  Swig_DirectorIOStream_callback_insert__SWIG_2_taglib_a694ea421b08a5bb(go_val, swig_data);
+  Swig_DirectorIOStream_callback_insert__SWIG_2_taglib_f208bd8fe051fa0d(go_val, swig_data);
 }
 
-extern "C" void Swig_DirectorIOStream_callback_removeBlock__SWIG_0_taglib_a694ea421b08a5bb(int, off_t *start, long long length);
+extern "C" void Swig_DirectorIOStream_callback_removeBlock__SWIG_0_taglib_f208bd8fe051fa0d(int, long long start, long long length);
 void SwigDirector_IOStream::removeBlock(TagLib::offset_t start,size_t length) {
-  off_t *swig_start;
+  long long swig_start;
   long long swig_length;
   
-  swig_start = new TagLib::offset_t(SWIG_STD_MOVE(start)); 
+  swig_start = (TagLib::offset_t)start; 
   swig_length = (size_t)length; 
-  Swig_DirectorIOStream_callback_removeBlock__SWIG_0_taglib_a694ea421b08a5bb(go_val, swig_start, swig_length);
+  Swig_DirectorIOStream_callback_removeBlock__SWIG_0_taglib_f208bd8fe051fa0d(go_val, swig_start, swig_length);
 }
 
-extern "C" void Swig_DirectorIOStream_callback_removeBlock__SWIG_1_taglib_a694ea421b08a5bb(int, off_t *start);
+extern "C" void Swig_DirectorIOStream_callback_removeBlock__SWIG_1_taglib_f208bd8fe051fa0d(int, long long start);
 void SwigDirector_IOStream::removeBlock(TagLib::offset_t start) {
-  off_t *swig_start;
+  long long swig_start;
   
-  swig_start = new TagLib::offset_t(SWIG_STD_MOVE(start)); 
-  Swig_DirectorIOStream_callback_removeBlock__SWIG_1_taglib_a694ea421b08a5bb(go_val, swig_start);
+  swig_start = (TagLib::offset_t)start; 
+  Swig_DirectorIOStream_callback_removeBlock__SWIG_1_taglib_f208bd8fe051fa0d(go_val, swig_start);
 }
 
-extern "C" void Swig_DirectorIOStream_callback_removeBlock__SWIG_2_taglib_a694ea421b08a5bb(int);
+extern "C" void Swig_DirectorIOStream_callback_removeBlock__SWIG_2_taglib_f208bd8fe051fa0d(int);
 void SwigDirector_IOStream::removeBlock() {
-  Swig_DirectorIOStream_callback_removeBlock__SWIG_2_taglib_a694ea421b08a5bb(go_val);
+  Swig_DirectorIOStream_callback_removeBlock__SWIG_2_taglib_f208bd8fe051fa0d(go_val);
 }
 
-extern "C" bool Swig_DirectorIOStream_callback_readOnly_taglib_a694ea421b08a5bb(int);
+extern "C" bool Swig_DirectorIOStream_callback_readOnly_taglib_f208bd8fe051fa0d(int);
 bool SwigDirector_IOStream::readOnly() const {
   bool c_result = SwigValueInit< bool >() ;
   bool result;
   
-  result = Swig_DirectorIOStream_callback_readOnly_taglib_a694ea421b08a5bb(go_val);
+  result = Swig_DirectorIOStream_callback_readOnly_taglib_f208bd8fe051fa0d(go_val);
   c_result = (bool)result; 
   return c_result;
 }
 
-extern "C" bool Swig_DirectorIOStream_callback_isOpen_taglib_a694ea421b08a5bb(int);
+extern "C" bool Swig_DirectorIOStream_callback_isOpen_taglib_f208bd8fe051fa0d(int);
 bool SwigDirector_IOStream::isOpen() const {
   bool c_result = SwigValueInit< bool >() ;
   bool result;
   
-  result = Swig_DirectorIOStream_callback_isOpen_taglib_a694ea421b08a5bb(go_val);
+  result = Swig_DirectorIOStream_callback_isOpen_taglib_f208bd8fe051fa0d(go_val);
   c_result = (bool)result; 
   return c_result;
 }
 
-extern "C" void Swig_DirectorIOStream_callback_seek__SWIG_0_taglib_a694ea421b08a5bb(int, off_t *offset, intgo p);
+extern "C" void Swig_DirectorIOStream_callback_seek__SWIG_0_taglib_f208bd8fe051fa0d(int, long long offset, intgo p);
 void SwigDirector_IOStream::seek(TagLib::offset_t offset,TagLib::IOStream::Position p) {
-  off_t *swig_offset;
+  long long swig_offset;
   intgo swig_p;
   
-  swig_offset = new TagLib::offset_t(SWIG_STD_MOVE(offset)); 
+  swig_offset = (TagLib::offset_t)offset; 
   swig_p = (intgo)p; 
-  Swig_DirectorIOStream_callback_seek__SWIG_0_taglib_a694ea421b08a5bb(go_val, swig_offset, swig_p);
+  Swig_DirectorIOStream_callback_seek__SWIG_0_taglib_f208bd8fe051fa0d(go_val, swig_offset, swig_p);
 }
 
-extern "C" void Swig_DirectorIOStream_callback_seek__SWIG_1_taglib_a694ea421b08a5bb(int, off_t *offset);
+extern "C" void Swig_DirectorIOStream_callback_seek__SWIG_1_taglib_f208bd8fe051fa0d(int, long long offset);
 void SwigDirector_IOStream::seek(TagLib::offset_t offset) {
-  off_t *swig_offset;
+  long long swig_offset;
   
-  swig_offset = new TagLib::offset_t(SWIG_STD_MOVE(offset)); 
-  Swig_DirectorIOStream_callback_seek__SWIG_1_taglib_a694ea421b08a5bb(go_val, swig_offset);
+  swig_offset = (TagLib::offset_t)offset; 
+  Swig_DirectorIOStream_callback_seek__SWIG_1_taglib_f208bd8fe051fa0d(go_val, swig_offset);
 }
 
-extern "C" void Swig_DirectorIOStream_callback_clear_taglib_a694ea421b08a5bb(int);
+extern "C" void Swig_DirectorIOStream_callback_clear_taglib_f208bd8fe051fa0d(int);
 void SwigDirector_IOStream::clear() {
-  Swig_DirectorIOStream_callback_clear_taglib_a694ea421b08a5bb(go_val);
+  Swig_DirectorIOStream_callback_clear_taglib_f208bd8fe051fa0d(go_val);
 }
 
-extern "C" off_t *Swig_DirectorIOStream_callback_tell_taglib_a694ea421b08a5bb(int);
+extern "C" long long Swig_DirectorIOStream_callback_tell_taglib_f208bd8fe051fa0d(int);
 TagLib::offset_t SwigDirector_IOStream::tell() const {
   TagLib::offset_t c_result = SwigValueInit< TagLib::offset_t >() ;
-  off_t *result;
+  long long result;
   
-  result = Swig_DirectorIOStream_callback_tell_taglib_a694ea421b08a5bb(go_val);
-  c_result = *(TagLib::offset_t *)result; 
+  result = Swig_DirectorIOStream_callback_tell_taglib_f208bd8fe051fa0d(go_val);
+  c_result = (TagLib::offset_t)result; 
   return c_result;
 }
 
-extern "C" off_t *Swig_DirectorIOStream_callback_length_taglib_a694ea421b08a5bb(int);
+extern "C" long long Swig_DirectorIOStream_callback_length_taglib_f208bd8fe051fa0d(int);
 TagLib::offset_t SwigDirector_IOStream::length() {
   TagLib::offset_t c_result = SwigValueInit< TagLib::offset_t >() ;
-  off_t *result;
+  long long result;
   
-  result = Swig_DirectorIOStream_callback_length_taglib_a694ea421b08a5bb(go_val);
-  c_result = *(TagLib::offset_t *)result; 
+  result = Swig_DirectorIOStream_callback_length_taglib_f208bd8fe051fa0d(go_val);
+  c_result = (TagLib::offset_t)result; 
   return c_result;
 }
 
-extern "C" void Swig_DirectorIOStream_callback_truncate_taglib_a694ea421b08a5bb(int, off_t *length);
+extern "C" void Swig_DirectorIOStream_callback_truncate_taglib_f208bd8fe051fa0d(int, long long length);
 void SwigDirector_IOStream::truncate(TagLib::offset_t length) {
-  off_t *swig_length;
+  long long swig_length;
   
-  swig_length = new TagLib::offset_t(SWIG_STD_MOVE(length)); 
-  Swig_DirectorIOStream_callback_truncate_taglib_a694ea421b08a5bb(go_val, swig_length);
+  swig_length = (TagLib::offset_t)length; 
+  Swig_DirectorIOStream_callback_truncate_taglib_f208bd8fe051fa0d(go_val, swig_length);
 }
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-void _wrap_Swig_free_taglib_a694ea421b08a5bb(void *_swig_go_0) {
+void _wrap_Swig_free_taglib_f208bd8fe051fa0d(void *_swig_go_0) {
   void *arg1 = (void *) 0 ;
   
   arg1 = *(void **)&_swig_go_0; 
@@ -585,7 +585,7 @@ void _wrap_Swig_free_taglib_a694ea421b08a5bb(void *_swig_go_0) {
 }
 
 
-void *_wrap_Swig_malloc_taglib_a694ea421b08a5bb(intgo _swig_go_0) {
+void *_wrap_Swig_malloc_taglib_f208bd8fe051fa0d(intgo _swig_go_0) {
   int arg1 ;
   void *result = 0 ;
   void *_swig_go_result;
@@ -598,7 +598,7 @@ void *_wrap_Swig_malloc_taglib_a694ea421b08a5bb(intgo _swig_go_0) {
 }
 
 
-intgo _wrap_Void_Variant_taglib_a694ea421b08a5bb() {
+intgo _wrap_Void_Variant_taglib_f208bd8fe051fa0d() {
   TagLib::Variant::Type result;
   intgo _swig_go_result;
   
@@ -610,7 +610,7 @@ intgo _wrap_Void_Variant_taglib_a694ea421b08a5bb() {
 }
 
 
-intgo _wrap_Bool_Variant_taglib_a694ea421b08a5bb() {
+intgo _wrap_Bool_Variant_taglib_f208bd8fe051fa0d() {
   TagLib::Variant::Type result;
   intgo _swig_go_result;
   
@@ -622,7 +622,7 @@ intgo _wrap_Bool_Variant_taglib_a694ea421b08a5bb() {
 }
 
 
-intgo _wrap_Int_Variant_taglib_a694ea421b08a5bb() {
+intgo _wrap_Int_Variant_taglib_f208bd8fe051fa0d() {
   TagLib::Variant::Type result;
   intgo _swig_go_result;
   
@@ -634,7 +634,7 @@ intgo _wrap_Int_Variant_taglib_a694ea421b08a5bb() {
 }
 
 
-intgo _wrap_UInt_Variant_taglib_a694ea421b08a5bb() {
+intgo _wrap_UInt_Variant_taglib_f208bd8fe051fa0d() {
   TagLib::Variant::Type result;
   intgo _swig_go_result;
   
@@ -646,7 +646,7 @@ intgo _wrap_UInt_Variant_taglib_a694ea421b08a5bb() {
 }
 
 
-intgo _wrap_LongLong_Variant_taglib_a694ea421b08a5bb() {
+intgo _wrap_LongLong_Variant_taglib_f208bd8fe051fa0d() {
   TagLib::Variant::Type result;
   intgo _swig_go_result;
   
@@ -658,7 +658,7 @@ intgo _wrap_LongLong_Variant_taglib_a694ea421b08a5bb() {
 }
 
 
-intgo _wrap_ULongLong_Variant_taglib_a694ea421b08a5bb() {
+intgo _wrap_ULongLong_Variant_taglib_f208bd8fe051fa0d() {
   TagLib::Variant::Type result;
   intgo _swig_go_result;
   
@@ -670,7 +670,7 @@ intgo _wrap_ULongLong_Variant_taglib_a694ea421b08a5bb() {
 }
 
 
-intgo _wrap_Double_Variant_taglib_a694ea421b08a5bb() {
+intgo _wrap_Double_Variant_taglib_f208bd8fe051fa0d() {
   TagLib::Variant::Type result;
   intgo _swig_go_result;
   
@@ -682,7 +682,7 @@ intgo _wrap_Double_Variant_taglib_a694ea421b08a5bb() {
 }
 
 
-intgo _wrap_String_Variant_taglib_a694ea421b08a5bb() {
+intgo _wrap_String_Variant_taglib_f208bd8fe051fa0d() {
   TagLib::Variant::Type result;
   intgo _swig_go_result;
   
@@ -694,7 +694,7 @@ intgo _wrap_String_Variant_taglib_a694ea421b08a5bb() {
 }
 
 
-intgo _wrap_StringList_Variant_taglib_a694ea421b08a5bb() {
+intgo _wrap_StringList_Variant_taglib_f208bd8fe051fa0d() {
   TagLib::Variant::Type result;
   intgo _swig_go_result;
   
@@ -706,7 +706,7 @@ intgo _wrap_StringList_Variant_taglib_a694ea421b08a5bb() {
 }
 
 
-intgo _wrap_ByteVector_Variant_taglib_a694ea421b08a5bb() {
+intgo _wrap_ByteVector_Variant_taglib_f208bd8fe051fa0d() {
   TagLib::Variant::Type result;
   intgo _swig_go_result;
   
@@ -718,7 +718,7 @@ intgo _wrap_ByteVector_Variant_taglib_a694ea421b08a5bb() {
 }
 
 
-intgo _wrap_ByteVectorList_Variant_taglib_a694ea421b08a5bb() {
+intgo _wrap_ByteVectorList_Variant_taglib_f208bd8fe051fa0d() {
   TagLib::Variant::Type result;
   intgo _swig_go_result;
   
@@ -730,7 +730,7 @@ intgo _wrap_ByteVectorList_Variant_taglib_a694ea421b08a5bb() {
 }
 
 
-intgo _wrap_VariantList_Variant_taglib_a694ea421b08a5bb() {
+intgo _wrap_VariantList_Variant_taglib_f208bd8fe051fa0d() {
   TagLib::Variant::Type result;
   intgo _swig_go_result;
   
@@ -742,7 +742,7 @@ intgo _wrap_VariantList_Variant_taglib_a694ea421b08a5bb() {
 }
 
 
-intgo _wrap_VariantMap_Variant_taglib_a694ea421b08a5bb() {
+intgo _wrap_VariantMap_Variant_taglib_f208bd8fe051fa0d() {
   TagLib::Variant::Type result;
   intgo _swig_go_result;
   
@@ -754,7 +754,7 @@ intgo _wrap_VariantMap_Variant_taglib_a694ea421b08a5bb() {
 }
 
 
-TagLib::Variant *_wrap_new_Variant__SWIG_0_taglib_a694ea421b08a5bb() {
+TagLib::Variant *_wrap_new_Variant__SWIG_0_taglib_f208bd8fe051fa0d() {
   TagLib::Variant *result = 0 ;
   TagLib::Variant *_swig_go_result;
   
@@ -765,7 +765,7 @@ TagLib::Variant *_wrap_new_Variant__SWIG_0_taglib_a694ea421b08a5bb() {
 }
 
 
-TagLib::Variant *_wrap_new_Variant__SWIG_1_taglib_a694ea421b08a5bb(intgo _swig_go_0) {
+TagLib::Variant *_wrap_new_Variant__SWIG_1_taglib_f208bd8fe051fa0d(intgo _swig_go_0) {
   int arg1 ;
   TagLib::Variant *result = 0 ;
   TagLib::Variant *_swig_go_result;
@@ -778,7 +778,7 @@ TagLib::Variant *_wrap_new_Variant__SWIG_1_taglib_a694ea421b08a5bb(intgo _swig_g
 }
 
 
-TagLib::Variant *_wrap_new_Variant__SWIG_2_taglib_a694ea421b08a5bb(intgo _swig_go_0) {
+TagLib::Variant *_wrap_new_Variant__SWIG_2_taglib_f208bd8fe051fa0d(intgo _swig_go_0) {
   unsigned int arg1 ;
   TagLib::Variant *result = 0 ;
   TagLib::Variant *_swig_go_result;
@@ -791,7 +791,7 @@ TagLib::Variant *_wrap_new_Variant__SWIG_2_taglib_a694ea421b08a5bb(intgo _swig_g
 }
 
 
-TagLib::Variant *_wrap_new_Variant__SWIG_3_taglib_a694ea421b08a5bb(long long _swig_go_0) {
+TagLib::Variant *_wrap_new_Variant__SWIG_3_taglib_f208bd8fe051fa0d(long long _swig_go_0) {
   long long arg1 ;
   TagLib::Variant *result = 0 ;
   TagLib::Variant *_swig_go_result;
@@ -804,7 +804,7 @@ TagLib::Variant *_wrap_new_Variant__SWIG_3_taglib_a694ea421b08a5bb(long long _sw
 }
 
 
-TagLib::Variant *_wrap_new_Variant__SWIG_4_taglib_a694ea421b08a5bb(long long _swig_go_0) {
+TagLib::Variant *_wrap_new_Variant__SWIG_4_taglib_f208bd8fe051fa0d(long long _swig_go_0) {
   unsigned long long arg1 ;
   TagLib::Variant *result = 0 ;
   TagLib::Variant *_swig_go_result;
@@ -817,7 +817,7 @@ TagLib::Variant *_wrap_new_Variant__SWIG_4_taglib_a694ea421b08a5bb(long long _sw
 }
 
 
-TagLib::Variant *_wrap_new_Variant__SWIG_5_taglib_a694ea421b08a5bb(bool _swig_go_0) {
+TagLib::Variant *_wrap_new_Variant__SWIG_5_taglib_f208bd8fe051fa0d(bool _swig_go_0) {
   bool arg1 ;
   TagLib::Variant *result = 0 ;
   TagLib::Variant *_swig_go_result;
@@ -830,7 +830,7 @@ TagLib::Variant *_wrap_new_Variant__SWIG_5_taglib_a694ea421b08a5bb(bool _swig_go
 }
 
 
-TagLib::Variant *_wrap_new_Variant__SWIG_6_taglib_a694ea421b08a5bb(double _swig_go_0) {
+TagLib::Variant *_wrap_new_Variant__SWIG_6_taglib_f208bd8fe051fa0d(double _swig_go_0) {
   double arg1 ;
   TagLib::Variant *result = 0 ;
   TagLib::Variant *_swig_go_result;
@@ -843,7 +843,7 @@ TagLib::Variant *_wrap_new_Variant__SWIG_6_taglib_a694ea421b08a5bb(double _swig_
 }
 
 
-TagLib::Variant *_wrap_new_Variant__SWIG_7_taglib_a694ea421b08a5bb(_gostring_ _swig_go_0) {
+TagLib::Variant *_wrap_new_Variant__SWIG_7_taglib_f208bd8fe051fa0d(_gostring_ _swig_go_0) {
   char *arg1 = (char *) 0 ;
   TagLib::Variant *result = 0 ;
   TagLib::Variant *_swig_go_result;
@@ -861,7 +861,7 @@ TagLib::Variant *_wrap_new_Variant__SWIG_7_taglib_a694ea421b08a5bb(_gostring_ _s
 }
 
 
-TagLib::Variant *_wrap_new_Variant__SWIG_8_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0) {
+TagLib::Variant *_wrap_new_Variant__SWIG_8_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0) {
   TagLib::String *arg1 = 0 ;
   TagLib::Variant *result = 0 ;
   TagLib::Variant *_swig_go_result;
@@ -874,7 +874,7 @@ TagLib::Variant *_wrap_new_Variant__SWIG_8_taglib_a694ea421b08a5bb(TagLib::Strin
 }
 
 
-TagLib::Variant *_wrap_new_Variant__SWIG_9_taglib_a694ea421b08a5bb(TagLib::StringList *_swig_go_0) {
+TagLib::Variant *_wrap_new_Variant__SWIG_9_taglib_f208bd8fe051fa0d(TagLib::StringList *_swig_go_0) {
   TagLib::StringList *arg1 = 0 ;
   TagLib::Variant *result = 0 ;
   TagLib::Variant *_swig_go_result;
@@ -887,7 +887,7 @@ TagLib::Variant *_wrap_new_Variant__SWIG_9_taglib_a694ea421b08a5bb(TagLib::Strin
 }
 
 
-TagLib::Variant *_wrap_new_Variant__SWIG_10_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0) {
+TagLib::Variant *_wrap_new_Variant__SWIG_10_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0) {
   TagLib::ByteVector *arg1 = 0 ;
   TagLib::Variant *result = 0 ;
   TagLib::Variant *_swig_go_result;
@@ -900,7 +900,7 @@ TagLib::Variant *_wrap_new_Variant__SWIG_10_taglib_a694ea421b08a5bb(TagLib::Byte
 }
 
 
-TagLib::Variant *_wrap_new_Variant__SWIG_11_taglib_a694ea421b08a5bb(TagLib::ByteVectorList *_swig_go_0) {
+TagLib::Variant *_wrap_new_Variant__SWIG_11_taglib_f208bd8fe051fa0d(TagLib::ByteVectorList *_swig_go_0) {
   TagLib::ByteVectorList *arg1 = 0 ;
   TagLib::Variant *result = 0 ;
   TagLib::Variant *_swig_go_result;
@@ -913,7 +913,7 @@ TagLib::Variant *_wrap_new_Variant__SWIG_11_taglib_a694ea421b08a5bb(TagLib::Byte
 }
 
 
-TagLib::Variant *_wrap_new_Variant__SWIG_12_taglib_a694ea421b08a5bb(TagLib::List< TagLib::Variant > *_swig_go_0) {
+TagLib::Variant *_wrap_new_Variant__SWIG_12_taglib_f208bd8fe051fa0d(TagLib::List< TagLib::Variant > *_swig_go_0) {
   TagLib::List< TagLib::Variant > *arg1 = 0 ;
   TagLib::Variant *result = 0 ;
   TagLib::Variant *_swig_go_result;
@@ -926,7 +926,7 @@ TagLib::Variant *_wrap_new_Variant__SWIG_12_taglib_a694ea421b08a5bb(TagLib::List
 }
 
 
-TagLib::Variant *_wrap_new_Variant__SWIG_13_taglib_a694ea421b08a5bb(TagLib::Map< TagLib::String,TagLib::Variant > *_swig_go_0) {
+TagLib::Variant *_wrap_new_Variant__SWIG_13_taglib_f208bd8fe051fa0d(TagLib::Map< TagLib::String,TagLib::Variant > *_swig_go_0) {
   TagLib::Map< TagLib::String,TagLib::Variant > *arg1 = 0 ;
   TagLib::Variant *result = 0 ;
   TagLib::Variant *_swig_go_result;
@@ -939,7 +939,7 @@ TagLib::Variant *_wrap_new_Variant__SWIG_13_taglib_a694ea421b08a5bb(TagLib::Map<
 }
 
 
-TagLib::Variant *_wrap_new_Variant__SWIG_14_taglib_a694ea421b08a5bb(TagLib::Variant *_swig_go_0) {
+TagLib::Variant *_wrap_new_Variant__SWIG_14_taglib_f208bd8fe051fa0d(TagLib::Variant *_swig_go_0) {
   TagLib::Variant *arg1 = 0 ;
   TagLib::Variant *result = 0 ;
   TagLib::Variant *_swig_go_result;
@@ -952,7 +952,7 @@ TagLib::Variant *_wrap_new_Variant__SWIG_14_taglib_a694ea421b08a5bb(TagLib::Vari
 }
 
 
-void _wrap_delete_Variant_taglib_a694ea421b08a5bb(TagLib::Variant *_swig_go_0) {
+void _wrap_delete_Variant_taglib_f208bd8fe051fa0d(TagLib::Variant *_swig_go_0) {
   TagLib::Variant *arg1 = (TagLib::Variant *) 0 ;
   
   arg1 = *(TagLib::Variant **)&_swig_go_0; 
@@ -962,7 +962,7 @@ void _wrap_delete_Variant_taglib_a694ea421b08a5bb(TagLib::Variant *_swig_go_0) {
 }
 
 
-intgo _wrap_Variant_Xtype_taglib_a694ea421b08a5bb(TagLib::Variant *_swig_go_0) {
+intgo _wrap_Variant_Xtype_taglib_f208bd8fe051fa0d(TagLib::Variant *_swig_go_0) {
   TagLib::Variant *arg1 = (TagLib::Variant *) 0 ;
   TagLib::Variant::Type result;
   intgo _swig_go_result;
@@ -975,7 +975,7 @@ intgo _wrap_Variant_Xtype_taglib_a694ea421b08a5bb(TagLib::Variant *_swig_go_0) {
 }
 
 
-bool _wrap_Variant_isEmpty_taglib_a694ea421b08a5bb(TagLib::Variant *_swig_go_0) {
+bool _wrap_Variant_isEmpty_taglib_f208bd8fe051fa0d(TagLib::Variant *_swig_go_0) {
   TagLib::Variant *arg1 = (TagLib::Variant *) 0 ;
   bool result;
   bool _swig_go_result;
@@ -988,7 +988,7 @@ bool _wrap_Variant_isEmpty_taglib_a694ea421b08a5bb(TagLib::Variant *_swig_go_0) 
 }
 
 
-intgo _wrap_Variant_toInt__SWIG_0_taglib_a694ea421b08a5bb(TagLib::Variant *_swig_go_0, bool *_swig_go_1) {
+intgo _wrap_Variant_toInt__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::Variant *_swig_go_0, bool *_swig_go_1) {
   TagLib::Variant *arg1 = (TagLib::Variant *) 0 ;
   bool *arg2 = (bool *) 0 ;
   int result;
@@ -1003,7 +1003,7 @@ intgo _wrap_Variant_toInt__SWIG_0_taglib_a694ea421b08a5bb(TagLib::Variant *_swig
 }
 
 
-intgo _wrap_Variant_toInt__SWIG_1_taglib_a694ea421b08a5bb(TagLib::Variant *_swig_go_0) {
+intgo _wrap_Variant_toInt__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::Variant *_swig_go_0) {
   TagLib::Variant *arg1 = (TagLib::Variant *) 0 ;
   int result;
   intgo _swig_go_result;
@@ -1016,7 +1016,7 @@ intgo _wrap_Variant_toInt__SWIG_1_taglib_a694ea421b08a5bb(TagLib::Variant *_swig
 }
 
 
-intgo _wrap_Variant_toUInt__SWIG_0_taglib_a694ea421b08a5bb(TagLib::Variant *_swig_go_0, bool *_swig_go_1) {
+intgo _wrap_Variant_toUInt__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::Variant *_swig_go_0, bool *_swig_go_1) {
   TagLib::Variant *arg1 = (TagLib::Variant *) 0 ;
   bool *arg2 = (bool *) 0 ;
   unsigned int result;
@@ -1031,7 +1031,7 @@ intgo _wrap_Variant_toUInt__SWIG_0_taglib_a694ea421b08a5bb(TagLib::Variant *_swi
 }
 
 
-intgo _wrap_Variant_toUInt__SWIG_1_taglib_a694ea421b08a5bb(TagLib::Variant *_swig_go_0) {
+intgo _wrap_Variant_toUInt__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::Variant *_swig_go_0) {
   TagLib::Variant *arg1 = (TagLib::Variant *) 0 ;
   unsigned int result;
   intgo _swig_go_result;
@@ -1044,7 +1044,7 @@ intgo _wrap_Variant_toUInt__SWIG_1_taglib_a694ea421b08a5bb(TagLib::Variant *_swi
 }
 
 
-long long _wrap_Variant_toLongLong__SWIG_0_taglib_a694ea421b08a5bb(TagLib::Variant *_swig_go_0, bool *_swig_go_1) {
+long long _wrap_Variant_toLongLong__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::Variant *_swig_go_0, bool *_swig_go_1) {
   TagLib::Variant *arg1 = (TagLib::Variant *) 0 ;
   bool *arg2 = (bool *) 0 ;
   long long result;
@@ -1059,7 +1059,7 @@ long long _wrap_Variant_toLongLong__SWIG_0_taglib_a694ea421b08a5bb(TagLib::Varia
 }
 
 
-long long _wrap_Variant_toLongLong__SWIG_1_taglib_a694ea421b08a5bb(TagLib::Variant *_swig_go_0) {
+long long _wrap_Variant_toLongLong__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::Variant *_swig_go_0) {
   TagLib::Variant *arg1 = (TagLib::Variant *) 0 ;
   long long result;
   long long _swig_go_result;
@@ -1072,7 +1072,7 @@ long long _wrap_Variant_toLongLong__SWIG_1_taglib_a694ea421b08a5bb(TagLib::Varia
 }
 
 
-long long _wrap_Variant_toULongLong__SWIG_0_taglib_a694ea421b08a5bb(TagLib::Variant *_swig_go_0, bool *_swig_go_1) {
+long long _wrap_Variant_toULongLong__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::Variant *_swig_go_0, bool *_swig_go_1) {
   TagLib::Variant *arg1 = (TagLib::Variant *) 0 ;
   bool *arg2 = (bool *) 0 ;
   unsigned long long result;
@@ -1087,7 +1087,7 @@ long long _wrap_Variant_toULongLong__SWIG_0_taglib_a694ea421b08a5bb(TagLib::Vari
 }
 
 
-long long _wrap_Variant_toULongLong__SWIG_1_taglib_a694ea421b08a5bb(TagLib::Variant *_swig_go_0) {
+long long _wrap_Variant_toULongLong__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::Variant *_swig_go_0) {
   TagLib::Variant *arg1 = (TagLib::Variant *) 0 ;
   unsigned long long result;
   long long _swig_go_result;
@@ -1100,7 +1100,7 @@ long long _wrap_Variant_toULongLong__SWIG_1_taglib_a694ea421b08a5bb(TagLib::Vari
 }
 
 
-bool _wrap_Variant_toBool__SWIG_0_taglib_a694ea421b08a5bb(TagLib::Variant *_swig_go_0, bool *_swig_go_1) {
+bool _wrap_Variant_toBool__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::Variant *_swig_go_0, bool *_swig_go_1) {
   TagLib::Variant *arg1 = (TagLib::Variant *) 0 ;
   bool *arg2 = (bool *) 0 ;
   bool result;
@@ -1115,7 +1115,7 @@ bool _wrap_Variant_toBool__SWIG_0_taglib_a694ea421b08a5bb(TagLib::Variant *_swig
 }
 
 
-bool _wrap_Variant_toBool__SWIG_1_taglib_a694ea421b08a5bb(TagLib::Variant *_swig_go_0) {
+bool _wrap_Variant_toBool__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::Variant *_swig_go_0) {
   TagLib::Variant *arg1 = (TagLib::Variant *) 0 ;
   bool result;
   bool _swig_go_result;
@@ -1128,7 +1128,7 @@ bool _wrap_Variant_toBool__SWIG_1_taglib_a694ea421b08a5bb(TagLib::Variant *_swig
 }
 
 
-double _wrap_Variant_toDouble__SWIG_0_taglib_a694ea421b08a5bb(TagLib::Variant *_swig_go_0, bool *_swig_go_1) {
+double _wrap_Variant_toDouble__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::Variant *_swig_go_0, bool *_swig_go_1) {
   TagLib::Variant *arg1 = (TagLib::Variant *) 0 ;
   bool *arg2 = (bool *) 0 ;
   double result;
@@ -1143,7 +1143,7 @@ double _wrap_Variant_toDouble__SWIG_0_taglib_a694ea421b08a5bb(TagLib::Variant *_
 }
 
 
-double _wrap_Variant_toDouble__SWIG_1_taglib_a694ea421b08a5bb(TagLib::Variant *_swig_go_0) {
+double _wrap_Variant_toDouble__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::Variant *_swig_go_0) {
   TagLib::Variant *arg1 = (TagLib::Variant *) 0 ;
   double result;
   double _swig_go_result;
@@ -1156,7 +1156,7 @@ double _wrap_Variant_toDouble__SWIG_1_taglib_a694ea421b08a5bb(TagLib::Variant *_
 }
 
 
-TagLib::String *_wrap_Variant_toString__SWIG_0_taglib_a694ea421b08a5bb(TagLib::Variant *_swig_go_0, bool *_swig_go_1) {
+TagLib::String *_wrap_Variant_toString__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::Variant *_swig_go_0, bool *_swig_go_1) {
   TagLib::Variant *arg1 = (TagLib::Variant *) 0 ;
   bool *arg2 = (bool *) 0 ;
   TagLib::String result;
@@ -1171,7 +1171,7 @@ TagLib::String *_wrap_Variant_toString__SWIG_0_taglib_a694ea421b08a5bb(TagLib::V
 }
 
 
-TagLib::String *_wrap_Variant_toString__SWIG_1_taglib_a694ea421b08a5bb(TagLib::Variant *_swig_go_0) {
+TagLib::String *_wrap_Variant_toString__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::Variant *_swig_go_0) {
   TagLib::Variant *arg1 = (TagLib::Variant *) 0 ;
   TagLib::String result;
   TagLib::String *_swig_go_result;
@@ -1184,7 +1184,7 @@ TagLib::String *_wrap_Variant_toString__SWIG_1_taglib_a694ea421b08a5bb(TagLib::V
 }
 
 
-TagLib::StringList *_wrap_Variant_toStringList__SWIG_0_taglib_a694ea421b08a5bb(TagLib::Variant *_swig_go_0, bool *_swig_go_1) {
+TagLib::StringList *_wrap_Variant_toStringList__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::Variant *_swig_go_0, bool *_swig_go_1) {
   TagLib::Variant *arg1 = (TagLib::Variant *) 0 ;
   bool *arg2 = (bool *) 0 ;
   TagLib::StringList result;
@@ -1199,7 +1199,7 @@ TagLib::StringList *_wrap_Variant_toStringList__SWIG_0_taglib_a694ea421b08a5bb(T
 }
 
 
-TagLib::StringList *_wrap_Variant_toStringList__SWIG_1_taglib_a694ea421b08a5bb(TagLib::Variant *_swig_go_0) {
+TagLib::StringList *_wrap_Variant_toStringList__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::Variant *_swig_go_0) {
   TagLib::Variant *arg1 = (TagLib::Variant *) 0 ;
   TagLib::StringList result;
   TagLib::StringList *_swig_go_result;
@@ -1212,7 +1212,7 @@ TagLib::StringList *_wrap_Variant_toStringList__SWIG_1_taglib_a694ea421b08a5bb(T
 }
 
 
-TagLib::ByteVector *_wrap_Variant_toByteVector__SWIG_0_taglib_a694ea421b08a5bb(TagLib::Variant *_swig_go_0, bool *_swig_go_1) {
+TagLib::ByteVector *_wrap_Variant_toByteVector__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::Variant *_swig_go_0, bool *_swig_go_1) {
   TagLib::Variant *arg1 = (TagLib::Variant *) 0 ;
   bool *arg2 = (bool *) 0 ;
   TagLib::ByteVector result;
@@ -1227,7 +1227,7 @@ TagLib::ByteVector *_wrap_Variant_toByteVector__SWIG_0_taglib_a694ea421b08a5bb(T
 }
 
 
-TagLib::ByteVector *_wrap_Variant_toByteVector__SWIG_1_taglib_a694ea421b08a5bb(TagLib::Variant *_swig_go_0) {
+TagLib::ByteVector *_wrap_Variant_toByteVector__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::Variant *_swig_go_0) {
   TagLib::Variant *arg1 = (TagLib::Variant *) 0 ;
   TagLib::ByteVector result;
   TagLib::ByteVector *_swig_go_result;
@@ -1240,7 +1240,7 @@ TagLib::ByteVector *_wrap_Variant_toByteVector__SWIG_1_taglib_a694ea421b08a5bb(T
 }
 
 
-TagLib::ByteVectorList *_wrap_Variant_toByteVectorList__SWIG_0_taglib_a694ea421b08a5bb(TagLib::Variant *_swig_go_0, bool *_swig_go_1) {
+TagLib::ByteVectorList *_wrap_Variant_toByteVectorList__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::Variant *_swig_go_0, bool *_swig_go_1) {
   TagLib::Variant *arg1 = (TagLib::Variant *) 0 ;
   bool *arg2 = (bool *) 0 ;
   TagLib::ByteVectorList result;
@@ -1255,7 +1255,7 @@ TagLib::ByteVectorList *_wrap_Variant_toByteVectorList__SWIG_0_taglib_a694ea421b
 }
 
 
-TagLib::ByteVectorList *_wrap_Variant_toByteVectorList__SWIG_1_taglib_a694ea421b08a5bb(TagLib::Variant *_swig_go_0) {
+TagLib::ByteVectorList *_wrap_Variant_toByteVectorList__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::Variant *_swig_go_0) {
   TagLib::Variant *arg1 = (TagLib::Variant *) 0 ;
   TagLib::ByteVectorList result;
   TagLib::ByteVectorList *_swig_go_result;
@@ -1268,7 +1268,7 @@ TagLib::ByteVectorList *_wrap_Variant_toByteVectorList__SWIG_1_taglib_a694ea421b
 }
 
 
-TagLib::List< TagLib::Variant > *_wrap_Variant_toList__SWIG_0_taglib_a694ea421b08a5bb(TagLib::Variant *_swig_go_0, bool *_swig_go_1) {
+TagLib::List< TagLib::Variant > *_wrap_Variant_toList__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::Variant *_swig_go_0, bool *_swig_go_1) {
   TagLib::Variant *arg1 = (TagLib::Variant *) 0 ;
   bool *arg2 = (bool *) 0 ;
   SwigValueWrapper< TagLib::List< TagLib::Variant > > result;
@@ -1283,7 +1283,7 @@ TagLib::List< TagLib::Variant > *_wrap_Variant_toList__SWIG_0_taglib_a694ea421b0
 }
 
 
-TagLib::List< TagLib::Variant > *_wrap_Variant_toList__SWIG_1_taglib_a694ea421b08a5bb(TagLib::Variant *_swig_go_0) {
+TagLib::List< TagLib::Variant > *_wrap_Variant_toList__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::Variant *_swig_go_0) {
   TagLib::Variant *arg1 = (TagLib::Variant *) 0 ;
   SwigValueWrapper< TagLib::List< TagLib::Variant > > result;
   TagLib::List< TagLib::Variant > *_swig_go_result;
@@ -1296,7 +1296,7 @@ TagLib::List< TagLib::Variant > *_wrap_Variant_toList__SWIG_1_taglib_a694ea421b0
 }
 
 
-TagLib::Map< TagLib::String,TagLib::Variant > *_wrap_Variant_toMap__SWIG_0_taglib_a694ea421b08a5bb(TagLib::Variant *_swig_go_0, bool *_swig_go_1) {
+TagLib::Map< TagLib::String,TagLib::Variant > *_wrap_Variant_toMap__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::Variant *_swig_go_0, bool *_swig_go_1) {
   TagLib::Variant *arg1 = (TagLib::Variant *) 0 ;
   bool *arg2 = (bool *) 0 ;
   SwigValueWrapper< TagLib::Map< TagLib::String,TagLib::Variant > > result;
@@ -1311,7 +1311,7 @@ TagLib::Map< TagLib::String,TagLib::Variant > *_wrap_Variant_toMap__SWIG_0_tagli
 }
 
 
-TagLib::Map< TagLib::String,TagLib::Variant > *_wrap_Variant_toMap__SWIG_1_taglib_a694ea421b08a5bb(TagLib::Variant *_swig_go_0) {
+TagLib::Map< TagLib::String,TagLib::Variant > *_wrap_Variant_toMap__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::Variant *_swig_go_0) {
   TagLib::Variant *arg1 = (TagLib::Variant *) 0 ;
   SwigValueWrapper< TagLib::Map< TagLib::String,TagLib::Variant > > result;
   TagLib::Map< TagLib::String,TagLib::Variant > *_swig_go_result;
@@ -1324,7 +1324,7 @@ TagLib::Map< TagLib::String,TagLib::Variant > *_wrap_Variant_toMap__SWIG_1_tagli
 }
 
 
-intgo _wrap_Latin1_String_taglib_a694ea421b08a5bb() {
+intgo _wrap_Latin1_String_taglib_f208bd8fe051fa0d() {
   TagLib::String::Type result;
   intgo _swig_go_result;
   
@@ -1336,7 +1336,7 @@ intgo _wrap_Latin1_String_taglib_a694ea421b08a5bb() {
 }
 
 
-intgo _wrap_UTF16_String_taglib_a694ea421b08a5bb() {
+intgo _wrap_UTF16_String_taglib_f208bd8fe051fa0d() {
   TagLib::String::Type result;
   intgo _swig_go_result;
   
@@ -1348,7 +1348,7 @@ intgo _wrap_UTF16_String_taglib_a694ea421b08a5bb() {
 }
 
 
-intgo _wrap_UTF16BE_String_taglib_a694ea421b08a5bb() {
+intgo _wrap_UTF16BE_String_taglib_f208bd8fe051fa0d() {
   TagLib::String::Type result;
   intgo _swig_go_result;
   
@@ -1360,7 +1360,7 @@ intgo _wrap_UTF16BE_String_taglib_a694ea421b08a5bb() {
 }
 
 
-intgo _wrap_UTF8_String_taglib_a694ea421b08a5bb() {
+intgo _wrap_UTF8_String_taglib_f208bd8fe051fa0d() {
   TagLib::String::Type result;
   intgo _swig_go_result;
   
@@ -1372,7 +1372,7 @@ intgo _wrap_UTF8_String_taglib_a694ea421b08a5bb() {
 }
 
 
-intgo _wrap_UTF16LE_String_taglib_a694ea421b08a5bb() {
+intgo _wrap_UTF16LE_String_taglib_f208bd8fe051fa0d() {
   TagLib::String::Type result;
   intgo _swig_go_result;
   
@@ -1384,7 +1384,7 @@ intgo _wrap_UTF16LE_String_taglib_a694ea421b08a5bb() {
 }
 
 
-TagLib::String *_wrap_new_String__SWIG_0_taglib_a694ea421b08a5bb() {
+TagLib::String *_wrap_new_String__SWIG_0_taglib_f208bd8fe051fa0d() {
   TagLib::String *result = 0 ;
   TagLib::String *_swig_go_result;
   
@@ -1395,7 +1395,7 @@ TagLib::String *_wrap_new_String__SWIG_0_taglib_a694ea421b08a5bb() {
 }
 
 
-TagLib::String *_wrap_new_String__SWIG_1_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0) {
+TagLib::String *_wrap_new_String__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0) {
   TagLib::String *arg1 = 0 ;
   TagLib::String *result = 0 ;
   TagLib::String *_swig_go_result;
@@ -1408,7 +1408,7 @@ TagLib::String *_wrap_new_String__SWIG_1_taglib_a694ea421b08a5bb(TagLib::String 
 }
 
 
-TagLib::String *_wrap_new_String__SWIG_2_taglib_a694ea421b08a5bb(_gostring_ _swig_go_0, intgo _swig_go_1) {
+TagLib::String *_wrap_new_String__SWIG_2_taglib_f208bd8fe051fa0d(_gostring_ _swig_go_0, intgo _swig_go_1) {
   std::string *arg1 = 0 ;
   TagLib::String::Type arg2 ;
   TagLib::String *result = 0 ;
@@ -1426,7 +1426,7 @@ TagLib::String *_wrap_new_String__SWIG_2_taglib_a694ea421b08a5bb(_gostring_ _swi
 }
 
 
-TagLib::String *_wrap_new_String__SWIG_3_taglib_a694ea421b08a5bb(_gostring_ _swig_go_0) {
+TagLib::String *_wrap_new_String__SWIG_3_taglib_f208bd8fe051fa0d(_gostring_ _swig_go_0) {
   std::string *arg1 = 0 ;
   TagLib::String *result = 0 ;
   TagLib::String *_swig_go_result;
@@ -1442,7 +1442,7 @@ TagLib::String *_wrap_new_String__SWIG_3_taglib_a694ea421b08a5bb(_gostring_ _swi
 }
 
 
-TagLib::String *_wrap_new_String__SWIG_4_taglib_a694ea421b08a5bb(std::wstring *_swig_go_0) {
+TagLib::String *_wrap_new_String__SWIG_4_taglib_f208bd8fe051fa0d(std::wstring *_swig_go_0) {
   std::wstring *arg1 = 0 ;
   TagLib::String *result = 0 ;
   TagLib::String *_swig_go_result;
@@ -1455,7 +1455,7 @@ TagLib::String *_wrap_new_String__SWIG_4_taglib_a694ea421b08a5bb(std::wstring *_
 }
 
 
-TagLib::String *_wrap_new_String__SWIG_5_taglib_a694ea421b08a5bb(std::wstring *_swig_go_0, intgo _swig_go_1) {
+TagLib::String *_wrap_new_String__SWIG_5_taglib_f208bd8fe051fa0d(std::wstring *_swig_go_0, intgo _swig_go_1) {
   std::wstring *arg1 = 0 ;
   TagLib::String::Type arg2 ;
   TagLib::String *result = 0 ;
@@ -1470,7 +1470,7 @@ TagLib::String *_wrap_new_String__SWIG_5_taglib_a694ea421b08a5bb(std::wstring *_
 }
 
 
-TagLib::String *_wrap_new_String__SWIG_6_taglib_a694ea421b08a5bb(wchar_t *_swig_go_0) {
+TagLib::String *_wrap_new_String__SWIG_6_taglib_f208bd8fe051fa0d(wchar_t *_swig_go_0) {
   wchar_t *arg1 = (wchar_t *) 0 ;
   TagLib::String *result = 0 ;
   TagLib::String *_swig_go_result;
@@ -1483,7 +1483,7 @@ TagLib::String *_wrap_new_String__SWIG_6_taglib_a694ea421b08a5bb(wchar_t *_swig_
 }
 
 
-TagLib::String *_wrap_new_String__SWIG_7_taglib_a694ea421b08a5bb(wchar_t *_swig_go_0, intgo _swig_go_1) {
+TagLib::String *_wrap_new_String__SWIG_7_taglib_f208bd8fe051fa0d(wchar_t *_swig_go_0, intgo _swig_go_1) {
   wchar_t *arg1 = (wchar_t *) 0 ;
   TagLib::String::Type arg2 ;
   TagLib::String *result = 0 ;
@@ -1498,7 +1498,7 @@ TagLib::String *_wrap_new_String__SWIG_7_taglib_a694ea421b08a5bb(wchar_t *_swig_
 }
 
 
-TagLib::String *_wrap_new_String__SWIG_8_taglib_a694ea421b08a5bb(char _swig_go_0, intgo _swig_go_1) {
+TagLib::String *_wrap_new_String__SWIG_8_taglib_f208bd8fe051fa0d(char _swig_go_0, intgo _swig_go_1) {
   char arg1 ;
   TagLib::String::Type arg2 ;
   TagLib::String *result = 0 ;
@@ -1513,7 +1513,7 @@ TagLib::String *_wrap_new_String__SWIG_8_taglib_a694ea421b08a5bb(char _swig_go_0
 }
 
 
-TagLib::String *_wrap_new_String__SWIG_9_taglib_a694ea421b08a5bb(char _swig_go_0) {
+TagLib::String *_wrap_new_String__SWIG_9_taglib_f208bd8fe051fa0d(char _swig_go_0) {
   char arg1 ;
   TagLib::String *result = 0 ;
   TagLib::String *_swig_go_result;
@@ -1526,7 +1526,7 @@ TagLib::String *_wrap_new_String__SWIG_9_taglib_a694ea421b08a5bb(char _swig_go_0
 }
 
 
-TagLib::String *_wrap_new_String__SWIG_10_taglib_a694ea421b08a5bb(wchar_t *_swig_go_0, intgo _swig_go_1) {
+TagLib::String *_wrap_new_String__SWIG_10_taglib_f208bd8fe051fa0d(wchar_t *_swig_go_0, intgo _swig_go_1) {
   wchar_t arg1 ;
   TagLib::String::Type arg2 ;
   wchar_t *argp1 ;
@@ -1548,7 +1548,7 @@ TagLib::String *_wrap_new_String__SWIG_10_taglib_a694ea421b08a5bb(wchar_t *_swig
 }
 
 
-TagLib::String *_wrap_new_String__SWIG_11_taglib_a694ea421b08a5bb(wchar_t *_swig_go_0) {
+TagLib::String *_wrap_new_String__SWIG_11_taglib_f208bd8fe051fa0d(wchar_t *_swig_go_0) {
   wchar_t arg1 ;
   wchar_t *argp1 ;
   TagLib::String *result = 0 ;
@@ -1568,7 +1568,7 @@ TagLib::String *_wrap_new_String__SWIG_11_taglib_a694ea421b08a5bb(wchar_t *_swig
 }
 
 
-TagLib::String *_wrap_new_String__SWIG_12_taglib_a694ea421b08a5bb(_gostring_ _swig_go_0, intgo _swig_go_1) {
+TagLib::String *_wrap_new_String__SWIG_12_taglib_f208bd8fe051fa0d(_gostring_ _swig_go_0, intgo _swig_go_1) {
   char *arg1 = (char *) 0 ;
   TagLib::String::Type arg2 ;
   TagLib::String *result = 0 ;
@@ -1588,7 +1588,7 @@ TagLib::String *_wrap_new_String__SWIG_12_taglib_a694ea421b08a5bb(_gostring_ _sw
 }
 
 
-TagLib::String *_wrap_new_String__SWIG_13_taglib_a694ea421b08a5bb(_gostring_ _swig_go_0) {
+TagLib::String *_wrap_new_String__SWIG_13_taglib_f208bd8fe051fa0d(_gostring_ _swig_go_0) {
   char *arg1 = (char *) 0 ;
   TagLib::String *result = 0 ;
   TagLib::String *_swig_go_result;
@@ -1606,7 +1606,7 @@ TagLib::String *_wrap_new_String__SWIG_13_taglib_a694ea421b08a5bb(_gostring_ _sw
 }
 
 
-TagLib::String *_wrap_new_String__SWIG_14_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1) {
+TagLib::String *_wrap_new_String__SWIG_14_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1) {
   TagLib::ByteVector *arg1 = 0 ;
   TagLib::String::Type arg2 ;
   TagLib::String *result = 0 ;
@@ -1621,7 +1621,7 @@ TagLib::String *_wrap_new_String__SWIG_14_taglib_a694ea421b08a5bb(TagLib::ByteVe
 }
 
 
-TagLib::String *_wrap_new_String__SWIG_15_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0) {
+TagLib::String *_wrap_new_String__SWIG_15_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0) {
   TagLib::ByteVector *arg1 = 0 ;
   TagLib::String *result = 0 ;
   TagLib::String *_swig_go_result;
@@ -1634,7 +1634,7 @@ TagLib::String *_wrap_new_String__SWIG_15_taglib_a694ea421b08a5bb(TagLib::ByteVe
 }
 
 
-void _wrap_delete_String_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0) {
+void _wrap_delete_String_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   
   arg1 = *(TagLib::String **)&_swig_go_0; 
@@ -1644,7 +1644,7 @@ void _wrap_delete_String_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0) {
 }
 
 
-_gostring_ _wrap_String_to8Bit__SWIG_0_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0, bool _swig_go_1) {
+_gostring_ _wrap_String_to8Bit__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0, bool _swig_go_1) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   bool arg2 ;
   std::string result;
@@ -1659,7 +1659,7 @@ _gostring_ _wrap_String_to8Bit__SWIG_0_taglib_a694ea421b08a5bb(TagLib::String *_
 }
 
 
-_gostring_ _wrap_String_to8Bit__SWIG_1_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0) {
+_gostring_ _wrap_String_to8Bit__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   std::string result;
   _gostring_ _swig_go_result;
@@ -1672,7 +1672,7 @@ _gostring_ _wrap_String_to8Bit__SWIG_1_taglib_a694ea421b08a5bb(TagLib::String *_
 }
 
 
-std::wstring *_wrap_String_toWString_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0) {
+std::wstring *_wrap_String_toWString_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   std::wstring result;
   std::wstring *_swig_go_result;
@@ -1685,7 +1685,7 @@ std::wstring *_wrap_String_toWString_taglib_a694ea421b08a5bb(TagLib::String *_sw
 }
 
 
-_gostring_ _wrap_String_toCString__SWIG_0_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0, bool _swig_go_1) {
+_gostring_ _wrap_String_toCString__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0, bool _swig_go_1) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   bool arg2 ;
   char *result = 0 ;
@@ -1700,7 +1700,7 @@ _gostring_ _wrap_String_toCString__SWIG_0_taglib_a694ea421b08a5bb(TagLib::String
 }
 
 
-_gostring_ _wrap_String_toCString__SWIG_1_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0) {
+_gostring_ _wrap_String_toCString__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   char *result = 0 ;
   _gostring_ _swig_go_result;
@@ -1713,7 +1713,7 @@ _gostring_ _wrap_String_toCString__SWIG_1_taglib_a694ea421b08a5bb(TagLib::String
 }
 
 
-wchar_t *_wrap_String_toCWString_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0) {
+wchar_t *_wrap_String_toCWString_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   wchar_t *result = 0 ;
   wchar_t *_swig_go_result;
@@ -1726,7 +1726,7 @@ wchar_t *_wrap_String_toCWString_taglib_a694ea421b08a5bb(TagLib::String *_swig_g
 }
 
 
-std::wstring::iterator *_wrap_String_begin__SWIG_0_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0) {
+std::wstring::iterator *_wrap_String_begin__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   TagLib::String::Iterator result;
   std::wstring::iterator *_swig_go_result;
@@ -1739,7 +1739,7 @@ std::wstring::iterator *_wrap_String_begin__SWIG_0_taglib_a694ea421b08a5bb(TagLi
 }
 
 
-std::wstring::const_iterator *_wrap_String_begin__SWIG_1_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0) {
+std::wstring::const_iterator *_wrap_String_begin__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   TagLib::String::ConstIterator result;
   std::wstring::const_iterator *_swig_go_result;
@@ -1752,7 +1752,7 @@ std::wstring::const_iterator *_wrap_String_begin__SWIG_1_taglib_a694ea421b08a5bb
 }
 
 
-std::wstring::const_iterator *_wrap_String_cbegin_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0) {
+std::wstring::const_iterator *_wrap_String_cbegin_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   TagLib::String::ConstIterator result;
   std::wstring::const_iterator *_swig_go_result;
@@ -1765,7 +1765,7 @@ std::wstring::const_iterator *_wrap_String_cbegin_taglib_a694ea421b08a5bb(TagLib
 }
 
 
-std::wstring::iterator *_wrap_String_end__SWIG_0_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0) {
+std::wstring::iterator *_wrap_String_end__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   TagLib::String::Iterator result;
   std::wstring::iterator *_swig_go_result;
@@ -1778,7 +1778,7 @@ std::wstring::iterator *_wrap_String_end__SWIG_0_taglib_a694ea421b08a5bb(TagLib:
 }
 
 
-std::wstring::const_iterator *_wrap_String_end__SWIG_1_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0) {
+std::wstring::const_iterator *_wrap_String_end__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   TagLib::String::ConstIterator result;
   std::wstring::const_iterator *_swig_go_result;
@@ -1791,7 +1791,7 @@ std::wstring::const_iterator *_wrap_String_end__SWIG_1_taglib_a694ea421b08a5bb(T
 }
 
 
-std::wstring::const_iterator *_wrap_String_cend_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0) {
+std::wstring::const_iterator *_wrap_String_cend_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   TagLib::String::ConstIterator result;
   std::wstring::const_iterator *_swig_go_result;
@@ -1804,7 +1804,7 @@ std::wstring::const_iterator *_wrap_String_cend_taglib_a694ea421b08a5bb(TagLib::
 }
 
 
-intgo _wrap_String_find__SWIG_0_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0, TagLib::String *_swig_go_1, intgo _swig_go_2) {
+intgo _wrap_String_find__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0, TagLib::String *_swig_go_1, intgo _swig_go_2) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   TagLib::String *arg2 = 0 ;
   int arg3 ;
@@ -1821,7 +1821,7 @@ intgo _wrap_String_find__SWIG_0_taglib_a694ea421b08a5bb(TagLib::String *_swig_go
 }
 
 
-intgo _wrap_String_find__SWIG_1_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0, TagLib::String *_swig_go_1) {
+intgo _wrap_String_find__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0, TagLib::String *_swig_go_1) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   TagLib::String *arg2 = 0 ;
   int result;
@@ -1836,7 +1836,7 @@ intgo _wrap_String_find__SWIG_1_taglib_a694ea421b08a5bb(TagLib::String *_swig_go
 }
 
 
-intgo _wrap_String_rfind__SWIG_0_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0, TagLib::String *_swig_go_1, intgo _swig_go_2) {
+intgo _wrap_String_rfind__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0, TagLib::String *_swig_go_1, intgo _swig_go_2) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   TagLib::String *arg2 = 0 ;
   int arg3 ;
@@ -1853,7 +1853,7 @@ intgo _wrap_String_rfind__SWIG_0_taglib_a694ea421b08a5bb(TagLib::String *_swig_g
 }
 
 
-intgo _wrap_String_rfind__SWIG_1_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0, TagLib::String *_swig_go_1) {
+intgo _wrap_String_rfind__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0, TagLib::String *_swig_go_1) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   TagLib::String *arg2 = 0 ;
   int result;
@@ -1868,7 +1868,7 @@ intgo _wrap_String_rfind__SWIG_1_taglib_a694ea421b08a5bb(TagLib::String *_swig_g
 }
 
 
-TagLib::StringList *_wrap_String_split__SWIG_0_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0, TagLib::String *_swig_go_1) {
+TagLib::StringList *_wrap_String_split__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0, TagLib::String *_swig_go_1) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   TagLib::String *arg2 = 0 ;
   TagLib::StringList result;
@@ -1883,7 +1883,7 @@ TagLib::StringList *_wrap_String_split__SWIG_0_taglib_a694ea421b08a5bb(TagLib::S
 }
 
 
-TagLib::StringList *_wrap_String_split__SWIG_1_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0) {
+TagLib::StringList *_wrap_String_split__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   TagLib::StringList result;
   TagLib::StringList *_swig_go_result;
@@ -1896,7 +1896,7 @@ TagLib::StringList *_wrap_String_split__SWIG_1_taglib_a694ea421b08a5bb(TagLib::S
 }
 
 
-bool _wrap_String_startsWith_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0, TagLib::String *_swig_go_1) {
+bool _wrap_String_startsWith_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0, TagLib::String *_swig_go_1) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   TagLib::String *arg2 = 0 ;
   bool result;
@@ -1911,7 +1911,7 @@ bool _wrap_String_startsWith_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0,
 }
 
 
-TagLib::String *_wrap_String_substr__SWIG_0_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0, intgo _swig_go_1, intgo _swig_go_2) {
+TagLib::String *_wrap_String_substr__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0, intgo _swig_go_1, intgo _swig_go_2) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   unsigned int arg2 ;
   unsigned int arg3 ;
@@ -1928,7 +1928,7 @@ TagLib::String *_wrap_String_substr__SWIG_0_taglib_a694ea421b08a5bb(TagLib::Stri
 }
 
 
-TagLib::String *_wrap_String_substr__SWIG_1_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0, intgo _swig_go_1) {
+TagLib::String *_wrap_String_substr__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0, intgo _swig_go_1) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   unsigned int arg2 ;
   TagLib::String result;
@@ -1943,7 +1943,7 @@ TagLib::String *_wrap_String_substr__SWIG_1_taglib_a694ea421b08a5bb(TagLib::Stri
 }
 
 
-TagLib::String *_wrap_String_append_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0, TagLib::String *_swig_go_1) {
+TagLib::String *_wrap_String_append_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0, TagLib::String *_swig_go_1) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   TagLib::String *arg2 = 0 ;
   TagLib::String *result = 0 ;
@@ -1958,7 +1958,7 @@ TagLib::String *_wrap_String_append_taglib_a694ea421b08a5bb(TagLib::String *_swi
 }
 
 
-TagLib::String *_wrap_String_clear_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0) {
+TagLib::String *_wrap_String_clear_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   TagLib::String *result = 0 ;
   TagLib::String *_swig_go_result;
@@ -1971,7 +1971,7 @@ TagLib::String *_wrap_String_clear_taglib_a694ea421b08a5bb(TagLib::String *_swig
 }
 
 
-TagLib::String *_wrap_String_upper_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0) {
+TagLib::String *_wrap_String_upper_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   TagLib::String result;
   TagLib::String *_swig_go_result;
@@ -1984,7 +1984,7 @@ TagLib::String *_wrap_String_upper_taglib_a694ea421b08a5bb(TagLib::String *_swig
 }
 
 
-intgo _wrap_String_size_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0) {
+intgo _wrap_String_size_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   unsigned int result;
   intgo _swig_go_result;
@@ -1997,7 +1997,7 @@ intgo _wrap_String_size_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0) {
 }
 
 
-intgo _wrap_String_length_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0) {
+intgo _wrap_String_length_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   unsigned int result;
   intgo _swig_go_result;
@@ -2010,7 +2010,7 @@ intgo _wrap_String_length_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0) {
 }
 
 
-bool _wrap_String_isEmpty_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0) {
+bool _wrap_String_isEmpty_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   bool result;
   bool _swig_go_result;
@@ -2023,7 +2023,7 @@ bool _wrap_String_isEmpty_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0) {
 }
 
 
-TagLib::ByteVector *_wrap_String_data_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0, intgo _swig_go_1) {
+TagLib::ByteVector *_wrap_String_data_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0, intgo _swig_go_1) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   TagLib::String::Type arg2 ;
   TagLib::ByteVector result;
@@ -2038,7 +2038,7 @@ TagLib::ByteVector *_wrap_String_data_taglib_a694ea421b08a5bb(TagLib::String *_s
 }
 
 
-intgo _wrap_String_toInt__SWIG_0_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0, bool *_swig_go_1) {
+intgo _wrap_String_toInt__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0, bool *_swig_go_1) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   bool *arg2 = (bool *) 0 ;
   int result;
@@ -2053,7 +2053,7 @@ intgo _wrap_String_toInt__SWIG_0_taglib_a694ea421b08a5bb(TagLib::String *_swig_g
 }
 
 
-intgo _wrap_String_toInt__SWIG_1_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0) {
+intgo _wrap_String_toInt__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   int result;
   intgo _swig_go_result;
@@ -2066,7 +2066,7 @@ intgo _wrap_String_toInt__SWIG_1_taglib_a694ea421b08a5bb(TagLib::String *_swig_g
 }
 
 
-TagLib::String *_wrap_String_stripWhiteSpace_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0) {
+TagLib::String *_wrap_String_stripWhiteSpace_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   TagLib::String result;
   TagLib::String *_swig_go_result;
@@ -2079,7 +2079,7 @@ TagLib::String *_wrap_String_stripWhiteSpace_taglib_a694ea421b08a5bb(TagLib::Str
 }
 
 
-bool _wrap_String_isLatin1_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0) {
+bool _wrap_String_isLatin1_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   bool result;
   bool _swig_go_result;
@@ -2092,7 +2092,7 @@ bool _wrap_String_isLatin1_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0) {
 }
 
 
-bool _wrap_String_isAscii_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0) {
+bool _wrap_String_isAscii_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   bool result;
   bool _swig_go_result;
@@ -2105,7 +2105,7 @@ bool _wrap_String_isAscii_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0) {
 }
 
 
-TagLib::String *_wrap_String_number_taglib_a694ea421b08a5bb(intgo _swig_go_0) {
+TagLib::String *_wrap_String_number_taglib_f208bd8fe051fa0d(intgo _swig_go_0) {
   int arg1 ;
   TagLib::String result;
   TagLib::String *_swig_go_result;
@@ -2118,7 +2118,7 @@ TagLib::String *_wrap_String_number_taglib_a694ea421b08a5bb(intgo _swig_go_0) {
 }
 
 
-TagLib::String *_wrap_String_fromLongLong_taglib_a694ea421b08a5bb(long long _swig_go_0) {
+TagLib::String *_wrap_String_fromLongLong_taglib_f208bd8fe051fa0d(long long _swig_go_0) {
   long long arg1 ;
   TagLib::String result;
   TagLib::String *_swig_go_result;
@@ -2131,7 +2131,7 @@ TagLib::String *_wrap_String_fromLongLong_taglib_a694ea421b08a5bb(long long _swi
 }
 
 
-void _wrap_String_swap_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0, TagLib::String *_swig_go_1) {
+void _wrap_String_swap_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0, TagLib::String *_swig_go_1) {
   TagLib::String *arg1 = (TagLib::String *) 0 ;
   TagLib::String *arg2 = 0 ;
   
@@ -2143,7 +2143,7 @@ void _wrap_String_swap_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0, TagLi
 }
 
 
-TagLib::ByteVector *_wrap_new_ByteVector__SWIG_0_taglib_a694ea421b08a5bb() {
+TagLib::ByteVector *_wrap_new_ByteVector__SWIG_0_taglib_f208bd8fe051fa0d() {
   TagLib::ByteVector *result = 0 ;
   TagLib::ByteVector *_swig_go_result;
   
@@ -2154,7 +2154,7 @@ TagLib::ByteVector *_wrap_new_ByteVector__SWIG_0_taglib_a694ea421b08a5bb() {
 }
 
 
-TagLib::ByteVector *_wrap_new_ByteVector__SWIG_1_taglib_a694ea421b08a5bb(intgo _swig_go_0, char _swig_go_1) {
+TagLib::ByteVector *_wrap_new_ByteVector__SWIG_1_taglib_f208bd8fe051fa0d(intgo _swig_go_0, char _swig_go_1) {
   unsigned int arg1 ;
   char arg2 ;
   TagLib::ByteVector *result = 0 ;
@@ -2169,7 +2169,7 @@ TagLib::ByteVector *_wrap_new_ByteVector__SWIG_1_taglib_a694ea421b08a5bb(intgo _
 }
 
 
-TagLib::ByteVector *_wrap_new_ByteVector__SWIG_2_taglib_a694ea421b08a5bb(intgo _swig_go_0) {
+TagLib::ByteVector *_wrap_new_ByteVector__SWIG_2_taglib_f208bd8fe051fa0d(intgo _swig_go_0) {
   unsigned int arg1 ;
   TagLib::ByteVector *result = 0 ;
   TagLib::ByteVector *_swig_go_result;
@@ -2182,7 +2182,7 @@ TagLib::ByteVector *_wrap_new_ByteVector__SWIG_2_taglib_a694ea421b08a5bb(intgo _
 }
 
 
-TagLib::ByteVector *_wrap_new_ByteVector__SWIG_3_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0) {
+TagLib::ByteVector *_wrap_new_ByteVector__SWIG_3_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0) {
   TagLib::ByteVector *arg1 = 0 ;
   TagLib::ByteVector *result = 0 ;
   TagLib::ByteVector *_swig_go_result;
@@ -2195,7 +2195,7 @@ TagLib::ByteVector *_wrap_new_ByteVector__SWIG_3_taglib_a694ea421b08a5bb(TagLib:
 }
 
 
-TagLib::ByteVector *_wrap_new_ByteVector__SWIG_4_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1, intgo _swig_go_2) {
+TagLib::ByteVector *_wrap_new_ByteVector__SWIG_4_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1, intgo _swig_go_2) {
   TagLib::ByteVector *arg1 = 0 ;
   unsigned int arg2 ;
   unsigned int arg3 ;
@@ -2212,7 +2212,7 @@ TagLib::ByteVector *_wrap_new_ByteVector__SWIG_4_taglib_a694ea421b08a5bb(TagLib:
 }
 
 
-TagLib::ByteVector *_wrap_new_ByteVector__SWIG_5_taglib_a694ea421b08a5bb(char _swig_go_0) {
+TagLib::ByteVector *_wrap_new_ByteVector__SWIG_5_taglib_f208bd8fe051fa0d(char _swig_go_0) {
   char arg1 ;
   TagLib::ByteVector *result = 0 ;
   TagLib::ByteVector *_swig_go_result;
@@ -2225,7 +2225,7 @@ TagLib::ByteVector *_wrap_new_ByteVector__SWIG_5_taglib_a694ea421b08a5bb(char _s
 }
 
 
-TagLib::ByteVector *_wrap_new_ByteVector__SWIG_6_taglib_a694ea421b08a5bb(_gostring_ _swig_go_0, intgo _swig_go_1) {
+TagLib::ByteVector *_wrap_new_ByteVector__SWIG_6_taglib_f208bd8fe051fa0d(_gostring_ _swig_go_0, intgo _swig_go_1) {
   char *arg1 = (char *) 0 ;
   unsigned int arg2 ;
   TagLib::ByteVector *result = 0 ;
@@ -2245,7 +2245,7 @@ TagLib::ByteVector *_wrap_new_ByteVector__SWIG_6_taglib_a694ea421b08a5bb(_gostri
 }
 
 
-TagLib::ByteVector *_wrap_new_ByteVector__SWIG_7_taglib_a694ea421b08a5bb(_gostring_ _swig_go_0) {
+TagLib::ByteVector *_wrap_new_ByteVector__SWIG_7_taglib_f208bd8fe051fa0d(_gostring_ _swig_go_0) {
   char *arg1 = (char *) 0 ;
   TagLib::ByteVector *result = 0 ;
   TagLib::ByteVector *_swig_go_result;
@@ -2263,7 +2263,7 @@ TagLib::ByteVector *_wrap_new_ByteVector__SWIG_7_taglib_a694ea421b08a5bb(_gostri
 }
 
 
-void _wrap_delete_ByteVector_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0) {
+void _wrap_delete_ByteVector_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   
   arg1 = *(TagLib::ByteVector **)&_swig_go_0; 
@@ -2273,7 +2273,7 @@ void _wrap_delete_ByteVector_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_g
 }
 
 
-TagLib::ByteVector *_wrap_ByteVector_setData__SWIG_0_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, _gostring_ _swig_go_1, intgo _swig_go_2) {
+TagLib::ByteVector *_wrap_ByteVector_setData__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, _gostring_ _swig_go_1, intgo _swig_go_2) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   char *arg2 = (char *) 0 ;
   unsigned int arg3 ;
@@ -2295,7 +2295,7 @@ TagLib::ByteVector *_wrap_ByteVector_setData__SWIG_0_taglib_a694ea421b08a5bb(Tag
 }
 
 
-TagLib::ByteVector *_wrap_ByteVector_setData__SWIG_1_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, _gostring_ _swig_go_1) {
+TagLib::ByteVector *_wrap_ByteVector_setData__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, _gostring_ _swig_go_1) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   char *arg2 = (char *) 0 ;
   TagLib::ByteVector *result = 0 ;
@@ -2315,7 +2315,7 @@ TagLib::ByteVector *_wrap_ByteVector_setData__SWIG_1_taglib_a694ea421b08a5bb(Tag
 }
 
 
-_gostring_ _wrap_ByteVector_data__SWIG_0_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0) {
+_gostring_ _wrap_ByteVector_data__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   char *result = 0 ;
   _gostring_ _swig_go_result;
@@ -2328,7 +2328,7 @@ _gostring_ _wrap_ByteVector_data__SWIG_0_taglib_a694ea421b08a5bb(TagLib::ByteVec
 }
 
 
-_gostring_ _wrap_ByteVector_data__SWIG_1_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0) {
+_gostring_ _wrap_ByteVector_data__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   char *result = 0 ;
   _gostring_ _swig_go_result;
@@ -2341,7 +2341,7 @@ _gostring_ _wrap_ByteVector_data__SWIG_1_taglib_a694ea421b08a5bb(TagLib::ByteVec
 }
 
 
-TagLib::ByteVector *_wrap_ByteVector_mid__SWIG_0_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1, intgo _swig_go_2) {
+TagLib::ByteVector *_wrap_ByteVector_mid__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1, intgo _swig_go_2) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   unsigned int arg2 ;
   unsigned int arg3 ;
@@ -2358,7 +2358,7 @@ TagLib::ByteVector *_wrap_ByteVector_mid__SWIG_0_taglib_a694ea421b08a5bb(TagLib:
 }
 
 
-TagLib::ByteVector *_wrap_ByteVector_mid__SWIG_1_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1) {
+TagLib::ByteVector *_wrap_ByteVector_mid__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   unsigned int arg2 ;
   TagLib::ByteVector result;
@@ -2373,7 +2373,7 @@ TagLib::ByteVector *_wrap_ByteVector_mid__SWIG_1_taglib_a694ea421b08a5bb(TagLib:
 }
 
 
-char _wrap_ByteVector_at_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1) {
+char _wrap_ByteVector_at_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   unsigned int arg2 ;
   char result;
@@ -2388,7 +2388,7 @@ char _wrap_ByteVector_at_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0,
 }
 
 
-intgo _wrap_ByteVector_find__SWIG_0_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, TagLib::ByteVector *_swig_go_1, intgo _swig_go_2, intgo _swig_go_3) {
+intgo _wrap_ByteVector_find__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, TagLib::ByteVector *_swig_go_1, intgo _swig_go_2, intgo _swig_go_3) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   TagLib::ByteVector *arg2 = 0 ;
   unsigned int arg3 ;
@@ -2407,7 +2407,7 @@ intgo _wrap_ByteVector_find__SWIG_0_taglib_a694ea421b08a5bb(TagLib::ByteVector *
 }
 
 
-intgo _wrap_ByteVector_find__SWIG_1_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, TagLib::ByteVector *_swig_go_1, intgo _swig_go_2) {
+intgo _wrap_ByteVector_find__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, TagLib::ByteVector *_swig_go_1, intgo _swig_go_2) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   TagLib::ByteVector *arg2 = 0 ;
   unsigned int arg3 ;
@@ -2424,7 +2424,7 @@ intgo _wrap_ByteVector_find__SWIG_1_taglib_a694ea421b08a5bb(TagLib::ByteVector *
 }
 
 
-intgo _wrap_ByteVector_find__SWIG_2_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, TagLib::ByteVector *_swig_go_1) {
+intgo _wrap_ByteVector_find__SWIG_2_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, TagLib::ByteVector *_swig_go_1) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   TagLib::ByteVector *arg2 = 0 ;
   int result;
@@ -2439,7 +2439,7 @@ intgo _wrap_ByteVector_find__SWIG_2_taglib_a694ea421b08a5bb(TagLib::ByteVector *
 }
 
 
-intgo _wrap_ByteVector_find__SWIG_3_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, char _swig_go_1, intgo _swig_go_2, intgo _swig_go_3) {
+intgo _wrap_ByteVector_find__SWIG_3_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, char _swig_go_1, intgo _swig_go_2, intgo _swig_go_3) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   char arg2 ;
   unsigned int arg3 ;
@@ -2458,7 +2458,7 @@ intgo _wrap_ByteVector_find__SWIG_3_taglib_a694ea421b08a5bb(TagLib::ByteVector *
 }
 
 
-intgo _wrap_ByteVector_find__SWIG_4_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, char _swig_go_1, intgo _swig_go_2) {
+intgo _wrap_ByteVector_find__SWIG_4_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, char _swig_go_1, intgo _swig_go_2) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   char arg2 ;
   unsigned int arg3 ;
@@ -2475,7 +2475,7 @@ intgo _wrap_ByteVector_find__SWIG_4_taglib_a694ea421b08a5bb(TagLib::ByteVector *
 }
 
 
-intgo _wrap_ByteVector_find__SWIG_5_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, char _swig_go_1) {
+intgo _wrap_ByteVector_find__SWIG_5_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, char _swig_go_1) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   char arg2 ;
   int result;
@@ -2490,7 +2490,7 @@ intgo _wrap_ByteVector_find__SWIG_5_taglib_a694ea421b08a5bb(TagLib::ByteVector *
 }
 
 
-intgo _wrap_ByteVector_rfind__SWIG_0_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, TagLib::ByteVector *_swig_go_1, intgo _swig_go_2, intgo _swig_go_3) {
+intgo _wrap_ByteVector_rfind__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, TagLib::ByteVector *_swig_go_1, intgo _swig_go_2, intgo _swig_go_3) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   TagLib::ByteVector *arg2 = 0 ;
   unsigned int arg3 ;
@@ -2509,7 +2509,7 @@ intgo _wrap_ByteVector_rfind__SWIG_0_taglib_a694ea421b08a5bb(TagLib::ByteVector 
 }
 
 
-intgo _wrap_ByteVector_rfind__SWIG_1_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, TagLib::ByteVector *_swig_go_1, intgo _swig_go_2) {
+intgo _wrap_ByteVector_rfind__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, TagLib::ByteVector *_swig_go_1, intgo _swig_go_2) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   TagLib::ByteVector *arg2 = 0 ;
   unsigned int arg3 ;
@@ -2526,7 +2526,7 @@ intgo _wrap_ByteVector_rfind__SWIG_1_taglib_a694ea421b08a5bb(TagLib::ByteVector 
 }
 
 
-intgo _wrap_ByteVector_rfind__SWIG_2_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, TagLib::ByteVector *_swig_go_1) {
+intgo _wrap_ByteVector_rfind__SWIG_2_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, TagLib::ByteVector *_swig_go_1) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   TagLib::ByteVector *arg2 = 0 ;
   int result;
@@ -2541,7 +2541,7 @@ intgo _wrap_ByteVector_rfind__SWIG_2_taglib_a694ea421b08a5bb(TagLib::ByteVector 
 }
 
 
-bool _wrap_ByteVector_containsAt__SWIG_0_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, TagLib::ByteVector *_swig_go_1, intgo _swig_go_2, intgo _swig_go_3, intgo _swig_go_4) {
+bool _wrap_ByteVector_containsAt__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, TagLib::ByteVector *_swig_go_1, intgo _swig_go_2, intgo _swig_go_3, intgo _swig_go_4) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   TagLib::ByteVector *arg2 = 0 ;
   unsigned int arg3 ;
@@ -2562,7 +2562,7 @@ bool _wrap_ByteVector_containsAt__SWIG_0_taglib_a694ea421b08a5bb(TagLib::ByteVec
 }
 
 
-bool _wrap_ByteVector_containsAt__SWIG_1_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, TagLib::ByteVector *_swig_go_1, intgo _swig_go_2, intgo _swig_go_3) {
+bool _wrap_ByteVector_containsAt__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, TagLib::ByteVector *_swig_go_1, intgo _swig_go_2, intgo _swig_go_3) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   TagLib::ByteVector *arg2 = 0 ;
   unsigned int arg3 ;
@@ -2581,7 +2581,7 @@ bool _wrap_ByteVector_containsAt__SWIG_1_taglib_a694ea421b08a5bb(TagLib::ByteVec
 }
 
 
-bool _wrap_ByteVector_containsAt__SWIG_2_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, TagLib::ByteVector *_swig_go_1, intgo _swig_go_2) {
+bool _wrap_ByteVector_containsAt__SWIG_2_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, TagLib::ByteVector *_swig_go_1, intgo _swig_go_2) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   TagLib::ByteVector *arg2 = 0 ;
   unsigned int arg3 ;
@@ -2598,7 +2598,7 @@ bool _wrap_ByteVector_containsAt__SWIG_2_taglib_a694ea421b08a5bb(TagLib::ByteVec
 }
 
 
-bool _wrap_ByteVector_startsWith_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, TagLib::ByteVector *_swig_go_1) {
+bool _wrap_ByteVector_startsWith_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, TagLib::ByteVector *_swig_go_1) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   TagLib::ByteVector *arg2 = 0 ;
   bool result;
@@ -2613,7 +2613,7 @@ bool _wrap_ByteVector_startsWith_taglib_a694ea421b08a5bb(TagLib::ByteVector *_sw
 }
 
 
-bool _wrap_ByteVector_endsWith_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, TagLib::ByteVector *_swig_go_1) {
+bool _wrap_ByteVector_endsWith_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, TagLib::ByteVector *_swig_go_1) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   TagLib::ByteVector *arg2 = 0 ;
   bool result;
@@ -2628,7 +2628,7 @@ bool _wrap_ByteVector_endsWith_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig
 }
 
 
-TagLib::ByteVector *_wrap_ByteVector_replace__SWIG_0_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, char _swig_go_1, char _swig_go_2) {
+TagLib::ByteVector *_wrap_ByteVector_replace__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, char _swig_go_1, char _swig_go_2) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   char arg2 ;
   char arg3 ;
@@ -2645,7 +2645,7 @@ TagLib::ByteVector *_wrap_ByteVector_replace__SWIG_0_taglib_a694ea421b08a5bb(Tag
 }
 
 
-TagLib::ByteVector *_wrap_ByteVector_replace__SWIG_1_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, TagLib::ByteVector *_swig_go_1, TagLib::ByteVector *_swig_go_2) {
+TagLib::ByteVector *_wrap_ByteVector_replace__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, TagLib::ByteVector *_swig_go_1, TagLib::ByteVector *_swig_go_2) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   TagLib::ByteVector *arg2 = 0 ;
   TagLib::ByteVector *arg3 = 0 ;
@@ -2662,7 +2662,7 @@ TagLib::ByteVector *_wrap_ByteVector_replace__SWIG_1_taglib_a694ea421b08a5bb(Tag
 }
 
 
-intgo _wrap_ByteVector_endsWithPartialMatch_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, TagLib::ByteVector *_swig_go_1) {
+intgo _wrap_ByteVector_endsWithPartialMatch_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, TagLib::ByteVector *_swig_go_1) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   TagLib::ByteVector *arg2 = 0 ;
   int result;
@@ -2677,7 +2677,7 @@ intgo _wrap_ByteVector_endsWithPartialMatch_taglib_a694ea421b08a5bb(TagLib::Byte
 }
 
 
-TagLib::ByteVector *_wrap_ByteVector_append__SWIG_0_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, TagLib::ByteVector *_swig_go_1) {
+TagLib::ByteVector *_wrap_ByteVector_append__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, TagLib::ByteVector *_swig_go_1) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   TagLib::ByteVector *arg2 = 0 ;
   TagLib::ByteVector *result = 0 ;
@@ -2692,7 +2692,7 @@ TagLib::ByteVector *_wrap_ByteVector_append__SWIG_0_taglib_a694ea421b08a5bb(TagL
 }
 
 
-TagLib::ByteVector *_wrap_ByteVector_append__SWIG_1_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, char _swig_go_1) {
+TagLib::ByteVector *_wrap_ByteVector_append__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, char _swig_go_1) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   char arg2 ;
   TagLib::ByteVector *result = 0 ;
@@ -2707,7 +2707,7 @@ TagLib::ByteVector *_wrap_ByteVector_append__SWIG_1_taglib_a694ea421b08a5bb(TagL
 }
 
 
-TagLib::ByteVector *_wrap_ByteVector_clear_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0) {
+TagLib::ByteVector *_wrap_ByteVector_clear_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   TagLib::ByteVector *result = 0 ;
   TagLib::ByteVector *_swig_go_result;
@@ -2720,7 +2720,7 @@ TagLib::ByteVector *_wrap_ByteVector_clear_taglib_a694ea421b08a5bb(TagLib::ByteV
 }
 
 
-intgo _wrap_ByteVector_size_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0) {
+intgo _wrap_ByteVector_size_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   unsigned int result;
   intgo _swig_go_result;
@@ -2733,7 +2733,7 @@ intgo _wrap_ByteVector_size_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go
 }
 
 
-TagLib::ByteVector *_wrap_ByteVector_resize__SWIG_0_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1, char _swig_go_2) {
+TagLib::ByteVector *_wrap_ByteVector_resize__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1, char _swig_go_2) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   unsigned int arg2 ;
   char arg3 ;
@@ -2750,7 +2750,7 @@ TagLib::ByteVector *_wrap_ByteVector_resize__SWIG_0_taglib_a694ea421b08a5bb(TagL
 }
 
 
-TagLib::ByteVector *_wrap_ByteVector_resize__SWIG_1_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1) {
+TagLib::ByteVector *_wrap_ByteVector_resize__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   unsigned int arg2 ;
   TagLib::ByteVector *result = 0 ;
@@ -2765,7 +2765,7 @@ TagLib::ByteVector *_wrap_ByteVector_resize__SWIG_1_taglib_a694ea421b08a5bb(TagL
 }
 
 
-std::vector< char >::iterator *_wrap_ByteVector_begin__SWIG_0_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0) {
+std::vector< char >::iterator *_wrap_ByteVector_begin__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   TagLib::ByteVector::Iterator result;
   std::vector< char >::iterator *_swig_go_result;
@@ -2778,7 +2778,7 @@ std::vector< char >::iterator *_wrap_ByteVector_begin__SWIG_0_taglib_a694ea421b0
 }
 
 
-std::vector< char >::const_iterator *_wrap_ByteVector_begin__SWIG_1_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0) {
+std::vector< char >::const_iterator *_wrap_ByteVector_begin__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   TagLib::ByteVector::ConstIterator result;
   std::vector< char >::const_iterator *_swig_go_result;
@@ -2791,7 +2791,7 @@ std::vector< char >::const_iterator *_wrap_ByteVector_begin__SWIG_1_taglib_a694e
 }
 
 
-std::vector< char >::const_iterator *_wrap_ByteVector_cbegin_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0) {
+std::vector< char >::const_iterator *_wrap_ByteVector_cbegin_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   TagLib::ByteVector::ConstIterator result;
   std::vector< char >::const_iterator *_swig_go_result;
@@ -2804,7 +2804,7 @@ std::vector< char >::const_iterator *_wrap_ByteVector_cbegin_taglib_a694ea421b08
 }
 
 
-std::vector< char >::iterator *_wrap_ByteVector_end__SWIG_0_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0) {
+std::vector< char >::iterator *_wrap_ByteVector_end__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   TagLib::ByteVector::Iterator result;
   std::vector< char >::iterator *_swig_go_result;
@@ -2817,7 +2817,7 @@ std::vector< char >::iterator *_wrap_ByteVector_end__SWIG_0_taglib_a694ea421b08a
 }
 
 
-std::vector< char >::const_iterator *_wrap_ByteVector_end__SWIG_1_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0) {
+std::vector< char >::const_iterator *_wrap_ByteVector_end__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   TagLib::ByteVector::ConstIterator result;
   std::vector< char >::const_iterator *_swig_go_result;
@@ -2830,7 +2830,7 @@ std::vector< char >::const_iterator *_wrap_ByteVector_end__SWIG_1_taglib_a694ea4
 }
 
 
-std::vector< char >::const_iterator *_wrap_ByteVector_cend_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0) {
+std::vector< char >::const_iterator *_wrap_ByteVector_cend_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   TagLib::ByteVector::ConstIterator result;
   std::vector< char >::const_iterator *_swig_go_result;
@@ -2843,7 +2843,7 @@ std::vector< char >::const_iterator *_wrap_ByteVector_cend_taglib_a694ea421b08a5
 }
 
 
-std::vector< char >::reverse_iterator *_wrap_ByteVector_rbegin__SWIG_0_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0) {
+std::vector< char >::reverse_iterator *_wrap_ByteVector_rbegin__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   TagLib::ByteVector::ReverseIterator result;
   std::vector< char >::reverse_iterator *_swig_go_result;
@@ -2856,7 +2856,7 @@ std::vector< char >::reverse_iterator *_wrap_ByteVector_rbegin__SWIG_0_taglib_a6
 }
 
 
-std::vector< char >::const_reverse_iterator *_wrap_ByteVector_rbegin__SWIG_1_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0) {
+std::vector< char >::const_reverse_iterator *_wrap_ByteVector_rbegin__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   TagLib::ByteVector::ConstReverseIterator result;
   std::vector< char >::const_reverse_iterator *_swig_go_result;
@@ -2869,7 +2869,7 @@ std::vector< char >::const_reverse_iterator *_wrap_ByteVector_rbegin__SWIG_1_tag
 }
 
 
-std::vector< char >::reverse_iterator *_wrap_ByteVector_rend__SWIG_0_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0) {
+std::vector< char >::reverse_iterator *_wrap_ByteVector_rend__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   TagLib::ByteVector::ReverseIterator result;
   std::vector< char >::reverse_iterator *_swig_go_result;
@@ -2882,7 +2882,7 @@ std::vector< char >::reverse_iterator *_wrap_ByteVector_rend__SWIG_0_taglib_a694
 }
 
 
-std::vector< char >::const_reverse_iterator *_wrap_ByteVector_rend__SWIG_1_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0) {
+std::vector< char >::const_reverse_iterator *_wrap_ByteVector_rend__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   TagLib::ByteVector::ConstReverseIterator result;
   std::vector< char >::const_reverse_iterator *_swig_go_result;
@@ -2895,7 +2895,7 @@ std::vector< char >::const_reverse_iterator *_wrap_ByteVector_rend__SWIG_1_tagli
 }
 
 
-bool _wrap_ByteVector_isEmpty_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0) {
+bool _wrap_ByteVector_isEmpty_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   bool result;
   bool _swig_go_result;
@@ -2908,7 +2908,7 @@ bool _wrap_ByteVector_isEmpty_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_
 }
 
 
-intgo _wrap_ByteVector_toUInt__SWIG_0_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, bool _swig_go_1) {
+intgo _wrap_ByteVector_toUInt__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, bool _swig_go_1) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   bool arg2 ;
   unsigned int result;
@@ -2923,7 +2923,7 @@ intgo _wrap_ByteVector_toUInt__SWIG_0_taglib_a694ea421b08a5bb(TagLib::ByteVector
 }
 
 
-intgo _wrap_ByteVector_toUInt__SWIG_1_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0) {
+intgo _wrap_ByteVector_toUInt__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   unsigned int result;
   intgo _swig_go_result;
@@ -2936,7 +2936,7 @@ intgo _wrap_ByteVector_toUInt__SWIG_1_taglib_a694ea421b08a5bb(TagLib::ByteVector
 }
 
 
-intgo _wrap_ByteVector_toUInt__SWIG_2_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1, bool _swig_go_2) {
+intgo _wrap_ByteVector_toUInt__SWIG_2_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1, bool _swig_go_2) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   unsigned int arg2 ;
   bool arg3 ;
@@ -2953,7 +2953,7 @@ intgo _wrap_ByteVector_toUInt__SWIG_2_taglib_a694ea421b08a5bb(TagLib::ByteVector
 }
 
 
-intgo _wrap_ByteVector_toUInt__SWIG_3_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1) {
+intgo _wrap_ByteVector_toUInt__SWIG_3_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   unsigned int arg2 ;
   unsigned int result;
@@ -2968,7 +2968,7 @@ intgo _wrap_ByteVector_toUInt__SWIG_3_taglib_a694ea421b08a5bb(TagLib::ByteVector
 }
 
 
-intgo _wrap_ByteVector_toUInt__SWIG_4_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1, intgo _swig_go_2, bool _swig_go_3) {
+intgo _wrap_ByteVector_toUInt__SWIG_4_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1, intgo _swig_go_2, bool _swig_go_3) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   unsigned int arg2 ;
   unsigned int arg3 ;
@@ -2987,7 +2987,7 @@ intgo _wrap_ByteVector_toUInt__SWIG_4_taglib_a694ea421b08a5bb(TagLib::ByteVector
 }
 
 
-intgo _wrap_ByteVector_toUInt__SWIG_5_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1, intgo _swig_go_2) {
+intgo _wrap_ByteVector_toUInt__SWIG_5_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1, intgo _swig_go_2) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   unsigned int arg2 ;
   unsigned int arg3 ;
@@ -3004,7 +3004,7 @@ intgo _wrap_ByteVector_toUInt__SWIG_5_taglib_a694ea421b08a5bb(TagLib::ByteVector
 }
 
 
-short _wrap_ByteVector_toShort__SWIG_0_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, bool _swig_go_1) {
+short _wrap_ByteVector_toShort__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, bool _swig_go_1) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   bool arg2 ;
   short result;
@@ -3019,7 +3019,7 @@ short _wrap_ByteVector_toShort__SWIG_0_taglib_a694ea421b08a5bb(TagLib::ByteVecto
 }
 
 
-short _wrap_ByteVector_toShort__SWIG_1_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0) {
+short _wrap_ByteVector_toShort__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   short result;
   short _swig_go_result;
@@ -3032,7 +3032,7 @@ short _wrap_ByteVector_toShort__SWIG_1_taglib_a694ea421b08a5bb(TagLib::ByteVecto
 }
 
 
-short _wrap_ByteVector_toShort__SWIG_2_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1, bool _swig_go_2) {
+short _wrap_ByteVector_toShort__SWIG_2_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1, bool _swig_go_2) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   unsigned int arg2 ;
   bool arg3 ;
@@ -3049,7 +3049,7 @@ short _wrap_ByteVector_toShort__SWIG_2_taglib_a694ea421b08a5bb(TagLib::ByteVecto
 }
 
 
-short _wrap_ByteVector_toShort__SWIG_3_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1) {
+short _wrap_ByteVector_toShort__SWIG_3_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   unsigned int arg2 ;
   short result;
@@ -3064,7 +3064,7 @@ short _wrap_ByteVector_toShort__SWIG_3_taglib_a694ea421b08a5bb(TagLib::ByteVecto
 }
 
 
-short _wrap_ByteVector_toUShort__SWIG_0_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, bool _swig_go_1) {
+short _wrap_ByteVector_toUShort__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, bool _swig_go_1) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   bool arg2 ;
   unsigned short result;
@@ -3079,7 +3079,7 @@ short _wrap_ByteVector_toUShort__SWIG_0_taglib_a694ea421b08a5bb(TagLib::ByteVect
 }
 
 
-short _wrap_ByteVector_toUShort__SWIG_1_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0) {
+short _wrap_ByteVector_toUShort__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   unsigned short result;
   short _swig_go_result;
@@ -3092,7 +3092,7 @@ short _wrap_ByteVector_toUShort__SWIG_1_taglib_a694ea421b08a5bb(TagLib::ByteVect
 }
 
 
-short _wrap_ByteVector_toUShort__SWIG_2_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1, bool _swig_go_2) {
+short _wrap_ByteVector_toUShort__SWIG_2_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1, bool _swig_go_2) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   unsigned int arg2 ;
   bool arg3 ;
@@ -3109,7 +3109,7 @@ short _wrap_ByteVector_toUShort__SWIG_2_taglib_a694ea421b08a5bb(TagLib::ByteVect
 }
 
 
-short _wrap_ByteVector_toUShort__SWIG_3_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1) {
+short _wrap_ByteVector_toUShort__SWIG_3_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   unsigned int arg2 ;
   unsigned short result;
@@ -3124,7 +3124,7 @@ short _wrap_ByteVector_toUShort__SWIG_3_taglib_a694ea421b08a5bb(TagLib::ByteVect
 }
 
 
-long long _wrap_ByteVector_toLongLong__SWIG_0_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, bool _swig_go_1) {
+long long _wrap_ByteVector_toLongLong__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, bool _swig_go_1) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   bool arg2 ;
   long long result;
@@ -3139,7 +3139,7 @@ long long _wrap_ByteVector_toLongLong__SWIG_0_taglib_a694ea421b08a5bb(TagLib::By
 }
 
 
-long long _wrap_ByteVector_toLongLong__SWIG_1_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0) {
+long long _wrap_ByteVector_toLongLong__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   long long result;
   long long _swig_go_result;
@@ -3152,7 +3152,7 @@ long long _wrap_ByteVector_toLongLong__SWIG_1_taglib_a694ea421b08a5bb(TagLib::By
 }
 
 
-long long _wrap_ByteVector_toLongLong__SWIG_2_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1, bool _swig_go_2) {
+long long _wrap_ByteVector_toLongLong__SWIG_2_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1, bool _swig_go_2) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   unsigned int arg2 ;
   bool arg3 ;
@@ -3169,7 +3169,7 @@ long long _wrap_ByteVector_toLongLong__SWIG_2_taglib_a694ea421b08a5bb(TagLib::By
 }
 
 
-long long _wrap_ByteVector_toLongLong__SWIG_3_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1) {
+long long _wrap_ByteVector_toLongLong__SWIG_3_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   unsigned int arg2 ;
   long long result;
@@ -3184,7 +3184,7 @@ long long _wrap_ByteVector_toLongLong__SWIG_3_taglib_a694ea421b08a5bb(TagLib::By
 }
 
 
-long long _wrap_ByteVector_toULongLong__SWIG_0_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, bool _swig_go_1) {
+long long _wrap_ByteVector_toULongLong__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, bool _swig_go_1) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   bool arg2 ;
   unsigned long long result;
@@ -3199,7 +3199,7 @@ long long _wrap_ByteVector_toULongLong__SWIG_0_taglib_a694ea421b08a5bb(TagLib::B
 }
 
 
-long long _wrap_ByteVector_toULongLong__SWIG_1_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0) {
+long long _wrap_ByteVector_toULongLong__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   unsigned long long result;
   long long _swig_go_result;
@@ -3212,7 +3212,7 @@ long long _wrap_ByteVector_toULongLong__SWIG_1_taglib_a694ea421b08a5bb(TagLib::B
 }
 
 
-long long _wrap_ByteVector_toULongLong__SWIG_2_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1, bool _swig_go_2) {
+long long _wrap_ByteVector_toULongLong__SWIG_2_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1, bool _swig_go_2) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   unsigned int arg2 ;
   bool arg3 ;
@@ -3229,7 +3229,7 @@ long long _wrap_ByteVector_toULongLong__SWIG_2_taglib_a694ea421b08a5bb(TagLib::B
 }
 
 
-long long _wrap_ByteVector_toULongLong__SWIG_3_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1) {
+long long _wrap_ByteVector_toULongLong__SWIG_3_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, intgo _swig_go_1) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   unsigned int arg2 ;
   unsigned long long result;
@@ -3244,7 +3244,7 @@ long long _wrap_ByteVector_toULongLong__SWIG_3_taglib_a694ea421b08a5bb(TagLib::B
 }
 
 
-float _wrap_ByteVector_toFloat32LE_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, long long _swig_go_1) {
+float _wrap_ByteVector_toFloat32LE_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, long long _swig_go_1) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   size_t arg2 ;
   float result;
@@ -3259,7 +3259,7 @@ float _wrap_ByteVector_toFloat32LE_taglib_a694ea421b08a5bb(TagLib::ByteVector *_
 }
 
 
-float _wrap_ByteVector_toFloat32BE_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, long long _swig_go_1) {
+float _wrap_ByteVector_toFloat32BE_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, long long _swig_go_1) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   size_t arg2 ;
   float result;
@@ -3274,7 +3274,7 @@ float _wrap_ByteVector_toFloat32BE_taglib_a694ea421b08a5bb(TagLib::ByteVector *_
 }
 
 
-double _wrap_ByteVector_toFloat64LE_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, long long _swig_go_1) {
+double _wrap_ByteVector_toFloat64LE_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, long long _swig_go_1) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   size_t arg2 ;
   double result;
@@ -3289,7 +3289,7 @@ double _wrap_ByteVector_toFloat64LE_taglib_a694ea421b08a5bb(TagLib::ByteVector *
 }
 
 
-double _wrap_ByteVector_toFloat64BE_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, long long _swig_go_1) {
+double _wrap_ByteVector_toFloat64BE_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, long long _swig_go_1) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   size_t arg2 ;
   double result;
@@ -3304,7 +3304,7 @@ double _wrap_ByteVector_toFloat64BE_taglib_a694ea421b08a5bb(TagLib::ByteVector *
 }
 
 
-long double *_wrap_ByteVector_toFloat80LE_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, long long _swig_go_1) {
+long double *_wrap_ByteVector_toFloat80LE_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, long long _swig_go_1) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   size_t arg2 ;
   long double result;
@@ -3319,7 +3319,7 @@ long double *_wrap_ByteVector_toFloat80LE_taglib_a694ea421b08a5bb(TagLib::ByteVe
 }
 
 
-long double *_wrap_ByteVector_toFloat80BE_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, long long _swig_go_1) {
+long double *_wrap_ByteVector_toFloat80BE_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, long long _swig_go_1) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   size_t arg2 ;
   long double result;
@@ -3334,7 +3334,7 @@ long double *_wrap_ByteVector_toFloat80BE_taglib_a694ea421b08a5bb(TagLib::ByteVe
 }
 
 
-TagLib::ByteVector *_wrap_ByteVector_fromUInt__SWIG_0_taglib_a694ea421b08a5bb(intgo _swig_go_0, bool _swig_go_1) {
+TagLib::ByteVector *_wrap_ByteVector_fromUInt__SWIG_0_taglib_f208bd8fe051fa0d(intgo _swig_go_0, bool _swig_go_1) {
   unsigned int arg1 ;
   bool arg2 ;
   TagLib::ByteVector result;
@@ -3349,7 +3349,7 @@ TagLib::ByteVector *_wrap_ByteVector_fromUInt__SWIG_0_taglib_a694ea421b08a5bb(in
 }
 
 
-TagLib::ByteVector *_wrap_ByteVector_fromUInt__SWIG_1_taglib_a694ea421b08a5bb(intgo _swig_go_0) {
+TagLib::ByteVector *_wrap_ByteVector_fromUInt__SWIG_1_taglib_f208bd8fe051fa0d(intgo _swig_go_0) {
   unsigned int arg1 ;
   TagLib::ByteVector result;
   TagLib::ByteVector *_swig_go_result;
@@ -3362,7 +3362,7 @@ TagLib::ByteVector *_wrap_ByteVector_fromUInt__SWIG_1_taglib_a694ea421b08a5bb(in
 }
 
 
-TagLib::ByteVector *_wrap_ByteVector_fromShort__SWIG_0_taglib_a694ea421b08a5bb(short _swig_go_0, bool _swig_go_1) {
+TagLib::ByteVector *_wrap_ByteVector_fromShort__SWIG_0_taglib_f208bd8fe051fa0d(short _swig_go_0, bool _swig_go_1) {
   short arg1 ;
   bool arg2 ;
   TagLib::ByteVector result;
@@ -3377,7 +3377,7 @@ TagLib::ByteVector *_wrap_ByteVector_fromShort__SWIG_0_taglib_a694ea421b08a5bb(s
 }
 
 
-TagLib::ByteVector *_wrap_ByteVector_fromShort__SWIG_1_taglib_a694ea421b08a5bb(short _swig_go_0) {
+TagLib::ByteVector *_wrap_ByteVector_fromShort__SWIG_1_taglib_f208bd8fe051fa0d(short _swig_go_0) {
   short arg1 ;
   TagLib::ByteVector result;
   TagLib::ByteVector *_swig_go_result;
@@ -3390,7 +3390,7 @@ TagLib::ByteVector *_wrap_ByteVector_fromShort__SWIG_1_taglib_a694ea421b08a5bb(s
 }
 
 
-TagLib::ByteVector *_wrap_ByteVector_fromUShort__SWIG_0_taglib_a694ea421b08a5bb(short _swig_go_0, bool _swig_go_1) {
+TagLib::ByteVector *_wrap_ByteVector_fromUShort__SWIG_0_taglib_f208bd8fe051fa0d(short _swig_go_0, bool _swig_go_1) {
   unsigned short arg1 ;
   bool arg2 ;
   TagLib::ByteVector result;
@@ -3405,7 +3405,7 @@ TagLib::ByteVector *_wrap_ByteVector_fromUShort__SWIG_0_taglib_a694ea421b08a5bb(
 }
 
 
-TagLib::ByteVector *_wrap_ByteVector_fromUShort__SWIG_1_taglib_a694ea421b08a5bb(short _swig_go_0) {
+TagLib::ByteVector *_wrap_ByteVector_fromUShort__SWIG_1_taglib_f208bd8fe051fa0d(short _swig_go_0) {
   unsigned short arg1 ;
   TagLib::ByteVector result;
   TagLib::ByteVector *_swig_go_result;
@@ -3418,7 +3418,7 @@ TagLib::ByteVector *_wrap_ByteVector_fromUShort__SWIG_1_taglib_a694ea421b08a5bb(
 }
 
 
-TagLib::ByteVector *_wrap_ByteVector_fromLongLong__SWIG_0_taglib_a694ea421b08a5bb(long long _swig_go_0, bool _swig_go_1) {
+TagLib::ByteVector *_wrap_ByteVector_fromLongLong__SWIG_0_taglib_f208bd8fe051fa0d(long long _swig_go_0, bool _swig_go_1) {
   long long arg1 ;
   bool arg2 ;
   TagLib::ByteVector result;
@@ -3433,7 +3433,7 @@ TagLib::ByteVector *_wrap_ByteVector_fromLongLong__SWIG_0_taglib_a694ea421b08a5b
 }
 
 
-TagLib::ByteVector *_wrap_ByteVector_fromLongLong__SWIG_1_taglib_a694ea421b08a5bb(long long _swig_go_0) {
+TagLib::ByteVector *_wrap_ByteVector_fromLongLong__SWIG_1_taglib_f208bd8fe051fa0d(long long _swig_go_0) {
   long long arg1 ;
   TagLib::ByteVector result;
   TagLib::ByteVector *_swig_go_result;
@@ -3446,7 +3446,7 @@ TagLib::ByteVector *_wrap_ByteVector_fromLongLong__SWIG_1_taglib_a694ea421b08a5b
 }
 
 
-TagLib::ByteVector *_wrap_ByteVector_fromULongLong__SWIG_0_taglib_a694ea421b08a5bb(long long _swig_go_0, bool _swig_go_1) {
+TagLib::ByteVector *_wrap_ByteVector_fromULongLong__SWIG_0_taglib_f208bd8fe051fa0d(long long _swig_go_0, bool _swig_go_1) {
   unsigned long long arg1 ;
   bool arg2 ;
   TagLib::ByteVector result;
@@ -3461,7 +3461,7 @@ TagLib::ByteVector *_wrap_ByteVector_fromULongLong__SWIG_0_taglib_a694ea421b08a5
 }
 
 
-TagLib::ByteVector *_wrap_ByteVector_fromULongLong__SWIG_1_taglib_a694ea421b08a5bb(long long _swig_go_0) {
+TagLib::ByteVector *_wrap_ByteVector_fromULongLong__SWIG_1_taglib_f208bd8fe051fa0d(long long _swig_go_0) {
   unsigned long long arg1 ;
   TagLib::ByteVector result;
   TagLib::ByteVector *_swig_go_result;
@@ -3474,7 +3474,7 @@ TagLib::ByteVector *_wrap_ByteVector_fromULongLong__SWIG_1_taglib_a694ea421b08a5
 }
 
 
-TagLib::ByteVector *_wrap_ByteVector_fromFloat32LE_taglib_a694ea421b08a5bb(float _swig_go_0) {
+TagLib::ByteVector *_wrap_ByteVector_fromFloat32LE_taglib_f208bd8fe051fa0d(float _swig_go_0) {
   float arg1 ;
   TagLib::ByteVector result;
   TagLib::ByteVector *_swig_go_result;
@@ -3487,7 +3487,7 @@ TagLib::ByteVector *_wrap_ByteVector_fromFloat32LE_taglib_a694ea421b08a5bb(float
 }
 
 
-TagLib::ByteVector *_wrap_ByteVector_fromFloat32BE_taglib_a694ea421b08a5bb(float _swig_go_0) {
+TagLib::ByteVector *_wrap_ByteVector_fromFloat32BE_taglib_f208bd8fe051fa0d(float _swig_go_0) {
   float arg1 ;
   TagLib::ByteVector result;
   TagLib::ByteVector *_swig_go_result;
@@ -3500,7 +3500,7 @@ TagLib::ByteVector *_wrap_ByteVector_fromFloat32BE_taglib_a694ea421b08a5bb(float
 }
 
 
-TagLib::ByteVector *_wrap_ByteVector_fromFloat64LE_taglib_a694ea421b08a5bb(double _swig_go_0) {
+TagLib::ByteVector *_wrap_ByteVector_fromFloat64LE_taglib_f208bd8fe051fa0d(double _swig_go_0) {
   double arg1 ;
   TagLib::ByteVector result;
   TagLib::ByteVector *_swig_go_result;
@@ -3513,7 +3513,7 @@ TagLib::ByteVector *_wrap_ByteVector_fromFloat64LE_taglib_a694ea421b08a5bb(doubl
 }
 
 
-TagLib::ByteVector *_wrap_ByteVector_fromFloat64BE_taglib_a694ea421b08a5bb(double _swig_go_0) {
+TagLib::ByteVector *_wrap_ByteVector_fromFloat64BE_taglib_f208bd8fe051fa0d(double _swig_go_0) {
   double arg1 ;
   TagLib::ByteVector result;
   TagLib::ByteVector *_swig_go_result;
@@ -3526,7 +3526,7 @@ TagLib::ByteVector *_wrap_ByteVector_fromFloat64BE_taglib_a694ea421b08a5bb(doubl
 }
 
 
-TagLib::ByteVector *_wrap_ByteVector_fromCString__SWIG_0_taglib_a694ea421b08a5bb(_gostring_ _swig_go_0, intgo _swig_go_1) {
+TagLib::ByteVector *_wrap_ByteVector_fromCString__SWIG_0_taglib_f208bd8fe051fa0d(_gostring_ _swig_go_0, intgo _swig_go_1) {
   char *arg1 = (char *) 0 ;
   unsigned int arg2 ;
   TagLib::ByteVector result;
@@ -3546,7 +3546,7 @@ TagLib::ByteVector *_wrap_ByteVector_fromCString__SWIG_0_taglib_a694ea421b08a5bb
 }
 
 
-TagLib::ByteVector *_wrap_ByteVector_fromCString__SWIG_1_taglib_a694ea421b08a5bb(_gostring_ _swig_go_0) {
+TagLib::ByteVector *_wrap_ByteVector_fromCString__SWIG_1_taglib_f208bd8fe051fa0d(_gostring_ _swig_go_0) {
   char *arg1 = (char *) 0 ;
   TagLib::ByteVector result;
   TagLib::ByteVector *_swig_go_result;
@@ -3564,7 +3564,7 @@ TagLib::ByteVector *_wrap_ByteVector_fromCString__SWIG_1_taglib_a694ea421b08a5bb
 }
 
 
-void _wrap_ByteVector_swap_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0, TagLib::ByteVector *_swig_go_1) {
+void _wrap_ByteVector_swap_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0, TagLib::ByteVector *_swig_go_1) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   TagLib::ByteVector *arg2 = 0 ;
   
@@ -3576,7 +3576,7 @@ void _wrap_ByteVector_swap_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_
 }
 
 
-TagLib::ByteVector *_wrap_ByteVector_toHex_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0) {
+TagLib::ByteVector *_wrap_ByteVector_toHex_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   TagLib::ByteVector result;
   TagLib::ByteVector *_swig_go_result;
@@ -3589,7 +3589,7 @@ TagLib::ByteVector *_wrap_ByteVector_toHex_taglib_a694ea421b08a5bb(TagLib::ByteV
 }
 
 
-TagLib::ByteVector *_wrap_ByteVector_toBase64_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0) {
+TagLib::ByteVector *_wrap_ByteVector_toBase64_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   TagLib::ByteVector result;
   TagLib::ByteVector *_swig_go_result;
@@ -3602,7 +3602,7 @@ TagLib::ByteVector *_wrap_ByteVector_toBase64_taglib_a694ea421b08a5bb(TagLib::By
 }
 
 
-TagLib::ByteVector *_wrap_ByteVector_fromBase64_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0) {
+TagLib::ByteVector *_wrap_ByteVector_fromBase64_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0) {
   TagLib::ByteVector *arg1 = 0 ;
   TagLib::ByteVector result;
   TagLib::ByteVector *_swig_go_result;
@@ -3615,7 +3615,7 @@ TagLib::ByteVector *_wrap_ByteVector_fromBase64_taglib_a694ea421b08a5bb(TagLib::
 }
 
 
-_gostring_ _wrap_ByteVector_bytes_taglib_a694ea421b08a5bb(TagLib::ByteVector *_swig_go_0) {
+_gostring_ _wrap_ByteVector_bytes_taglib_f208bd8fe051fa0d(TagLib::ByteVector *_swig_go_0) {
   TagLib::ByteVector *arg1 = (TagLib::ByteVector *) 0 ;
   std::string result;
   _gostring_ _swig_go_result;
@@ -3628,7 +3628,7 @@ _gostring_ _wrap_ByteVector_bytes_taglib_a694ea421b08a5bb(TagLib::ByteVector *_s
 }
 
 
-intgo _wrap_Fast_AudioProperties_taglib_a694ea421b08a5bb() {
+intgo _wrap_Fast_AudioProperties_taglib_f208bd8fe051fa0d() {
   TagLib::AudioProperties::ReadStyle result;
   intgo _swig_go_result;
   
@@ -3640,7 +3640,7 @@ intgo _wrap_Fast_AudioProperties_taglib_a694ea421b08a5bb() {
 }
 
 
-intgo _wrap_Average_AudioProperties_taglib_a694ea421b08a5bb() {
+intgo _wrap_Average_AudioProperties_taglib_f208bd8fe051fa0d() {
   TagLib::AudioProperties::ReadStyle result;
   intgo _swig_go_result;
   
@@ -3652,7 +3652,7 @@ intgo _wrap_Average_AudioProperties_taglib_a694ea421b08a5bb() {
 }
 
 
-intgo _wrap_Accurate_AudioProperties_taglib_a694ea421b08a5bb() {
+intgo _wrap_Accurate_AudioProperties_taglib_f208bd8fe051fa0d() {
   TagLib::AudioProperties::ReadStyle result;
   intgo _swig_go_result;
   
@@ -3664,7 +3664,7 @@ intgo _wrap_Accurate_AudioProperties_taglib_a694ea421b08a5bb() {
 }
 
 
-void _wrap_delete_AudioProperties_taglib_a694ea421b08a5bb(TagLib::AudioProperties *_swig_go_0) {
+void _wrap_delete_AudioProperties_taglib_f208bd8fe051fa0d(TagLib::AudioProperties *_swig_go_0) {
   TagLib::AudioProperties *arg1 = (TagLib::AudioProperties *) 0 ;
   
   arg1 = *(TagLib::AudioProperties **)&_swig_go_0; 
@@ -3674,7 +3674,7 @@ void _wrap_delete_AudioProperties_taglib_a694ea421b08a5bb(TagLib::AudioPropertie
 }
 
 
-intgo _wrap_AudioProperties_length_taglib_a694ea421b08a5bb(TagLib::AudioProperties *_swig_go_0) {
+intgo _wrap_AudioProperties_length_taglib_f208bd8fe051fa0d(TagLib::AudioProperties *_swig_go_0) {
   TagLib::AudioProperties *arg1 = (TagLib::AudioProperties *) 0 ;
   int result;
   intgo _swig_go_result;
@@ -3687,7 +3687,7 @@ intgo _wrap_AudioProperties_length_taglib_a694ea421b08a5bb(TagLib::AudioProperti
 }
 
 
-intgo _wrap_AudioProperties_lengthInSeconds_taglib_a694ea421b08a5bb(TagLib::AudioProperties *_swig_go_0) {
+intgo _wrap_AudioProperties_lengthInSeconds_taglib_f208bd8fe051fa0d(TagLib::AudioProperties *_swig_go_0) {
   TagLib::AudioProperties *arg1 = (TagLib::AudioProperties *) 0 ;
   int result;
   intgo _swig_go_result;
@@ -3700,7 +3700,7 @@ intgo _wrap_AudioProperties_lengthInSeconds_taglib_a694ea421b08a5bb(TagLib::Audi
 }
 
 
-intgo _wrap_AudioProperties_lengthInMilliseconds_taglib_a694ea421b08a5bb(TagLib::AudioProperties *_swig_go_0) {
+intgo _wrap_AudioProperties_lengthInMilliseconds_taglib_f208bd8fe051fa0d(TagLib::AudioProperties *_swig_go_0) {
   TagLib::AudioProperties *arg1 = (TagLib::AudioProperties *) 0 ;
   int result;
   intgo _swig_go_result;
@@ -3713,7 +3713,7 @@ intgo _wrap_AudioProperties_lengthInMilliseconds_taglib_a694ea421b08a5bb(TagLib:
 }
 
 
-intgo _wrap_AudioProperties_bitrate_taglib_a694ea421b08a5bb(TagLib::AudioProperties *_swig_go_0) {
+intgo _wrap_AudioProperties_bitrate_taglib_f208bd8fe051fa0d(TagLib::AudioProperties *_swig_go_0) {
   TagLib::AudioProperties *arg1 = (TagLib::AudioProperties *) 0 ;
   int result;
   intgo _swig_go_result;
@@ -3726,7 +3726,7 @@ intgo _wrap_AudioProperties_bitrate_taglib_a694ea421b08a5bb(TagLib::AudioPropert
 }
 
 
-intgo _wrap_AudioProperties_sampleRate_taglib_a694ea421b08a5bb(TagLib::AudioProperties *_swig_go_0) {
+intgo _wrap_AudioProperties_sampleRate_taglib_f208bd8fe051fa0d(TagLib::AudioProperties *_swig_go_0) {
   TagLib::AudioProperties *arg1 = (TagLib::AudioProperties *) 0 ;
   int result;
   intgo _swig_go_result;
@@ -3739,7 +3739,7 @@ intgo _wrap_AudioProperties_sampleRate_taglib_a694ea421b08a5bb(TagLib::AudioProp
 }
 
 
-intgo _wrap_AudioProperties_channels_taglib_a694ea421b08a5bb(TagLib::AudioProperties *_swig_go_0) {
+intgo _wrap_AudioProperties_channels_taglib_f208bd8fe051fa0d(TagLib::AudioProperties *_swig_go_0) {
   TagLib::AudioProperties *arg1 = (TagLib::AudioProperties *) 0 ;
   int result;
   intgo _swig_go_result;
@@ -3752,7 +3752,7 @@ intgo _wrap_AudioProperties_channels_taglib_a694ea421b08a5bb(TagLib::AudioProper
 }
 
 
-TagLib::PropertyMap *_wrap_new_PropertyMap__SWIG_0_taglib_a694ea421b08a5bb() {
+TagLib::PropertyMap *_wrap_new_PropertyMap__SWIG_0_taglib_f208bd8fe051fa0d() {
   TagLib::PropertyMap *result = 0 ;
   TagLib::PropertyMap *_swig_go_result;
   
@@ -3763,7 +3763,7 @@ TagLib::PropertyMap *_wrap_new_PropertyMap__SWIG_0_taglib_a694ea421b08a5bb() {
 }
 
 
-TagLib::PropertyMap *_wrap_new_PropertyMap__SWIG_1_taglib_a694ea421b08a5bb(TagLib::PropertyMap *_swig_go_0) {
+TagLib::PropertyMap *_wrap_new_PropertyMap__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::PropertyMap *_swig_go_0) {
   TagLib::PropertyMap *arg1 = 0 ;
   TagLib::PropertyMap *result = 0 ;
   TagLib::PropertyMap *_swig_go_result;
@@ -3776,7 +3776,7 @@ TagLib::PropertyMap *_wrap_new_PropertyMap__SWIG_1_taglib_a694ea421b08a5bb(TagLi
 }
 
 
-TagLib::PropertyMap *_wrap_new_PropertyMap__SWIG_2_taglib_a694ea421b08a5bb(TagLib::Map< TagLib::String,TagLib::StringList > *_swig_go_0) {
+TagLib::PropertyMap *_wrap_new_PropertyMap__SWIG_2_taglib_f208bd8fe051fa0d(TagLib::Map< TagLib::String,TagLib::StringList > *_swig_go_0) {
   TagLib::SimplePropertyMap *arg1 = 0 ;
   TagLib::PropertyMap *result = 0 ;
   TagLib::PropertyMap *_swig_go_result;
@@ -3789,7 +3789,7 @@ TagLib::PropertyMap *_wrap_new_PropertyMap__SWIG_2_taglib_a694ea421b08a5bb(TagLi
 }
 
 
-void _wrap_delete_PropertyMap_taglib_a694ea421b08a5bb(TagLib::PropertyMap *_swig_go_0) {
+void _wrap_delete_PropertyMap_taglib_f208bd8fe051fa0d(TagLib::PropertyMap *_swig_go_0) {
   TagLib::PropertyMap *arg1 = (TagLib::PropertyMap *) 0 ;
   
   arg1 = *(TagLib::PropertyMap **)&_swig_go_0; 
@@ -3799,7 +3799,7 @@ void _wrap_delete_PropertyMap_taglib_a694ea421b08a5bb(TagLib::PropertyMap *_swig
 }
 
 
-bool _wrap_PropertyMap_insert_taglib_a694ea421b08a5bb(TagLib::PropertyMap *_swig_go_0, TagLib::String *_swig_go_1, TagLib::StringList *_swig_go_2) {
+bool _wrap_PropertyMap_insert_taglib_f208bd8fe051fa0d(TagLib::PropertyMap *_swig_go_0, TagLib::String *_swig_go_1, TagLib::StringList *_swig_go_2) {
   TagLib::PropertyMap *arg1 = (TagLib::PropertyMap *) 0 ;
   TagLib::String *arg2 = 0 ;
   TagLib::StringList *arg3 = 0 ;
@@ -3816,7 +3816,7 @@ bool _wrap_PropertyMap_insert_taglib_a694ea421b08a5bb(TagLib::PropertyMap *_swig
 }
 
 
-bool _wrap_PropertyMap_replace_taglib_a694ea421b08a5bb(TagLib::PropertyMap *_swig_go_0, TagLib::String *_swig_go_1, TagLib::StringList *_swig_go_2) {
+bool _wrap_PropertyMap_replace_taglib_f208bd8fe051fa0d(TagLib::PropertyMap *_swig_go_0, TagLib::String *_swig_go_1, TagLib::StringList *_swig_go_2) {
   TagLib::PropertyMap *arg1 = (TagLib::PropertyMap *) 0 ;
   TagLib::String *arg2 = 0 ;
   TagLib::StringList *arg3 = 0 ;
@@ -3833,7 +3833,7 @@ bool _wrap_PropertyMap_replace_taglib_a694ea421b08a5bb(TagLib::PropertyMap *_swi
 }
 
 
-TagLib::Map< TagLib::String,TagLib::StringList >::Iterator *_wrap_PropertyMap_find__SWIG_0_taglib_a694ea421b08a5bb(TagLib::PropertyMap *_swig_go_0, TagLib::String *_swig_go_1) {
+TagLib::Map< TagLib::String,TagLib::StringList >::Iterator *_wrap_PropertyMap_find__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::PropertyMap *_swig_go_0, TagLib::String *_swig_go_1) {
   TagLib::PropertyMap *arg1 = (TagLib::PropertyMap *) 0 ;
   TagLib::String *arg2 = 0 ;
   SwigValueWrapper< TagLib::Map< TagLib::String,TagLib::StringList >::Iterator > result;
@@ -3848,7 +3848,7 @@ TagLib::Map< TagLib::String,TagLib::StringList >::Iterator *_wrap_PropertyMap_fi
 }
 
 
-TagLib::Map< TagLib::String,TagLib::StringList >::ConstIterator *_wrap_PropertyMap_find__SWIG_1_taglib_a694ea421b08a5bb(TagLib::PropertyMap *_swig_go_0, TagLib::String *_swig_go_1) {
+TagLib::Map< TagLib::String,TagLib::StringList >::ConstIterator *_wrap_PropertyMap_find__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::PropertyMap *_swig_go_0, TagLib::String *_swig_go_1) {
   TagLib::PropertyMap *arg1 = (TagLib::PropertyMap *) 0 ;
   TagLib::String *arg2 = 0 ;
   SwigValueWrapper< TagLib::Map< TagLib::String,TagLib::StringList >::ConstIterator > result;
@@ -3863,7 +3863,7 @@ TagLib::Map< TagLib::String,TagLib::StringList >::ConstIterator *_wrap_PropertyM
 }
 
 
-bool _wrap_PropertyMap_contains__SWIG_0_taglib_a694ea421b08a5bb(TagLib::PropertyMap *_swig_go_0, TagLib::String *_swig_go_1) {
+bool _wrap_PropertyMap_contains__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::PropertyMap *_swig_go_0, TagLib::String *_swig_go_1) {
   TagLib::PropertyMap *arg1 = (TagLib::PropertyMap *) 0 ;
   TagLib::String *arg2 = 0 ;
   bool result;
@@ -3878,7 +3878,7 @@ bool _wrap_PropertyMap_contains__SWIG_0_taglib_a694ea421b08a5bb(TagLib::Property
 }
 
 
-bool _wrap_PropertyMap_contains__SWIG_1_taglib_a694ea421b08a5bb(TagLib::PropertyMap *_swig_go_0, TagLib::PropertyMap *_swig_go_1) {
+bool _wrap_PropertyMap_contains__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::PropertyMap *_swig_go_0, TagLib::PropertyMap *_swig_go_1) {
   TagLib::PropertyMap *arg1 = (TagLib::PropertyMap *) 0 ;
   TagLib::PropertyMap *arg2 = 0 ;
   bool result;
@@ -3893,7 +3893,7 @@ bool _wrap_PropertyMap_contains__SWIG_1_taglib_a694ea421b08a5bb(TagLib::Property
 }
 
 
-TagLib::PropertyMap *_wrap_PropertyMap_erase__SWIG_0_taglib_a694ea421b08a5bb(TagLib::PropertyMap *_swig_go_0, TagLib::String *_swig_go_1) {
+TagLib::PropertyMap *_wrap_PropertyMap_erase__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::PropertyMap *_swig_go_0, TagLib::String *_swig_go_1) {
   TagLib::PropertyMap *arg1 = (TagLib::PropertyMap *) 0 ;
   TagLib::String *arg2 = 0 ;
   TagLib::PropertyMap *result = 0 ;
@@ -3908,7 +3908,7 @@ TagLib::PropertyMap *_wrap_PropertyMap_erase__SWIG_0_taglib_a694ea421b08a5bb(Tag
 }
 
 
-TagLib::PropertyMap *_wrap_PropertyMap_erase__SWIG_1_taglib_a694ea421b08a5bb(TagLib::PropertyMap *_swig_go_0, TagLib::PropertyMap *_swig_go_1) {
+TagLib::PropertyMap *_wrap_PropertyMap_erase__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::PropertyMap *_swig_go_0, TagLib::PropertyMap *_swig_go_1) {
   TagLib::PropertyMap *arg1 = (TagLib::PropertyMap *) 0 ;
   TagLib::PropertyMap *arg2 = 0 ;
   TagLib::PropertyMap *result = 0 ;
@@ -3923,7 +3923,7 @@ TagLib::PropertyMap *_wrap_PropertyMap_erase__SWIG_1_taglib_a694ea421b08a5bb(Tag
 }
 
 
-TagLib::PropertyMap *_wrap_PropertyMap_merge_taglib_a694ea421b08a5bb(TagLib::PropertyMap *_swig_go_0, TagLib::PropertyMap *_swig_go_1) {
+TagLib::PropertyMap *_wrap_PropertyMap_merge_taglib_f208bd8fe051fa0d(TagLib::PropertyMap *_swig_go_0, TagLib::PropertyMap *_swig_go_1) {
   TagLib::PropertyMap *arg1 = (TagLib::PropertyMap *) 0 ;
   TagLib::PropertyMap *arg2 = 0 ;
   TagLib::PropertyMap *result = 0 ;
@@ -3938,7 +3938,7 @@ TagLib::PropertyMap *_wrap_PropertyMap_merge_taglib_a694ea421b08a5bb(TagLib::Pro
 }
 
 
-TagLib::StringList *_wrap_PropertyMap_value__SWIG_0_taglib_a694ea421b08a5bb(TagLib::PropertyMap *_swig_go_0, TagLib::String *_swig_go_1, TagLib::StringList *_swig_go_2) {
+TagLib::StringList *_wrap_PropertyMap_value__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::PropertyMap *_swig_go_0, TagLib::String *_swig_go_1, TagLib::StringList *_swig_go_2) {
   TagLib::PropertyMap *arg1 = (TagLib::PropertyMap *) 0 ;
   TagLib::String *arg2 = 0 ;
   TagLib::StringList *arg3 = 0 ;
@@ -3955,7 +3955,7 @@ TagLib::StringList *_wrap_PropertyMap_value__SWIG_0_taglib_a694ea421b08a5bb(TagL
 }
 
 
-TagLib::StringList *_wrap_PropertyMap_value__SWIG_1_taglib_a694ea421b08a5bb(TagLib::PropertyMap *_swig_go_0, TagLib::String *_swig_go_1) {
+TagLib::StringList *_wrap_PropertyMap_value__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::PropertyMap *_swig_go_0, TagLib::String *_swig_go_1) {
   TagLib::PropertyMap *arg1 = (TagLib::PropertyMap *) 0 ;
   TagLib::String *arg2 = 0 ;
   TagLib::StringList result;
@@ -3970,7 +3970,7 @@ TagLib::StringList *_wrap_PropertyMap_value__SWIG_1_taglib_a694ea421b08a5bb(TagL
 }
 
 
-TagLib::StringList *_wrap_PropertyMap_unsupportedData_taglib_a694ea421b08a5bb(TagLib::PropertyMap *_swig_go_0) {
+TagLib::StringList *_wrap_PropertyMap_unsupportedData_taglib_f208bd8fe051fa0d(TagLib::PropertyMap *_swig_go_0) {
   TagLib::PropertyMap *arg1 = (TagLib::PropertyMap *) 0 ;
   TagLib::StringList *result = 0 ;
   TagLib::StringList *_swig_go_result;
@@ -3983,7 +3983,7 @@ TagLib::StringList *_wrap_PropertyMap_unsupportedData_taglib_a694ea421b08a5bb(Ta
 }
 
 
-void _wrap_PropertyMap_addUnsupportedData_taglib_a694ea421b08a5bb(TagLib::PropertyMap *_swig_go_0, TagLib::String *_swig_go_1) {
+void _wrap_PropertyMap_addUnsupportedData_taglib_f208bd8fe051fa0d(TagLib::PropertyMap *_swig_go_0, TagLib::String *_swig_go_1) {
   TagLib::PropertyMap *arg1 = (TagLib::PropertyMap *) 0 ;
   TagLib::String *arg2 = 0 ;
   
@@ -3995,7 +3995,7 @@ void _wrap_PropertyMap_addUnsupportedData_taglib_a694ea421b08a5bb(TagLib::Proper
 }
 
 
-void _wrap_PropertyMap_removeEmpty_taglib_a694ea421b08a5bb(TagLib::PropertyMap *_swig_go_0) {
+void _wrap_PropertyMap_removeEmpty_taglib_f208bd8fe051fa0d(TagLib::PropertyMap *_swig_go_0) {
   TagLib::PropertyMap *arg1 = (TagLib::PropertyMap *) 0 ;
   
   arg1 = *(TagLib::PropertyMap **)&_swig_go_0; 
@@ -4005,7 +4005,7 @@ void _wrap_PropertyMap_removeEmpty_taglib_a694ea421b08a5bb(TagLib::PropertyMap *
 }
 
 
-TagLib::String *_wrap_PropertyMap_toString_taglib_a694ea421b08a5bb(TagLib::PropertyMap *_swig_go_0) {
+TagLib::String *_wrap_PropertyMap_toString_taglib_f208bd8fe051fa0d(TagLib::PropertyMap *_swig_go_0) {
   TagLib::PropertyMap *arg1 = (TagLib::PropertyMap *) 0 ;
   TagLib::String result;
   TagLib::String *_swig_go_result;
@@ -4018,7 +4018,7 @@ TagLib::String *_wrap_PropertyMap_toString_taglib_a694ea421b08a5bb(TagLib::Prope
 }
 
 
-TagLib::StringList *_wrap_new_StringList__SWIG_0_taglib_a694ea421b08a5bb() {
+TagLib::StringList *_wrap_new_StringList__SWIG_0_taglib_f208bd8fe051fa0d() {
   TagLib::StringList *result = 0 ;
   TagLib::StringList *_swig_go_result;
   
@@ -4029,7 +4029,7 @@ TagLib::StringList *_wrap_new_StringList__SWIG_0_taglib_a694ea421b08a5bb() {
 }
 
 
-TagLib::StringList *_wrap_new_StringList__SWIG_1_taglib_a694ea421b08a5bb(TagLib::StringList *_swig_go_0) {
+TagLib::StringList *_wrap_new_StringList__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::StringList *_swig_go_0) {
   TagLib::StringList *arg1 = 0 ;
   TagLib::StringList *result = 0 ;
   TagLib::StringList *_swig_go_result;
@@ -4042,7 +4042,7 @@ TagLib::StringList *_wrap_new_StringList__SWIG_1_taglib_a694ea421b08a5bb(TagLib:
 }
 
 
-TagLib::StringList *_wrap_new_StringList__SWIG_2_taglib_a694ea421b08a5bb(std::initializer_list< TagLib::String > *_swig_go_0) {
+TagLib::StringList *_wrap_new_StringList__SWIG_2_taglib_f208bd8fe051fa0d(std::initializer_list< TagLib::String > *_swig_go_0) {
   SwigValueWrapper< std::initializer_list< TagLib::String > > arg1 ;
   TagLib::StringList *result = 0 ;
   TagLib::StringList *_swig_go_result;
@@ -4055,7 +4055,7 @@ TagLib::StringList *_wrap_new_StringList__SWIG_2_taglib_a694ea421b08a5bb(std::in
 }
 
 
-TagLib::StringList *_wrap_new_StringList__SWIG_3_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0) {
+TagLib::StringList *_wrap_new_StringList__SWIG_3_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0) {
   TagLib::String *arg1 = 0 ;
   TagLib::StringList *result = 0 ;
   TagLib::StringList *_swig_go_result;
@@ -4068,7 +4068,7 @@ TagLib::StringList *_wrap_new_StringList__SWIG_3_taglib_a694ea421b08a5bb(TagLib:
 }
 
 
-TagLib::StringList *_wrap_new_StringList__SWIG_4_taglib_a694ea421b08a5bb(TagLib::ByteVectorList *_swig_go_0, intgo _swig_go_1) {
+TagLib::StringList *_wrap_new_StringList__SWIG_4_taglib_f208bd8fe051fa0d(TagLib::ByteVectorList *_swig_go_0, intgo _swig_go_1) {
   TagLib::ByteVectorList *arg1 = 0 ;
   TagLib::String::Type arg2 ;
   TagLib::StringList *result = 0 ;
@@ -4083,7 +4083,7 @@ TagLib::StringList *_wrap_new_StringList__SWIG_4_taglib_a694ea421b08a5bb(TagLib:
 }
 
 
-TagLib::StringList *_wrap_new_StringList__SWIG_5_taglib_a694ea421b08a5bb(TagLib::ByteVectorList *_swig_go_0) {
+TagLib::StringList *_wrap_new_StringList__SWIG_5_taglib_f208bd8fe051fa0d(TagLib::ByteVectorList *_swig_go_0) {
   TagLib::ByteVectorList *arg1 = 0 ;
   TagLib::StringList *result = 0 ;
   TagLib::StringList *_swig_go_result;
@@ -4096,7 +4096,7 @@ TagLib::StringList *_wrap_new_StringList__SWIG_5_taglib_a694ea421b08a5bb(TagLib:
 }
 
 
-void _wrap_delete_StringList_taglib_a694ea421b08a5bb(TagLib::StringList *_swig_go_0) {
+void _wrap_delete_StringList_taglib_f208bd8fe051fa0d(TagLib::StringList *_swig_go_0) {
   TagLib::StringList *arg1 = (TagLib::StringList *) 0 ;
   
   arg1 = *(TagLib::StringList **)&_swig_go_0; 
@@ -4106,7 +4106,7 @@ void _wrap_delete_StringList_taglib_a694ea421b08a5bb(TagLib::StringList *_swig_g
 }
 
 
-TagLib::String *_wrap_StringList_toString__SWIG_0_taglib_a694ea421b08a5bb(TagLib::StringList *_swig_go_0, TagLib::String *_swig_go_1) {
+TagLib::String *_wrap_StringList_toString__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::StringList *_swig_go_0, TagLib::String *_swig_go_1) {
   TagLib::StringList *arg1 = (TagLib::StringList *) 0 ;
   TagLib::String *arg2 = 0 ;
   TagLib::String result;
@@ -4121,7 +4121,7 @@ TagLib::String *_wrap_StringList_toString__SWIG_0_taglib_a694ea421b08a5bb(TagLib
 }
 
 
-TagLib::String *_wrap_StringList_toString__SWIG_1_taglib_a694ea421b08a5bb(TagLib::StringList *_swig_go_0) {
+TagLib::String *_wrap_StringList_toString__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::StringList *_swig_go_0) {
   TagLib::StringList *arg1 = (TagLib::StringList *) 0 ;
   TagLib::String result;
   TagLib::String *_swig_go_result;
@@ -4134,7 +4134,7 @@ TagLib::String *_wrap_StringList_toString__SWIG_1_taglib_a694ea421b08a5bb(TagLib
 }
 
 
-TagLib::StringList *_wrap_StringList_append__SWIG_0_taglib_a694ea421b08a5bb(TagLib::StringList *_swig_go_0, TagLib::String *_swig_go_1) {
+TagLib::StringList *_wrap_StringList_append__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::StringList *_swig_go_0, TagLib::String *_swig_go_1) {
   TagLib::StringList *arg1 = (TagLib::StringList *) 0 ;
   TagLib::String *arg2 = 0 ;
   TagLib::StringList *result = 0 ;
@@ -4149,7 +4149,7 @@ TagLib::StringList *_wrap_StringList_append__SWIG_0_taglib_a694ea421b08a5bb(TagL
 }
 
 
-TagLib::StringList *_wrap_StringList_append__SWIG_1_taglib_a694ea421b08a5bb(TagLib::StringList *_swig_go_0, TagLib::StringList *_swig_go_1) {
+TagLib::StringList *_wrap_StringList_append__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::StringList *_swig_go_0, TagLib::StringList *_swig_go_1) {
   TagLib::StringList *arg1 = (TagLib::StringList *) 0 ;
   TagLib::StringList *arg2 = 0 ;
   TagLib::StringList *result = 0 ;
@@ -4164,7 +4164,7 @@ TagLib::StringList *_wrap_StringList_append__SWIG_1_taglib_a694ea421b08a5bb(TagL
 }
 
 
-TagLib::StringList *_wrap_StringList_split_taglib_a694ea421b08a5bb(TagLib::String *_swig_go_0, TagLib::String *_swig_go_1) {
+TagLib::StringList *_wrap_StringList_split_taglib_f208bd8fe051fa0d(TagLib::String *_swig_go_0, TagLib::String *_swig_go_1) {
   TagLib::String *arg1 = 0 ;
   TagLib::String *arg2 = 0 ;
   TagLib::StringList result;
@@ -4179,7 +4179,7 @@ TagLib::StringList *_wrap_StringList_split_taglib_a694ea421b08a5bb(TagLib::Strin
 }
 
 
-TagLib::IOStream *_wrap__swig_NewDirectorIOStreamIOStream_taglib_a694ea421b08a5bb(intgo _swig_go_0) {
+TagLib::IOStream *_wrap__swig_NewDirectorIOStreamIOStream_taglib_f208bd8fe051fa0d(intgo _swig_go_0) {
   int arg1 ;
   TagLib::IOStream *result = 0 ;
   TagLib::IOStream *_swig_go_result;
@@ -4192,7 +4192,7 @@ TagLib::IOStream *_wrap__swig_NewDirectorIOStreamIOStream_taglib_a694ea421b08a5b
 }
 
 
-void _wrap_DeleteDirectorIOStream_taglib_a694ea421b08a5bb(TagLib::IOStream *_swig_go_0) {
+void _wrap_DeleteDirectorIOStream_taglib_f208bd8fe051fa0d(TagLib::IOStream *_swig_go_0) {
   TagLib::IOStream *arg1 = (TagLib::IOStream *) 0 ;
   
   arg1 = *(TagLib::IOStream **)&_swig_go_0; 
@@ -4202,7 +4202,7 @@ void _wrap_DeleteDirectorIOStream_taglib_a694ea421b08a5bb(TagLib::IOStream *_swi
 }
 
 
-void _wrap__swig_DirectorIOStream_upcall_Clear_taglib_a694ea421b08a5bb(SwigDirector_IOStream *_swig_go_0) {
+void _wrap__swig_DirectorIOStream_upcall_Clear_taglib_f208bd8fe051fa0d(SwigDirector_IOStream *_swig_go_0) {
   SwigDirector_IOStream *arg1 = (SwigDirector_IOStream *) 0 ;
   
   arg1 = *(SwigDirector_IOStream **)&_swig_go_0; 
@@ -4212,7 +4212,7 @@ void _wrap__swig_DirectorIOStream_upcall_Clear_taglib_a694ea421b08a5bb(SwigDirec
 }
 
 
-intgo _wrap_Beginning_IOStream_taglib_a694ea421b08a5bb() {
+intgo _wrap_Beginning_IOStream_taglib_f208bd8fe051fa0d() {
   TagLib::IOStream::Position result;
   intgo _swig_go_result;
   
@@ -4224,7 +4224,7 @@ intgo _wrap_Beginning_IOStream_taglib_a694ea421b08a5bb() {
 }
 
 
-intgo _wrap_Current_IOStream_taglib_a694ea421b08a5bb() {
+intgo _wrap_Current_IOStream_taglib_f208bd8fe051fa0d() {
   TagLib::IOStream::Position result;
   intgo _swig_go_result;
   
@@ -4236,7 +4236,7 @@ intgo _wrap_Current_IOStream_taglib_a694ea421b08a5bb() {
 }
 
 
-intgo _wrap_End_IOStream_taglib_a694ea421b08a5bb() {
+intgo _wrap_End_IOStream_taglib_f208bd8fe051fa0d() {
   TagLib::IOStream::Position result;
   intgo _swig_go_result;
   
@@ -4248,7 +4248,7 @@ intgo _wrap_End_IOStream_taglib_a694ea421b08a5bb() {
 }
 
 
-TagLib::IOStream *_wrap_new_IOStream_taglib_a694ea421b08a5bb() {
+TagLib::IOStream *_wrap_new_IOStream_taglib_f208bd8fe051fa0d() {
   TagLib::IOStream *result = 0 ;
   TagLib::IOStream *_swig_go_result;
   
@@ -4259,7 +4259,7 @@ TagLib::IOStream *_wrap_new_IOStream_taglib_a694ea421b08a5bb() {
 }
 
 
-void _wrap_delete_IOStream_taglib_a694ea421b08a5bb(TagLib::IOStream *_swig_go_0) {
+void _wrap_delete_IOStream_taglib_f208bd8fe051fa0d(TagLib::IOStream *_swig_go_0) {
   TagLib::IOStream *arg1 = (TagLib::IOStream *) 0 ;
   
   arg1 = *(TagLib::IOStream **)&_swig_go_0; 
@@ -4269,7 +4269,7 @@ void _wrap_delete_IOStream_taglib_a694ea421b08a5bb(TagLib::IOStream *_swig_go_0)
 }
 
 
-_gostring_ _wrap_IOStream_name_taglib_a694ea421b08a5bb(TagLib::IOStream *_swig_go_0) {
+_gostring_ _wrap_IOStream_name_taglib_f208bd8fe051fa0d(TagLib::IOStream *_swig_go_0) {
   TagLib::IOStream *arg1 = (TagLib::IOStream *) 0 ;
   TagLib::FileName result;
   _gostring_ _swig_go_result;
@@ -4282,7 +4282,7 @@ _gostring_ _wrap_IOStream_name_taglib_a694ea421b08a5bb(TagLib::IOStream *_swig_g
 }
 
 
-TagLib::ByteVector *_wrap_IOStream_readBlock_taglib_a694ea421b08a5bb(TagLib::IOStream *_swig_go_0, long long _swig_go_1) {
+TagLib::ByteVector *_wrap_IOStream_readBlock_taglib_f208bd8fe051fa0d(TagLib::IOStream *_swig_go_0, long long _swig_go_1) {
   TagLib::IOStream *arg1 = (TagLib::IOStream *) 0 ;
   size_t arg2 ;
   TagLib::ByteVector result;
@@ -4297,7 +4297,7 @@ TagLib::ByteVector *_wrap_IOStream_readBlock_taglib_a694ea421b08a5bb(TagLib::IOS
 }
 
 
-void _wrap_IOStream_writeBlock_taglib_a694ea421b08a5bb(TagLib::IOStream *_swig_go_0, TagLib::ByteVector *_swig_go_1) {
+void _wrap_IOStream_writeBlock_taglib_f208bd8fe051fa0d(TagLib::IOStream *_swig_go_0, TagLib::ByteVector *_swig_go_1) {
   TagLib::IOStream *arg1 = (TagLib::IOStream *) 0 ;
   TagLib::ByteVector *arg2 = 0 ;
   
@@ -4309,51 +4309,37 @@ void _wrap_IOStream_writeBlock_taglib_a694ea421b08a5bb(TagLib::IOStream *_swig_g
 }
 
 
-void _wrap_IOStream_insert__SWIG_0_taglib_a694ea421b08a5bb(TagLib::IOStream *_swig_go_0, TagLib::ByteVector *_swig_go_1, off_t *_swig_go_2, long long _swig_go_3) {
+void _wrap_IOStream_insert__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::IOStream *_swig_go_0, TagLib::ByteVector *_swig_go_1, long long _swig_go_2, long long _swig_go_3) {
   TagLib::IOStream *arg1 = (TagLib::IOStream *) 0 ;
   TagLib::ByteVector *arg2 = 0 ;
   TagLib::offset_t arg3 ;
   size_t arg4 ;
-  TagLib::offset_t *argp3 ;
   
   arg1 = *(TagLib::IOStream **)&_swig_go_0; 
   arg2 = *(TagLib::ByteVector **)&_swig_go_1; 
-  
-  argp3 = (TagLib::offset_t *)_swig_go_2;
-  if (argp3 == NULL) {
-    _swig_gopanic("Attempt to dereference null TagLib::offset_t");
-  }
-  arg3 = (TagLib::offset_t)*argp3;
-  
+  arg3 = (TagLib::offset_t)_swig_go_2; 
   arg4 = (size_t)_swig_go_3; 
   
-  (arg1)->insert((TagLib::ByteVector const &)*arg2,SWIG_STD_MOVE(arg3),SWIG_STD_MOVE(arg4));
+  (arg1)->insert((TagLib::ByteVector const &)*arg2,arg3,SWIG_STD_MOVE(arg4));
   
 }
 
 
-void _wrap_IOStream_insert__SWIG_1_taglib_a694ea421b08a5bb(TagLib::IOStream *_swig_go_0, TagLib::ByteVector *_swig_go_1, off_t *_swig_go_2) {
+void _wrap_IOStream_insert__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::IOStream *_swig_go_0, TagLib::ByteVector *_swig_go_1, long long _swig_go_2) {
   TagLib::IOStream *arg1 = (TagLib::IOStream *) 0 ;
   TagLib::ByteVector *arg2 = 0 ;
   TagLib::offset_t arg3 ;
-  TagLib::offset_t *argp3 ;
   
   arg1 = *(TagLib::IOStream **)&_swig_go_0; 
   arg2 = *(TagLib::ByteVector **)&_swig_go_1; 
+  arg3 = (TagLib::offset_t)_swig_go_2; 
   
-  argp3 = (TagLib::offset_t *)_swig_go_2;
-  if (argp3 == NULL) {
-    _swig_gopanic("Attempt to dereference null TagLib::offset_t");
-  }
-  arg3 = (TagLib::offset_t)*argp3;
-  
-  
-  (arg1)->insert((TagLib::ByteVector const &)*arg2,SWIG_STD_MOVE(arg3));
+  (arg1)->insert((TagLib::ByteVector const &)*arg2,arg3);
   
 }
 
 
-void _wrap_IOStream_insert__SWIG_2_taglib_a694ea421b08a5bb(TagLib::IOStream *_swig_go_0, TagLib::ByteVector *_swig_go_1) {
+void _wrap_IOStream_insert__SWIG_2_taglib_f208bd8fe051fa0d(TagLib::IOStream *_swig_go_0, TagLib::ByteVector *_swig_go_1) {
   TagLib::IOStream *arg1 = (TagLib::IOStream *) 0 ;
   TagLib::ByteVector *arg2 = 0 ;
   
@@ -4365,47 +4351,33 @@ void _wrap_IOStream_insert__SWIG_2_taglib_a694ea421b08a5bb(TagLib::IOStream *_sw
 }
 
 
-void _wrap_IOStream_removeBlock__SWIG_0_taglib_a694ea421b08a5bb(TagLib::IOStream *_swig_go_0, off_t *_swig_go_1, long long _swig_go_2) {
+void _wrap_IOStream_removeBlock__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::IOStream *_swig_go_0, long long _swig_go_1, long long _swig_go_2) {
   TagLib::IOStream *arg1 = (TagLib::IOStream *) 0 ;
   TagLib::offset_t arg2 ;
   size_t arg3 ;
-  TagLib::offset_t *argp2 ;
   
   arg1 = *(TagLib::IOStream **)&_swig_go_0; 
-  
-  argp2 = (TagLib::offset_t *)_swig_go_1;
-  if (argp2 == NULL) {
-    _swig_gopanic("Attempt to dereference null TagLib::offset_t");
-  }
-  arg2 = (TagLib::offset_t)*argp2;
-  
+  arg2 = (TagLib::offset_t)_swig_go_1; 
   arg3 = (size_t)_swig_go_2; 
   
-  (arg1)->removeBlock(SWIG_STD_MOVE(arg2),SWIG_STD_MOVE(arg3));
+  (arg1)->removeBlock(arg2,SWIG_STD_MOVE(arg3));
   
 }
 
 
-void _wrap_IOStream_removeBlock__SWIG_1_taglib_a694ea421b08a5bb(TagLib::IOStream *_swig_go_0, off_t *_swig_go_1) {
+void _wrap_IOStream_removeBlock__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::IOStream *_swig_go_0, long long _swig_go_1) {
   TagLib::IOStream *arg1 = (TagLib::IOStream *) 0 ;
   TagLib::offset_t arg2 ;
-  TagLib::offset_t *argp2 ;
   
   arg1 = *(TagLib::IOStream **)&_swig_go_0; 
+  arg2 = (TagLib::offset_t)_swig_go_1; 
   
-  argp2 = (TagLib::offset_t *)_swig_go_1;
-  if (argp2 == NULL) {
-    _swig_gopanic("Attempt to dereference null TagLib::offset_t");
-  }
-  arg2 = (TagLib::offset_t)*argp2;
-  
-  
-  (arg1)->removeBlock(SWIG_STD_MOVE(arg2));
+  (arg1)->removeBlock(arg2);
   
 }
 
 
-void _wrap_IOStream_removeBlock__SWIG_2_taglib_a694ea421b08a5bb(TagLib::IOStream *_swig_go_0) {
+void _wrap_IOStream_removeBlock__SWIG_2_taglib_f208bd8fe051fa0d(TagLib::IOStream *_swig_go_0) {
   TagLib::IOStream *arg1 = (TagLib::IOStream *) 0 ;
   
   arg1 = *(TagLib::IOStream **)&_swig_go_0; 
@@ -4415,7 +4387,7 @@ void _wrap_IOStream_removeBlock__SWIG_2_taglib_a694ea421b08a5bb(TagLib::IOStream
 }
 
 
-bool _wrap_IOStream_readOnly_taglib_a694ea421b08a5bb(TagLib::IOStream *_swig_go_0) {
+bool _wrap_IOStream_readOnly_taglib_f208bd8fe051fa0d(TagLib::IOStream *_swig_go_0) {
   TagLib::IOStream *arg1 = (TagLib::IOStream *) 0 ;
   bool result;
   bool _swig_go_result;
@@ -4428,7 +4400,7 @@ bool _wrap_IOStream_readOnly_taglib_a694ea421b08a5bb(TagLib::IOStream *_swig_go_
 }
 
 
-bool _wrap_IOStream_isOpen_taglib_a694ea421b08a5bb(TagLib::IOStream *_swig_go_0) {
+bool _wrap_IOStream_isOpen_taglib_f208bd8fe051fa0d(TagLib::IOStream *_swig_go_0) {
   TagLib::IOStream *arg1 = (TagLib::IOStream *) 0 ;
   bool result;
   bool _swig_go_result;
@@ -4441,47 +4413,33 @@ bool _wrap_IOStream_isOpen_taglib_a694ea421b08a5bb(TagLib::IOStream *_swig_go_0)
 }
 
 
-void _wrap_IOStream_seek__SWIG_0_taglib_a694ea421b08a5bb(TagLib::IOStream *_swig_go_0, off_t *_swig_go_1, intgo _swig_go_2) {
+void _wrap_IOStream_seek__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::IOStream *_swig_go_0, long long _swig_go_1, intgo _swig_go_2) {
   TagLib::IOStream *arg1 = (TagLib::IOStream *) 0 ;
   TagLib::offset_t arg2 ;
   TagLib::IOStream::Position arg3 ;
-  TagLib::offset_t *argp2 ;
   
   arg1 = *(TagLib::IOStream **)&_swig_go_0; 
-  
-  argp2 = (TagLib::offset_t *)_swig_go_1;
-  if (argp2 == NULL) {
-    _swig_gopanic("Attempt to dereference null TagLib::offset_t");
-  }
-  arg2 = (TagLib::offset_t)*argp2;
-  
+  arg2 = (TagLib::offset_t)_swig_go_1; 
   arg3 = (TagLib::IOStream::Position)_swig_go_2; 
   
-  (arg1)->seek(SWIG_STD_MOVE(arg2),arg3);
+  (arg1)->seek(arg2,arg3);
   
 }
 
 
-void _wrap_IOStream_seek__SWIG_1_taglib_a694ea421b08a5bb(TagLib::IOStream *_swig_go_0, off_t *_swig_go_1) {
+void _wrap_IOStream_seek__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::IOStream *_swig_go_0, long long _swig_go_1) {
   TagLib::IOStream *arg1 = (TagLib::IOStream *) 0 ;
   TagLib::offset_t arg2 ;
-  TagLib::offset_t *argp2 ;
   
   arg1 = *(TagLib::IOStream **)&_swig_go_0; 
+  arg2 = (TagLib::offset_t)_swig_go_1; 
   
-  argp2 = (TagLib::offset_t *)_swig_go_1;
-  if (argp2 == NULL) {
-    _swig_gopanic("Attempt to dereference null TagLib::offset_t");
-  }
-  arg2 = (TagLib::offset_t)*argp2;
-  
-  
-  (arg1)->seek(SWIG_STD_MOVE(arg2));
+  (arg1)->seek(arg2);
   
 }
 
 
-void _wrap_IOStream_clear_taglib_a694ea421b08a5bb(TagLib::IOStream *_swig_go_0) {
+void _wrap_IOStream_clear_taglib_f208bd8fe051fa0d(TagLib::IOStream *_swig_go_0) {
   TagLib::IOStream *arg1 = (TagLib::IOStream *) 0 ;
   
   arg1 = *(TagLib::IOStream **)&_swig_go_0; 
@@ -4491,52 +4449,45 @@ void _wrap_IOStream_clear_taglib_a694ea421b08a5bb(TagLib::IOStream *_swig_go_0) 
 }
 
 
-off_t *_wrap_IOStream_tell_taglib_a694ea421b08a5bb(TagLib::IOStream *_swig_go_0) {
+long long _wrap_IOStream_tell_taglib_f208bd8fe051fa0d(TagLib::IOStream *_swig_go_0) {
   TagLib::IOStream *arg1 = (TagLib::IOStream *) 0 ;
   TagLib::offset_t result;
-  off_t *_swig_go_result;
+  long long _swig_go_result;
   
   arg1 = *(TagLib::IOStream **)&_swig_go_0; 
   
-  result = ((TagLib::IOStream const *)arg1)->tell();
-  *(TagLib::offset_t **)&_swig_go_result = new TagLib::offset_t(result); 
+  result = (TagLib::offset_t)((TagLib::IOStream const *)arg1)->tell();
+  _swig_go_result = result; 
   return _swig_go_result;
 }
 
 
-off_t *_wrap_IOStream_length_taglib_a694ea421b08a5bb(TagLib::IOStream *_swig_go_0) {
+long long _wrap_IOStream_length_taglib_f208bd8fe051fa0d(TagLib::IOStream *_swig_go_0) {
   TagLib::IOStream *arg1 = (TagLib::IOStream *) 0 ;
   TagLib::offset_t result;
-  off_t *_swig_go_result;
+  long long _swig_go_result;
   
   arg1 = *(TagLib::IOStream **)&_swig_go_0; 
   
-  result = (arg1)->length();
-  *(TagLib::offset_t **)&_swig_go_result = new TagLib::offset_t(result); 
+  result = (TagLib::offset_t)(arg1)->length();
+  _swig_go_result = result; 
   return _swig_go_result;
 }
 
 
-void _wrap_IOStream_truncate_taglib_a694ea421b08a5bb(TagLib::IOStream *_swig_go_0, off_t *_swig_go_1) {
+void _wrap_IOStream_truncate_taglib_f208bd8fe051fa0d(TagLib::IOStream *_swig_go_0, long long _swig_go_1) {
   TagLib::IOStream *arg1 = (TagLib::IOStream *) 0 ;
   TagLib::offset_t arg2 ;
-  TagLib::offset_t *argp2 ;
   
   arg1 = *(TagLib::IOStream **)&_swig_go_0; 
+  arg2 = (TagLib::offset_t)_swig_go_1; 
   
-  argp2 = (TagLib::offset_t *)_swig_go_1;
-  if (argp2 == NULL) {
-    _swig_gopanic("Attempt to dereference null TagLib::offset_t");
-  }
-  arg2 = (TagLib::offset_t)*argp2;
-  
-  
-  (arg1)->truncate(SWIG_STD_MOVE(arg2));
+  (arg1)->truncate(arg2);
   
 }
 
 
-intgo _wrap_Beginning_File_taglib_a694ea421b08a5bb() {
+intgo _wrap_Beginning_File_taglib_f208bd8fe051fa0d() {
   TagLib::File::Position result;
   intgo _swig_go_result;
   
@@ -4548,7 +4499,7 @@ intgo _wrap_Beginning_File_taglib_a694ea421b08a5bb() {
 }
 
 
-intgo _wrap_Current_File_taglib_a694ea421b08a5bb() {
+intgo _wrap_Current_File_taglib_f208bd8fe051fa0d() {
   TagLib::File::Position result;
   intgo _swig_go_result;
   
@@ -4560,7 +4511,7 @@ intgo _wrap_Current_File_taglib_a694ea421b08a5bb() {
 }
 
 
-intgo _wrap_End_File_taglib_a694ea421b08a5bb() {
+intgo _wrap_End_File_taglib_f208bd8fe051fa0d() {
   TagLib::File::Position result;
   intgo _swig_go_result;
   
@@ -4572,7 +4523,7 @@ intgo _wrap_End_File_taglib_a694ea421b08a5bb() {
 }
 
 
-intgo _wrap_StripNone_File_taglib_a694ea421b08a5bb() {
+intgo _wrap_StripNone_File_taglib_f208bd8fe051fa0d() {
   TagLib::File::StripTags result;
   intgo _swig_go_result;
   
@@ -4584,7 +4535,7 @@ intgo _wrap_StripNone_File_taglib_a694ea421b08a5bb() {
 }
 
 
-intgo _wrap_StripOthers_File_taglib_a694ea421b08a5bb() {
+intgo _wrap_StripOthers_File_taglib_f208bd8fe051fa0d() {
   TagLib::File::StripTags result;
   intgo _swig_go_result;
   
@@ -4596,7 +4547,7 @@ intgo _wrap_StripOthers_File_taglib_a694ea421b08a5bb() {
 }
 
 
-intgo _wrap_Duplicate_File_taglib_a694ea421b08a5bb() {
+intgo _wrap_Duplicate_File_taglib_f208bd8fe051fa0d() {
   TagLib::File::DuplicateTags result;
   intgo _swig_go_result;
   
@@ -4608,7 +4559,7 @@ intgo _wrap_Duplicate_File_taglib_a694ea421b08a5bb() {
 }
 
 
-intgo _wrap_DoNotDuplicate_File_taglib_a694ea421b08a5bb() {
+intgo _wrap_DoNotDuplicate_File_taglib_f208bd8fe051fa0d() {
   TagLib::File::DuplicateTags result;
   intgo _swig_go_result;
   
@@ -4620,7 +4571,7 @@ intgo _wrap_DoNotDuplicate_File_taglib_a694ea421b08a5bb() {
 }
 
 
-void _wrap_delete_File_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0) {
+void _wrap_delete_File_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   
   arg1 = *(TagLib::File **)&_swig_go_0; 
@@ -4630,7 +4581,7 @@ void _wrap_delete_File_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0) {
 }
 
 
-_gostring_ _wrap_File_name_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0) {
+_gostring_ _wrap_File_name_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   TagLib::FileName result;
   _gostring_ _swig_go_result;
@@ -4643,7 +4594,7 @@ _gostring_ _wrap_File_name_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0) {
 }
 
 
-TagLib::Tag *_wrap_File_tag_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0) {
+TagLib::Tag *_wrap_File_tag_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   TagLib::Tag *result = 0 ;
   TagLib::Tag *_swig_go_result;
@@ -4656,7 +4607,7 @@ TagLib::Tag *_wrap_File_tag_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0) {
 }
 
 
-TagLib::PropertyMap *_wrap_File_properties_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0) {
+TagLib::PropertyMap *_wrap_File_properties_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   TagLib::PropertyMap result;
   TagLib::PropertyMap *_swig_go_result;
@@ -4669,7 +4620,7 @@ TagLib::PropertyMap *_wrap_File_properties_taglib_a694ea421b08a5bb(TagLib::File 
 }
 
 
-void _wrap_File_removeUnsupportedProperties_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0, TagLib::StringList *_swig_go_1) {
+void _wrap_File_removeUnsupportedProperties_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0, TagLib::StringList *_swig_go_1) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   TagLib::StringList *arg2 = 0 ;
   
@@ -4681,7 +4632,7 @@ void _wrap_File_removeUnsupportedProperties_taglib_a694ea421b08a5bb(TagLib::File
 }
 
 
-TagLib::PropertyMap *_wrap_File_setProperties_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0, TagLib::PropertyMap *_swig_go_1) {
+TagLib::PropertyMap *_wrap_File_setProperties_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0, TagLib::PropertyMap *_swig_go_1) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   TagLib::PropertyMap *arg2 = 0 ;
   TagLib::PropertyMap result;
@@ -4696,7 +4647,7 @@ TagLib::PropertyMap *_wrap_File_setProperties_taglib_a694ea421b08a5bb(TagLib::Fi
 }
 
 
-TagLib::StringList *_wrap_File_complexPropertyKeys_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0) {
+TagLib::StringList *_wrap_File_complexPropertyKeys_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   TagLib::StringList result;
   TagLib::StringList *_swig_go_result;
@@ -4709,7 +4660,7 @@ TagLib::StringList *_wrap_File_complexPropertyKeys_taglib_a694ea421b08a5bb(TagLi
 }
 
 
-TagLib::List< TagLib::Map< TagLib::String,TagLib::Variant > > *_wrap_File_complexProperties_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0, TagLib::String *_swig_go_1) {
+TagLib::List< TagLib::Map< TagLib::String,TagLib::Variant > > *_wrap_File_complexProperties_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0, TagLib::String *_swig_go_1) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   TagLib::String *arg2 = 0 ;
   SwigValueWrapper< TagLib::List< TagLib::Map< TagLib::String,TagLib::Variant > > > result;
@@ -4724,7 +4675,7 @@ TagLib::List< TagLib::Map< TagLib::String,TagLib::Variant > > *_wrap_File_comple
 }
 
 
-bool _wrap_File_setComplexProperties_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0, TagLib::String *_swig_go_1, TagLib::List< TagLib::Map< TagLib::String,TagLib::Variant > > *_swig_go_2) {
+bool _wrap_File_setComplexProperties_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0, TagLib::String *_swig_go_1, TagLib::List< TagLib::Map< TagLib::String,TagLib::Variant > > *_swig_go_2) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   TagLib::String *arg2 = 0 ;
   TagLib::List< TagLib::VariantMap > *arg3 = 0 ;
@@ -4741,7 +4692,7 @@ bool _wrap_File_setComplexProperties_taglib_a694ea421b08a5bb(TagLib::File *_swig
 }
 
 
-TagLib::AudioProperties *_wrap_File_audioProperties_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0) {
+TagLib::AudioProperties *_wrap_File_audioProperties_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   TagLib::AudioProperties *result = 0 ;
   TagLib::AudioProperties *_swig_go_result;
@@ -4754,7 +4705,7 @@ TagLib::AudioProperties *_wrap_File_audioProperties_taglib_a694ea421b08a5bb(TagL
 }
 
 
-bool _wrap_File_save_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0) {
+bool _wrap_File_save_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   bool result;
   bool _swig_go_result;
@@ -4767,7 +4718,7 @@ bool _wrap_File_save_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0) {
 }
 
 
-TagLib::ByteVector *_wrap_File_readBlock_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0, long long _swig_go_1) {
+TagLib::ByteVector *_wrap_File_readBlock_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0, long long _swig_go_1) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   size_t arg2 ;
   TagLib::ByteVector result;
@@ -4782,7 +4733,7 @@ TagLib::ByteVector *_wrap_File_readBlock_taglib_a694ea421b08a5bb(TagLib::File *_
 }
 
 
-void _wrap_File_writeBlock_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0, TagLib::ByteVector *_swig_go_1) {
+void _wrap_File_writeBlock_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0, TagLib::ByteVector *_swig_go_1) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   TagLib::ByteVector *arg2 = 0 ;
   
@@ -4794,181 +4745,139 @@ void _wrap_File_writeBlock_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0, Tag
 }
 
 
-off_t *_wrap_File_find__SWIG_0_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0, TagLib::ByteVector *_swig_go_1, off_t *_swig_go_2, TagLib::ByteVector *_swig_go_3) {
+long long _wrap_File_find__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0, TagLib::ByteVector *_swig_go_1, long long _swig_go_2, TagLib::ByteVector *_swig_go_3) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   TagLib::ByteVector *arg2 = 0 ;
   TagLib::offset_t arg3 ;
   TagLib::ByteVector *arg4 = 0 ;
-  TagLib::offset_t *argp3 ;
   TagLib::offset_t result;
-  off_t *_swig_go_result;
+  long long _swig_go_result;
   
   arg1 = *(TagLib::File **)&_swig_go_0; 
   arg2 = *(TagLib::ByteVector **)&_swig_go_1; 
-  
-  argp3 = (TagLib::offset_t *)_swig_go_2;
-  if (argp3 == NULL) {
-    _swig_gopanic("Attempt to dereference null TagLib::offset_t");
-  }
-  arg3 = (TagLib::offset_t)*argp3;
-  
+  arg3 = (TagLib::offset_t)_swig_go_2; 
   arg4 = *(TagLib::ByteVector **)&_swig_go_3; 
   
-  result = (arg1)->find((TagLib::ByteVector const &)*arg2,SWIG_STD_MOVE(arg3),(TagLib::ByteVector const &)*arg4);
-  *(TagLib::offset_t **)&_swig_go_result = new TagLib::offset_t(result); 
+  result = (TagLib::offset_t)(arg1)->find((TagLib::ByteVector const &)*arg2,arg3,(TagLib::ByteVector const &)*arg4);
+  _swig_go_result = result; 
   return _swig_go_result;
 }
 
 
-off_t *_wrap_File_find__SWIG_1_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0, TagLib::ByteVector *_swig_go_1, off_t *_swig_go_2) {
+long long _wrap_File_find__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0, TagLib::ByteVector *_swig_go_1, long long _swig_go_2) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   TagLib::ByteVector *arg2 = 0 ;
   TagLib::offset_t arg3 ;
-  TagLib::offset_t *argp3 ;
   TagLib::offset_t result;
-  off_t *_swig_go_result;
+  long long _swig_go_result;
   
   arg1 = *(TagLib::File **)&_swig_go_0; 
   arg2 = *(TagLib::ByteVector **)&_swig_go_1; 
+  arg3 = (TagLib::offset_t)_swig_go_2; 
   
-  argp3 = (TagLib::offset_t *)_swig_go_2;
-  if (argp3 == NULL) {
-    _swig_gopanic("Attempt to dereference null TagLib::offset_t");
-  }
-  arg3 = (TagLib::offset_t)*argp3;
-  
-  
-  result = (arg1)->find((TagLib::ByteVector const &)*arg2,SWIG_STD_MOVE(arg3));
-  *(TagLib::offset_t **)&_swig_go_result = new TagLib::offset_t(result); 
+  result = (TagLib::offset_t)(arg1)->find((TagLib::ByteVector const &)*arg2,arg3);
+  _swig_go_result = result; 
   return _swig_go_result;
 }
 
 
-off_t *_wrap_File_find__SWIG_2_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0, TagLib::ByteVector *_swig_go_1) {
+long long _wrap_File_find__SWIG_2_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0, TagLib::ByteVector *_swig_go_1) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   TagLib::ByteVector *arg2 = 0 ;
   TagLib::offset_t result;
-  off_t *_swig_go_result;
+  long long _swig_go_result;
   
   arg1 = *(TagLib::File **)&_swig_go_0; 
   arg2 = *(TagLib::ByteVector **)&_swig_go_1; 
   
-  result = (arg1)->find((TagLib::ByteVector const &)*arg2);
-  *(TagLib::offset_t **)&_swig_go_result = new TagLib::offset_t(result); 
+  result = (TagLib::offset_t)(arg1)->find((TagLib::ByteVector const &)*arg2);
+  _swig_go_result = result; 
   return _swig_go_result;
 }
 
 
-off_t *_wrap_File_rfind__SWIG_0_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0, TagLib::ByteVector *_swig_go_1, off_t *_swig_go_2, TagLib::ByteVector *_swig_go_3) {
+long long _wrap_File_rfind__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0, TagLib::ByteVector *_swig_go_1, long long _swig_go_2, TagLib::ByteVector *_swig_go_3) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   TagLib::ByteVector *arg2 = 0 ;
   TagLib::offset_t arg3 ;
   TagLib::ByteVector *arg4 = 0 ;
-  TagLib::offset_t *argp3 ;
   TagLib::offset_t result;
-  off_t *_swig_go_result;
+  long long _swig_go_result;
   
   arg1 = *(TagLib::File **)&_swig_go_0; 
   arg2 = *(TagLib::ByteVector **)&_swig_go_1; 
-  
-  argp3 = (TagLib::offset_t *)_swig_go_2;
-  if (argp3 == NULL) {
-    _swig_gopanic("Attempt to dereference null TagLib::offset_t");
-  }
-  arg3 = (TagLib::offset_t)*argp3;
-  
+  arg3 = (TagLib::offset_t)_swig_go_2; 
   arg4 = *(TagLib::ByteVector **)&_swig_go_3; 
   
-  result = (arg1)->rfind((TagLib::ByteVector const &)*arg2,SWIG_STD_MOVE(arg3),(TagLib::ByteVector const &)*arg4);
-  *(TagLib::offset_t **)&_swig_go_result = new TagLib::offset_t(result); 
+  result = (TagLib::offset_t)(arg1)->rfind((TagLib::ByteVector const &)*arg2,arg3,(TagLib::ByteVector const &)*arg4);
+  _swig_go_result = result; 
   return _swig_go_result;
 }
 
 
-off_t *_wrap_File_rfind__SWIG_1_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0, TagLib::ByteVector *_swig_go_1, off_t *_swig_go_2) {
+long long _wrap_File_rfind__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0, TagLib::ByteVector *_swig_go_1, long long _swig_go_2) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   TagLib::ByteVector *arg2 = 0 ;
   TagLib::offset_t arg3 ;
-  TagLib::offset_t *argp3 ;
   TagLib::offset_t result;
-  off_t *_swig_go_result;
+  long long _swig_go_result;
   
   arg1 = *(TagLib::File **)&_swig_go_0; 
   arg2 = *(TagLib::ByteVector **)&_swig_go_1; 
+  arg3 = (TagLib::offset_t)_swig_go_2; 
   
-  argp3 = (TagLib::offset_t *)_swig_go_2;
-  if (argp3 == NULL) {
-    _swig_gopanic("Attempt to dereference null TagLib::offset_t");
-  }
-  arg3 = (TagLib::offset_t)*argp3;
-  
-  
-  result = (arg1)->rfind((TagLib::ByteVector const &)*arg2,SWIG_STD_MOVE(arg3));
-  *(TagLib::offset_t **)&_swig_go_result = new TagLib::offset_t(result); 
+  result = (TagLib::offset_t)(arg1)->rfind((TagLib::ByteVector const &)*arg2,arg3);
+  _swig_go_result = result; 
   return _swig_go_result;
 }
 
 
-off_t *_wrap_File_rfind__SWIG_2_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0, TagLib::ByteVector *_swig_go_1) {
+long long _wrap_File_rfind__SWIG_2_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0, TagLib::ByteVector *_swig_go_1) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   TagLib::ByteVector *arg2 = 0 ;
   TagLib::offset_t result;
-  off_t *_swig_go_result;
+  long long _swig_go_result;
   
   arg1 = *(TagLib::File **)&_swig_go_0; 
   arg2 = *(TagLib::ByteVector **)&_swig_go_1; 
   
-  result = (arg1)->rfind((TagLib::ByteVector const &)*arg2);
-  *(TagLib::offset_t **)&_swig_go_result = new TagLib::offset_t(result); 
+  result = (TagLib::offset_t)(arg1)->rfind((TagLib::ByteVector const &)*arg2);
+  _swig_go_result = result; 
   return _swig_go_result;
 }
 
 
-void _wrap_File_insert__SWIG_0_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0, TagLib::ByteVector *_swig_go_1, off_t *_swig_go_2, long long _swig_go_3) {
+void _wrap_File_insert__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0, TagLib::ByteVector *_swig_go_1, long long _swig_go_2, long long _swig_go_3) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   TagLib::ByteVector *arg2 = 0 ;
   TagLib::offset_t arg3 ;
   size_t arg4 ;
-  TagLib::offset_t *argp3 ;
   
   arg1 = *(TagLib::File **)&_swig_go_0; 
   arg2 = *(TagLib::ByteVector **)&_swig_go_1; 
-  
-  argp3 = (TagLib::offset_t *)_swig_go_2;
-  if (argp3 == NULL) {
-    _swig_gopanic("Attempt to dereference null TagLib::offset_t");
-  }
-  arg3 = (TagLib::offset_t)*argp3;
-  
+  arg3 = (TagLib::offset_t)_swig_go_2; 
   arg4 = (size_t)_swig_go_3; 
   
-  (arg1)->insert((TagLib::ByteVector const &)*arg2,SWIG_STD_MOVE(arg3),SWIG_STD_MOVE(arg4));
+  (arg1)->insert((TagLib::ByteVector const &)*arg2,arg3,SWIG_STD_MOVE(arg4));
   
 }
 
 
-void _wrap_File_insert__SWIG_1_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0, TagLib::ByteVector *_swig_go_1, off_t *_swig_go_2) {
+void _wrap_File_insert__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0, TagLib::ByteVector *_swig_go_1, long long _swig_go_2) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   TagLib::ByteVector *arg2 = 0 ;
   TagLib::offset_t arg3 ;
-  TagLib::offset_t *argp3 ;
   
   arg1 = *(TagLib::File **)&_swig_go_0; 
   arg2 = *(TagLib::ByteVector **)&_swig_go_1; 
+  arg3 = (TagLib::offset_t)_swig_go_2; 
   
-  argp3 = (TagLib::offset_t *)_swig_go_2;
-  if (argp3 == NULL) {
-    _swig_gopanic("Attempt to dereference null TagLib::offset_t");
-  }
-  arg3 = (TagLib::offset_t)*argp3;
-  
-  
-  (arg1)->insert((TagLib::ByteVector const &)*arg2,SWIG_STD_MOVE(arg3));
+  (arg1)->insert((TagLib::ByteVector const &)*arg2,arg3);
   
 }
 
 
-void _wrap_File_insert__SWIG_2_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0, TagLib::ByteVector *_swig_go_1) {
+void _wrap_File_insert__SWIG_2_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0, TagLib::ByteVector *_swig_go_1) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   TagLib::ByteVector *arg2 = 0 ;
   
@@ -4980,47 +4889,33 @@ void _wrap_File_insert__SWIG_2_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0,
 }
 
 
-void _wrap_File_removeBlock__SWIG_0_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0, off_t *_swig_go_1, long long _swig_go_2) {
+void _wrap_File_removeBlock__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0, long long _swig_go_1, long long _swig_go_2) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   TagLib::offset_t arg2 ;
   size_t arg3 ;
-  TagLib::offset_t *argp2 ;
   
   arg1 = *(TagLib::File **)&_swig_go_0; 
-  
-  argp2 = (TagLib::offset_t *)_swig_go_1;
-  if (argp2 == NULL) {
-    _swig_gopanic("Attempt to dereference null TagLib::offset_t");
-  }
-  arg2 = (TagLib::offset_t)*argp2;
-  
+  arg2 = (TagLib::offset_t)_swig_go_1; 
   arg3 = (size_t)_swig_go_2; 
   
-  (arg1)->removeBlock(SWIG_STD_MOVE(arg2),SWIG_STD_MOVE(arg3));
+  (arg1)->removeBlock(arg2,SWIG_STD_MOVE(arg3));
   
 }
 
 
-void _wrap_File_removeBlock__SWIG_1_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0, off_t *_swig_go_1) {
+void _wrap_File_removeBlock__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0, long long _swig_go_1) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   TagLib::offset_t arg2 ;
-  TagLib::offset_t *argp2 ;
   
   arg1 = *(TagLib::File **)&_swig_go_0; 
+  arg2 = (TagLib::offset_t)_swig_go_1; 
   
-  argp2 = (TagLib::offset_t *)_swig_go_1;
-  if (argp2 == NULL) {
-    _swig_gopanic("Attempt to dereference null TagLib::offset_t");
-  }
-  arg2 = (TagLib::offset_t)*argp2;
-  
-  
-  (arg1)->removeBlock(SWIG_STD_MOVE(arg2));
+  (arg1)->removeBlock(arg2);
   
 }
 
 
-void _wrap_File_removeBlock__SWIG_2_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0) {
+void _wrap_File_removeBlock__SWIG_2_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   
   arg1 = *(TagLib::File **)&_swig_go_0; 
@@ -5030,7 +4925,7 @@ void _wrap_File_removeBlock__SWIG_2_taglib_a694ea421b08a5bb(TagLib::File *_swig_
 }
 
 
-bool _wrap_File_readOnly_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0) {
+bool _wrap_File_readOnly_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   bool result;
   bool _swig_go_result;
@@ -5043,7 +4938,7 @@ bool _wrap_File_readOnly_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0) {
 }
 
 
-bool _wrap_File_isOpen_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0) {
+bool _wrap_File_isOpen_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   bool result;
   bool _swig_go_result;
@@ -5056,7 +4951,7 @@ bool _wrap_File_isOpen_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0) {
 }
 
 
-bool _wrap_File_isValid_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0) {
+bool _wrap_File_isValid_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   bool result;
   bool _swig_go_result;
@@ -5069,47 +4964,33 @@ bool _wrap_File_isValid_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0) {
 }
 
 
-void _wrap_File_seek__SWIG_0_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0, off_t *_swig_go_1, intgo _swig_go_2) {
+void _wrap_File_seek__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0, long long _swig_go_1, intgo _swig_go_2) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   TagLib::offset_t arg2 ;
   TagLib::File::Position arg3 ;
-  TagLib::offset_t *argp2 ;
   
   arg1 = *(TagLib::File **)&_swig_go_0; 
-  
-  argp2 = (TagLib::offset_t *)_swig_go_1;
-  if (argp2 == NULL) {
-    _swig_gopanic("Attempt to dereference null TagLib::offset_t");
-  }
-  arg2 = (TagLib::offset_t)*argp2;
-  
+  arg2 = (TagLib::offset_t)_swig_go_1; 
   arg3 = (TagLib::File::Position)_swig_go_2; 
   
-  (arg1)->seek(SWIG_STD_MOVE(arg2),arg3);
+  (arg1)->seek(arg2,arg3);
   
 }
 
 
-void _wrap_File_seek__SWIG_1_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0, off_t *_swig_go_1) {
+void _wrap_File_seek__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0, long long _swig_go_1) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   TagLib::offset_t arg2 ;
-  TagLib::offset_t *argp2 ;
   
   arg1 = *(TagLib::File **)&_swig_go_0; 
+  arg2 = (TagLib::offset_t)_swig_go_1; 
   
-  argp2 = (TagLib::offset_t *)_swig_go_1;
-  if (argp2 == NULL) {
-    _swig_gopanic("Attempt to dereference null TagLib::offset_t");
-  }
-  arg2 = (TagLib::offset_t)*argp2;
-  
-  
-  (arg1)->seek(SWIG_STD_MOVE(arg2));
+  (arg1)->seek(arg2);
   
 }
 
 
-void _wrap_File_clear_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0) {
+void _wrap_File_clear_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   
   arg1 = *(TagLib::File **)&_swig_go_0; 
@@ -5119,33 +5000,33 @@ void _wrap_File_clear_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0) {
 }
 
 
-off_t *_wrap_File_tell_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0) {
+long long _wrap_File_tell_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   TagLib::offset_t result;
-  off_t *_swig_go_result;
+  long long _swig_go_result;
   
   arg1 = *(TagLib::File **)&_swig_go_0; 
   
-  result = ((TagLib::File const *)arg1)->tell();
-  *(TagLib::offset_t **)&_swig_go_result = new TagLib::offset_t(result); 
+  result = (TagLib::offset_t)((TagLib::File const *)arg1)->tell();
+  _swig_go_result = result; 
   return _swig_go_result;
 }
 
 
-off_t *_wrap_File_length_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0) {
+long long _wrap_File_length_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   TagLib::offset_t result;
-  off_t *_swig_go_result;
+  long long _swig_go_result;
   
   arg1 = *(TagLib::File **)&_swig_go_0; 
   
-  result = (arg1)->length();
-  *(TagLib::offset_t **)&_swig_go_result = new TagLib::offset_t(result); 
+  result = (TagLib::offset_t)(arg1)->length();
+  _swig_go_result = result; 
   return _swig_go_result;
 }
 
 
-void _wrap_delete_Tag_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0) {
+void _wrap_delete_Tag_taglib_f208bd8fe051fa0d(TagLib::Tag *_swig_go_0) {
   TagLib::Tag *arg1 = (TagLib::Tag *) 0 ;
   
   arg1 = *(TagLib::Tag **)&_swig_go_0; 
@@ -5155,7 +5036,7 @@ void _wrap_delete_Tag_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0) {
 }
 
 
-TagLib::PropertyMap *_wrap_Tag_properties_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0) {
+TagLib::PropertyMap *_wrap_Tag_properties_taglib_f208bd8fe051fa0d(TagLib::Tag *_swig_go_0) {
   TagLib::Tag *arg1 = (TagLib::Tag *) 0 ;
   TagLib::PropertyMap result;
   TagLib::PropertyMap *_swig_go_result;
@@ -5168,7 +5049,7 @@ TagLib::PropertyMap *_wrap_Tag_properties_taglib_a694ea421b08a5bb(TagLib::Tag *_
 }
 
 
-void _wrap_Tag_removeUnsupportedProperties_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0, TagLib::StringList *_swig_go_1) {
+void _wrap_Tag_removeUnsupportedProperties_taglib_f208bd8fe051fa0d(TagLib::Tag *_swig_go_0, TagLib::StringList *_swig_go_1) {
   TagLib::Tag *arg1 = (TagLib::Tag *) 0 ;
   TagLib::StringList *arg2 = 0 ;
   
@@ -5180,7 +5061,7 @@ void _wrap_Tag_removeUnsupportedProperties_taglib_a694ea421b08a5bb(TagLib::Tag *
 }
 
 
-TagLib::PropertyMap *_wrap_Tag_setProperties_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0, TagLib::PropertyMap *_swig_go_1) {
+TagLib::PropertyMap *_wrap_Tag_setProperties_taglib_f208bd8fe051fa0d(TagLib::Tag *_swig_go_0, TagLib::PropertyMap *_swig_go_1) {
   TagLib::Tag *arg1 = (TagLib::Tag *) 0 ;
   TagLib::PropertyMap *arg2 = 0 ;
   TagLib::PropertyMap result;
@@ -5195,7 +5076,7 @@ TagLib::PropertyMap *_wrap_Tag_setProperties_taglib_a694ea421b08a5bb(TagLib::Tag
 }
 
 
-TagLib::StringList *_wrap_Tag_complexPropertyKeys_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0) {
+TagLib::StringList *_wrap_Tag_complexPropertyKeys_taglib_f208bd8fe051fa0d(TagLib::Tag *_swig_go_0) {
   TagLib::Tag *arg1 = (TagLib::Tag *) 0 ;
   TagLib::StringList result;
   TagLib::StringList *_swig_go_result;
@@ -5208,7 +5089,7 @@ TagLib::StringList *_wrap_Tag_complexPropertyKeys_taglib_a694ea421b08a5bb(TagLib
 }
 
 
-TagLib::List< TagLib::Map< TagLib::String,TagLib::Variant > > *_wrap_Tag_complexProperties_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0, TagLib::String *_swig_go_1) {
+TagLib::List< TagLib::Map< TagLib::String,TagLib::Variant > > *_wrap_Tag_complexProperties_taglib_f208bd8fe051fa0d(TagLib::Tag *_swig_go_0, TagLib::String *_swig_go_1) {
   TagLib::Tag *arg1 = (TagLib::Tag *) 0 ;
   TagLib::String *arg2 = 0 ;
   SwigValueWrapper< TagLib::List< TagLib::Map< TagLib::String,TagLib::Variant > > > result;
@@ -5223,7 +5104,7 @@ TagLib::List< TagLib::Map< TagLib::String,TagLib::Variant > > *_wrap_Tag_complex
 }
 
 
-bool _wrap_Tag_setComplexProperties_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0, TagLib::String *_swig_go_1, TagLib::List< TagLib::Map< TagLib::String,TagLib::Variant > > *_swig_go_2) {
+bool _wrap_Tag_setComplexProperties_taglib_f208bd8fe051fa0d(TagLib::Tag *_swig_go_0, TagLib::String *_swig_go_1, TagLib::List< TagLib::Map< TagLib::String,TagLib::Variant > > *_swig_go_2) {
   TagLib::Tag *arg1 = (TagLib::Tag *) 0 ;
   TagLib::String *arg2 = 0 ;
   TagLib::List< TagLib::VariantMap > *arg3 = 0 ;
@@ -5240,7 +5121,7 @@ bool _wrap_Tag_setComplexProperties_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_g
 }
 
 
-TagLib::String *_wrap_Tag_title_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0) {
+TagLib::String *_wrap_Tag_title_taglib_f208bd8fe051fa0d(TagLib::Tag *_swig_go_0) {
   TagLib::Tag *arg1 = (TagLib::Tag *) 0 ;
   TagLib::String result;
   TagLib::String *_swig_go_result;
@@ -5253,7 +5134,7 @@ TagLib::String *_wrap_Tag_title_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0)
 }
 
 
-TagLib::String *_wrap_Tag_artist_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0) {
+TagLib::String *_wrap_Tag_artist_taglib_f208bd8fe051fa0d(TagLib::Tag *_swig_go_0) {
   TagLib::Tag *arg1 = (TagLib::Tag *) 0 ;
   TagLib::String result;
   TagLib::String *_swig_go_result;
@@ -5266,7 +5147,7 @@ TagLib::String *_wrap_Tag_artist_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0
 }
 
 
-TagLib::String *_wrap_Tag_album_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0) {
+TagLib::String *_wrap_Tag_album_taglib_f208bd8fe051fa0d(TagLib::Tag *_swig_go_0) {
   TagLib::Tag *arg1 = (TagLib::Tag *) 0 ;
   TagLib::String result;
   TagLib::String *_swig_go_result;
@@ -5279,7 +5160,7 @@ TagLib::String *_wrap_Tag_album_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0)
 }
 
 
-TagLib::String *_wrap_Tag_comment_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0) {
+TagLib::String *_wrap_Tag_comment_taglib_f208bd8fe051fa0d(TagLib::Tag *_swig_go_0) {
   TagLib::Tag *arg1 = (TagLib::Tag *) 0 ;
   TagLib::String result;
   TagLib::String *_swig_go_result;
@@ -5292,7 +5173,7 @@ TagLib::String *_wrap_Tag_comment_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_
 }
 
 
-TagLib::String *_wrap_Tag_genre_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0) {
+TagLib::String *_wrap_Tag_genre_taglib_f208bd8fe051fa0d(TagLib::Tag *_swig_go_0) {
   TagLib::Tag *arg1 = (TagLib::Tag *) 0 ;
   TagLib::String result;
   TagLib::String *_swig_go_result;
@@ -5305,7 +5186,7 @@ TagLib::String *_wrap_Tag_genre_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0)
 }
 
 
-intgo _wrap_Tag_year_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0) {
+intgo _wrap_Tag_year_taglib_f208bd8fe051fa0d(TagLib::Tag *_swig_go_0) {
   TagLib::Tag *arg1 = (TagLib::Tag *) 0 ;
   unsigned int result;
   intgo _swig_go_result;
@@ -5318,7 +5199,7 @@ intgo _wrap_Tag_year_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0) {
 }
 
 
-intgo _wrap_Tag_track_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0) {
+intgo _wrap_Tag_track_taglib_f208bd8fe051fa0d(TagLib::Tag *_swig_go_0) {
   TagLib::Tag *arg1 = (TagLib::Tag *) 0 ;
   unsigned int result;
   intgo _swig_go_result;
@@ -5331,7 +5212,7 @@ intgo _wrap_Tag_track_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0) {
 }
 
 
-void _wrap_Tag_setTitle_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0, TagLib::String *_swig_go_1) {
+void _wrap_Tag_setTitle_taglib_f208bd8fe051fa0d(TagLib::Tag *_swig_go_0, TagLib::String *_swig_go_1) {
   TagLib::Tag *arg1 = (TagLib::Tag *) 0 ;
   TagLib::String *arg2 = 0 ;
   
@@ -5343,7 +5224,7 @@ void _wrap_Tag_setTitle_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0, TagLib:
 }
 
 
-void _wrap_Tag_setArtist_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0, TagLib::String *_swig_go_1) {
+void _wrap_Tag_setArtist_taglib_f208bd8fe051fa0d(TagLib::Tag *_swig_go_0, TagLib::String *_swig_go_1) {
   TagLib::Tag *arg1 = (TagLib::Tag *) 0 ;
   TagLib::String *arg2 = 0 ;
   
@@ -5355,7 +5236,7 @@ void _wrap_Tag_setArtist_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0, TagLib
 }
 
 
-void _wrap_Tag_setAlbum_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0, TagLib::String *_swig_go_1) {
+void _wrap_Tag_setAlbum_taglib_f208bd8fe051fa0d(TagLib::Tag *_swig_go_0, TagLib::String *_swig_go_1) {
   TagLib::Tag *arg1 = (TagLib::Tag *) 0 ;
   TagLib::String *arg2 = 0 ;
   
@@ -5367,7 +5248,7 @@ void _wrap_Tag_setAlbum_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0, TagLib:
 }
 
 
-void _wrap_Tag_setComment_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0, TagLib::String *_swig_go_1) {
+void _wrap_Tag_setComment_taglib_f208bd8fe051fa0d(TagLib::Tag *_swig_go_0, TagLib::String *_swig_go_1) {
   TagLib::Tag *arg1 = (TagLib::Tag *) 0 ;
   TagLib::String *arg2 = 0 ;
   
@@ -5379,7 +5260,7 @@ void _wrap_Tag_setComment_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0, TagLi
 }
 
 
-void _wrap_Tag_setGenre_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0, TagLib::String *_swig_go_1) {
+void _wrap_Tag_setGenre_taglib_f208bd8fe051fa0d(TagLib::Tag *_swig_go_0, TagLib::String *_swig_go_1) {
   TagLib::Tag *arg1 = (TagLib::Tag *) 0 ;
   TagLib::String *arg2 = 0 ;
   
@@ -5391,7 +5272,7 @@ void _wrap_Tag_setGenre_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0, TagLib:
 }
 
 
-void _wrap_Tag_setYear_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0, intgo _swig_go_1) {
+void _wrap_Tag_setYear_taglib_f208bd8fe051fa0d(TagLib::Tag *_swig_go_0, intgo _swig_go_1) {
   TagLib::Tag *arg1 = (TagLib::Tag *) 0 ;
   unsigned int arg2 ;
   
@@ -5403,7 +5284,7 @@ void _wrap_Tag_setYear_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0, intgo _s
 }
 
 
-void _wrap_Tag_setTrack_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0, intgo _swig_go_1) {
+void _wrap_Tag_setTrack_taglib_f208bd8fe051fa0d(TagLib::Tag *_swig_go_0, intgo _swig_go_1) {
   TagLib::Tag *arg1 = (TagLib::Tag *) 0 ;
   unsigned int arg2 ;
   
@@ -5415,7 +5296,7 @@ void _wrap_Tag_setTrack_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0, intgo _
 }
 
 
-bool _wrap_Tag_isEmpty_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0) {
+bool _wrap_Tag_isEmpty_taglib_f208bd8fe051fa0d(TagLib::Tag *_swig_go_0) {
   TagLib::Tag *arg1 = (TagLib::Tag *) 0 ;
   bool result;
   bool _swig_go_result;
@@ -5428,7 +5309,7 @@ bool _wrap_Tag_isEmpty_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0) {
 }
 
 
-void _wrap_Tag_duplicate__SWIG_0_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0, TagLib::Tag *_swig_go_1, bool _swig_go_2) {
+void _wrap_Tag_duplicate__SWIG_0_taglib_f208bd8fe051fa0d(TagLib::Tag *_swig_go_0, TagLib::Tag *_swig_go_1, bool _swig_go_2) {
   TagLib::Tag *arg1 = (TagLib::Tag *) 0 ;
   TagLib::Tag *arg2 = (TagLib::Tag *) 0 ;
   bool arg3 ;
@@ -5442,7 +5323,7 @@ void _wrap_Tag_duplicate__SWIG_0_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0
 }
 
 
-void _wrap_Tag_duplicate__SWIG_1_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0, TagLib::Tag *_swig_go_1) {
+void _wrap_Tag_duplicate__SWIG_1_taglib_f208bd8fe051fa0d(TagLib::Tag *_swig_go_0, TagLib::Tag *_swig_go_1) {
   TagLib::Tag *arg1 = (TagLib::Tag *) 0 ;
   TagLib::Tag *arg2 = (TagLib::Tag *) 0 ;
   
@@ -5454,7 +5335,7 @@ void _wrap_Tag_duplicate__SWIG_1_taglib_a694ea421b08a5bb(TagLib::Tag *_swig_go_0
 }
 
 
-TagLib::String *_wrap_Tag_joinTagValues_taglib_a694ea421b08a5bb(TagLib::StringList *_swig_go_0) {
+TagLib::String *_wrap_Tag_joinTagValues_taglib_f208bd8fe051fa0d(TagLib::StringList *_swig_go_0) {
   TagLib::StringList *arg1 = 0 ;
   TagLib::String result;
   TagLib::String *_swig_go_result;
@@ -5467,7 +5348,7 @@ TagLib::String *_wrap_Tag_joinTagValues_taglib_a694ea421b08a5bb(TagLib::StringLi
 }
 
 
-TagLib::FileRef *_wrap_new_FileRef__SWIG_0_taglib_a694ea421b08a5bb() {
+TagLib::FileRef *_wrap_new_FileRef__SWIG_0_taglib_f208bd8fe051fa0d() {
   TagLib::FileRef *result = 0 ;
   TagLib::FileRef *_swig_go_result;
   
@@ -5478,7 +5359,7 @@ TagLib::FileRef *_wrap_new_FileRef__SWIG_0_taglib_a694ea421b08a5bb() {
 }
 
 
-TagLib::FileRef *_wrap_new_FileRef__SWIG_1_taglib_a694ea421b08a5bb(_gostring_ _swig_go_0, bool _swig_go_1, intgo _swig_go_2) {
+TagLib::FileRef *_wrap_new_FileRef__SWIG_1_taglib_f208bd8fe051fa0d(_gostring_ _swig_go_0, bool _swig_go_1, intgo _swig_go_2) {
   TagLib::FileName arg1 = (TagLib::FileName) 0 ;
   bool arg2 ;
   TagLib::AudioProperties::ReadStyle arg3 ;
@@ -5500,7 +5381,7 @@ TagLib::FileRef *_wrap_new_FileRef__SWIG_1_taglib_a694ea421b08a5bb(_gostring_ _s
 }
 
 
-TagLib::FileRef *_wrap_new_FileRef__SWIG_2_taglib_a694ea421b08a5bb(_gostring_ _swig_go_0, bool _swig_go_1) {
+TagLib::FileRef *_wrap_new_FileRef__SWIG_2_taglib_f208bd8fe051fa0d(_gostring_ _swig_go_0, bool _swig_go_1) {
   TagLib::FileName arg1 = (TagLib::FileName) 0 ;
   bool arg2 ;
   TagLib::FileRef *result = 0 ;
@@ -5520,7 +5401,7 @@ TagLib::FileRef *_wrap_new_FileRef__SWIG_2_taglib_a694ea421b08a5bb(_gostring_ _s
 }
 
 
-TagLib::FileRef *_wrap_new_FileRef__SWIG_3_taglib_a694ea421b08a5bb(_gostring_ _swig_go_0) {
+TagLib::FileRef *_wrap_new_FileRef__SWIG_3_taglib_f208bd8fe051fa0d(_gostring_ _swig_go_0) {
   TagLib::FileName arg1 = (TagLib::FileName) 0 ;
   TagLib::FileRef *result = 0 ;
   TagLib::FileRef *_swig_go_result;
@@ -5538,7 +5419,7 @@ TagLib::FileRef *_wrap_new_FileRef__SWIG_3_taglib_a694ea421b08a5bb(_gostring_ _s
 }
 
 
-TagLib::FileRef *_wrap_new_FileRef__SWIG_4_taglib_a694ea421b08a5bb(TagLib::IOStream *_swig_go_0, bool _swig_go_1, intgo _swig_go_2) {
+TagLib::FileRef *_wrap_new_FileRef__SWIG_4_taglib_f208bd8fe051fa0d(TagLib::IOStream *_swig_go_0, bool _swig_go_1, intgo _swig_go_2) {
   TagLib::IOStream *arg1 = (TagLib::IOStream *) 0 ;
   bool arg2 ;
   TagLib::AudioProperties::ReadStyle arg3 ;
@@ -5555,7 +5436,7 @@ TagLib::FileRef *_wrap_new_FileRef__SWIG_4_taglib_a694ea421b08a5bb(TagLib::IOStr
 }
 
 
-TagLib::FileRef *_wrap_new_FileRef__SWIG_5_taglib_a694ea421b08a5bb(TagLib::IOStream *_swig_go_0, bool _swig_go_1) {
+TagLib::FileRef *_wrap_new_FileRef__SWIG_5_taglib_f208bd8fe051fa0d(TagLib::IOStream *_swig_go_0, bool _swig_go_1) {
   TagLib::IOStream *arg1 = (TagLib::IOStream *) 0 ;
   bool arg2 ;
   TagLib::FileRef *result = 0 ;
@@ -5570,7 +5451,7 @@ TagLib::FileRef *_wrap_new_FileRef__SWIG_5_taglib_a694ea421b08a5bb(TagLib::IOStr
 }
 
 
-TagLib::FileRef *_wrap_new_FileRef__SWIG_6_taglib_a694ea421b08a5bb(TagLib::IOStream *_swig_go_0) {
+TagLib::FileRef *_wrap_new_FileRef__SWIG_6_taglib_f208bd8fe051fa0d(TagLib::IOStream *_swig_go_0) {
   TagLib::IOStream *arg1 = (TagLib::IOStream *) 0 ;
   TagLib::FileRef *result = 0 ;
   TagLib::FileRef *_swig_go_result;
@@ -5583,7 +5464,7 @@ TagLib::FileRef *_wrap_new_FileRef__SWIG_6_taglib_a694ea421b08a5bb(TagLib::IOStr
 }
 
 
-TagLib::FileRef *_wrap_new_FileRef__SWIG_7_taglib_a694ea421b08a5bb(TagLib::File *_swig_go_0) {
+TagLib::FileRef *_wrap_new_FileRef__SWIG_7_taglib_f208bd8fe051fa0d(TagLib::File *_swig_go_0) {
   TagLib::File *arg1 = (TagLib::File *) 0 ;
   TagLib::FileRef *result = 0 ;
   TagLib::FileRef *_swig_go_result;
@@ -5596,7 +5477,7 @@ TagLib::FileRef *_wrap_new_FileRef__SWIG_7_taglib_a694ea421b08a5bb(TagLib::File 
 }
 
 
-TagLib::FileRef *_wrap_new_FileRef__SWIG_8_taglib_a694ea421b08a5bb(TagLib::FileRef *_swig_go_0) {
+TagLib::FileRef *_wrap_new_FileRef__SWIG_8_taglib_f208bd8fe051fa0d(TagLib::FileRef *_swig_go_0) {
   TagLib::FileRef *arg1 = 0 ;
   TagLib::FileRef *result = 0 ;
   TagLib::FileRef *_swig_go_result;
@@ -5609,7 +5490,7 @@ TagLib::FileRef *_wrap_new_FileRef__SWIG_8_taglib_a694ea421b08a5bb(TagLib::FileR
 }
 
 
-void _wrap_delete_FileRef_taglib_a694ea421b08a5bb(TagLib::FileRef *_swig_go_0) {
+void _wrap_delete_FileRef_taglib_f208bd8fe051fa0d(TagLib::FileRef *_swig_go_0) {
   TagLib::FileRef *arg1 = (TagLib::FileRef *) 0 ;
   
   arg1 = *(TagLib::FileRef **)&_swig_go_0; 
@@ -5619,7 +5500,7 @@ void _wrap_delete_FileRef_taglib_a694ea421b08a5bb(TagLib::FileRef *_swig_go_0) {
 }
 
 
-TagLib::Tag *_wrap_FileRef_tag_taglib_a694ea421b08a5bb(TagLib::FileRef *_swig_go_0) {
+TagLib::Tag *_wrap_FileRef_tag_taglib_f208bd8fe051fa0d(TagLib::FileRef *_swig_go_0) {
   TagLib::FileRef *arg1 = (TagLib::FileRef *) 0 ;
   TagLib::Tag *result = 0 ;
   TagLib::Tag *_swig_go_result;
@@ -5632,7 +5513,7 @@ TagLib::Tag *_wrap_FileRef_tag_taglib_a694ea421b08a5bb(TagLib::FileRef *_swig_go
 }
 
 
-TagLib::PropertyMap *_wrap_FileRef_properties_taglib_a694ea421b08a5bb(TagLib::FileRef *_swig_go_0) {
+TagLib::PropertyMap *_wrap_FileRef_properties_taglib_f208bd8fe051fa0d(TagLib::FileRef *_swig_go_0) {
   TagLib::FileRef *arg1 = (TagLib::FileRef *) 0 ;
   TagLib::PropertyMap result;
   TagLib::PropertyMap *_swig_go_result;
@@ -5645,7 +5526,7 @@ TagLib::PropertyMap *_wrap_FileRef_properties_taglib_a694ea421b08a5bb(TagLib::Fi
 }
 
 
-void _wrap_FileRef_removeUnsupportedProperties_taglib_a694ea421b08a5bb(TagLib::FileRef *_swig_go_0, TagLib::StringList *_swig_go_1) {
+void _wrap_FileRef_removeUnsupportedProperties_taglib_f208bd8fe051fa0d(TagLib::FileRef *_swig_go_0, TagLib::StringList *_swig_go_1) {
   TagLib::FileRef *arg1 = (TagLib::FileRef *) 0 ;
   TagLib::StringList *arg2 = 0 ;
   
@@ -5657,7 +5538,7 @@ void _wrap_FileRef_removeUnsupportedProperties_taglib_a694ea421b08a5bb(TagLib::F
 }
 
 
-TagLib::PropertyMap *_wrap_FileRef_setProperties_taglib_a694ea421b08a5bb(TagLib::FileRef *_swig_go_0, TagLib::PropertyMap *_swig_go_1) {
+TagLib::PropertyMap *_wrap_FileRef_setProperties_taglib_f208bd8fe051fa0d(TagLib::FileRef *_swig_go_0, TagLib::PropertyMap *_swig_go_1) {
   TagLib::FileRef *arg1 = (TagLib::FileRef *) 0 ;
   TagLib::PropertyMap *arg2 = 0 ;
   TagLib::PropertyMap result;
@@ -5672,7 +5553,7 @@ TagLib::PropertyMap *_wrap_FileRef_setProperties_taglib_a694ea421b08a5bb(TagLib:
 }
 
 
-TagLib::StringList *_wrap_FileRef_complexPropertyKeys_taglib_a694ea421b08a5bb(TagLib::FileRef *_swig_go_0) {
+TagLib::StringList *_wrap_FileRef_complexPropertyKeys_taglib_f208bd8fe051fa0d(TagLib::FileRef *_swig_go_0) {
   TagLib::FileRef *arg1 = (TagLib::FileRef *) 0 ;
   TagLib::StringList result;
   TagLib::StringList *_swig_go_result;
@@ -5685,7 +5566,7 @@ TagLib::StringList *_wrap_FileRef_complexPropertyKeys_taglib_a694ea421b08a5bb(Ta
 }
 
 
-TagLib::List< TagLib::Map< TagLib::String,TagLib::Variant > > *_wrap_FileRef_complexProperties_taglib_a694ea421b08a5bb(TagLib::FileRef *_swig_go_0, TagLib::String *_swig_go_1) {
+TagLib::List< TagLib::Map< TagLib::String,TagLib::Variant > > *_wrap_FileRef_complexProperties_taglib_f208bd8fe051fa0d(TagLib::FileRef *_swig_go_0, TagLib::String *_swig_go_1) {
   TagLib::FileRef *arg1 = (TagLib::FileRef *) 0 ;
   TagLib::String *arg2 = 0 ;
   SwigValueWrapper< TagLib::List< TagLib::Map< TagLib::String,TagLib::Variant > > > result;
@@ -5700,7 +5581,7 @@ TagLib::List< TagLib::Map< TagLib::String,TagLib::Variant > > *_wrap_FileRef_com
 }
 
 
-bool _wrap_FileRef_setComplexProperties_taglib_a694ea421b08a5bb(TagLib::FileRef *_swig_go_0, TagLib::String *_swig_go_1, TagLib::List< TagLib::Map< TagLib::String,TagLib::Variant > > *_swig_go_2) {
+bool _wrap_FileRef_setComplexProperties_taglib_f208bd8fe051fa0d(TagLib::FileRef *_swig_go_0, TagLib::String *_swig_go_1, TagLib::List< TagLib::Map< TagLib::String,TagLib::Variant > > *_swig_go_2) {
   TagLib::FileRef *arg1 = (TagLib::FileRef *) 0 ;
   TagLib::String *arg2 = 0 ;
   TagLib::List< TagLib::VariantMap > *arg3 = 0 ;
@@ -5717,7 +5598,7 @@ bool _wrap_FileRef_setComplexProperties_taglib_a694ea421b08a5bb(TagLib::FileRef 
 }
 
 
-TagLib::AudioProperties *_wrap_FileRef_audioProperties_taglib_a694ea421b08a5bb(TagLib::FileRef *_swig_go_0) {
+TagLib::AudioProperties *_wrap_FileRef_audioProperties_taglib_f208bd8fe051fa0d(TagLib::FileRef *_swig_go_0) {
   TagLib::FileRef *arg1 = (TagLib::FileRef *) 0 ;
   TagLib::AudioProperties *result = 0 ;
   TagLib::AudioProperties *_swig_go_result;
@@ -5730,7 +5611,7 @@ TagLib::AudioProperties *_wrap_FileRef_audioProperties_taglib_a694ea421b08a5bb(T
 }
 
 
-TagLib::File *_wrap_FileRef_file_taglib_a694ea421b08a5bb(TagLib::FileRef *_swig_go_0) {
+TagLib::File *_wrap_FileRef_file_taglib_f208bd8fe051fa0d(TagLib::FileRef *_swig_go_0) {
   TagLib::FileRef *arg1 = (TagLib::FileRef *) 0 ;
   TagLib::File *result = 0 ;
   TagLib::File *_swig_go_result;
@@ -5743,7 +5624,7 @@ TagLib::File *_wrap_FileRef_file_taglib_a694ea421b08a5bb(TagLib::FileRef *_swig_
 }
 
 
-bool _wrap_FileRef_save_taglib_a694ea421b08a5bb(TagLib::FileRef *_swig_go_0) {
+bool _wrap_FileRef_save_taglib_f208bd8fe051fa0d(TagLib::FileRef *_swig_go_0) {
   TagLib::FileRef *arg1 = (TagLib::FileRef *) 0 ;
   bool result;
   bool _swig_go_result;
@@ -5756,7 +5637,7 @@ bool _wrap_FileRef_save_taglib_a694ea421b08a5bb(TagLib::FileRef *_swig_go_0) {
 }
 
 
-TagLib::FileRef::FileTypeResolver *_wrap_FileRef_addFileTypeResolver_taglib_a694ea421b08a5bb(TagLib::FileRef::FileTypeResolver *_swig_go_0) {
+TagLib::FileRef::FileTypeResolver *_wrap_FileRef_addFileTypeResolver_taglib_f208bd8fe051fa0d(TagLib::FileRef::FileTypeResolver *_swig_go_0) {
   TagLib::FileRef::FileTypeResolver *arg1 = (TagLib::FileRef::FileTypeResolver *) 0 ;
   TagLib::FileRef::FileTypeResolver *result = 0 ;
   TagLib::FileRef::FileTypeResolver *_swig_go_result;
@@ -5769,13 +5650,13 @@ TagLib::FileRef::FileTypeResolver *_wrap_FileRef_addFileTypeResolver_taglib_a694
 }
 
 
-void _wrap_FileRef_clearFileTypeResolvers_taglib_a694ea421b08a5bb() {
+void _wrap_FileRef_clearFileTypeResolvers_taglib_f208bd8fe051fa0d() {
   TagLib::FileRef::clearFileTypeResolvers();
   
 }
 
 
-TagLib::StringList *_wrap_FileRef_defaultFileExtensions_taglib_a694ea421b08a5bb() {
+TagLib::StringList *_wrap_FileRef_defaultFileExtensions_taglib_f208bd8fe051fa0d() {
   TagLib::StringList result;
   TagLib::StringList *_swig_go_result;
   
@@ -5786,7 +5667,7 @@ TagLib::StringList *_wrap_FileRef_defaultFileExtensions_taglib_a694ea421b08a5bb(
 }
 
 
-bool _wrap_FileRef_isNull_taglib_a694ea421b08a5bb(TagLib::FileRef *_swig_go_0) {
+bool _wrap_FileRef_isNull_taglib_f208bd8fe051fa0d(TagLib::FileRef *_swig_go_0) {
   TagLib::FileRef *arg1 = (TagLib::FileRef *) 0 ;
   bool result;
   bool _swig_go_result;
@@ -5799,7 +5680,7 @@ bool _wrap_FileRef_isNull_taglib_a694ea421b08a5bb(TagLib::FileRef *_swig_go_0) {
 }
 
 
-void _wrap_FileRef_swap_taglib_a694ea421b08a5bb(TagLib::FileRef *_swig_go_0, TagLib::FileRef *_swig_go_1) {
+void _wrap_FileRef_swap_taglib_f208bd8fe051fa0d(TagLib::FileRef *_swig_go_0, TagLib::FileRef *_swig_go_1) {
   TagLib::FileRef *arg1 = (TagLib::FileRef *) 0 ;
   TagLib::FileRef *arg2 = 0 ;
   
@@ -5811,7 +5692,7 @@ void _wrap_FileRef_swap_taglib_a694ea421b08a5bb(TagLib::FileRef *_swig_go_0, Tag
 }
 
 
-intgo _wrap_FileRef_pictureCount_taglib_a694ea421b08a5bb(TagLib::FileRef *_swig_go_0) {
+intgo _wrap_FileRef_pictureCount_taglib_f208bd8fe051fa0d(TagLib::FileRef *_swig_go_0) {
   TagLib::FileRef *arg1 = (TagLib::FileRef *) 0 ;
   unsigned int result;
   intgo _swig_go_result;
@@ -5824,7 +5705,7 @@ intgo _wrap_FileRef_pictureCount_taglib_a694ea421b08a5bb(TagLib::FileRef *_swig_
 }
 
 
-TagLib::Variant *_wrap_FileRef_pictureProperty_taglib_a694ea421b08a5bb(TagLib::FileRef *_swig_go_0, intgo _swig_go_1, TagLib::String *_swig_go_2) {
+TagLib::Variant *_wrap_FileRef_pictureProperty_taglib_f208bd8fe051fa0d(TagLib::FileRef *_swig_go_0, intgo _swig_go_1, TagLib::String *_swig_go_2) {
   TagLib::FileRef *arg1 = (TagLib::FileRef *) 0 ;
   unsigned int arg2 ;
   TagLib::String *arg3 = 0 ;

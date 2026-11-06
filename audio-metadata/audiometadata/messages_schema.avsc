@@ -1,0 +1,53 @@
+[
+  {
+    "type": "record",
+    "name": "TagsRequest",
+    "namespace": "seraph.audiometadata",
+    "fields": [
+      { "name": "providerId", "type": "string" },
+      { "name": "path", "type": "string" }
+    ]
+  },
+  {
+    "type": "record",
+    "name": "TagsResponse",
+    "namespace": "seraph.audiometadata",
+    "fields": [
+      { "name": "error", "type": "string" },
+      { "name": "errorClass", "type": "string", "default": "" },
+      { "name": "title", "type": "string", "default": "" },
+      { "name": "artist", "type": "string", "default": "" },
+      { "name": "album", "type": "string", "default": "" },
+      { "name": "albumArtist", "type": "string", "default": "" },
+      { "name": "genre", "type": "string", "default": "" },
+      { "name": "year", "type": "int", "default": 0 },
+      { "name": "trackNumber", "type": "int", "default": 0 },
+      { "name": "discNumber", "type": "int", "default": 0 },
+      { "name": "durationMs", "type": "long", "default": 0 },
+      { "name": "hasPicture", "type": "boolean", "default": false }
+    ]
+  },
+  {
+    "type": "record",
+    "name": "PictureRequest",
+    "namespace": "seraph.audiometadata",
+    "fields": [
+      { "name": "providerId", "type": "string" },
+      { "name": "path", "type": "string" },
+      { "name": "offset", "type": "long" },
+      { "name": "length", "type": "int" }
+    ]
+  },
+  {
+    "type": "record",
+    "name": "PictureResponse",
+    "namespace": "seraph.audiometadata",
+    "fields": [
+      { "name": "error", "type": "string" },
+      { "name": "errorClass", "type": "string", "default": "" },
+      { "name": "mimeType", "type": "string", "default": "" },
+      { "name": "totalSize", "type": "long", "default": 0 },
+      { "name": "data", "type": "bytes", "default": "" }
+    ]
+  }
+]

@@ -22,6 +22,12 @@
 // binary data (see ByteVector::bytes below).
 %include <std_string.i>
 
+// TagLib::offset_t is off_t on Linux, which SWIG does not know: unknown, it
+// becomes an opaque pointer type, and the IOStream director's tell() and
+// length() then dereference a pointer the Go side handed back. Declared as
+// an integer, offsets cross as plain int64 values.
+typedef long long off_t;
+
 %include <taglib/taglib_export.h>
 %include <taglib/taglib.h>
 

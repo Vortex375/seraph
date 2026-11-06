@@ -20,18 +20,9 @@ package taglib
 
 import (
 	"io"
-	"unsafe"
 
 	"golang.org/x/net/webdav"
 )
-
-type off_t struct {
-	v int64
-}
-
-func (o *off_t) Swigcptr() uintptr {
-	return uintptr(unsafe.Pointer(&o.v))
-}
 
 type WebdavFileStream interface {
 	IOStream
@@ -44,7 +35,10 @@ type webdavFileStream struct {
 	om *overwrittenMethodsOnWebdavFileStream
 }
 
+// Delete frees the stream and closes its file. Delete any FileRef reading
+// from the stream first: the FileRef does not own the stream.
 func (m *webdavFileStream) Delete() {
+	m.om.freeLastBlock()
 	m.om.file.Close()
 	DeleteDirectorIOStream(m.IOStream)
 }
@@ -59,6 +53,12 @@ type overwrittenMethodsOnWebdavFileStream struct {
 	name   string
 	file   webdav.File
 	offset int64
+
+	// lastBlock is the ByteVector most recently returned by ReadBlock. The
+	// director copies it (ByteVectors are implicitly shared, so that is
+	// cheap) but never frees the wrapper's heap object; it is freed on the
+	// next read or on Delete.
+	lastBlock ByteVector
 }
 
 func NewWebdavFileStream(name string, file webdav.File) WebdavFileStream {
@@ -73,50 +73,46 @@ func NewWebdavFileStream(name string, file webdav.File) WebdavFileStream {
 	return &webdavFileStream{IOStream: ioStream, om: om}
 }
 
-func (om *overwrittenMethodsOnWebdavFileStream) Name() string {
-	// fmt.Printf("Name()\n")
-	ret := om.name
-	// fmt.Printf("Name() => %v\n", ret)
-	return ret
+func (om *overwrittenMethodsOnWebdavFileStream) freeLastBlock() {
+	if om.lastBlock != nil {
+		DeleteByteVector(om.lastBlock)
+		om.lastBlock = nil
+	}
 }
 
-func (om *overwrittenMethodsOnWebdavFileStream) ReadBlock(arg2 int64) ByteVector {
-	// fmt.Printf("ReadBlock(%v)\n", arg2)
-	bytes := make([]byte, arg2)
-	n, err := om.file.Read(bytes)
-	if err != nil || n == 0 {
-		ret := NewByteVector()
-		// fmt.Printf("ReadBlock(%v) => %v\n", arg2, ret)
-		return ret
+func (om *overwrittenMethodsOnWebdavFileStream) Name() string {
+	return om.name
+}
+
+func (om *overwrittenMethodsOnWebdavFileStream) ReadBlock(length int64) ByteVector {
+	om.freeLastBlock()
+
+	bytes := make([]byte, length)
+	n, err := io.ReadFull(om.file, bytes)
+	om.offset += int64(n)
+	if n == 0 {
+		om.lastBlock = NewByteVector()
+	} else {
+		// a short read at the end of the file is not an error for TagLib
+		_ = err
+		om.lastBlock = NewByteVector(string(bytes[:n]), uint(n))
 	}
-	ret := NewByteVector(string(bytes[:n]), uint(n))
-	// fmt.Printf("ReadBlock(%v) => %v\n", arg2, ret.Data())
-	return ret
+	return om.lastBlock
 }
 
 func (om *overwrittenMethodsOnWebdavFileStream) ReadOnly() bool {
-	// fmt.Printf("ReadOnly() => true\n")
 	return true
 }
 
 func (om *overwrittenMethodsOnWebdavFileStream) IsOpen() bool {
-	// fmt.Printf("IsOpen() => true\n")
 	return true
 }
 
 func (om *overwrittenMethodsOnWebdavFileStream) Seek(a ...interface{}) {
-	// fmt.Printf("Seek(%v)\n", a)
-
-	offset := a[0].(Off_t)
-	addr := offset.Swigcptr()
-	ptr := unsafe.Pointer(addr)
-	value := *(*int64)(ptr)
-
-	// fmt.Printf("Seek(%v)\n", value)
+	offset := a[0].(int64)
 	whence := io.SeekStart
 	if len(a) > 1 {
-		pos := a[1].(TagLibIOStreamPosition)
-		switch pos {
+		switch a[1].(TagLibIOStreamPosition) {
 		case IOStreamBeginning:
 			whence = io.SeekStart
 		case IOStreamCurrent:
@@ -125,40 +121,29 @@ func (om *overwrittenMethodsOnWebdavFileStream) Seek(a ...interface{}) {
 			whence = io.SeekEnd
 		}
 	}
-	position, err := om.file.Seek(value, whence)
+	position, err := om.file.Seek(offset, whence)
 	if err == nil {
 		om.offset = position
 	}
-
-	// fmt.Printf("Seek(%v) => %v, %v\n", a, position, err)
 }
 
-func (om *overwrittenMethodsOnWebdavFileStream) Seek__SWIG_0(offset Off_t, pos TagLibIOStreamPosition) {
-	// fmt.Printf("Seek__SWIG_0(%v,%v)\n", offset, pos)
+func (om *overwrittenMethodsOnWebdavFileStream) Seek__SWIG_0(offset int64, pos TagLibIOStreamPosition) {
 	om.Seek(offset, pos)
 }
 
-func (om *overwrittenMethodsOnWebdavFileStream) Seek__SWIG_1(offset Off_t) {
-	// fmt.Printf("Seek__SWIG_1(%v)\n", offset)
+func (om *overwrittenMethodsOnWebdavFileStream) Seek__SWIG_1(offset int64) {
 	om.Seek(offset)
 }
 
-func (om *overwrittenMethodsOnWebdavFileStream) Tell() Off_t {
-	ret := om.offset
-	// fmt.Printf("Tell() => %v\n", ret)
-
-	return &off_t{ret}
+func (om *overwrittenMethodsOnWebdavFileStream) Tell() int64 {
+	return om.offset
 }
 
-func (om *overwrittenMethodsOnWebdavFileStream) Length() Off_t {
-	// fmt.Printf("Length()\n")
-	currentPos := om.offset
-	len, err := om.file.Seek(0, io.SeekEnd)
+func (om *overwrittenMethodsOnWebdavFileStream) Length() int64 {
+	length, err := om.file.Seek(0, io.SeekEnd)
 	if err != nil {
-		return &off_t{0}
+		return 0
 	}
-	om.file.Seek(currentPos, io.SeekStart)
-	// fmt.Printf("Length() => %v\n", len)
-
-	return &off_t{len}
+	om.file.Seek(om.offset, io.SeekStart)
+	return length
 }
