@@ -904,6 +904,33 @@ void main() {
     expect(delegate.crossAxisCount, inInclusiveRange(2, 4));
   });
 
+  testWidgets('the date dialog jumps to a chosen year and picks a whole '
+      'month in one tap', (tester) async {
+    await setUpGallery(itemCount: 6);
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.date_range));
+    await tester.pumpAndSettle();
+    expect(find.text('Filter by capture date'), findsOneWidget);
+
+    // Jump straight to 2024 via the year dropdown...
+    await tester.tap(find.byType(DropdownButton<int>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('2024').last);
+    await tester.pumpAndSettle();
+
+    // ...then one tap on May filters to the whole month.
+    await tester.tap(find.text('May'));
+    await tester.pumpAndSettle();
+
+    expect(controller.filter.value.capturedFrom, DateTime(2024, 5, 1));
+    expect(controller.filter.value.capturedTo, DateTime(2024, 5, 31));
+    expect(find.byType(Chip), findsOneWidget);
+    // Nothing photographed in May 2024 - the filtered-empty state shows.
+    expect(find.text('No photos match this filter.'), findsOneWidget);
+  });
+
   testWidgets(
       'an active date range shows a removable chip; removing it '
       'restores the unfiltered gallery', (tester) async {

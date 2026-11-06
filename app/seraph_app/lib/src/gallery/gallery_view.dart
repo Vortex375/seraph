@@ -197,22 +197,19 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
     );
   }
 
-  /// The date-range action (the gallery-metadata feature): Flutter's own
-  /// `showDateRangePicker`, storing the picked days as the filter's capture-
-  /// date range. Reopening the picker preselects the active range.
+  /// The date-range action (the gallery-metadata feature): the year jump
+  /// dialog - quick month selection within a chosen year, or Flutter's own
+  /// `showDateRangePicker` (via "Custom range…") for an arbitrary range -
+  /// storing the picked days as the filter's capture-date range. Reopening
+  /// preselects the active range.
   Future<void> _pickDateRange() async {
-    final now = DateTime.now();
     final current = controller.filter.value;
-    final picked = await showDateRangePicker(
+    final initial = current.capturedFrom != null && current.capturedTo != null
+        ? DateTimeRange(start: current.capturedFrom!, end: current.capturedTo!)
+        : null;
+    final picked = await showDialog<DateTimeRange>(
       context: context,
-      firstDate: DateTime(1970),
-      lastDate: DateTime(now.year + 1),
-      initialDateRange:
-          current.capturedFrom != null && current.capturedTo != null
-              ? DateTimeRange(
-                  start: current.capturedFrom!, end: current.capturedTo!)
-              : null,
-      helpText: 'Filter by capture date',
+      builder: (_) => _DateRangeDialog(initialRange: initial),
     );
     if (picked != null) {
       await controller.setDateRange(picked.start, picked.end);
@@ -821,6 +818,128 @@ class _FilterChipsBar extends StatelessWidget {
     }
     final single = from ?? to!;
     return 'Since ${localizations.formatMediumDate(single)}';
+  }
+}
+
+/// The date-range dialog: a YEAR JUMP (a dropdown over the years the
+/// gallery's range covers) plus a month grid - tapping a month filters to
+/// that whole month immediately, no scrolling through the calendar. For an
+/// arbitrary range, "Custom range…" hands off to Flutter's own
+/// `showDateRangePicker`, opening on the year selected here (or on the
+/// active range).
+class _DateRangeDialog extends StatefulWidget {
+  const _DateRangeDialog({required this.initialRange});
+
+  final DateTimeRange? initialRange;
+
+  @override
+  State<_DateRangeDialog> createState() => _DateRangeDialogState();
+}
+
+class _DateRangeDialogState extends State<_DateRangeDialog> {
+  static const _firstYear = 1970;
+  static const _monthNames = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+
+  late int _year = widget.initialRange?.start.year ?? DateTime.now().year;
+
+  Iterable<int> get _years sync* {
+    final newest = DateTime.now().year;
+    for (var y = newest; y >= _firstYear; y--) {
+      yield y;
+    }
+  }
+
+  void _pickMonth(int month) {
+    final start = DateTime(_year, month);
+    final end = DateTime(_year, month + 1).subtract(const Duration(days: 1));
+    Navigator.of(context).pop(DateTimeRange(start: start, end: end));
+  }
+
+  Future<void> _pickCustom() async {
+    final now = DateTime.now();
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(_firstYear),
+      lastDate: DateTime(now.year + 1),
+      initialDateRange: widget.initialRange ??
+          DateTimeRange(
+            start: DateTime(_year),
+            end: DateTime(_year, 12, 31),
+          ),
+      helpText: 'Filter by capture date',
+    );
+    if (picked != null && mounted) {
+      Navigator.of(context).pop(picked);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Filter by capture date'),
+      content: SizedBox(
+        width: 320,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text('Year'),
+                const Spacer(),
+                DropdownButton<int>(
+                  value: _year,
+                  items: [
+                    for (final year in _years)
+                      DropdownMenuItem(value: year, child: Text('$year')),
+                  ],
+                  onChanged: (year) => setState(() => _year = year ?? _year),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            GridView.count(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisCount: 3,
+              childAspectRatio: 2.8,
+              mainAxisSpacing: 4,
+              crossAxisSpacing: 4,
+              children: [
+                for (var m = 1; m <= 12; m++)
+                  OutlinedButton(
+                    onPressed: () => _pickMonth(m),
+                    child: Text(_monthNames[m - 1]),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _pickCustom,
+          child: const Text('Custom range…'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+      ],
+    );
   }
 }
 
