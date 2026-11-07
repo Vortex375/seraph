@@ -3,6 +3,7 @@ import 'dart:developer' as developer;
 
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:rxdart/rxdart.dart';
 import 'package:seraph_app/src/media_player/audio_tags.dart';
 import 'package:seraph_app/src/media_player/authenticated_audio_source.dart';
 import 'package:seraph_app/src/media_player/queue_model.dart';
@@ -126,6 +127,8 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         MediaControl.skipToPrevious,
         MediaControl.skipToNext,
       ],
+      // seek gives Android Auto and the notification a seek bar
+      systemActions: const {MediaAction.seek},
       androidCompactActionIndices: const [0, 1, 2],
       processingState: const {
         ProcessingState.idle: AudioProcessingState.idle,
@@ -313,6 +316,56 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       return;
     }
     await player.seek(Duration.zero, index: index);
+  }
+
+  static const String _queueChildPrefix = 'queue/';
+
+  /// Android Auto opens into this browse tree when nothing is playing; it
+  /// lists the current queue so a track can be resumed from the car. Child
+  /// ids carry the queue index, since a file may be queued twice.
+  // ponytail: queue only, real file browsing is a later iteration
+  @override
+  Future<List<MediaItem>> getChildren(String parentMediaId,
+      [Map<String, dynamic>? options]) async {
+    if (parentMediaId != AudioService.browsableRootId) {
+      return [];
+    }
+    final entries = queue.value;
+    return [
+      for (var i = 0; i < entries.length; i++)
+        // no artUri: Auto loads browse art itself and cannot send our token
+        MediaItem(
+          id: '$_queueChildPrefix$i',
+          title: entries[i].title,
+          artist: entries[i].artist,
+          album: entries[i].album,
+          duration: entries[i].duration,
+        ),
+    ];
+  }
+
+  ValueStream<Map<String, dynamic>>? _rootChildren;
+
+  @override
+  ValueStream<Map<String, dynamic>> subscribeToChildren(String parentMediaId) {
+    if (parentMediaId != AudioService.browsableRootId) {
+      return super.subscribeToChildren(parentMediaId);
+    }
+    return _rootChildren ??=
+        queue.map((_) => <String, dynamic>{}).shareValueSeeded(<String, dynamic>{});
+  }
+
+  @override
+  Future<void> playFromMediaId(String mediaId, [Map<String, dynamic>? extras]) async {
+    if (!mediaId.startsWith(_queueChildPrefix)) {
+      return;
+    }
+    final index = int.tryParse(mediaId.substring(_queueChildPrefix.length));
+    if (index == null || index < 0 || index >= queue.value.length) {
+      return;
+    }
+    await skipToQueueItem(index);
+    await play();
   }
 
   @override

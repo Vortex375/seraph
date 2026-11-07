@@ -58,6 +58,7 @@ dependencies:
   flutter_foreground_task: ^11.0.3
   workmanager: ^0.10.6
   just_audio: ^0.10.6
+  rxdart: ^0.28.0
 
 dev_dependencies:
   flutter_test:
