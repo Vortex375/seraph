@@ -24,10 +24,7 @@ class FileBrowserGridView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GridView.builder(
-      // Providing a restorationId allows the ListView to restore the
-      // scroll position when a user leaves and returns to the app after it
-      // has been killed while running in the background.
-      restorationId: 'fileBrowserGridView',
+      controller: Get.find<FileBrowserController>().scrollController,
       gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: gridSize,
       ),

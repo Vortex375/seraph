@@ -25,10 +25,7 @@ class FileBrowserListView extends StatelessWidget{
     ShareController shareController = Get.find();
     
     return ListView.builder(
-      // Providing a restorationId allows the ListView to restore the
-      // scroll position when a user leaves and returns to the app after it
-      // has been killed while running in the background.
-      restorationId: 'fileBrowserListView',
+      controller: Get.find<FileBrowserController>().scrollController,
       itemCount: items.length,
       itemBuilder: (BuildContext context, int index) {
         final item = items[index];
@@ -56,7 +53,7 @@ class FileBrowserListView extends StatelessWidget{
                   onChanged: (v) => selectItem(item, v ?? false)
                 ),
                 if (selectionController.isSelecting.value) const SizedBox(width: 4),
-                Hero(tag: "preview:${item.path}", child: icon),
+                if (hasPreview) Hero(tag: "preview:${item.path}", child: icon) else icon,
               ],
             ),
             trailing: Obx(() {

@@ -60,7 +60,7 @@ class FileBrowserView extends StatelessWidget {
           if (newPath == '') {
             newPath = '/';
           }
-          Get.offNamed('${shareController.shareMode.value ? ShareController.routeName : FileBrowserView.routeName}?path=$newPath');
+          Get.find<FileBrowserController>().navigateTo(newPath);
         }
       ));
     }

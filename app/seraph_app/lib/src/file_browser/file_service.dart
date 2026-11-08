@@ -88,16 +88,29 @@ class FileService {
     );
   }
 
+  /// `webdav_client` splices the path into a URL verbatim, so a `#`, `?` or
+  /// `%` in a name truncates or corrupts the request. Every path handed to
+  /// [client] goes through this; paths in and out of [FileService] stay decoded.
+  static String _encodePath(String path) =>
+      path.split('/').map(Uri.encodeComponent).join('/');
+
   Future<List<File>> readDir(String path) async {
     Client? c = client;
     if (c == null) {
       return [];
     }
-    return _withTokenRecovery(() async {
+    final files = await _withTokenRecovery(() async {
       final headers = await getRequestHeaders();
       c.setHeaders(headers);
-      return c.readDir(path);
+      return c.readDir(_encodePath(path));
     });
+    // the package builds each File.path from the (now encoded) request path
+    var dir = path.startsWith('/') ? path : '/$path';
+    if (!dir.endsWith('/')) dir = '$dir/';
+    for (final f in files) {
+      f.path = '$dir${f.name}${(f.isDir ?? false) ? '/' : ''}';
+    }
+    return files;
   }
 
   Future<File?> stat(String path) async {
@@ -108,7 +121,7 @@ class FileService {
     return _withTokenRecovery(() async {
       final headers = await getRequestHeaders();
       c.setHeaders(headers);
-      return c.readProps(path);
+      return c.readProps(_encodePath(path));
     });
   }
 
@@ -133,7 +146,7 @@ class FileService {
     await _withTokenRecovery(() async {
       final headers = await getRequestHeaders();
       c.setHeaders(headers);
-      await c.write(path, data);
+      await c.write(_encodePath(path), data);
     });
   }
 
@@ -152,7 +165,7 @@ class FileService {
     await _withTokenRecovery(() async {
       final headers = await getRequestHeaders();
       c.setHeaders(headers);
-      await c.remove(path);
+      await c.remove(_encodePath(path));
     });
   }
 

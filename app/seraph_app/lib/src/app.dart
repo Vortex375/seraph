@@ -40,7 +40,7 @@ class MyApp extends StatelessWidget {
             page: () {
               if (shareController.isDir.value) {
                 Get.find<FileBrowserController>()
-                    .setPath(Get.parameters['path'] ?? '/');
+                    .setPathFromRoute(Get.parameters['path']);
               }
               return const ShareView();
             },
@@ -66,7 +66,7 @@ class MyApp extends StatelessWidget {
           name: FileBrowserView.routeName,
           page: () {
             Get.find<FileBrowserController>()
-                .setPath(Get.parameters['path'] ?? '/');
+                .setPathFromRoute(Get.parameters['path']);
             return const LoginView(child: FileBrowserView());
           },
           transition: Transition.noTransition,

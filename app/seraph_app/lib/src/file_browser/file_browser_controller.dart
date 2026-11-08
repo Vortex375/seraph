@@ -28,6 +28,11 @@ class FileBrowserController extends GetxController {
 
   bool _first = true;
 
+  /// Shared by the list and grid views so [loadFiles] can put a folder back
+  /// where the user left it. [_offsets] is keyed by folder path.
+  final scrollController = ScrollController();
+  final Map<String, double> _offsets = {};
+
   Widget Function()? _previewFactory;
 
   void setPath(String path) {
@@ -42,13 +47,46 @@ class FileBrowserController extends GetxController {
     });
   }
 
+  /// The route URL is not trustworthy for in-app navigation: the web engine
+  /// decodes it, so `a#b` or `c&d` no longer parse back to the same path.
+  /// [navigateTo] hands the exact path over here instead.
+  String? _pendingNav;
+
+  /// For the route builders; [param] is the `path` query parameter, which is
+  /// all there is on a deep link or reload.
+  void setPathFromRoute(String? param) {
+    // not cleared: the builder can run more than once per navigation
+    setPath(_pendingNav ?? param ?? '/');
+  }
+
   void goUp() {
-    var split = _path.split("/");
-    if (split.length <= 1) {
-      setPath('');
-    } else {
-      setPath(split.sublist(0, split.length - 1).join('/'));
+    if (_path.value.isEmpty) {
+      return;
     }
+    final split = _path.value.split("/");
+    navigateTo(split.length <= 1 ? '' : split.sublist(0, split.length - 1).join('/'));
+  }
+
+  /// Opens folder [path] through the router, so the route always matches what
+  /// is shown (a stale route makes re-entering the same folder a no-op) and
+  /// the path survives a reload. Remembers the current scroll position.
+  void navigateTo(String path) {
+    _pendingNav = path;
+    if (scrollController.hasClients && scrollController.positions.length == 1) {
+      _offsets[_path.value] = scrollController.offset;
+    }
+    final share = Get.find<ShareController>().shareMode.value;
+    Get.offNamed(
+        '${share ? ShareController.routeName : FileBrowserView.routeName}?path=${Uri.encodeQueryComponent(path.isEmpty ? '/' : path)}');
+  }
+
+  void _restoreScroll() {
+    final target = _offsets[_path.value] ?? 0;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      for (final p in scrollController.positions) {
+        p.jumpTo(target.clamp(p.minScrollExtent, p.maxScrollExtent));
+      }
+    });
   }
 
   Future<void> loadFiles() async {
@@ -74,6 +112,7 @@ class FileBrowserController extends GetxController {
       });
       _files.value = files;
       _status.value = files.isEmpty ? RxStatus.empty() : RxStatus.success();
+      _restoreScroll();
     } catch (err) {
       _showError(err.toString());
       developer.log("Error: $err", name: 'seraph.file_browser', error: err);
@@ -82,14 +121,12 @@ class FileBrowserController extends GetxController {
   }
 
   void openItem(File item) {
-    final ShareController shareController = Get.find();
-
     if (!_status.value.isLoading && (item.isDir ?? false)) {
-      Get.offNamed(
-          '${shareController.shareMode.value ? ShareController.routeName : FileBrowserView.routeName}?path=$_path/${item.name}');
+      navigateTo('$_path/${item.name}');
     } else {
       _openItemIndex.value = files.value.indexOf(item);
-      Get.toNamed('${FileViewerView.routeName}?path=$_path/${item.name}');
+      Get.toNamed(
+          '${FileViewerView.routeName}?path=${Uri.encodeQueryComponent('$_path/${item.name}')}');
     }
   }
 
