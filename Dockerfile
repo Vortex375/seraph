@@ -5,16 +5,12 @@ COPY . .
 
 ARG TARGETOS TARGETARCH
 
-RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go build -C api-gateway -o /out/api-gateway .
-RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go build -C file-indexer -o /out/file-indexer .
-RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go build -C thumbnailer -o /out/thumbnailer .
-RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go build -C shares -o /out/shares .
-RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go build -C spaces -o /out/spaces .
-RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go build -C gallery -o /out/gallery .
-RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go build -C jobs -o /out/jobs .
-RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go build -C file-provider-dir -o /out/file-provider-dir .
-RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go build -C file-provider-smb -o /out/file-provider-smb .
-RUN --mount=type=cache,target=/go/pkg/mod GOOS=$TARGETOS GOARCH=$TARGETARCH go build -C log-viewer -o /out/log-viewer .
+# One go invocation builds every service in parallel; the go-build cache mount
+# (shared with audio-metadata-build) keeps unchanged packages compiled.
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /out/ \
+    ./api-gateway ./file-indexer ./thumbnailer ./shares ./spaces ./gallery ./jobs \
+    ./file-provider-dir ./file-provider-smb ./log-viewer
 
 # Build audio-metadata, the only cgo service: TagLib from Debian, built on the
 # target platform so the binary matches the runtime image's glibc.
@@ -22,7 +18,7 @@ FROM golang:1.26.5 AS audio-metadata-build
 RUN apt-get update && apt-get install -y --no-install-recommends libtag-dev zlib1g-dev && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY . .
-RUN --mount=type=cache,target=/go/pkg/mod CGO_ENABLED=1 go build -C audio-metadata -o /out/audio-metadata .
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build CGO_ENABLED=1 go build -C audio-metadata -o /out/audio-metadata .
 # TagLib and zlib for the final image, staged under the multiarch directory
 # (x86_64-linux-gnu, aarch64-linux-gnu) they are loaded from.
 RUN set -e; multiarch=$(gcc -print-multiarch); mkdir -p /out/lib/$multiarch; \

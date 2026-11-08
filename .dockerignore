@@ -17,3 +17,9 @@ linux/
 windows/
 android/
 ios/
+
+# Not needed by the image: agent worktrees, git, the agents service (own context)
+.git/
+.claude/
+.scratch/
+agents/
