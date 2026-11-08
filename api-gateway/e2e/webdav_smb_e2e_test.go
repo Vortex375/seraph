@@ -49,8 +49,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/fx/fxtest"
 	xwebdav "golang.org/x/net/webdav"
-	"umbasa.net/seraph/file-provider/fileprovider"
 	"umbasa.net/seraph/file-provider-smb/smbprovider"
+	"umbasa.net/seraph/file-provider/fileprovider"
 	"umbasa.net/seraph/logging"
 	"umbasa.net/seraph/tracing"
 
@@ -59,9 +59,9 @@ import (
 )
 
 const (
-	smbShareName    = "Data"
-	smbUser         = "samba"
-	smbPass         = "secret"
+	smbShareName   = "Data"
+	smbUser        = "samba"
+	smbPass        = "secret"
 	smbSpaceProvId = "smbstorage"
 	smbProviderId  = "smb-test-provider"
 )

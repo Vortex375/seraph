@@ -215,6 +215,10 @@ func TestMkdir(t *testing.T) {
 	}
 
 	mockFs.On("Mkdir", mock.Anything, "testdir", fs.FileMode(0644)).Return(nil)
+	// handleMkdir stats the new dir to publish its FileInfoEvent; a failed
+	// stat only skips the event, the mkdir still succeeds
+	var null *MockFileInfo = nil
+	mockFs.On("Stat", mock.Anything, "testdir").Return(null, errors.New("stat failed"))
 
 	doTest(t, &mockFs, false, request, responseEquals(expected))
 }
@@ -346,6 +350,10 @@ func TestRename(t *testing.T) {
 	}
 
 	mockFs.On("Rename", mock.Anything, "foo", "bar").Return(nil)
+	// handleRename stats the target to publish its FileInfoEvent; a failed
+	// stat only skips the event, the rename still succeeds
+	var null *MockFileInfo = nil
+	mockFs.On("Stat", mock.Anything, "bar").Return(null, errors.New("stat failed"))
 
 	doTest(t, &mockFs, false, request, responseEquals(expected))
 }
@@ -718,6 +726,10 @@ func TestFile(t *testing.T) {
 		}
 
 		mockFile.On("Close").Return(nil)
+		// closing a file opened for writing stats it to publish its
+		// FileInfoEvent; a failed stat only skips the event
+		var null *MockFileInfo = nil
+		mockFs.On("Stat", mock.Anything, "testfile").Return(null, errors.New("stat failed"))
 
 		expected := FileProviderFileResponse{
 			Uid:      fileRequest.Uid,

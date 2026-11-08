@@ -49,7 +49,11 @@ func TestMain(m *testing.M) {
 }
 
 func setup() {
-	opts := &server.Options{}
+	opts := &server.Options{
+		// random port: a local NATS on 4222 (dev compose) would otherwise
+		// make the embedded server fail to start
+		Port: server.RANDOM_PORT,
+	}
 	var err error
 	natsServer, err = server.NewServer(opts)
 	if err != nil {

@@ -61,9 +61,20 @@ var (
 	setupErr  error
 )
 
+// natsStoreDir is this run's own JetStream store: a shared one (os.TempDir())
+// keeps streams across runs and packages, so stale messages from an earlier
+// run - or another package's tests - get consumed here.
+var natsStoreDir string
+
 func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "seraph-nats-")
+	if err != nil {
+		panic(err)
+	}
+	natsStoreDir = dir
 	code := m.Run()
 	shutdown()
+	os.RemoveAll(natsStoreDir)
 	os.Exit(code)
 }
 
@@ -83,7 +94,7 @@ func requireIntegration(t *testing.T) {
 func setup() error {
 	opts := &server.Options{
 		JetStream: true,
-		StoreDir:  os.TempDir(),
+		StoreDir:  natsStoreDir,
 		// random port: a local NATS on 4222 (dev compose) would otherwise
 		// make every integration test skip
 		Port: server.RANDOM_PORT,

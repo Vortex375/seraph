@@ -48,10 +48,21 @@ var mongoContainer testcontainers.Container
 var mongoUrl string
 var v *viper.Viper
 
+// natsStoreDir is this run's own JetStream store: a shared one (os.TempDir())
+// keeps streams across runs and packages, so stale messages from an earlier
+// run - or another package's tests - get consumed here.
+var natsStoreDir string
+
 func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "seraph-nats-")
+	if err != nil {
+		panic(err)
+	}
+	natsStoreDir = dir
 	setup()
 	code := m.Run()
 	shutdown()
+	os.RemoveAll(natsStoreDir)
 	os.Exit(code)
 }
 
@@ -59,7 +70,7 @@ func setup() {
 	opts := &server.Options{
 		Port:      server.RANDOM_PORT,
 		JetStream: true,
-		StoreDir:  os.TempDir(),
+		StoreDir:  natsStoreDir,
 	}
 	var err error
 	natsServer, err = server.NewServer(opts)

@@ -48,6 +48,7 @@ dev = [
     "pytest",
     "pytest-asyncio",
     "types-cachetools>=6.2.0.20260408",
+    "types-requests>=2.33.0.20261030",
 ]
 
 [build-system]

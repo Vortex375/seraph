@@ -251,9 +251,7 @@ async def test_read_file_excerpt_rejects_binary_or_large_files() -> None:
         max_read_bytes=32,
         max_inline_file_size=128,
     )
-    large_result = await large_service.read_file_excerpt(
-        user_id="alice", provider_id="space-a", path="/team/spec.txt"
-    )
+    large_result = await large_service.read_file_excerpt(user_id="alice", provider_id="space-a", path="/team/spec.txt")
     assert large_result["content"] is None
     assert "too large" in large_result["message"]
 
@@ -330,9 +328,7 @@ async def test_stat_file_allows_nested_path_in_space_scope() -> None:
         search_client=None,
     )
 
-    result = await service.stat_file(
-        user_id="alice", provider_id="test", path="/wallpaper/round_moons_nasa.jpg"
-    )
+    result = await service.stat_file(user_id="alice", provider_id="test", path="/wallpaper/round_moons_nasa.jpg")
 
     assert result["provider_id"] == "test"
     assert result["path"] == "/wallpaper/round_moons_nasa.jpg"
@@ -487,9 +483,7 @@ async def test_relative_path_is_normalized_before_authorization() -> None:
         search_client=None,
     )
 
-    result = await service.stat_file(
-        user_id="alice", provider_id="test", path="wallpaper/round_moons_nasa.jpg"
-    )
+    result = await service.stat_file(user_id="alice", provider_id="test", path="wallpaper/round_moons_nasa.jpg")
 
     assert result["path"] == "/wallpaper/round_moons_nasa.jpg"
 

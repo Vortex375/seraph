@@ -57,12 +57,12 @@ func requireRealPixelPhoto(t *testing.T) []byte {
 	return realPixelPhoto
 }
 
-// realPhotoCaptureDate is the EXIF DateTimeOriginal embedded in
-// testdata/PXL_20240308_190141760.jpg, parsed the same way the gallery service
-// parses it (metadata.go exifCaptureDate: time.ParseInLocation with UTC), so
-// the assertion compares apples to apples. CapturedAt is stored as Unix
-// seconds.
-var realPhotoCaptureDate = time.Date(2024, 3, 8, 20, 1, 41, 0, time.UTC)
+// realPhotoCaptureDate is the capture instant of
+// testdata/PXL_20240308_190141760.jpg: EXIF DateTimeOriginal 20:01:41 local
+// at the photo's +01:00 offset, which the gallery service turns into the UTC
+// instant (metadata.go exifCaptureDate/resolveExifOffset) - matching the
+// UTC-based Pixel file name. CapturedAt is stored as Unix seconds.
+var realPhotoCaptureDate = time.Date(2024, 3, 8, 19, 1, 41, 0, time.UTC)
 
 // TestE2EGalleryPipelineExifThroughRealUpload proves the EXIF extraction the
 // user's gallery ordering depends on actually runs when a photo arrives
@@ -139,7 +139,7 @@ func TestE2EGalleryPipelineExifThroughRealUpload(t *testing.T) {
 	assert.Equal(t, gallery.CaptureDateSourceExif, photo["capturedAtSource"],
 		"a real Pixel photo uploaded through the backup route must have capturedAtSource=exif (extraction ran end to end)")
 	assert.Equal(t, realPhotoCaptureDate.Unix(), photo["capturedAt"],
-		"capturedAt must be the EXIF DateTimeOriginal (2024-03-08 20:01:41 UTC), not the upload time")
+		"capturedAt must be the EXIF DateTimeOriginal (2024-03-08 19:01:41 UTC), not the upload time")
 	pending, _ := photo["metadataPending"].(bool)
 	assert.False(t, pending, "live-ingested photo must not be metadataPending")
 	assert.NotZero(t, photo["width"], "EXIF/dimension extraction should populate width for a real photo")
@@ -276,9 +276,9 @@ func requireEventualGalleryListingContains(t *testing.T, relPath string) gallery
 			t.Fatalf("gallery listing: want 200, got %d (body=%s)", resp.StatusCode, body)
 		}
 		var page struct {
-			Items     []galleryListItem `json:"items"`
-			NextCursor string           `json:"nextCursor"`
-			HasMore    bool             `json:"hasMore"`
+			Items      []galleryListItem `json:"items"`
+			NextCursor string            `json:"nextCursor"`
+			HasMore    bool              `json:"hasMore"`
 		}
 		require.NoError(t, json.Unmarshal(body, &page))
 

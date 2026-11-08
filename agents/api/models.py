@@ -39,7 +39,7 @@ class ChatMessageResponse(BaseModel):
     content: str
     created_at: datetime
     citations: list[FileCitationResponse]
-    status: str = 'finished'
+    status: str = "finished"
     error: str | None = None
 
 

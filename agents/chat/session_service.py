@@ -214,7 +214,9 @@ class SessionService:
 
         return sorted(messages, key=lambda message: _normalize_created_at(message.created_at))
 
-    async def _get_session_with_state(self, user_id: str, session_id: str) -> tuple[ChatSession, AgentState | None] | None:
+    async def _get_session_with_state(
+        self, user_id: str, session_id: str
+    ) -> tuple[ChatSession, AgentState | None] | None:
         result = await self._session.execute(
             select(ChatSession).where(ChatSession.id == session_id, ChatSession.user_id == user_id)
         )

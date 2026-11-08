@@ -65,9 +65,7 @@ class SearchFilesTool(ToolBase):
         self._user_id = user_id
         self._citations: list[dict[str, str]] = []
 
-    async def check_permissions(
-        self, tool_input: dict[str, Any], context: PermissionContext
-    ) -> PermissionDecision:
+    async def check_permissions(self, tool_input: dict[str, Any], context: PermissionContext) -> PermissionDecision:
         del tool_input, context
         return PermissionDecision(
             behavior=PermissionBehavior.ALLOW,
@@ -108,9 +106,7 @@ class ListDirectoryTool(ToolBase):
         self._user_id = user_id
         self._citations: list[dict[str, str]] = []
 
-    async def check_permissions(
-        self, tool_input: dict[str, Any], context: PermissionContext
-    ) -> PermissionDecision:
+    async def check_permissions(self, tool_input: dict[str, Any], context: PermissionContext) -> PermissionDecision:
         del tool_input, context
         return PermissionDecision(
             behavior=PermissionBehavior.ALLOW,
@@ -118,9 +114,7 @@ class ListDirectoryTool(ToolBase):
         )
 
     async def __call__(self, provider_id: str, path: str) -> ToolChunk:
-        entries = await self._file_access.list_directory(
-            user_id=self._user_id, provider_id=provider_id, path=path
-        )
+        entries = await self._file_access.list_directory(user_id=self._user_id, provider_id=provider_id, path=path)
         self._citations = []
         return ToolChunk(
             content=[TextBlock(text=json.dumps(entries, ensure_ascii=False))],
@@ -153,9 +147,7 @@ class StatFileTool(ToolBase):
         self._user_id = user_id
         self._citations: list[dict[str, str]] = []
 
-    async def check_permissions(
-        self, tool_input: dict[str, Any], context: PermissionContext
-    ) -> PermissionDecision:
+    async def check_permissions(self, tool_input: dict[str, Any], context: PermissionContext) -> PermissionDecision:
         del tool_input, context
         return PermissionDecision(
             behavior=PermissionBehavior.ALLOW,
@@ -163,9 +155,7 @@ class StatFileTool(ToolBase):
         )
 
     async def __call__(self, provider_id: str, path: str) -> ToolChunk:
-        info = await self._file_access.stat_file(
-            user_id=self._user_id, provider_id=provider_id, path=path
-        )
+        info = await self._file_access.stat_file(user_id=self._user_id, provider_id=provider_id, path=path)
         self._citations = _citations_from_hits([info])
         return ToolChunk(
             content=[TextBlock(text=json.dumps(info, ensure_ascii=False))],
@@ -213,9 +203,7 @@ class ReadFileExcerptTool(ToolBase):
         self._user_id = user_id
         self._citations: list[dict[str, str]] = []
 
-    async def check_permissions(
-        self, tool_input: dict[str, Any], context: PermissionContext
-    ) -> PermissionDecision:
+    async def check_permissions(self, tool_input: dict[str, Any], context: PermissionContext) -> PermissionDecision:
         del tool_input, context
         return PermissionDecision(
             behavior=PermissionBehavior.ALLOW,
@@ -279,18 +267,14 @@ class SearchKnowledgeBaseTool(ToolBase):
         self._knowledge = knowledge
         self._citations: list[dict[str, str]] = []
 
-    async def check_permissions(
-        self, tool_input: dict[str, Any], context: PermissionContext
-    ) -> PermissionDecision:
+    async def check_permissions(self, tool_input: dict[str, Any], context: PermissionContext) -> PermissionDecision:
         del tool_input, context
         return PermissionDecision(
             behavior=PermissionBehavior.ALLOW,
             message="Knowledge base search is read-only.",
         )
 
-    async def __call__(
-        self, query: str, limit: int = 5, min_score: float = 0.0
-    ) -> ToolChunk:
+    async def __call__(self, query: str, limit: int = 5, min_score: float = 0.0) -> ToolChunk:
         documents = await self._knowledge.search(query=query, limit=limit, min_score=min_score)
         hits = [_document_to_hit(doc) for doc in documents]
         self._citations = _citations_from_hits(hits)
@@ -323,9 +307,7 @@ class GetCurrentDateTimeTool(ToolBase):
     is_concurrency_safe = True
     is_read_only = True
 
-    async def check_permissions(
-        self, tool_input: dict[str, Any], context: PermissionContext
-    ) -> PermissionDecision:
+    async def check_permissions(self, tool_input: dict[str, Any], context: PermissionContext) -> PermissionDecision:
         del tool_input, context
         return PermissionDecision(
             behavior=PermissionBehavior.ALLOW,

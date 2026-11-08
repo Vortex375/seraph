@@ -402,7 +402,9 @@ async def _stream_chat_events(db: Any, session_id: str, agent: Any, user_input: 
             if payload is not None:
                 trusted_citations = _trusted_turn_citations(
                     retrieval_sources=pending_sources,
-                    tool_citations=getattr(agent, "_seraph_tool_citations", []) if tool_citation_state is not None else [],
+                    tool_citations=getattr(agent, "_seraph_tool_citations", [])
+                    if tool_citation_state is not None
+                    else [],
                 )
                 trusted_sources = _citation_sources(trusted_citations)
                 payload["citations"] = trusted_citations

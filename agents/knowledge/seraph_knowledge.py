@@ -32,16 +32,12 @@ class SeraphKnowledgeBase:
     retrieval when the model decides to look up documents.
     """
 
-    def __init__(
-        self, retrieval_service: Any, spaces_client: Any, user_id: str
-    ) -> None:
+    def __init__(self, retrieval_service: Any, spaces_client: Any, user_id: str) -> None:
         self._retrieval_service = retrieval_service
         self._spaces_client = spaces_client
         self._user_id = user_id
 
-    async def search(
-        self, query: str, limit: int = 5, min_score: float = 0.0
-    ) -> list[SeraphKnowledgeDocument]:
+    async def search(self, query: str, limit: int = 5, min_score: float = 0.0) -> list[SeraphKnowledgeDocument]:
         scopes = await self._spaces_client.get_scopes_for_user(self._user_id)
         results = await self._retrieval_service.retrieve(query=query, scopes=scopes, limit=limit)
         documents: list[SeraphKnowledgeDocument] = []

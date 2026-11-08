@@ -58,15 +58,15 @@ import (
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.uber.org/fx/fxtest"
 	xwebdav "golang.org/x/net/webdav"
-	"go.mongodb.org/mongo-driver/mongo"
 	"umbasa.net/seraph/api-gateway/auth"
-	gwhandler "umbasa.net/seraph/api-gateway/gateway-handler"
+	apigallery "umbasa.net/seraph/api-gateway/gallery"
 	"umbasa.net/seraph/api-gateway/gateway"
+	gwhandler "umbasa.net/seraph/api-gateway/gateway-handler"
 	apidav "umbasa.net/seraph/api-gateway/spaces"
 	"umbasa.net/seraph/api-gateway/webdav"
-	apigallery "umbasa.net/seraph/api-gateway/gallery"
 	"umbasa.net/seraph/file-indexer/fileindexer"
 	"umbasa.net/seraph/file-provider/fileprovider"
 	"umbasa.net/seraph/gallery/gallery"
@@ -98,14 +98,15 @@ var (
 	// the per-service defaults in their main.go (seraph-files / seraph-gallery).
 	// Distinct from mongoDbName (auth/spaces) so a test run never leaves gallery
 	// state behind that a later run's auth/spaces teardown would not clean.
-	fileIndexDbName  = "seraph_files_e2e"
-	galleryDbName    = "seraph_gallery_e2e"
-	mongoClient      *mongo.Client
-	providerDir string
-	fpServer    *fileprovider.FileProviderServer
-	fpConn      *nats.Conn
-	gatewayAddr string
-	gatewayBase string
+	fileIndexDbName = "seraph_files_e2e"
+	galleryDbName   = "seraph_gallery_e2e"
+	mongoClient     *mongo.Client
+	providerDir     string
+	natsStoreDir    string
+	fpServer        *fileprovider.FileProviderServer
+	fpConn          *nats.Conn
+	gatewayAddr     string
+	gatewayBase     string
 	// galleryProvider / fiConsumer are started in setup() so the gallery-pipeline
 	// E2E test can exercise the full upload → file-indexer → gallery → delta path
 	// against the same live stack the WebDAV verb suite uses.
@@ -139,6 +140,7 @@ func setup() int {
 		fmt.Printf("e2e: nats store dir: %v\n", err)
 		return 1
 	}
+	natsStoreDir = natsStore
 	opts := &server.Options{
 		Port:      server.RANDOM_PORT,
 		JetStream: true,
@@ -219,8 +221,8 @@ func setup() int {
 	v.Set("mongo.db", mongoDbName)
 	v.Set("nats.url", natsServer.ClientURL())
 	v.Set("gateway.address", gatewayAddr)
-	v.Set("gateway.appLocation", providerDir)     // any existing dir; not exercised
-	v.Set("gateway.webAppLocation", providerDir)  // any existing dir; not exercised
+	v.Set("gateway.appLocation", providerDir)    // any existing dir; not exercised
+	v.Set("gateway.webAppLocation", providerDir) // any existing dir; not exercised
 	v.Set("tracing.serviceName", "api-gateway-e2e")
 
 	appConn, err := nats.Connect(natsServer.ClientURL())
@@ -448,6 +450,11 @@ func teardown() {
 	}
 	if mongoC != nil {
 		_ = testcontainers.TerminateContainer(mongoC)
+	}
+	for _, dir := range []string{natsStoreDir, providerDir} {
+		if dir != "" {
+			_ = os.RemoveAll(dir)
+		}
 	}
 }
 
@@ -727,8 +734,13 @@ func runWebDavVerbSuite(t *testing.T, diskRoot, davPrefix string) {
 		putFile(t, p("/e2e-del.txt"), []byte("delete me"))
 		resp := do(t, http.MethodDelete, p("/e2e-del.txt"), nil)
 		require.Equal(t, http.StatusNoContent, resp.StatusCode, "DELETE file: %s", getBody(t, resp))
-		_, err := os.Stat(filepath.Join(diskRoot, "e2e-del.txt"))
-		assert.True(t, os.IsNotExist(err), "file should be gone on disk")
+		// SMB defers the removal ("delete pending") while another handle is
+		// open - here the file indexer hashing the fresh upload - and
+		// completes it when that handle closes
+		assert.Eventually(t, func() bool {
+			_, err := os.Stat(filepath.Join(diskRoot, "e2e-del.txt"))
+			return os.IsNotExist(err)
+		}, 5*time.Second, 50*time.Millisecond, "file should be gone on disk")
 	})
 
 	t.Run("DELETE_empty_dir", func(t *testing.T) {

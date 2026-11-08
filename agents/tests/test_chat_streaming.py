@@ -118,11 +118,19 @@ async def test_stream_agent_reply_collects_tool_citations_from_toolkit(monkeypat
         def __init__(self) -> None:
             self.toolkit = StubToolkit(
                 [
-                    StubToolGroup([StubTool([{
-                        "provider_id": "space-a",
-                        "path": "/team/spec.md",
-                        "label": "/team/spec.md",
-                    }])]),
+                    StubToolGroup(
+                        [
+                            StubTool(
+                                [
+                                    {
+                                        "provider_id": "space-a",
+                                        "path": "/team/spec.md",
+                                        "label": "/team/spec.md",
+                                    }
+                                ]
+                            )
+                        ]
+                    ),
                 ]
             )
 
@@ -212,7 +220,6 @@ async def test_create_message_and_stream_endpoint_invokes_stream_create(monkeypa
     assert 'data: {"id":"assistant-1","type":"done"}' in payload
 
 
-
 @pytest.mark.asyncio
 async def test_stream_message_create_updates_session_timestamps_before_turn(
     monkeypatch: pytest.MonkeyPatch,
@@ -249,9 +256,7 @@ async def test_run_turn_and_publish_tracks_finished_turn_state(monkeypatch: pyte
     recorded: dict[str, Any] = {"upserts": [], "state_by_id": {}}
 
     class StubAgentFactory:
-        def create(
-            self, user_id: str, session_id: str, *, state: object = None, **kwargs: Any
-        ) -> object:
+        def create(self, user_id: str, session_id: str, *, state: object = None, **kwargs: Any) -> object:
             recorded["factory_user_id"] = user_id
             recorded["factory_session_id"] = session_id
             return object()
@@ -322,9 +327,7 @@ async def test_run_turn_and_publish_accumulates_delta_chunks_in_turn_state(
     recorded: dict[str, Any] = {"upserts": []}
 
     class StubAgentFactory:
-        def create(
-            self, user_id: str, session_id: str, *, state: object = None, **kwargs: Any
-        ) -> object:
+        def create(self, user_id: str, session_id: str, *, state: object = None, **kwargs: Any) -> object:
             del user_id, session_id, state, kwargs
             return object()
 
@@ -401,7 +404,12 @@ async def test_run_turn_and_publish_updates_session_timestamps_when_turn_finishe
     monkeypatch.setattr(chat_module, "_stream_chat_events", fake_stream_chat_events)
     monkeypatch.setattr(chat_module, "_upsert_turn_state_with_isolated_session", _async_noop)
     monkeypatch.setattr(chat_module, "_record_failure_with_isolated_session", _async_noop)
-    monkeypatch.setattr(chat_module, "_touch_session_activity", lambda *, session_id: recorded["touches"].append(session_id), raising=False)
+    monkeypatch.setattr(
+        chat_module,
+        "_touch_session_activity",
+        lambda *, session_id: recorded["touches"].append(session_id),
+        raising=False,
+    )
 
     queue: asyncio.Queue[str | None] = asyncio.Queue()
     await chat_module._run_turn_and_publish(
@@ -597,9 +605,7 @@ async def test_run_turn_and_publish_finishes_queue_when_agent_creation_fails(
     recorded: dict[str, Any] = {"upserts": [], "failures": []}
 
     class StubAgentFactory:
-        def create(
-            self, user_id: str, session_id: str, *, state: object = None, **kwargs: Any
-        ) -> object:
+        def create(self, user_id: str, session_id: str, *, state: object = None, **kwargs: Any) -> object:
             recorded["factory_user_id"] = user_id
             recorded["factory_session_id"] = session_id
             raise RuntimeError("factory failed")
@@ -659,10 +665,12 @@ async def test_stream_chat_events_records_tool_citations(monkeypatch: pytest.Mon
 
     async def fake_stream_agent_reply(*, agent: Any, user_input: str):
         del user_input
-        agent._seraph_tool_citations = [{
-            "provider_id": "space-a",
-            "path": "/team/spec.md",
-        }]
+        agent._seraph_tool_citations = [
+            {
+                "provider_id": "space-a",
+                "path": "/team/spec.md",
+            }
+        ]
         yield 'data: {"id":"assistant-1","content":"answer","citations":[]}\n\n'
 
     async def fake_record_sources(
@@ -753,10 +761,12 @@ async def test_stream_chat_events_persists_validated_tool_citations(monkeypatch:
 
     async def fake_stream_agent_reply(*, agent: Any, user_input: str):
         del user_input
-        agent._seraph_tool_citations = [{
-            "provider_id": "space-a",
-            "path": "/team/spec.md",
-        }]
+        agent._seraph_tool_citations = [
+            {
+                "provider_id": "space-a",
+                "path": "/team/spec.md",
+            }
+        ]
         yield 'data: {"id":"assistant-1","content":"answer","citations":[]}\n\n'
 
     async def fake_record_sources(
@@ -819,7 +829,9 @@ async def test_stream_chat_events_restores_preexisting_tool_citations_after_turn
 
 
 @pytest.mark.asyncio
-async def test_stream_chat_events_records_sources_again_when_message_id_changes(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_stream_chat_events_records_sources_again_when_message_id_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     chat_module = importlib.import_module("api.chat")
     recorded: dict[str, Any] = {}
 

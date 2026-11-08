@@ -113,16 +113,12 @@ async def test_search_client_ignores_non_file_replies_and_errors_cleanly() -> No
                     type(
                         "Msg",
                         (),
-                        {
-                            "data": b'{"requestId":"req-1","replyId":"reply-1","type":"other","reply":{},"last":false}'
-                        },
+                        {"data": b'{"requestId":"req-1","replyId":"reply-1","type":"other","reply":{},"last":false}'},
                     )(),
                     type(
                         "Msg",
                         (),
-                        {
-                            "data": b'{"requestId":"req-1","replyId":"reply-1","error":"boom","last":false}'
-                        },
+                        {"data": b'{"requestId":"req-1","replyId":"reply-1","error":"boom","last":false}'},
                     )(),
                     type("Msg", (), {"data": b'{"requestId":"req-1","replyId":"reply-1","last":true}'})(),
                 ]

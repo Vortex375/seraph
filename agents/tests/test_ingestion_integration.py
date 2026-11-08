@@ -3,6 +3,7 @@ import json
 import os
 import secrets
 import selectors
+import signal
 import subprocess
 import sys
 import time
@@ -64,6 +65,9 @@ async def testserver_info() -> AsyncGenerator[Dict[str, str], None]:
         stderr=subprocess.PIPE,
         text=True,
         bufsize=1,
+        # own process group: `go run` does not pass SIGTERM on to the server
+        # binary it spawns, so signal the whole group or the server is orphaned
+        start_new_session=True,
     )
 
     try:
@@ -71,11 +75,11 @@ async def testserver_info() -> AsyncGenerator[Dict[str, str], None]:
         info = json.loads(line)
         yield info
     finally:
-        proc.terminate()
+        os.killpg(proc.pid, signal.SIGTERM)
         try:
             proc.wait(timeout=10.0)
         except subprocess.TimeoutExpired:
-            proc.kill()
+            os.killpg(proc.pid, signal.SIGKILL)
             proc.wait(timeout=5.0)
 
 

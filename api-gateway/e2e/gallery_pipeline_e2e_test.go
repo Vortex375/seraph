@@ -310,7 +310,7 @@ func requireEventualDeltaItem(t *testing.T, relPath string) galleryDeltaItem {
 			t.Fatalf("delta feed: want 200, got %d (body=%s)", resp.StatusCode, body)
 		}
 		var page struct {
-			Items     []galleryDeltaItem `json:"items"`
+			Items      []galleryDeltaItem `json:"items"`
 			NextCursor string             `json:"nextCursor"`
 			HasMore    bool               `json:"hasMore"`
 			NextSince  int64              `json:"nextSince"`
