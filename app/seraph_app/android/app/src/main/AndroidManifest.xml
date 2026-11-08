@@ -33,6 +33,9 @@
          READ_MEDIA_IMAGES is what makes the system show that choice; without
          it Android would only ever offer all-or-nothing. -->
     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED"/>
+    <!-- Without it MediaStore zeroes the EXIF GPS coordinates in the bytes
+         loadOriginal reads, so backed-up photos lose their location. -->
+    <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION"/>
 
     <application
         android:label="Seraph"

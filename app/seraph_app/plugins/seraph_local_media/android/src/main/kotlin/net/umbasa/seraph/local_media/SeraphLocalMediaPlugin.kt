@@ -87,6 +87,9 @@ class SeraphLocalMediaPlugin : FlutterPlugin, ActivityAware, PluginRegistry.Requ
     // the original MainActivity code did.
     private var pendingPermissionResult: MethodChannel.Result? = null
     private val permissionRequestCode = 4201
+    // The on-attach ACCESS_MEDIA_LOCATION top-up for installs that granted
+    // photo access before it was requested; no Dart caller awaits it.
+    private val mediaLocationRequestCode = 4202
 
     private var channel: MethodChannel? = null
     private var localMediaChannelForObserver: MethodChannel? = null
@@ -151,6 +154,17 @@ class SeraphLocalMediaPlugin : FlutterPlugin, ActivityAware, PluginRegistry.Requ
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
         activity = binding.activity
         binding.addRequestPermissionsResultListener(this)
+        // Photo access granted before ACCESS_MEDIA_LOCATION was requested
+        // (or by an older app version) never goes through
+        // handleRequestPermission again, so top it up here. The system
+        // grants it without a dialog while photo access is held.
+        if ((hasFullImageAccess() || hasPartialImageAccess()) && !hasMediaLocationAccess()) {
+            ActivityCompat.requestPermissions(
+                binding.activity,
+                arrayOf(android.Manifest.permission.ACCESS_MEDIA_LOCATION),
+                mediaLocationRequestCode,
+            )
+        }
     }
 
     override fun onDetachedFromActivityForConfigChanges() {
@@ -180,6 +194,9 @@ class SeraphLocalMediaPlugin : FlutterPlugin, ActivityAware, PluginRegistry.Requ
         permissions: Array<out String>,
         grantResults: IntArray,
     ): Boolean {
+        if (requestCode == mediaLocationRequestCode) {
+            return true
+        }
         if (requestCode != permissionRequestCode) {
             return false
         }
@@ -238,6 +255,12 @@ class SeraphLocalMediaPlugin : FlutterPlugin, ActivityAware, PluginRegistry.Requ
         ContextCompat.checkSelfPermission(it, android.Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) == PackageManager.PERMISSION_GRANTED
     } ?: false
 
+    // Without it, MediaStore hands out photo bytes with the EXIF GPS
+    // coordinates zeroed - an upload would then lose the photo's location.
+    private fun hasMediaLocationAccess(): Boolean = appContext?.let {
+        ContextCompat.checkSelfPermission(it, android.Manifest.permission.ACCESS_MEDIA_LOCATION) == PackageManager.PERMISSION_GRANTED
+    } ?: false
+
     /**
      * "granted" (full library), "partial" (Android 14's user-selected
      * subset - READ_MEDIA_VISUAL_USER_SELECTED without READ_MEDIA_IMAGES),
@@ -261,7 +284,7 @@ class SeraphLocalMediaPlugin : FlutterPlugin, ActivityAware, PluginRegistry.Requ
             )
             return
         }
-        if (hasFullImageAccess()) {
+        if (hasFullImageAccess() && hasMediaLocationAccess()) {
             // Already fully granted - nothing to ask the user for.
             result.success("granted")
             return
@@ -289,6 +312,7 @@ class SeraphLocalMediaPlugin : FlutterPlugin, ActivityAware, PluginRegistry.Requ
             arrayOf(
                 android.Manifest.permission.READ_MEDIA_IMAGES,
                 android.Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+                android.Manifest.permission.ACCESS_MEDIA_LOCATION,
             ),
             permissionRequestCode,
         )
@@ -538,7 +562,11 @@ class SeraphLocalMediaPlugin : FlutterPlugin, ActivityAware, PluginRegistry.Requ
                     runOnUiThread { result.success(null) }
                     return@execute
                 }
-                val bytes = ctx.contentResolver.openInputStream(uri)?.use {
+                // setRequireOriginal: the unredacted bytes, GPS included.
+                // Without ACCESS_MEDIA_LOCATION it would throw, so fall back
+                // to the redacted copy rather than no photo at all.
+                val source = if (hasMediaLocationAccess()) MediaStore.setRequireOriginal(uri) else uri
+                val bytes = ctx.contentResolver.openInputStream(source)?.use {
                     it.readBytes()
                 }
                 runOnUiThread { result.success(bytes) }
