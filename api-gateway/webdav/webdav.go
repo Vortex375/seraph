@@ -99,12 +99,12 @@ func New(p Params) Result {
 func (server *webDavServer) Setup(app *gin.Engine, apiGroup *gin.RouterGroup, publicApiGroup *gin.RouterGroup) {
 	// Gin's router doesn't handle WebDAV methods like PROPFIND, so we must register a global middleware here
 	passwordAuth := server.auth.AuthMiddleware(true, "Access to WebDAV")
-	handler := withAtomicPut(&webdav.Handler{
+	handler := withAtomicPut(withExistingCollectionMkcol(&webdav.Handler{
 		Prefix:     PathPrefix,
 		FileSystem: server.fs,
 		LockSystem: server.lockSystem,
 		Logger:     makeLogger(server.logger),
-	})
+	}))
 	app.Use(scoped(PathPrefix, false, func(ctx *gin.Context) {
 		// redirect requests to "dav/" to "dav/p/"
 		//TODO: doesn't seem to be understood by clients
@@ -132,6 +132,25 @@ func (server *webDavServer) Setup(app *gin.Engine, apiGroup *gin.RouterGroup, pu
 		}))
 	app.Any("/dav/*path", func(*gin.Context) {
 		// dummy method to prevent GIN returning 404
+	})
+}
+
+// withExistingCollectionMkcol answers MKCOL on a collection that already
+// exists with 405 - what webdav.Handler answers as well - but without taking
+// its lock first. webdav_client sends a MKCOL for the parent before every
+// upload, so concurrent uploads into one folder race for that lock and the
+// losers get 423 Locked, failing their upload.
+func withExistingCollectionMkcol(h *webdav.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "MKCOL" {
+			if name, ok := strings.CutPrefix(r.URL.Path, h.Prefix); ok {
+				if info, err := h.FileSystem.Stat(r.Context(), name); err == nil && info.IsDir() {
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+			}
+		}
+		h.ServeHTTP(w, r)
 	})
 }
 
