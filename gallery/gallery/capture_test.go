@@ -241,6 +241,21 @@ func TestExtractLocationTreatsZeroZeroAsAbsent(t *testing.T) {
 	}
 }
 
+func TestExtractLocationTreatsRedactedGpsAsAbsent(t *testing.T) {
+	// Android's location redaction zeroes the GPS rationals to 0/0, which
+	// goexif decodes to NaN without an error. NaN must not be stored: it
+	// fails JSON encoding and breaks the delta feed.
+	data := gallerytest.BuildJPEGWithExifSpec(t, 8, 6, gallerytest.ExifFixtureSpec{
+		GPS:         true,
+		GPSRedacted: true,
+	})
+
+	lat, lon := extractLocation(bytes.NewReader(data))
+	if lat != nil || lon != nil {
+		t.Fatalf("0/0 rationals must count as no fix, got %v, %v", *lat, *lon)
+	}
+}
+
 func TestExtractLocationAbsentWithoutGps(t *testing.T) {
 	data := gallerytest.BuildJPEGWithExifSpec(t, 8, 6, gallerytest.ExifFixtureSpec{
 		DateTimeOriginal: "2026:03:08 14:00:00",

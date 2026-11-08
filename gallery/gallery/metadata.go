@@ -103,7 +103,10 @@ func extractMetadata(r io.ReadSeeker) photoMetadata {
 // nil pointers when the photo has no usable fix: no EXIF, no GPS sub-IFD,
 // unparseable values, or the (0, 0) some cameras write to mean "no fix".
 // Out-of-range values are treated the same way - garbage coordinates must
-// not resolve to a place in the middle of the Gulf of Guinea.
+// not resolve to a place in the middle of the Gulf of Guinea. So are NaN
+// and Inf, which goexif returns for 0/0 rationals (Android's MediaStore
+// location redaction): they slip past the range checks and cannot be
+// JSON-encoded.
 func extractLocation(r io.Reader) (lat, lon *float64) {
 	x, err := exif.Decode(r)
 	if err != nil {
@@ -117,7 +120,7 @@ func extractLocation(r io.Reader) (lat, lon *float64) {
 	if eLat == 0 && eLon == 0 {
 		return nil, nil
 	}
-	if eLat < -90 || eLat > 90 || eLon < -180 || eLon > 180 {
+	if !(eLat >= -90 && eLat <= 90 && eLon >= -180 && eLon <= 180) {
 		return nil, nil
 	}
 	return &eLat, &eLon

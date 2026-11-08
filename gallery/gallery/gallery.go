@@ -172,8 +172,7 @@ func (g *GalleryProvider) Start() error {
 
 		resp := g.handleSourceFolderCrud(ctx, &req)
 
-		data, _ := json.Marshal(resp)
-		msg.Respond(data)
+		g.respond(msg, resp)
 	})
 	if err != nil {
 		return fmt.Errorf("while starting GalleryProvider: %w", err)
@@ -190,8 +189,7 @@ func (g *GalleryProvider) Start() error {
 
 		resp := g.listPhotos(ctx, &req)
 
-		data, _ := json.Marshal(resp)
-		msg.Respond(data)
+		g.respond(msg, resp)
 	})
 	if err != nil {
 		return fmt.Errorf("while starting GalleryProvider: %w", err)
@@ -208,8 +206,7 @@ func (g *GalleryProvider) Start() error {
 
 		resp := g.deltaFeed(ctx, &req)
 
-		data, _ := json.Marshal(resp)
-		msg.Respond(data)
+		g.respond(msg, resp)
 	})
 	if err != nil {
 		return fmt.Errorf("while starting GalleryProvider: %w", err)
@@ -677,4 +674,16 @@ func normalizePath(p string) (string, error) {
 		return "", errors.New("path must start with '/'")
 	}
 	return path.Clean(p), nil
+}
+
+// respond encodes resp as the NATS reply. An encoding failure is logged and
+// replied as {"error": ...} - every gallery response carries that field -
+// rather than as an empty reply the caller can only fail to decode.
+func (g *GalleryProvider) respond(msg *nats.Msg, resp any) {
+	data, err := json.Marshal(resp)
+	if err != nil {
+		g.log.Error("failed to encode gallery response", "subject", msg.Subject, "error", err)
+		data, _ = json.Marshal(map[string]string{"error": err.Error()})
+	}
+	msg.Respond(data)
 }

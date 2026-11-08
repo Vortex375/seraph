@@ -146,8 +146,8 @@ func TestMetadataSweepReextractsStalePhotos(t *testing.T) {
 	// The EXIF photo: swept to the current version with the full
 	// capture-time + Place result.
 	photo := waitForPhotoState(t, db, "physical-photos", "/holidays/with-everything.jpg",
-		func(p *gallery.GalleryPhoto) bool { return p.MetadataVersion == 2 },
-		"re-extracted to metadataVersion 2")
+		func(p *gallery.GalleryPhoto) bool { return p.MetadataVersion == 3 },
+		"re-extracted to metadataVersion 3")
 
 	wall := time.Date(2021, 7, 5, 14, 30, 0, 0, time.UTC)
 	expectedInstant := wall.Add(-2 * time.Hour).Unix()
@@ -171,8 +171,8 @@ func TestMetadataSweepReextractsStalePhotos(t *testing.T) {
 	// offset and no Place - and no feed-visible change beyond clearing
 	// MetadataPending (which is itself a bump).
 	png := waitForPhotoState(t, db, "physical-photos", "/holidays/no-exif.png",
-		func(p *gallery.GalleryPhoto) bool { return p.MetadataVersion == 2 },
-		"re-extracted to metadataVersion 2")
+		func(p *gallery.GalleryPhoto) bool { return p.MetadataVersion == 3 },
+		"re-extracted to metadataVersion 3")
 	assert.Nil(t, png.CapturedAtOffset)
 	assert.Nil(t, png.Place)
 	assert.Equal(t, 0, png.GeoVersion, "no coordinates to resolve - a later dataset bump must not pick this photo up")
@@ -203,7 +203,7 @@ func TestMetadataSweepSkipsUnreadableFilesWithoutStalling(t *testing.T) {
 	})
 
 	readable := waitForPhotoState(t, db, "physical-photos", "/holidays/readable.jpg",
-		func(p *gallery.GalleryPhoto) bool { return p.MetadataVersion == 2 },
+		func(p *gallery.GalleryPhoto) bool { return p.MetadataVersion == 3 },
 		"the readable photo behind a full page of unreadable ones still got swept")
 	assert.Equal(t, 7200, *readable.CapturedAtOffset)
 
@@ -234,7 +234,7 @@ func TestMetadataSweepConvergesWithLiveEvent(t *testing.T) {
 		events.FileChangedEventCreated, int64(len(exifLisbonJPEG(t))), time.Now().Unix(), "image/jpeg")
 
 	photo := waitForPhotoState(t, db, "physical-photos", "/holidays/raced.jpg",
-		func(p *gallery.GalleryPhoto) bool { return p.MetadataVersion == 2 },
+		func(p *gallery.GalleryPhoto) bool { return p.MetadataVersion == 3 },
 		"converged to the current version")
 
 	// Whatever order the two writers committed in, the end state is the
@@ -288,7 +288,7 @@ func TestGeoResolvePassReResolvesStoredCoordinates(t *testing.T) {
 		// A: coordinates, no place yet - the geo pass's main case.
 		insertStalePhoto(t, db, "physical-photos", "/holidays/a.jpg", bson.M{
 			"capturedAtSource": gallery.CaptureDateSourceExif,
-			"metadataVersion":  2,
+			"metadataVersion":  3,
 			"geoVersion":       0,
 			"lat":              38.7223,
 			"lon":              -9.1393,
@@ -298,7 +298,7 @@ func TestGeoResolvePassReResolvesStoredCoordinates(t *testing.T) {
 		// marked as resolved against this dataset version, Seq untouched.
 		insertStalePhoto(t, db, "physical-photos", "/holidays/b.jpg", bson.M{
 			"capturedAtSource": gallery.CaptureDateSourceExif,
-			"metadataVersion":  2,
+			"metadataVersion":  3,
 			"geoVersion":       0,
 			"lat":              47.0,
 			"lon":              -30.0,
@@ -307,7 +307,7 @@ func TestGeoResolvePassReResolvesStoredCoordinates(t *testing.T) {
 		// C: already resolved at the current dataset version - untouched.
 		insertStalePhoto(t, db, "physical-photos", "/holidays/c.jpg", bson.M{
 			"capturedAtSource": gallery.CaptureDateSourceExif,
-			"metadataVersion":  2,
+			"metadataVersion":  3,
 			"geoVersion":       geo.Version,
 			"lat":              38.7223,
 			"lon":              -9.1393,
@@ -319,7 +319,7 @@ func TestGeoResolvePassReResolvesStoredCoordinates(t *testing.T) {
 		// feed carries changed).
 		insertStalePhoto(t, db, "physical-photos", "/holidays/d.jpg", bson.M{
 			"capturedAtSource": gallery.CaptureDateSourceExif,
-			"metadataVersion":  2,
+			"metadataVersion":  3,
 			"geoVersion":       0,
 			"lat":              38.7223,
 			"lon":              -9.1393,

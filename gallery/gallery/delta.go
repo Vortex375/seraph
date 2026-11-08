@@ -23,6 +23,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math"
 	"path"
 	"strconv"
 	"time"
@@ -297,8 +298,8 @@ func deltaItemFor(row deltaRow, folders []resolvedFolder) (GalleryDeltaItem, boo
 		CapturedAt:       p.CapturedAt,
 		CapturedAtSource: p.CapturedAtSource,
 		CapturedAtOffset: p.CapturedAtOffset,
-		Lat:              p.Lat,
-		Lon:              p.Lon,
+		Lat:              finiteOrNil(p.Lat),
+		Lon:              finiteOrNil(p.Lon),
 		Width:            p.Width,
 		Height:           p.Height,
 		Orientation:      p.Orientation,
@@ -318,6 +319,17 @@ func deltaItemFor(row deltaRow, folders []resolvedFolder) (GalleryDeltaItem, boo
 	}
 
 	return item, true
+}
+
+// finiteOrNil drops a NaN/Inf coordinate: encoding/json refuses to encode
+// one, and a single such row would fail every page it lands on. Documents
+// extracted before metadataVersion 3 can still hold NaN until the sweep
+// reaches them.
+func finiteOrNil(v *float64) *float64 {
+	if v == nil || math.IsNaN(*v) || math.IsInf(*v, 0) {
+		return nil
+	}
+	return v
 }
 
 // nextDeltaRows pulls the next batch of candidates strictly after seq pos and

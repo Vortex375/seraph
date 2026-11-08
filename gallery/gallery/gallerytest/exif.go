@@ -69,6 +69,11 @@ type ExifFixtureSpec struct {
 	Lon    float64
 	LatRef string // "N"/"S"
 	LonRef string // "E"/"W"
+
+	// GPSRedacted writes GPSLatitude/GPSLongitude as all-zero 0/0
+	// rationals instead of Lat/Lon - what Android's MediaStore location
+	// redaction leaves behind. Only meaningful with GPS true.
+	GPSRedacted bool
 }
 
 func BuildJPEGWithExifSpec(t *testing.T, width, height int, spec ExifFixtureSpec) []byte {
@@ -171,7 +176,10 @@ func buildExifAPP1Segment(spec ExifFixtureSpec) []byte {
 	if spec.GPS || spec.GpsDateStamp != "" {
 		gpsEntries = append(gpsEntries, ifdEntry{tag: 0x01, typ: 2, count: 2, value: asciiValue(spec.LatRef)})
 		gpsEntries = append(gpsEntries, ifdEntry{tag: 0x03, typ: 2, count: 2, value: asciiValue(spec.LonRef)})
-		if spec.GPS {
+		if spec.GPS && spec.GPSRedacted {
+			gpsEntries = append(gpsEntries, ifdEntry{tag: 0x02, typ: 5, count: 3, value: make([]byte, 24)})
+			gpsEntries = append(gpsEntries, ifdEntry{tag: 0x04, typ: 5, count: 3, value: make([]byte, 24)})
+		} else if spec.GPS {
 			gpsEntries = append(gpsEntries, ifdEntry{tag: 0x02, typ: 5, count: 3, value: rationalValue(degreesRational(spec.Lat)...)})
 			gpsEntries = append(gpsEntries, ifdEntry{tag: 0x04, typ: 5, count: 3, value: rationalValue(degreesRational(spec.Lon)...)})
 		}

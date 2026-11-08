@@ -44,11 +44,13 @@ import (
 //	2 - the capture-time rule: Capture Date stored as a true instant with
 //	    CapturedAtOffset (OffsetTimeOriginal / GPS timestamp / floating),
 //	    plus GPS coordinates extraction (Lat/Lon) for place resolution.
+//	3 - NaN/Inf coordinates (0/0 GPS rationals) stored as absent instead
+//	    of as NaN, which broke the delta feed's JSON encoding.
 //
 // Live ingestion and the sweep both write this value; backfill writes 0
 // (backfill never extracts - see backfill.go's metadata tension docs), so a
 // backfilled placeholder is swept immediately after boot.
-const currentMetadataVersion = 2
+const currentMetadataVersion = 3
 
 // sweepPageSize is how many documents one sweep page pulls. The sweep is
 // deliberately unheroic: it competes with live ingestion and query serving
