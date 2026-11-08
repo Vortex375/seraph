@@ -27,6 +27,7 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -85,10 +86,13 @@ type GalleryProvider struct {
 
 	// prefixCache and the durable file-change consumer implement event
 	// ingestion; see ingest.go.
-	prefixCache  *prefixCache
-	ingest       *ingestConsumer
-	ingestCancel context.CancelFunc
-	wg           sync.WaitGroup
+	prefixCache *prefixCache
+	// prefixRetryPending guards schedulePrefixCacheRetry to one pending
+	// retry at a time - see refreshPrefixCache.
+	prefixRetryPending atomic.Bool
+	ingest             *ingestConsumer
+	ingestCancel       context.CancelFunc
+	wg                 sync.WaitGroup
 
 	// spacesChanged is the durable spaces.changed consumer that keeps
 	// prefixCache invalidated when a Space's resolution changes underneath
@@ -213,6 +217,12 @@ func (g *GalleryProvider) Start() error {
 	}
 	g.deltaSub = deltaSub
 
+	// created before the first prefix cache refresh: a refresh that cannot
+	// reach the Spaces service schedules its retry on this context
+	backfillCtx, backfillCancel := context.WithCancel(context.Background())
+	g.backfillCtx = backfillCtx
+	g.backfillCancel = backfillCancel
+
 	// build the prefix cache once at startup so ingestion can match events
 	// cheaply from the first message; ADD/REMOVE keep it current afterwards
 	// (see handleSourceFolderCrud), and the spaces.changed consumer started
@@ -220,7 +230,7 @@ func (g *GalleryProvider) Start() error {
 	// resolution changes underneath a folder rather than the folder set
 	// itself changing.
 	if err := g.refreshPrefixCache(context.Background()); err != nil {
-		g.log.Error("failed to build initial gallery source folder prefix cache; ingestion will accept no events until it succeeds", "error", err)
+		g.log.Error("failed to build initial gallery source folder prefix cache; file-change events are held unacked until a retry succeeds", "error", err)
 	}
 
 	ingestCtx, cancel := context.WithCancel(context.Background())
@@ -257,10 +267,6 @@ func (g *GalleryProvider) Start() error {
 	} else {
 		g.warmUnsupported = warmUnsupported
 	}
-
-	backfillCtx, backfillCancel := context.WithCancel(context.Background())
-	g.backfillCtx = backfillCtx
-	g.backfillCancel = backfillCancel
 
 	// resume/restart any Gallery Source Folder backfill that had not
 	// finished when the service last stopped. Runs in the background like

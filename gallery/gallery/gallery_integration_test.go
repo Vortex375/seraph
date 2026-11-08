@@ -84,6 +84,9 @@ func setup() error {
 	opts := &server.Options{
 		JetStream: true,
 		StoreDir:  os.TempDir(),
+		// random port: a local NATS on 4222 (dev compose) would otherwise
+		// make every integration test skip
+		Port: server.RANDOM_PORT,
 	}
 	var err error
 	natsServer, err = server.NewServer(opts)

@@ -24,6 +24,7 @@ import (
 	"context"
 	"fmt"
 	"mime"
+	"os"
 	"path"
 	"sync"
 	"testing"
@@ -663,4 +664,55 @@ func TestRescanDoesNotResurrectADeletedPendingPhoto(t *testing.T) {
 	listRes := list(t, nc, &gallery.GalleryListRequest{UserId: "pino"})
 	require.Equal(t, "", listRes.Error)
 	assert.Len(t, listRes.Items, 0)
+}
+
+// TestRescanTombstonesPhotosMissingFromDisk covers a deletion no
+// FileChangedEvent ever announced - here because the stub indexer, like the
+// real file-indexer for a directory emptied on disk, never publishes one. The
+// rescan itself must notice the photo is gone, while a photo still on disk
+// stays live.
+func TestRescanTombstonesPhotosMissingFromDisk(t *testing.T) {
+	requireIntegration(t)
+
+	nc, db := startGalleryProvider(t, map[string][]string{
+		"pino": {"photos"},
+	})
+	clearSourceFolders(t, db)
+	clearPhotos(t, db)
+
+	dir := startFileProvider(t, "physical-photos")
+	newStubFileIndexer(t, nc)
+
+	res := crud(t, nc, &gallery.GallerySourceFolderCrudRequest{
+		Operation:       gallery.GallerySourceFolderOperationAdd,
+		UserId:          "pino",
+		SpaceProviderId: "photos",
+		Path:            "/holidays",
+	})
+	require.Equal(t, "", res.Error)
+	folderId := res.SourceFolder[0].Id
+
+	data := gallerytest.BuildJPEGWithExif(t, 16, 12, "2022:05:04 09:08:07", 0)
+	kept := "/mounted/photos/holidays/kept.jpg"
+	gone := "/mounted/photos/holidays/emptied/gone.jpg"
+	writeFixture(t, dir, kept, data)
+	writeFixture(t, dir, gone, data)
+
+	require.Equal(t, "", rescan(t, nc, "pino", folderId.Hex()).Error)
+	waitForPhoto(t, db, "physical-photos", kept)
+	waitForPhoto(t, db, "physical-photos", gone)
+	waitForRescanFinished(t, db, folderId)
+
+	// leaves "emptied" an empty directory: a readdir of it has no entries
+	require.NoError(t, os.Remove(path.Join(dir, gone)))
+
+	require.Equal(t, "", rescan(t, nc, "pino", folderId.Hex()).Error)
+	waitForRescanFinished(t, db, folderId)
+
+	goneDoc := findPhoto(t, db, "physical-photos", gone)
+	require.NotNil(t, goneDoc)
+	assert.True(t, goneDoc.Deleted, "a photo no longer on disk must be tombstoned by the rescan")
+	keptDoc := findPhoto(t, db, "physical-photos", kept)
+	require.NotNil(t, keptDoc)
+	assert.False(t, keptDoc.Deleted, "a photo still on disk must stay live")
 }

@@ -628,3 +628,126 @@ func writeFixture(t *testing.T, dir string, relativePath string, data []byte) {
 	require.NoError(t, os.MkdirAll(path.Dir(full), 0777))
 	require.NoError(t, os.WriteFile(full, data, 0666))
 }
+
+// TestIngestionRecoversWhenSpacesUnavailableAtStartup covers the deploy
+// race: the gallery starts before the Spaces service answers, so the startup
+// prefix cache refresh resolves nothing. Without a retry, every event for
+// the folder would be acked and dropped until something else refreshed the
+// cache.
+func TestIngestionRecoversWhenSpacesUnavailableAtStartup(t *testing.T) {
+	requireIntegration(t)
+	t.Cleanup(gallery.SetPrefixCacheRetryInterval(100 * time.Millisecond))
+
+	provider, nc, db := getGalleryProvider(t)
+	clearSourceFolders(t, db)
+	clearPhotos(t, db)
+	dir := startFileProvider(t, "physical-photos")
+
+	_, err := db.Collection("gallerySourceFolders").InsertOne(context.Background(), bson.M{
+		"userId":          "pino",
+		"spaceProviderId": "photos",
+		"path":            "/holidays",
+		"backfillDone":    true,
+	})
+	require.NoError(t, err)
+
+	// no Space resolver subscribed yet: the startup refresh cannot resolve
+	require.NoError(t, provider.Start())
+	t.Cleanup(func() {
+		provider.Stop()
+		nc.Close()
+	})
+
+	subscribeSpaceResolve(t, nc, map[string][]string{"pino": {"photos"}})
+	// several retry intervals, so the event below arrives after a retry
+	time.Sleep(time.Second)
+
+	data := gallerytest.BuildJPEGWithExif(t, 16, 12, "2022:05:04 09:08:07", 0)
+	physicalPath := "/mounted/photos/holidays/after-startup.jpg"
+	writeFixture(t, dir, physicalPath, data)
+	publishFileChanged(t, nc, "physical-photos", physicalPath,
+		events.FileChangedEventCreated, int64(len(data)), time.Now().Unix(), "image/jpeg")
+
+	waitForPhoto(t, db, "physical-photos", physicalPath)
+}
+
+// TestIngestionUsesPersistedPrefixWhileSpacesUnavailable covers events that
+// arrive before the Spaces service answers: they must still be ingested for a
+// folder whose physical prefix is already known, not acked and dropped.
+func TestIngestionUsesPersistedPrefixWhileSpacesUnavailable(t *testing.T) {
+	requireIntegration(t)
+
+	provider, nc, db := getGalleryProvider(t)
+	clearSourceFolders(t, db)
+	clearPhotos(t, db)
+	dir := startFileProvider(t, "physical-photos")
+
+	_, err := db.Collection("gallerySourceFolders").InsertOne(context.Background(), bson.M{
+		"userId":             "pino",
+		"spaceProviderId":    "photos",
+		"path":               "/holidays",
+		"backfillDone":       true,
+		"physicalProviderId": "physical-photos",
+		"physicalPath":       "/mounted/photos/holidays",
+	})
+	require.NoError(t, err)
+
+	// no Space resolver subscribed at all
+	require.NoError(t, provider.Start())
+	t.Cleanup(func() {
+		provider.Stop()
+		nc.Close()
+	})
+
+	data := gallerytest.BuildJPEGWithExif(t, 16, 12, "2022:05:04 09:08:07", 0)
+	physicalPath := "/mounted/photos/holidays/during-outage.jpg"
+	writeFixture(t, dir, physicalPath, data)
+	publishFileChanged(t, nc, "physical-photos", physicalPath,
+		events.FileChangedEventCreated, int64(len(data)), time.Now().Unix(), "image/jpeg")
+
+	waitForPhoto(t, db, "physical-photos", physicalPath)
+}
+
+// TestEventForMissingFileTombstonesInsteadOfRetrying covers an event whose
+// file no longer exists when it is processed (moved or deleted since, or a
+// replayed event). Retrying can never succeed, and enough such events left
+// unacked would stall the consumer at Max Ack Pending - so the gallery
+// records the current state (gone) and acks.
+func TestEventForMissingFileTombstonesInsteadOfRetrying(t *testing.T) {
+	requireIntegration(t)
+
+	nc, db := startGalleryProvider(t, map[string][]string{
+		"pino": {"photos"},
+	})
+	clearSourceFolders(t, db)
+	clearPhotos(t, db)
+	startFileProvider(t, "physical-photos")
+
+	res := crud(t, nc, &gallery.GallerySourceFolderCrudRequest{
+		Operation:       gallery.GallerySourceFolderOperationAdd,
+		UserId:          "pino",
+		SpaceProviderId: "photos",
+		Path:            "/holidays",
+	})
+	require.Equal(t, "", res.Error)
+
+	physicalPath := "/mounted/photos/holidays/moved-away.jpg"
+	_, err := db.Collection("galleryPhotos").InsertOne(context.Background(), bson.M{
+		"providerId": "physical-photos",
+		"path":       physicalPath,
+		"capturedAt": int64(1600000000),
+		"size":       int64(100),
+		"mime":       "image/jpeg",
+		"seq":        int64(0),
+	})
+	require.NoError(t, err)
+
+	// never written to disk
+	publishFileChanged(t, nc, "physical-photos", physicalPath,
+		events.FileChangedEventChanged, 100, time.Now().Unix(), "image/jpeg")
+
+	waitForCondition(t, func() bool {
+		p := findPhoto(t, db, "physical-photos", physicalPath)
+		return p != nil && p.Deleted
+	}, "an event for a file that no longer exists must tombstone the photo")
+}

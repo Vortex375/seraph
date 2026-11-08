@@ -27,6 +27,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	"umbasa.net/seraph/events"
 	"umbasa.net/seraph/file-provider/fileprovider"
 )
@@ -211,13 +212,17 @@ func (g *GalleryProvider) runRescan(ctx context.Context, folderId primitive.Obje
 		return
 	}
 
-	if err := g.walkRescan(ctx, p); err != nil {
+	walk, err := g.walkRescan(ctx, p)
+	if err != nil {
 		g.log.Error("rescan: walk failed; the folder may still be stale", "error", err, "providerId", p.providerId, "path", p.path)
-		// still attempt the metadata heal below - a walk failure (e.g. one
-		// unreadable subdirectory) does not mean nothing on disk changed, and
+		// still attempt the metadata heal below - a walk failure (e.g. an
+		// unreadable folder root) does not mean nothing on disk changed, and
 		// healing is independent of how far the walk got
 	} else {
 		g.log.Debug("rescan: walk complete", "providerId", p.providerId, "path", p.path)
+		if err := g.tombstoneMissing(ctx, p, walk); err != nil {
+			g.log.Error("rescan: tombstoning photos missing from disk failed", "error", err, "providerId", p.providerId, "path", p.path)
+		}
 	}
 
 	if err := g.healPendingMetadata(ctx, p); err != nil {
@@ -257,18 +262,80 @@ func (g *GalleryProvider) runRescan(ctx context.Context, folderId primitive.Obje
 // connection and File Provider server, so it walks its own tree serially.
 // rescanParallel is what keeps several folders' rescans from compounding
 // that cost.
-func (g *GalleryProvider) walkRescan(ctx context.Context, p prefix) error {
+func (g *GalleryProvider) walkRescan(ctx context.Context, p prefix) (*rescanWalk, error) {
 	client := fileprovider.NewFileProviderClient(p.providerId, g.nc, g.logging)
 	defer client.Close()
 
-	return g.walkDir(ctx, client, p.path)
+	walk := &rescanWalk{files: make(map[string]struct{})}
+	if err := g.walkDir(ctx, client, p.path, walk); err != nil {
+		return nil, err
+	}
+	return walk, nil
+}
+
+// rescanWalk is what a walk saw: every file path it listed, and every
+// subdirectory it could not list. tombstoneMissing needs both - a photo is
+// only known to be gone if the directory it lived in (or an ancestor that
+// would have listed it) was listed successfully.
+type rescanWalk struct {
+	files      map[string]struct{}
+	failedDirs []string
+}
+
+// tombstoneMissing marks deleted every live photo under p that the walk did
+// not see on disk. The walk's file-indexer side effect cannot be relied on
+// for this: file-indexer only reconciles a directory on a complete readdir
+// with at least one entry, and it forgets a file once it has published its
+// deletion - so a deletion it published while the gallery dropped it (e.g.
+// an empty ingestion prefix cache) or a folder emptied on disk would leave
+// the photo in the gallery forever. Comparing against the walk directly
+// covers both.
+//
+// Photos under a subdirectory that failed to list are left alone: not seeing
+// them proves nothing.
+func (g *GalleryProvider) tombstoneMissing(ctx context.Context, p prefix, walk *rescanWalk) error {
+	filter := prefixFilter(p)
+	filter["deleted"] = bson.M{"$ne": true}
+	cur, err := g.photos.Find(ctx, filter, options.Find().SetProjection(bson.M{"path": 1}))
+	if err != nil {
+		return fmt.Errorf("finding photos under %s/%s: %w", p.providerId, p.path, err)
+	}
+	var docs []struct {
+		Path string `bson:"path"`
+	}
+	if err := cur.All(ctx, &docs); err != nil {
+		return fmt.Errorf("finding photos under %s/%s: %w", p.providerId, p.path, err)
+	}
+
+	tombstoned := 0
+	for _, d := range docs {
+		if _, ok := walk.files[d.Path]; ok || walk.underFailedDir(p.providerId, d.Path) {
+			continue
+		}
+		if err := g.markDeleted(ctx, p.providerId, d.Path); err != nil {
+			return err
+		}
+		tombstoned++
+	}
+
+	g.log.Info("rescan: tombstoned photos missing from disk", "providerId", p.providerId, "path", p.path, "count", tombstoned)
+	return nil
+}
+
+func (w *rescanWalk) underFailedDir(providerId string, filePath string) bool {
+	for _, dir := range w.failedDirs {
+		if (prefix{providerId: providerId, path: dir}).contains(providerId, filePath) {
+			return true
+		}
+	}
+	return false
 }
 
 // walkDir lists one directory's immediate children and recurses into every
 // child that is itself a directory. See walkRescan's docs for why simply
 // opening/listing is enough to make file-indexer catch up - this function's
 // only job is to visit every directory under the root exactly once.
-func (g *GalleryProvider) walkDir(ctx context.Context, client fileprovider.Client, dirPath string) error {
+func (g *GalleryProvider) walkDir(ctx context.Context, client fileprovider.Client, dirPath string, walk *rescanWalk) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -287,15 +354,17 @@ func (g *GalleryProvider) walkDir(ctx context.Context, client fileprovider.Clien
 	}
 
 	for _, entry := range entries {
+		childPath := joinPhysicalPath(dirPath, entry.Name())
 		if !entry.IsDir() {
+			walk.files[childPath] = struct{}{}
 			continue
 		}
-		childPath := joinPhysicalPath(dirPath, entry.Name())
-		if err := g.walkDir(ctx, client, childPath); err != nil {
+		if err := g.walkDir(ctx, client, childPath, walk); err != nil {
 			// one unreadable/vanished subdirectory must not abort the rest of
 			// the walk - log and keep going, exactly like backfill treats a
 			// single upsert failure as non-fatal to the rest of its pass
 			g.log.Error("rescan: failed to walk subdirectory; continuing with the rest of the tree", "error", err, "path", childPath)
+			walk.failedDirs = append(walk.failedDirs, childPath)
 			continue
 		}
 	}

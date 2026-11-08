@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"strings"
@@ -60,6 +61,11 @@ const ingestConsumerName = "SERAPH_GALLERY_INGEST"
 // request/reply and decodes it, so this is deliberately modest - this is
 // background ingestion, not an interactive request.
 const ingestParallel = 4
+
+// prefixCacheRetryInterval is how long refreshPrefixCache waits before
+// retrying after the source folder listing or a folder's resolution request
+// itself failed. A var so tests can shorten it.
+var prefixCacheRetryInterval = 30 * time.Second
 
 // prefix is a resolved physical location a Gallery Source Folder currently
 // points at: every event under providerId+path (as a path prefix) belongs to
@@ -100,6 +106,9 @@ func (p prefix) contains(providerId string, candidatePath string) bool {
 type prefixCache struct {
 	mu       sync.RWMutex
 	prefixes []prefix
+	// loaded is false until the first successful refresh: before that an
+	// empty prefix set means "unknown", not "no folders"
+	loaded bool
 }
 
 func newPrefixCache() *prefixCache {
@@ -110,6 +119,13 @@ func (c *prefixCache) set(prefixes []prefix) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.prefixes = prefixes
+	c.loaded = true
+}
+
+func (c *prefixCache) ready() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.loaded
 }
 
 // matches reports whether the given physical (providerId, path) falls under
@@ -151,21 +167,38 @@ func (c *prefixCache) matches(providerId string, filePath string) bool {
 func (g *GalleryProvider) refreshPrefixCache(ctx context.Context) error {
 	cur, err := g.sourceFolders.Find(ctx, bson.M{})
 	if err != nil {
+		g.schedulePrefixCacheRetry()
 		return fmt.Errorf("while listing gallery source folders: %w", err)
 	}
 
 	folders := make([]GallerySourceFolder, 0)
 	if err := cur.All(ctx, &folders); err != nil {
+		g.schedulePrefixCacheRetry()
 		return fmt.Errorf("while listing gallery source folders: %w", err)
 	}
 
 	seen := make(map[prefix]bool)
 	prefixes := make([]prefix, 0, len(folders))
+	unreachable := false
 	for _, f := range folders {
 		res, err := g.resolveSpace(ctx, spacesResolveRequest(f))
 		if err != nil {
-			g.log.Warn("failed to resolve gallery source folder; excluding it from ingestion until it resolves",
+			unreachable = true
+			// Spaces not answering says nothing about the folder itself, and
+			// excluding it would ack-and-drop its events until the retry
+			// below succeeds: keep matching on the last persisted prefix
+			if f.PhysicalProviderId == "" {
+				g.log.Warn("failed to resolve gallery source folder; excluding it from ingestion until it resolves",
+					"error", err, "userId", f.UserId, "spaceProviderId", f.SpaceProviderId, "path", f.Path)
+				continue
+			}
+			g.log.Warn("failed to resolve gallery source folder; ingesting on its last known prefix until it resolves",
 				"error", err, "userId", f.UserId, "spaceProviderId", f.SpaceProviderId, "path", f.Path)
+			p := prefix{providerId: f.PhysicalProviderId, path: f.PhysicalPath}
+			if !seen[p] {
+				seen[p] = true
+				prefixes = append(prefixes, p)
+			}
 			continue
 		}
 		if res.Error != "" || res.ProviderId == "" {
@@ -194,7 +227,40 @@ func (g *GalleryProvider) refreshPrefixCache(ctx context.Context) error {
 
 	g.prefixCache.set(prefixes)
 	g.log.Debug("refreshed gallery source folder prefix cache", "count", len(prefixes))
+
+	// A failed resolve request (as opposed to a resolve that answered "no
+	// such space" / "no access") usually means the Spaces service is not up
+	// yet - typical right after a deploy. Nothing else would refresh the
+	// cache, and until it does every event for the excluded folders is
+	// acked and dropped, so retry.
+	if unreachable {
+		g.schedulePrefixCacheRetry()
+	}
 	return nil
+}
+
+// schedulePrefixCacheRetry re-runs refreshPrefixCache after
+// prefixCacheRetryInterval, at most one pending retry at a time; a retry
+// that still cannot reach the Spaces service schedules the next one.
+func (g *GalleryProvider) schedulePrefixCacheRetry() {
+	ctx := g.backfillCtx
+	if ctx == nil || !g.prefixRetryPending.CompareAndSwap(false, true) {
+		return
+	}
+	g.wg.Add(1)
+	go func() {
+		defer g.wg.Done()
+		select {
+		case <-time.After(prefixCacheRetryInterval):
+		case <-ctx.Done():
+			g.prefixRetryPending.Store(false)
+			return
+		}
+		g.prefixRetryPending.Store(false)
+		if err := g.refreshPrefixCache(ctx); err != nil {
+			g.log.Error("retrying gallery source folder prefix cache refresh failed", "error", err)
+		}
+	}()
 }
 
 // startIngestConsumer creates (or reattaches to) the durable file-change
@@ -303,6 +369,13 @@ func (ic *ingestConsumer) handleMessage(ctx context.Context, msg jetstream.Msg) 
 		return
 	}
 
+	if !g.prefixCache.ready() {
+		// the source folders could not be loaded yet (MongoDB unavailable):
+		// filtering against an empty set would ack and drop every event, so
+		// leave it unacked for redelivery until the retry loads them
+		return
+	}
+
 	// cheap reject: no resolve, just a prefix-set lookup
 	if !g.prefixCache.matches(ev.ProviderID, ev.Path) {
 		msg.Ack()
@@ -321,6 +394,13 @@ func (ic *ingestConsumer) handleMessage(ctx context.Context, msg jetstream.Msg) 
 	default:
 		// unknown change kind: nothing to do, but ack so it doesn't block
 		// the stream forever
+	}
+
+	if err != nil && ev.Change != events.FileChangedEventDeleted && errors.Is(err, fs.ErrNotExist) {
+		// The file is gone by the time the event is processed (deleted or
+		// moved since, or a replayed event for a long-gone file). That is
+		// the current state, not a failure: retrying can never succeed.
+		err = g.markDeleted(ctx, ev.ProviderID, ev.Path)
 	}
 
 	if err != nil {
