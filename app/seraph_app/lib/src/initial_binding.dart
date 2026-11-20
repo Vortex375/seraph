@@ -25,7 +25,8 @@ import 'package:seraph_app/src/spaces_admin/spaces_service.dart';
 class InitialBinding extends Bindings {
   @override
   void dependencies() {
-    Get.put(FileService(Get.find(), Get.find(), Get.find()));
+    // FileService is registered in main.dart, ahead of the first frame: a cold-start
+    // play() needs it before this binding runs.
     Get.put(SearchService(Get.find(), Get.find()));
     Get.put(ChatService(Get.find(), Get.find()));
     Get.put(ChatController(Get.find()));

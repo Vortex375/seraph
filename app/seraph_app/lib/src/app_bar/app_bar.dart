@@ -4,6 +4,7 @@ import 'package:seraph_app/src/chat/chat_view.dart';
 import 'package:seraph_app/src/file_browser/file_browser_view.dart';
 import 'package:seraph_app/src/gallery/gallery_view.dart';
 import 'package:seraph_app/src/login/login_controller.dart';
+import 'package:seraph_app/src/media_player/history_view.dart';
 import 'package:seraph_app/src/share/share_controller.dart';
 import 'package:seraph_app/src/spaces_admin/spaces_list_view.dart';
 import '../settings/settings_view.dart';
@@ -72,6 +73,10 @@ Widget _buildDropdown(bool isAdmin, String currentRoute) {
     const DropdownMenuItem(
       value: ChatView.routeName,
       child: Text('Chat', overflow: TextOverflow.ellipsis),
+    ),
+    const DropdownMenuItem(
+      value: HistoryView.routeName,
+      child: Text('Recent playlists', overflow: TextOverflow.ellipsis),
     ),
     const DropdownMenuItem(enabled: false, child: Divider()),
     if (isAdmin)

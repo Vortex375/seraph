@@ -1,9 +1,11 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:get/get.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:seraph_app/src/file_browser/file_service.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 import 'package:seraph_app/src/login/login_controller.dart';
@@ -66,6 +68,19 @@ void main() async {
     shareController: shareController,
     galleryMirror: galleryMirror,
   ), permanent: true);
+
+  final loginController = Get.find<LoginController>();
+  Get.put(FileService(settingsController, loginController, shareController));
+  // A play() that started this process (headset button, resumption card) waits
+  // for the saved session before it loads authenticated sources. A later
+  // interactive login counts too. Web has no cold start, and its init paths
+  // never settle sessionRestored.
+  if (!kIsWeb) {
+    Get.find<MyAudioHandler>().sessionReady = () async =>
+        loginController.currentUser.value != null ||
+        loginController.isNoAuth.value ||
+        await loginController.sessionRestored;
+  }
 
   runApp(const MyApp());
 }

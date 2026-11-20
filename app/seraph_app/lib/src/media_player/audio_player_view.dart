@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import 'package:seraph_app/src/media_player/audio_player_controller.dart';
 import 'package:seraph_app/src/media_player/album_art.dart';
 import 'package:seraph_app/src/media_player/audio_tags.dart';
+import 'package:seraph_app/src/media_player/history_view.dart';
 import 'package:seraph_app/src/media_player/queue_view.dart';
 
 class AudioPlayerView extends StatefulWidget {
@@ -61,6 +62,11 @@ class _AudioPlayerViewState extends State<AudioPlayerView> {
                   ),
                 );
               },
+            ),
+            IconButton(
+              icon: const Icon(Icons.history),
+              tooltip: 'Recent playlists',
+              onPressed: () => Get.toNamed(HistoryView.routeName),
             ),
             IconButton(icon: const Icon(Icons.close),
             onPressed: () {

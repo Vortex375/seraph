@@ -11,6 +11,7 @@ import 'package:seraph_app/src/gallery/gallery_view.dart';
 import 'package:seraph_app/src/initial_binding.dart';
 import 'package:seraph_app/src/localization/app_localizations.dart';
 import 'package:seraph_app/src/media_player/audio_player_view.dart';
+import 'package:seraph_app/src/media_player/history_view.dart';
 import 'package:seraph_app/src/media_player/video_player_controller.dart';
 import 'package:seraph_app/src/search/search_controller.dart';
 import 'package:seraph_app/src/search/search_view.dart';
@@ -104,6 +105,7 @@ class MyApp extends StatelessWidget {
           name: ChatView.routeName,
           page: () => const ChatView(),
         ),
+        GetPage(name: HistoryView.routeName, page: () => const HistoryView()),
         GetPage(name: SettingsView.routeName, page: () => const SettingsView()),
         GetPage(
           name: SpacesListView.routeName,

@@ -7,7 +7,6 @@ import 'package:get/get.dart';
 import 'package:seraph_app/src/file_browser/file_service.dart';
 import 'package:seraph_app/src/media_player/audio_handler.dart';
 import 'package:seraph_app/src/media_player/audio_tags.dart';
-import 'package:path/path.dart' as p;
 
 class AudioPlayerController extends GetxController {
 
@@ -99,18 +98,6 @@ class AudioPlayerController extends GetxController {
     });
   }
 
-  /// A queue entry for file [path]: id is the streamed URL, the title the file
-  /// name until tags arrive.
-  MediaItem _mediaItemFor(String path) {
-    final FileService fileService = Get.find();
-    return MediaItem(
-      id: fileService.getFileUrl(path),
-      title: p.basename(path),
-      artUri: Uri.parse(fileService.getAlbumArtUrl(path)),
-      extras: {'path': path},
-    );
-  }
-
   Future<void> closePlayer() async {
     final MyAudioHandler audioHandler = Get.find();
     await audioHandler.stop();
@@ -118,7 +105,7 @@ class AudioPlayerController extends GetxController {
 
   Future<void> setPlaylist(List<String> files, int position) async {
     final MyAudioHandler audioHandler = Get.find();
-    await audioHandler.updateQueue(files.map(_mediaItemFor).toList());
+    await audioHandler.updateQueue(files.map(audioHandler.mediaItemFor).toList());
 
     await audioHandler.skipToQueueItem(position);
   }
@@ -160,8 +147,8 @@ class AudioPlayerController extends GetxController {
     if (files.isEmpty) {
       return;
     }
-    final items = files.map(_mediaItemFor).toList();
     final MyAudioHandler audioHandler = Get.find();
+    final items = files.map(audioHandler.mediaItemFor).toList();
 
     final nothingPlaying = !open.value || currentIndex.value < 0;
     final firstIndex = playNext

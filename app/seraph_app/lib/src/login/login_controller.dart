@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:developer' as developer;
 import 'dart:io';
 
@@ -10,6 +11,7 @@ import 'package:oidc/oidc.dart';
 import 'package:oidc_default_store/oidc_default_store.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 import 'package:seraph_app/src/gallery/sync/token_refresh_coordination.dart';
+import 'package:seraph_app/src/media_player/audio_handler.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
 import 'package:seraph_app/src/share/share_controller.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -29,6 +31,9 @@ class LoginController extends GetxController with WidgetsBindingObserver {
     
     if (settingsController.serverUrlConfirmed.value || kIsWeb) {
       init(settingsController.oidcIssuer.value, settingsController.oidcClientId.value);
+    }
+    else {
+      _settle(false); // no server configured: nothing to restore
     }
     settingsController.serverUrlConfirmed.listen((confirmed) {
       if (confirmed) {
@@ -59,6 +64,20 @@ class LoginController extends GetxController with WidgetsBindingObserver {
   late Rx<OidcUser?> _currentUser;
   late Rx<bool> _isSpaceAdmin;
 
+  final Completer<bool> _restored = Completer<bool>();
+
+  /// Completes once the first [init] has settled: true when a session is
+  /// available (restored, refreshed or no auth needed), false when none could
+  /// be restored (interactive login needed, or no server). The audio handler
+  /// awaits this before an idle play() on a cold start.
+  Future<bool> get sessionRestored => _restored.future;
+
+  void _settle(bool ok) {
+    if (!_restored.isCompleted) {
+      _restored.complete(ok);
+    }
+  }
+
   Rx<bool> get isInitialized => _initialized;
   Rx<bool> get isNoAuth => _noAuth;
   Rx<OidcUser?> get currentUser => _currentUser;
@@ -83,6 +102,7 @@ class LoginController extends GetxController with WidgetsBindingObserver {
       _noAuth.value = true;
       _initialized.value = true;
       _isSpaceAdmin.value = true;
+      _settle(true);
       return;
     }
 
@@ -138,12 +158,14 @@ class LoginController extends GetxController with WidgetsBindingObserver {
     );
     if (user == null) {
       developer.log("oidc: refresh failed -> perform login", name: 'seraph.login');
+      _settle(false);
       await login();
     } else {
       developer.log("oidc: refresh successful", name: 'seraph.login');
       _currentUser.value = user;
       _initialized.value = true;
       _updateSpaceAdmin(user);
+      _settle(true);
     }
 
     _manager?.userChanges().listen((user) async {
@@ -279,6 +301,7 @@ class LoginController extends GetxController with WidgetsBindingObserver {
         isDismissible: true
       );
       settingsController.setServerUrlConfirmed(false);
+      _settle(false);
     }
   }
 
@@ -298,6 +321,9 @@ class LoginController extends GetxController with WidgetsBindingObserver {
     }
     developer.log("oidc: logout", name: 'seraph.login');
     await _manager?.logout();
+    if (Get.isRegistered<MyAudioHandler>()) {
+      await Get.find<MyAudioHandler>().clearHistory();
+    }
     _currentUser.value = null;
     _isSpaceAdmin.value = false;
     developer.log("oidc: logout complete", name: 'seraph.login');
