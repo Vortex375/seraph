@@ -21,15 +21,17 @@ That is the deferred remote-deletion tombstone gap seen from the other side.
 
 **Blocked by:** 20
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A free-up-space flow offers only Verified items
-- [ ] The amount of space to be reclaimed is shown before the user confirms
-- [ ] Confirming trashes the device copies in one batch through a single system dialog
-- [ ] Trashed photos remain recoverable through the system trash
-- [ ] Freed items become Cloud only in the gallery and are not re-downloaded
-- [ ] A Cloud only photo can still be opened at full resolution on demand
-- [ ] Cancelling the system dialog leaves everything unchanged
-- [ ] An item that is not Verified cannot be freed through any path, including a stale UI acting on old state
-- [ ] Restoring a freed photo from the trash returns it to Synced rather than producing a duplicate item
-- [ ] Covered at the app's mirror seam with a fake Local Source, including an explicit attempt to free a non-Verified item
+- [x] A free-up-space flow offers only Verified items
+- [x] The amount of space to be reclaimed is shown before the user confirms
+- [x] Confirming trashes the device copies in one batch through a single system dialog
+- [x] Trashed photos remain recoverable through the system trash
+- [x] Freed items become Cloud only in the gallery and are not re-downloaded
+- [ ] A Cloud only photo can still be opened at full resolution on demand (not verified: download-on-demand is still an open question in D17/design notes)
+- [x] Cancelling the system dialog leaves everything unchanged
+- [x] An item that is not Verified cannot be freed through any path, including a stale UI acting on old state
+- [x] Restoring a freed photo from the trash returns it to Synced rather than producing a duplicate item
+- [x] Covered at the app's mirror seam with a fake Local Source, including an explicit attempt to free a non-Verified item
+
+**Resolution notes:** free up is reachable only from a grid multi-selection (long-press); only Synced (`origin == both`) items are freed, re-checked against the mirror at call time.

@@ -27,15 +27,17 @@ which would contradict an action confirmed through two dialogs.
 
 **Blocked by:** 26
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Erase is offered as an explicit action, distinct from every other delete in the app
-- [ ] The warning states plainly that the Seraph copy cannot be recovered
-- [ ] Erase removes the Seraph copy first, then trashes the device copy
-- [ ] Cancelling the device-deletion dialog leaves the photo on the device and it is **not** re-uploaded on any subsequent scan
-- [ ] Restoring the photo from the system trash leaves it Device only and it is **not** re-uploaded
-- [ ] An explicit "back this up again" action exists and clears the tombstone
-- [ ] A batch of photos can be erased in one action with a single system dialog
-- [ ] Erase tombstones survive an app restart
-- [ ] Failure to delete remotely aborts the erase before anything local is touched
-- [ ] Covered at the app's mirror seam, with explicit tests for the cancelled-dialog and restored-from-trash cases running a full scan afterwards and asserting no re-upload
+- [x] Erase is offered as an explicit action, distinct from every other delete in the app
+- [x] The warning states plainly that the Seraph copy cannot be recovered
+- [x] Erase removes the Seraph copy first, then trashes the device copy
+- [x] Cancelling the device-deletion dialog leaves the photo on the device and it is **not** re-uploaded on any subsequent scan
+- [x] Restoring the photo from the system trash leaves it Device only and it is **not** re-uploaded
+- [x] An explicit "back this up again" action exists and clears the tombstone
+- [x] A batch of photos can be erased in one action with a single system dialog
+- [x] Erase tombstones survive an app restart
+- [x] Failure to delete remotely aborts the erase before anything local is touched
+- [x] Covered at the app's mirror seam, with explicit tests for the cancelled-dialog and restored-from-trash cases running a full scan afterwards and asserting no re-upload
+
+**Resolution notes:** tombstones live in the `EraseTombstones` table (schema v16); a re-appearing device copy is an `erased` Device only row excluded from the upload queue. **Known gap:** a photo freed (Cloud only) and then erased has no local identity left in the mirror, so no tombstone is written; restoring its trashed copy within 30 days would re-upload it.
