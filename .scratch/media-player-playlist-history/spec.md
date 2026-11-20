@@ -1,6 +1,6 @@
 # Media player: playlist history and idle resume
 
-Status: needs-triage
+Status: resolved
 
 Builds on `.scratch/audio-player-engine/` and `.scratch/audio-player-ux/` (just_audio + `audio_service`,
 queue model, queue view, enqueue from the file browser). Both have landed.

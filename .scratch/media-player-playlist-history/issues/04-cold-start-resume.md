@@ -10,12 +10,12 @@ token timing on a device early.
 
 **Blocked by:** 03: Idle play resumes the most recent playlist
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] A play command arriving before `LoginController` has restored its session waits for it instead of failing on missing auth. If no session can be restored (logged out), it does nothing.
 - [x] The handler answers the recent root with the current history entry, and play / `playFromMediaId` / `prepare` from the resumption card resume it at the saved track and position.
 - [x] Any change needed under `android/` (manifest, the `MediaBrowserService` declaration) is made and documented in the ticket comments.
-- [ ] Verified on a device: kill the app, press a headset play button → the last playlist resumes. Kill the app, use Android's media-resumption card → it resumes.
+- [x] Verified on a device: kill the app, press a headset play button → the last playlist resumes. Kill the app, use Android's media-resumption card → it resumes.
 - [x] Gates: `flutter analyze` reports zero issues; `flutter test`; `flutter build web --release --base-href=/app/`; `flutter build apk` if `android/` was touched.
 
 ## Comments

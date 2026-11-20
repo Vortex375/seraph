@@ -14,7 +14,7 @@ entry at its saved track and position and plays it. With no history, it does not
 - [x] `play()` with a non-empty queue behaves exactly as today.
 - [x] After closing the player with the close button, a play command resumes the same playlist where it stopped.
 - [x] Resuming doesn't archive anything (it is not a replace).
-- [ ] Gates: `flutter analyze` reports zero issues; `flutter test`; `flutter build web --release --base-href=/app/` (web build left to the orchestrator).
+- [x] Gates: `flutter analyze` reports zero issues; `flutter test`; `flutter build web --release --base-href=/app/` (web build left to the orchestrator).
 
 ## Comments
 
