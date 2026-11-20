@@ -15,6 +15,7 @@ import 'package:seraph_app/src/gallery/gallery_view.dart';
 import 'package:seraph_app/src/gallery/local/local_image_loader.dart';
 import 'package:seraph_app/src/gallery/local/local_scan_service.dart';
 import 'package:seraph_app/src/gallery/local/local_source.dart';
+import 'package:seraph_app/src/gallery/mirror/gallery_erase_service.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 import 'package:seraph_app/src/login/login_controller.dart';
@@ -66,6 +67,7 @@ void main() {
 
     controller = GalleryGridController(
       mirror: mirror,
+      eraseService: GalleryEraseService(mirror, FakeGalleryUploadBackend(), null),
       localScanService: localSource == null
           ? null
           : LocalScanService(mirror, localSource: localSource),
@@ -918,6 +920,25 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('selected'), findsNothing);
     expect(controller.isSelecting, isFalse);
+  });
+
+  testWidgets('Erase warns that the Seraph copy cannot be recovered, and '
+      'cancelling erases nothing', (tester) async {
+    await setUpGallery(itemCount: 6);
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    await tester.longPress(find.byType(GalleryTile).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Erase'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('CANNOT be recovered'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    expect(controller.totalCount.value, 6);
+    expect(controller.selected.length, 1);
   });
 
   testWidgets('a narrow phone window keeps a usable column count',

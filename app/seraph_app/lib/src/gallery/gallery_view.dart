@@ -181,7 +181,10 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
           ]),
       body: Column(
         children: [
-          _SelectionBar(controller: controller, onFreeUp: _freeUpSelected),
+          _SelectionBar(
+              controller: controller,
+              onFreeUp: _freeUpSelected,
+              onErase: _eraseSelected),
           _LocalPermissionBanner(controller: controller),
           _SummaryBar(controller: controller),
           _FilterChipsBar(controller: controller),
@@ -208,6 +211,55 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
         ],
       ),
     );
+  }
+
+  /// Ticket 27: Erase, behind a warning that says plainly what is
+  /// unrecoverable. Deliberately a different dialog, colour and wording from
+  /// every other action here - nothing else in the app deletes from Seraph.
+  Future<void> _eraseSelected() async {
+    final count = controller.selected.length;
+    final messenger = ScaffoldMessenger.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: Icon(Icons.warning_amber_rounded,
+            color: Theme.of(ctx).colorScheme.error),
+        title: Text('Erase $count ${count == 1 ? 'photo' : 'photos'}?'),
+        content: const Text(
+            'This permanently deletes the selected photos from Seraph. '
+            'Seraph has no trash - the Seraph copy CANNOT be recovered.\n\n'
+            'Copies on this device move to the Android trash, where they can '
+            'be restored for 30 days (a restored photo stays on this device '
+            'only and is not backed up again unless you ask).'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              style: FilledButton.styleFrom(
+                  backgroundColor: Theme.of(ctx).colorScheme.error,
+                  foregroundColor: Theme.of(ctx).colorScheme.onError),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Erase permanently')),
+        ],
+      ),
+    );
+    if (confirmed != true) {
+      return;
+    }
+    final result = await controller.eraseSelected();
+    if (result == null) {
+      return;
+    }
+    final failure = result.failure;
+    messenger.showSnackBar(SnackBar(
+      content: Text(failure != null
+          ? 'Erase stopped after ${result.erased}: $failure'
+          : result.cancelled
+              ? 'Erased ${result.erased} from Seraph. The device copies '
+                  'were kept and will not be backed up again.'
+              : 'Erased ${result.erased}.'),
+    ));
   }
 
   Future<void> _freeUpSelected() =>
@@ -703,10 +755,15 @@ class _SummaryBar extends StatelessWidget {
 /// selection-scoped "Free up space" action (only Synced photos among the
 /// selection are freed - see [LocalScanService.freeUpSpace]).
 class _SelectionBar extends StatelessWidget {
-  const _SelectionBar({required this.controller, required this.onFreeUp});
+  const _SelectionBar({
+    required this.controller,
+    required this.onFreeUp,
+    required this.onErase,
+  });
 
   final GalleryGridController controller;
   final VoidCallback onFreeUp;
+  final VoidCallback onErase;
 
   @override
   Widget build(BuildContext context) {
@@ -728,12 +785,34 @@ class _SelectionBar extends StatelessWidget {
               onPressed: controller.clearSelection,
             ),
             Expanded(child: Text('$count selected')),
-            if (canFree)
-              TextButton.icon(
-                icon: const Icon(Icons.cleaning_services_outlined),
-                label: const Text('Free up space'),
-                onPressed: onFreeUp,
+            Flexible(
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                children: [
+                  if (controller.selectedErased.isNotEmpty)
+                    TextButton.icon(
+                      icon: const Icon(Icons.cloud_upload_outlined),
+                      label: const Text('Back up again'),
+                      onPressed: () => unawaited(controller
+                          .backUpAgainSelected()),
+                    ),
+                  if (canFree)
+                    TextButton.icon(
+                      icon: const Icon(Icons.cleaning_services_outlined),
+                      label: const Text('Free up space'),
+                      onPressed: onFreeUp,
+                    ),
+                  if (controller.eraseService != null)
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                          foregroundColor: Theme.of(context).colorScheme.error),
+                      icon: const Icon(Icons.delete_forever_outlined),
+                      label: const Text('Erase'),
+                      onPressed: onErase,
+                    ),
+                ],
               ),
+            ),
           ],
         ),
       );

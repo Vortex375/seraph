@@ -9,6 +9,7 @@ import 'package:seraph_app/src/gallery/gallery_image_loader.dart';
 import 'package:seraph_app/src/gallery/gallery_service.dart';
 import 'package:seraph_app/src/gallery/local/local_image_loader.dart';
 import 'package:seraph_app/src/gallery/local/local_scan_service.dart';
+import 'package:seraph_app/src/gallery/mirror/gallery_erase_service.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_sync_service.dart';
@@ -56,9 +57,10 @@ class InitialBinding extends Bindings {
     // platform with no Local Source, localScanService.localSource is null
     // and GalleryUploadService.upload simply reports deviceFileUnavailable
     // for every call, so there is nothing to gate here.
+    final uploadBackend = WebDavGalleryUploadBackend(Get.find<FileService>());
     Get.put(GalleryUploadService(
       galleryMirror,
-      WebDavGalleryUploadBackend(Get.find<FileService>()),
+      uploadBackend,
       localScanService.localSource,
     ));
     // Ticket 22: the UI's only window onto the headless engine - reads
@@ -99,6 +101,8 @@ class InitialBinding extends Bindings {
         mirror: galleryMirror,
         syncService: gallerySyncService,
         localScanService: localScanService,
+        eraseService:
+            GalleryEraseService(galleryMirror, uploadBackend, localScanService),
       ),
       fenix: true,
     );

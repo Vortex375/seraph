@@ -32,6 +32,7 @@ part 'gallery_mirror_database.g.dart';
   SyncRunState,
   TokenRefreshLock,
   SyncRunLock,
+  EraseTombstones,
 ])
 class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
   GalleryMirrorDatabase(super.e);
@@ -45,7 +46,7 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
   }
 
   @override
-  int get schemaVersion => 15;
+  int get schemaVersion => 16;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -324,6 +325,15 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
                   ..where((t) => t.source.equals('server')))
                 .go();
           }
+          if (from < 16) {
+            // v16 (ticket 27) added the erase tombstones and the
+            // [GalleryItems.erased] flag. [GalleryItems] is base schema
+            // (never created mid-ladder), so a plain addColumn is safe on
+            // every path; [EraseTombstones] is new and createTable builds
+            // it from the current definition.
+            await m.addColumn(galleryItems, galleryItems.erased);
+            await m.createTable(eraseTombstones);
+          }
         },
         beforeOpen: (details) async {
           await customStatement('PRAGMA foreign_keys = ON');
@@ -601,6 +611,16 @@ class GalleryItems extends Table {
   /// [GalleryUploadException.message] the failing attempt carried. Null
   /// whenever [uploadFailureBucket] is.
   TextColumn get uploadFailureReason => text().nullable()();
+
+  // --- Ticket 27: Erase ---
+
+  /// True for a Device only row whose local identity matches an
+  /// [EraseTombstones] row: the photo was erased from Seraph, but its device
+  /// copy is visible again (the user cancelled the device-deletion dialog,
+  /// or restored it from the trash). Such a row stays in the gallery as
+  /// Device only but is never an upload candidate until the user chooses
+  /// "back this up again" ([GalleryMirror.backUpAgain]).
+  BoolColumn get erased => boolean().withDefault(const Constant(false))();
 
   // --- Gallery metadata: capture-time offset, location and Place ---
   // (schema v14, the gallery-metadata feature). All nullable: existing rows
@@ -1031,4 +1051,22 @@ class SyncRunLock extends Table {
 
   @override
   Set<Column> get primaryKey => {id};
+}
+
+/// Ticket 27's erase tombstone, keyed on local identity (D9):
+/// `(relative path, display name, size, date taken)`. Written by
+/// [GalleryEraseService] BEFORE the Seraph copy is deleted, so that however
+/// the device-side half ends - dialog cancelled, or the photo restored from
+/// the trash within thirty days - the local copy reappearing in a scan is
+/// never mistaken for a new photo and re-uploaded. Narrow by design: we
+/// performed the erase and know exactly what we erased (D17); remote
+/// deletions made elsewhere stay unrecorded.
+class EraseTombstones extends Table {
+  TextColumn get relativePath => text()();
+  TextColumn get displayName => text()();
+  IntColumn get size => integer()();
+  IntColumn get dateTaken => integer()();
+
+  @override
+  Set<Column> get primaryKey => {relativePath, displayName, size, dateTaken};
 }

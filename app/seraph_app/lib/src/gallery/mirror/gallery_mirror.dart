@@ -1074,6 +1074,34 @@ class GalleryMirror {
     final capturedAt = _capturedAtSeconds(item);
     final capturedAtSource = item.dateTakenMillis > 0 ? 'exif' : 'modTime';
 
+    // Ticket 27: an erased photo whose device copy is visible again stays on
+    // the device only - never merged onto a cloud row, never queued.
+    final tombstone = await (_db.select(_db.eraseTombstones)
+          ..where((t) =>
+              t.relativePath.equals(item.relativePath) &
+              t.displayName.equals(item.displayName) &
+              t.size.equals(item.size) &
+              t.dateTaken.equals(item.dateTakenMillis)))
+        .getSingleOrNull();
+    if (tombstone != null) {
+      await _db.into(_db.galleryItems).insert(
+            GalleryItemsCompanion.insert(
+              origin: const Value(_originDevice),
+              localRelativePath: Value(item.relativePath),
+              localDisplayName: Value(item.displayName),
+              localSize: Value(item.size),
+              localDateTaken: Value(item.dateTakenMillis),
+              capturedAt: capturedAt,
+              capturedAtSource: Value(capturedAtSource),
+              size: Value(item.size),
+              erased: const Value(true),
+              localFirstSeenAt:
+                  Value(nowMillis ?? DateTime.now().millisecondsSinceEpoch),
+            ),
+          );
+      return;
+    }
+
     final coveringPairs = _allCoveringSyncPairs(syncPairs, item.relativePath);
 
     if (coveringPairs.isNotEmpty) {
@@ -1563,6 +1591,7 @@ class GalleryMirror {
     final rows = await (_db.select(_db.galleryItems)
           ..where((t) =>
               t.origin.equals(_originDevice) &
+              t.erased.equals(false) &
               (t.uploadState.equals(_uploadStateMismatch) |
                   t.uploadState.equals(_uploadStateAssumedMismatch))))
         .get();
@@ -1631,6 +1660,7 @@ class GalleryMirror {
     final rows = await (_db.select(_db.galleryItems)
           ..where((t) =>
               t.origin.equals(_originDevice) &
+              t.erased.equals(false) &
               t.uploadState.isNull() &
               t.uploadFailureBucket.isNull() &
               (t.uploadNextRetryAt.isNull() |
@@ -2171,6 +2201,80 @@ class GalleryMirror {
       query.where((t) => t.id.isIn(wanted));
     }
     return query.get();
+  }
+
+  // --- Ticket 27: Erase ---
+
+  /// The rows for [ids], whatever their Availability - everything can be
+  /// erased: a Synced or Cloud only row loses its Seraph copy, a Device only
+  /// one is merely kept from ever being uploaded.
+  Future<List<GalleryItem>> itemsByIds(Iterable<int> ids) {
+    final wanted = ids.toList();
+    return (_db.select(_db.galleryItems)..where((t) => t.id.isIn(wanted)))
+        .get();
+  }
+
+  static bool _hasLocalIdentity(GalleryItem row) =>
+      row.localRelativePath != null &&
+      row.localDisplayName != null &&
+      row.localSize != null &&
+      row.localDateTaken != null;
+
+  /// Records the erase tombstone for [row]'s device copy (a no-op for a row
+  /// with none) - see [EraseTombstones]. Idempotent.
+  Future<void> addEraseTombstone(GalleryItem row) async {
+    if (!_hasLocalIdentity(row)) {
+      return;
+    }
+    await _db.into(_db.eraseTombstones).insertOnConflictUpdate(
+          EraseTombstonesCompanion.insert(
+            relativePath: row.localRelativePath!,
+            displayName: row.localDisplayName!,
+            size: row.localSize!,
+            dateTaken: row.localDateTaken!,
+          ),
+        );
+  }
+
+  /// Undoes [addEraseTombstone] - used when the remote deletion failed and
+  /// the erase is abandoned.
+  Future<void> removeEraseTombstone(GalleryItem row) async {
+    if (!_hasLocalIdentity(row)) {
+      return;
+    }
+    await (_db.delete(_db.eraseTombstones)
+          ..where((t) =>
+              t.relativePath.equals(row.localRelativePath!) &
+              t.displayName.equals(row.localDisplayName!) &
+              t.size.equals(row.localSize!) &
+              t.dateTaken.equals(row.localDateTaken!)))
+        .go();
+  }
+
+  /// Drops the rows for [ids] after their Seraph copy was erased. A device
+  /// copy that is still there reappears at the next scan as an erased
+  /// Device only row (see [_upsertLocalItem]).
+  Future<void> deleteItems(Iterable<int> ids) {
+    final gone = ids.toList();
+    return (_db.delete(_db.galleryItems)..where((t) => t.id.isIn(gone))).go();
+  }
+
+  /// The user's explicit "back this up again" for erased Device only rows
+  /// among [ids]: clears each tombstone and the [GalleryItems.erased] flag,
+  /// making the row an ordinary upload candidate again. Returns how many
+  /// rows were released.
+  Future<int> backUpAgain(Iterable<int> ids) async {
+    return _db.transaction(() async {
+      final rows = await (_db.select(_db.galleryItems)
+            ..where((t) => t.id.isIn(ids.toList()) & t.erased.equals(true)))
+          .get();
+      for (final row in rows) {
+        await removeEraseTombstone(row);
+        await (_db.update(_db.galleryItems)..where((t) => t.id.equals(row.id)))
+            .write(const GalleryItemsCompanion(erased: Value(false)));
+      }
+      return rows.length;
+    });
   }
 
   /// One page of the mirror in the same Capture-Date-descending order as

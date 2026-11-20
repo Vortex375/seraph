@@ -183,6 +183,15 @@ class $GalleryItemsTable extends GalleryItems
   late final GeneratedColumn<String> uploadFailureReason =
       GeneratedColumn<String>('upload_failure_reason', aliasedName, true,
           type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _erasedMeta = const VerificationMeta('erased');
+  @override
+  late final GeneratedColumn<bool> erased = GeneratedColumn<bool>(
+      'erased', aliasedName, false,
+      type: DriftSqlType.bool,
+      requiredDuringInsert: false,
+      defaultConstraints:
+          GeneratedColumn.constraintIsAlways('CHECK ("erased" IN (0, 1))'),
+      defaultValue: const Constant(false));
   static const VerificationMeta _capturedAtOffsetMeta =
       const VerificationMeta('capturedAtOffset');
   @override
@@ -263,6 +272,7 @@ class $GalleryItemsTable extends GalleryItems
         uploadNextRetryAt,
         uploadFailureBucket,
         uploadFailureReason,
+        erased,
         capturedAtOffset,
         lat,
         lon,
@@ -422,6 +432,10 @@ class $GalleryItemsTable extends GalleryItems
           uploadFailureReason.isAcceptableOrUnknown(
               data['upload_failure_reason']!, _uploadFailureReasonMeta));
     }
+    if (data.containsKey('erased')) {
+      context.handle(_erasedMeta,
+          erased.isAcceptableOrUnknown(data['erased']!, _erasedMeta));
+    }
     if (data.containsKey('captured_at_offset')) {
       context.handle(
           _capturedAtOffsetMeta,
@@ -538,6 +552,8 @@ class $GalleryItemsTable extends GalleryItems
           DriftSqlType.string, data['${effectivePrefix}upload_failure_bucket']),
       uploadFailureReason: attachedDatabase.typeMapping.read(
           DriftSqlType.string, data['${effectivePrefix}upload_failure_reason']),
+      erased: attachedDatabase.typeMapping
+          .read(DriftSqlType.bool, data['${effectivePrefix}erased'])!,
       capturedAtOffset: attachedDatabase.typeMapping
           .read(DriftSqlType.int, data['${effectivePrefix}captured_at_offset']),
       lat: attachedDatabase.typeMapping
@@ -708,6 +724,14 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
   /// whenever [uploadFailureBucket] is.
   final String? uploadFailureReason;
 
+  /// True for a Device only row whose local identity matches an
+  /// [EraseTombstones] row: the photo was erased from Seraph, but its device
+  /// copy is visible again (the user cancelled the device-deletion dialog,
+  /// or restored it from the trash). Such a row stays in the gallery as
+  /// Device only but is never an upload candidate until the user chooses
+  /// "back this up again" ([GalleryMirror.backUpAgain]).
+  final bool erased;
+
   /// Seconds east of UTC at the place of capture, when the photo itself
   /// recorded one (EXIF OffsetTimeOriginal or its GPS timestamp - ADR
   /// 0003). Null when unknown. [capturedAt] is a true instant whenever
@@ -758,6 +782,7 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
       this.uploadNextRetryAt,
       this.uploadFailureBucket,
       this.uploadFailureReason,
+      required this.erased,
       this.capturedAtOffset,
       this.lat,
       this.lon,
@@ -825,6 +850,7 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
     if (!nullToAbsent || uploadFailureReason != null) {
       map['upload_failure_reason'] = Variable<String>(uploadFailureReason);
     }
+    map['erased'] = Variable<bool>(erased);
     if (!nullToAbsent || capturedAtOffset != null) {
       map['captured_at_offset'] = Variable<int>(capturedAtOffset);
     }
@@ -907,6 +933,7 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
       uploadFailureReason: uploadFailureReason == null && nullToAbsent
           ? const Value.absent()
           : Value(uploadFailureReason),
+      erased: Value(erased),
       capturedAtOffset: capturedAtOffset == null && nullToAbsent
           ? const Value.absent()
           : Value(capturedAtOffset),
@@ -967,6 +994,7 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
           serializer.fromJson<String?>(json['uploadFailureBucket']),
       uploadFailureReason:
           serializer.fromJson<String?>(json['uploadFailureReason']),
+      erased: serializer.fromJson<bool>(json['erased']),
       capturedAtOffset: serializer.fromJson<int?>(json['capturedAtOffset']),
       lat: serializer.fromJson<double?>(json['lat']),
       lon: serializer.fromJson<double?>(json['lon']),
@@ -1009,6 +1037,7 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
       'uploadNextRetryAt': serializer.toJson<int?>(uploadNextRetryAt),
       'uploadFailureBucket': serializer.toJson<String?>(uploadFailureBucket),
       'uploadFailureReason': serializer.toJson<String?>(uploadFailureReason),
+      'erased': serializer.toJson<bool>(erased),
       'capturedAtOffset': serializer.toJson<int?>(capturedAtOffset),
       'lat': serializer.toJson<double?>(lat),
       'lon': serializer.toJson<double?>(lon),
@@ -1048,6 +1077,7 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
           Value<int?> uploadNextRetryAt = const Value.absent(),
           Value<String?> uploadFailureBucket = const Value.absent(),
           Value<String?> uploadFailureReason = const Value.absent(),
+          bool? erased,
           Value<int?> capturedAtOffset = const Value.absent(),
           Value<double?> lat = const Value.absent(),
           Value<double?> lon = const Value.absent(),
@@ -1101,6 +1131,7 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
         uploadFailureReason: uploadFailureReason.present
             ? uploadFailureReason.value
             : this.uploadFailureReason,
+        erased: erased ?? this.erased,
         capturedAtOffset: capturedAtOffset.present
             ? capturedAtOffset.value
             : this.capturedAtOffset,
@@ -1178,6 +1209,7 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
       uploadFailureReason: data.uploadFailureReason.present
           ? data.uploadFailureReason.value
           : this.uploadFailureReason,
+      erased: data.erased.present ? data.erased.value : this.erased,
       capturedAtOffset: data.capturedAtOffset.present
           ? data.capturedAtOffset.value
           : this.capturedAtOffset,
@@ -1232,6 +1264,7 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
           ..write('uploadNextRetryAt: $uploadNextRetryAt, ')
           ..write('uploadFailureBucket: $uploadFailureBucket, ')
           ..write('uploadFailureReason: $uploadFailureReason, ')
+          ..write('erased: $erased, ')
           ..write('capturedAtOffset: $capturedAtOffset, ')
           ..write('lat: $lat, ')
           ..write('lon: $lon, ')
@@ -1273,6 +1306,7 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
         uploadNextRetryAt,
         uploadFailureBucket,
         uploadFailureReason,
+        erased,
         capturedAtOffset,
         lat,
         lon,
@@ -1313,6 +1347,7 @@ class GalleryItem extends DataClass implements Insertable<GalleryItem> {
           other.uploadNextRetryAt == this.uploadNextRetryAt &&
           other.uploadFailureBucket == this.uploadFailureBucket &&
           other.uploadFailureReason == this.uploadFailureReason &&
+          other.erased == this.erased &&
           other.capturedAtOffset == this.capturedAtOffset &&
           other.lat == this.lat &&
           other.lon == this.lon &&
@@ -1351,6 +1386,7 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
   final Value<int?> uploadNextRetryAt;
   final Value<String?> uploadFailureBucket;
   final Value<String?> uploadFailureReason;
+  final Value<bool> erased;
   final Value<int?> capturedAtOffset;
   final Value<double?> lat;
   final Value<double?> lon;
@@ -1387,6 +1423,7 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
     this.uploadNextRetryAt = const Value.absent(),
     this.uploadFailureBucket = const Value.absent(),
     this.uploadFailureReason = const Value.absent(),
+    this.erased = const Value.absent(),
     this.capturedAtOffset = const Value.absent(),
     this.lat = const Value.absent(),
     this.lon = const Value.absent(),
@@ -1424,6 +1461,7 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
     this.uploadNextRetryAt = const Value.absent(),
     this.uploadFailureBucket = const Value.absent(),
     this.uploadFailureReason = const Value.absent(),
+    this.erased = const Value.absent(),
     this.capturedAtOffset = const Value.absent(),
     this.lat = const Value.absent(),
     this.lon = const Value.absent(),
@@ -1461,6 +1499,7 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
     Expression<int>? uploadNextRetryAt,
     Expression<String>? uploadFailureBucket,
     Expression<String>? uploadFailureReason,
+    Expression<bool>? erased,
     Expression<int>? capturedAtOffset,
     Expression<double>? lat,
     Expression<double>? lon,
@@ -1501,6 +1540,7 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
         'upload_failure_bucket': uploadFailureBucket,
       if (uploadFailureReason != null)
         'upload_failure_reason': uploadFailureReason,
+      if (erased != null) 'erased': erased,
       if (capturedAtOffset != null) 'captured_at_offset': capturedAtOffset,
       if (lat != null) 'lat': lat,
       if (lon != null) 'lon': lon,
@@ -1540,6 +1580,7 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
       Value<int?>? uploadNextRetryAt,
       Value<String?>? uploadFailureBucket,
       Value<String?>? uploadFailureReason,
+      Value<bool>? erased,
       Value<int?>? capturedAtOffset,
       Value<double?>? lat,
       Value<double?>? lon,
@@ -1577,6 +1618,7 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
       uploadNextRetryAt: uploadNextRetryAt ?? this.uploadNextRetryAt,
       uploadFailureBucket: uploadFailureBucket ?? this.uploadFailureBucket,
       uploadFailureReason: uploadFailureReason ?? this.uploadFailureReason,
+      erased: erased ?? this.erased,
       capturedAtOffset: capturedAtOffset ?? this.capturedAtOffset,
       lat: lat ?? this.lat,
       lon: lon ?? this.lon,
@@ -1673,6 +1715,9 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
       map['upload_failure_reason'] =
           Variable<String>(uploadFailureReason.value);
     }
+    if (erased.present) {
+      map['erased'] = Variable<bool>(erased.value);
+    }
     if (capturedAtOffset.present) {
       map['captured_at_offset'] = Variable<int>(capturedAtOffset.value);
     }
@@ -1732,6 +1777,7 @@ class GalleryItemsCompanion extends UpdateCompanion<GalleryItem> {
           ..write('uploadNextRetryAt: $uploadNextRetryAt, ')
           ..write('uploadFailureBucket: $uploadFailureBucket, ')
           ..write('uploadFailureReason: $uploadFailureReason, ')
+          ..write('erased: $erased, ')
           ..write('capturedAtOffset: $capturedAtOffset, ')
           ..write('lat: $lat, ')
           ..write('lon: $lon, ')
@@ -4139,6 +4185,287 @@ class SyncRunLockCompanion extends UpdateCompanion<SyncRunLockData> {
   }
 }
 
+class $EraseTombstonesTable extends EraseTombstones
+    with TableInfo<$EraseTombstonesTable, EraseTombstone> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $EraseTombstonesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _relativePathMeta =
+      const VerificationMeta('relativePath');
+  @override
+  late final GeneratedColumn<String> relativePath = GeneratedColumn<String>(
+      'relative_path', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _displayNameMeta =
+      const VerificationMeta('displayName');
+  @override
+  late final GeneratedColumn<String> displayName = GeneratedColumn<String>(
+      'display_name', aliasedName, false,
+      type: DriftSqlType.string, requiredDuringInsert: true);
+  static const VerificationMeta _sizeMeta = const VerificationMeta('size');
+  @override
+  late final GeneratedColumn<int> size = GeneratedColumn<int>(
+      'size', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  static const VerificationMeta _dateTakenMeta =
+      const VerificationMeta('dateTaken');
+  @override
+  late final GeneratedColumn<int> dateTaken = GeneratedColumn<int>(
+      'date_taken', aliasedName, false,
+      type: DriftSqlType.int, requiredDuringInsert: true);
+  @override
+  List<GeneratedColumn> get $columns =>
+      [relativePath, displayName, size, dateTaken];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'erase_tombstones';
+  @override
+  VerificationContext validateIntegrity(Insertable<EraseTombstone> instance,
+      {bool isInserting = false}) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('relative_path')) {
+      context.handle(
+          _relativePathMeta,
+          relativePath.isAcceptableOrUnknown(
+              data['relative_path']!, _relativePathMeta));
+    } else if (isInserting) {
+      context.missing(_relativePathMeta);
+    }
+    if (data.containsKey('display_name')) {
+      context.handle(
+          _displayNameMeta,
+          displayName.isAcceptableOrUnknown(
+              data['display_name']!, _displayNameMeta));
+    } else if (isInserting) {
+      context.missing(_displayNameMeta);
+    }
+    if (data.containsKey('size')) {
+      context.handle(
+          _sizeMeta, size.isAcceptableOrUnknown(data['size']!, _sizeMeta));
+    } else if (isInserting) {
+      context.missing(_sizeMeta);
+    }
+    if (data.containsKey('date_taken')) {
+      context.handle(_dateTakenMeta,
+          dateTaken.isAcceptableOrUnknown(data['date_taken']!, _dateTakenMeta));
+    } else if (isInserting) {
+      context.missing(_dateTakenMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey =>
+      {relativePath, displayName, size, dateTaken};
+  @override
+  EraseTombstone map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return EraseTombstone(
+      relativePath: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}relative_path'])!,
+      displayName: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}display_name'])!,
+      size: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}size'])!,
+      dateTaken: attachedDatabase.typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}date_taken'])!,
+    );
+  }
+
+  @override
+  $EraseTombstonesTable createAlias(String alias) {
+    return $EraseTombstonesTable(attachedDatabase, alias);
+  }
+}
+
+class EraseTombstone extends DataClass implements Insertable<EraseTombstone> {
+  final String relativePath;
+  final String displayName;
+  final int size;
+  final int dateTaken;
+  const EraseTombstone(
+      {required this.relativePath,
+      required this.displayName,
+      required this.size,
+      required this.dateTaken});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['relative_path'] = Variable<String>(relativePath);
+    map['display_name'] = Variable<String>(displayName);
+    map['size'] = Variable<int>(size);
+    map['date_taken'] = Variable<int>(dateTaken);
+    return map;
+  }
+
+  EraseTombstonesCompanion toCompanion(bool nullToAbsent) {
+    return EraseTombstonesCompanion(
+      relativePath: Value(relativePath),
+      displayName: Value(displayName),
+      size: Value(size),
+      dateTaken: Value(dateTaken),
+    );
+  }
+
+  factory EraseTombstone.fromJson(Map<String, dynamic> json,
+      {ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return EraseTombstone(
+      relativePath: serializer.fromJson<String>(json['relativePath']),
+      displayName: serializer.fromJson<String>(json['displayName']),
+      size: serializer.fromJson<int>(json['size']),
+      dateTaken: serializer.fromJson<int>(json['dateTaken']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'relativePath': serializer.toJson<String>(relativePath),
+      'displayName': serializer.toJson<String>(displayName),
+      'size': serializer.toJson<int>(size),
+      'dateTaken': serializer.toJson<int>(dateTaken),
+    };
+  }
+
+  EraseTombstone copyWith(
+          {String? relativePath,
+          String? displayName,
+          int? size,
+          int? dateTaken}) =>
+      EraseTombstone(
+        relativePath: relativePath ?? this.relativePath,
+        displayName: displayName ?? this.displayName,
+        size: size ?? this.size,
+        dateTaken: dateTaken ?? this.dateTaken,
+      );
+  EraseTombstone copyWithCompanion(EraseTombstonesCompanion data) {
+    return EraseTombstone(
+      relativePath: data.relativePath.present
+          ? data.relativePath.value
+          : this.relativePath,
+      displayName:
+          data.displayName.present ? data.displayName.value : this.displayName,
+      size: data.size.present ? data.size.value : this.size,
+      dateTaken: data.dateTaken.present ? data.dateTaken.value : this.dateTaken,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('EraseTombstone(')
+          ..write('relativePath: $relativePath, ')
+          ..write('displayName: $displayName, ')
+          ..write('size: $size, ')
+          ..write('dateTaken: $dateTaken')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(relativePath, displayName, size, dateTaken);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is EraseTombstone &&
+          other.relativePath == this.relativePath &&
+          other.displayName == this.displayName &&
+          other.size == this.size &&
+          other.dateTaken == this.dateTaken);
+}
+
+class EraseTombstonesCompanion extends UpdateCompanion<EraseTombstone> {
+  final Value<String> relativePath;
+  final Value<String> displayName;
+  final Value<int> size;
+  final Value<int> dateTaken;
+  final Value<int> rowid;
+  const EraseTombstonesCompanion({
+    this.relativePath = const Value.absent(),
+    this.displayName = const Value.absent(),
+    this.size = const Value.absent(),
+    this.dateTaken = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  EraseTombstonesCompanion.insert({
+    required String relativePath,
+    required String displayName,
+    required int size,
+    required int dateTaken,
+    this.rowid = const Value.absent(),
+  })  : relativePath = Value(relativePath),
+        displayName = Value(displayName),
+        size = Value(size),
+        dateTaken = Value(dateTaken);
+  static Insertable<EraseTombstone> custom({
+    Expression<String>? relativePath,
+    Expression<String>? displayName,
+    Expression<int>? size,
+    Expression<int>? dateTaken,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (relativePath != null) 'relative_path': relativePath,
+      if (displayName != null) 'display_name': displayName,
+      if (size != null) 'size': size,
+      if (dateTaken != null) 'date_taken': dateTaken,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  EraseTombstonesCompanion copyWith(
+      {Value<String>? relativePath,
+      Value<String>? displayName,
+      Value<int>? size,
+      Value<int>? dateTaken,
+      Value<int>? rowid}) {
+    return EraseTombstonesCompanion(
+      relativePath: relativePath ?? this.relativePath,
+      displayName: displayName ?? this.displayName,
+      size: size ?? this.size,
+      dateTaken: dateTaken ?? this.dateTaken,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (relativePath.present) {
+      map['relative_path'] = Variable<String>(relativePath.value);
+    }
+    if (displayName.present) {
+      map['display_name'] = Variable<String>(displayName.value);
+    }
+    if (size.present) {
+      map['size'] = Variable<int>(size.value);
+    }
+    if (dateTaken.present) {
+      map['date_taken'] = Variable<int>(dateTaken.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('EraseTombstonesCompanion(')
+          ..write('relativePath: $relativePath, ')
+          ..write('displayName: $displayName, ')
+          ..write('size: $size, ')
+          ..write('dateTaken: $dateTaken, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$GalleryMirrorDatabase extends GeneratedDatabase {
   _$GalleryMirrorDatabase(QueryExecutor e) : super(e);
   $GalleryMirrorDatabaseManager get managers =>
@@ -4154,6 +4481,8 @@ abstract class _$GalleryMirrorDatabase extends GeneratedDatabase {
   late final $TokenRefreshLockTable tokenRefreshLock =
       $TokenRefreshLockTable(this);
   late final $SyncRunLockTable syncRunLock = $SyncRunLockTable(this);
+  late final $EraseTombstonesTable eraseTombstones =
+      $EraseTombstonesTable(this);
   late final Index idxGalleryItemsLocalIdentity = Index(
       'idx_gallery_items_local_identity',
       'CREATE INDEX idx_gallery_items_local_identity ON gallery_items (local_relative_path, local_display_name, local_size, local_date_taken)');
@@ -4188,6 +4517,7 @@ abstract class _$GalleryMirrorDatabase extends GeneratedDatabase {
         syncRunState,
         tokenRefreshLock,
         syncRunLock,
+        eraseTombstones,
         idxGalleryItemsLocalIdentity,
         idxGalleryItemsOriginSizeCapturedAt,
         idxGalleryItemsCapturedAtId,
@@ -4226,6 +4556,7 @@ typedef $$GalleryItemsTableCreateCompanionBuilder = GalleryItemsCompanion
   Value<int?> uploadNextRetryAt,
   Value<String?> uploadFailureBucket,
   Value<String?> uploadFailureReason,
+  Value<bool> erased,
   Value<int?> capturedAtOffset,
   Value<double?> lat,
   Value<double?> lon,
@@ -4264,6 +4595,7 @@ typedef $$GalleryItemsTableUpdateCompanionBuilder = GalleryItemsCompanion
   Value<int?> uploadNextRetryAt,
   Value<String?> uploadFailureBucket,
   Value<String?> uploadFailureReason,
+  Value<bool> erased,
   Value<int?> capturedAtOffset,
   Value<double?> lat,
   Value<double?> lon,
@@ -4373,6 +4705,9 @@ class $$GalleryItemsTableFilterComposer
   ColumnFilters<String> get uploadFailureReason => $composableBuilder(
       column: $table.uploadFailureReason,
       builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get erased => $composableBuilder(
+      column: $table.erased, builder: (column) => ColumnFilters(column));
 
   ColumnFilters<int> get capturedAtOffset => $composableBuilder(
       column: $table.capturedAtOffset,
@@ -4505,6 +4840,9 @@ class $$GalleryItemsTableOrderingComposer
       column: $table.uploadFailureReason,
       builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<bool> get erased => $composableBuilder(
+      column: $table.erased, builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<int> get capturedAtOffset => $composableBuilder(
       column: $table.capturedAtOffset,
       builder: (column) => ColumnOrderings(column));
@@ -4626,6 +4964,9 @@ class $$GalleryItemsTableAnnotationComposer
   GeneratedColumn<String> get uploadFailureReason => $composableBuilder(
       column: $table.uploadFailureReason, builder: (column) => column);
 
+  GeneratedColumn<bool> get erased =>
+      $composableBuilder(column: $table.erased, builder: (column) => column);
+
   GeneratedColumn<int> get capturedAtOffset => $composableBuilder(
       column: $table.capturedAtOffset, builder: (column) => column);
 
@@ -4707,6 +5048,7 @@ class $$GalleryItemsTableTableManager extends RootTableManager<
             Value<int?> uploadNextRetryAt = const Value.absent(),
             Value<String?> uploadFailureBucket = const Value.absent(),
             Value<String?> uploadFailureReason = const Value.absent(),
+            Value<bool> erased = const Value.absent(),
             Value<int?> capturedAtOffset = const Value.absent(),
             Value<double?> lat = const Value.absent(),
             Value<double?> lon = const Value.absent(),
@@ -4744,6 +5086,7 @@ class $$GalleryItemsTableTableManager extends RootTableManager<
             uploadNextRetryAt: uploadNextRetryAt,
             uploadFailureBucket: uploadFailureBucket,
             uploadFailureReason: uploadFailureReason,
+            erased: erased,
             capturedAtOffset: capturedAtOffset,
             lat: lat,
             lon: lon,
@@ -4781,6 +5124,7 @@ class $$GalleryItemsTableTableManager extends RootTableManager<
             Value<int?> uploadNextRetryAt = const Value.absent(),
             Value<String?> uploadFailureBucket = const Value.absent(),
             Value<String?> uploadFailureReason = const Value.absent(),
+            Value<bool> erased = const Value.absent(),
             Value<int?> capturedAtOffset = const Value.absent(),
             Value<double?> lat = const Value.absent(),
             Value<double?> lon = const Value.absent(),
@@ -4818,6 +5162,7 @@ class $$GalleryItemsTableTableManager extends RootTableManager<
             uploadNextRetryAt: uploadNextRetryAt,
             uploadFailureBucket: uploadFailureBucket,
             uploadFailureReason: uploadFailureReason,
+            erased: erased,
             capturedAtOffset: capturedAtOffset,
             lat: lat,
             lon: lon,
@@ -6141,6 +6486,172 @@ typedef $$SyncRunLockTableProcessedTableManager = ProcessedTableManager<
     ),
     SyncRunLockData,
     PrefetchHooks Function()>;
+typedef $$EraseTombstonesTableCreateCompanionBuilder = EraseTombstonesCompanion
+    Function({
+  required String relativePath,
+  required String displayName,
+  required int size,
+  required int dateTaken,
+  Value<int> rowid,
+});
+typedef $$EraseTombstonesTableUpdateCompanionBuilder = EraseTombstonesCompanion
+    Function({
+  Value<String> relativePath,
+  Value<String> displayName,
+  Value<int> size,
+  Value<int> dateTaken,
+  Value<int> rowid,
+});
+
+class $$EraseTombstonesTableFilterComposer
+    extends Composer<_$GalleryMirrorDatabase, $EraseTombstonesTable> {
+  $$EraseTombstonesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get relativePath => $composableBuilder(
+      column: $table.relativePath, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get displayName => $composableBuilder(
+      column: $table.displayName, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get size => $composableBuilder(
+      column: $table.size, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<int> get dateTaken => $composableBuilder(
+      column: $table.dateTaken, builder: (column) => ColumnFilters(column));
+}
+
+class $$EraseTombstonesTableOrderingComposer
+    extends Composer<_$GalleryMirrorDatabase, $EraseTombstonesTable> {
+  $$EraseTombstonesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get relativePath => $composableBuilder(
+      column: $table.relativePath,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get displayName => $composableBuilder(
+      column: $table.displayName, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get size => $composableBuilder(
+      column: $table.size, builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<int> get dateTaken => $composableBuilder(
+      column: $table.dateTaken, builder: (column) => ColumnOrderings(column));
+}
+
+class $$EraseTombstonesTableAnnotationComposer
+    extends Composer<_$GalleryMirrorDatabase, $EraseTombstonesTable> {
+  $$EraseTombstonesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get relativePath => $composableBuilder(
+      column: $table.relativePath, builder: (column) => column);
+
+  GeneratedColumn<String> get displayName => $composableBuilder(
+      column: $table.displayName, builder: (column) => column);
+
+  GeneratedColumn<int> get size =>
+      $composableBuilder(column: $table.size, builder: (column) => column);
+
+  GeneratedColumn<int> get dateTaken =>
+      $composableBuilder(column: $table.dateTaken, builder: (column) => column);
+}
+
+class $$EraseTombstonesTableTableManager extends RootTableManager<
+    _$GalleryMirrorDatabase,
+    $EraseTombstonesTable,
+    EraseTombstone,
+    $$EraseTombstonesTableFilterComposer,
+    $$EraseTombstonesTableOrderingComposer,
+    $$EraseTombstonesTableAnnotationComposer,
+    $$EraseTombstonesTableCreateCompanionBuilder,
+    $$EraseTombstonesTableUpdateCompanionBuilder,
+    (
+      EraseTombstone,
+      BaseReferences<_$GalleryMirrorDatabase, $EraseTombstonesTable,
+          EraseTombstone>
+    ),
+    EraseTombstone,
+    PrefetchHooks Function()> {
+  $$EraseTombstonesTableTableManager(
+      _$GalleryMirrorDatabase db, $EraseTombstonesTable table)
+      : super(TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$EraseTombstonesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$EraseTombstonesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$EraseTombstonesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback: ({
+            Value<String> relativePath = const Value.absent(),
+            Value<String> displayName = const Value.absent(),
+            Value<int> size = const Value.absent(),
+            Value<int> dateTaken = const Value.absent(),
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              EraseTombstonesCompanion(
+            relativePath: relativePath,
+            displayName: displayName,
+            size: size,
+            dateTaken: dateTaken,
+            rowid: rowid,
+          ),
+          createCompanionCallback: ({
+            required String relativePath,
+            required String displayName,
+            required int size,
+            required int dateTaken,
+            Value<int> rowid = const Value.absent(),
+          }) =>
+              EraseTombstonesCompanion.insert(
+            relativePath: relativePath,
+            displayName: displayName,
+            size: size,
+            dateTaken: dateTaken,
+            rowid: rowid,
+          ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (
+                    e.readTable<$EraseTombstonesTable, EraseTombstone>(table),
+                    BaseReferences<_$GalleryMirrorDatabase,
+                        $EraseTombstonesTable, EraseTombstone>(db, table, e)
+                  ))
+              .toList(),
+          prefetchHooksCallback: null,
+        ));
+}
+
+typedef $$EraseTombstonesTableProcessedTableManager = ProcessedTableManager<
+    _$GalleryMirrorDatabase,
+    $EraseTombstonesTable,
+    EraseTombstone,
+    $$EraseTombstonesTableFilterComposer,
+    $$EraseTombstonesTableOrderingComposer,
+    $$EraseTombstonesTableAnnotationComposer,
+    $$EraseTombstonesTableCreateCompanionBuilder,
+    $$EraseTombstonesTableUpdateCompanionBuilder,
+    (
+      EraseTombstone,
+      BaseReferences<_$GalleryMirrorDatabase, $EraseTombstonesTable,
+          EraseTombstone>
+    ),
+    EraseTombstone,
+    PrefetchHooks Function()>;
 
 class $GalleryMirrorDatabaseManager {
   final _$GalleryMirrorDatabase _db;
@@ -6161,4 +6672,6 @@ class $GalleryMirrorDatabaseManager {
       $$TokenRefreshLockTableTableManager(_db, _db.tokenRefreshLock);
   $$SyncRunLockTableTableManager get syncRunLock =>
       $$SyncRunLockTableTableManager(_db, _db.syncRunLock);
+  $$EraseTombstonesTableTableManager get eraseTombstones =>
+      $$EraseTombstonesTableTableManager(_db, _db.eraseTombstones);
 }

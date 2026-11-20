@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:get/get.dart';
 import 'package:seraph_app/src/gallery/local/local_scan_service.dart';
 import 'package:seraph_app/src/gallery/local/local_source.dart';
+import 'package:seraph_app/src/gallery/mirror/gallery_erase_service.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 import 'package:seraph_app/src/gallery/gallery_item_display.dart';
@@ -48,11 +49,15 @@ class GalleryGridController extends GetxController {
     required this.mirror,
     this.syncService,
     this.localScanService,
+    this.eraseService,
     this.pageSize = 120,
     DateTime Function()? now,
   }) : _now = now ?? DateTime.now;
 
   final GalleryMirror mirror;
+
+  /// Ticket 27: performs Erase. Null where erasing is not wired up.
+  final GalleryEraseService? eraseService;
 
   /// Ticket 30's clock seam: everything below that reasons about elapsed
   /// time (the sync throttle, the full-scan backstop) reads this instead of
@@ -203,15 +208,45 @@ class GalleryGridController extends GetxController {
   /// stable across reloads, so a selection survives scrolling and syncs.
   final RxSet<int> selected = <int>{}.obs;
 
+  /// The subset of [selected] that is an erased Device only row (ticket 27),
+  /// which is what decides whether "Back up again" is offered.
+  final RxSet<int> selectedErased = <int>{}.obs;
+
   bool get isSelecting => selected.isNotEmpty;
 
   void toggleSelected(GalleryItem item) {
-    if (!selected.remove(item.id)) {
-      selected.add(item.id);
+    if (selected.remove(item.id)) {
+      selectedErased.remove(item.id);
+      return;
+    }
+    selected.add(item.id);
+    if (item.erased) {
+      selectedErased.add(item.id);
     }
   }
 
-  void clearSelection() => selected.clear();
+  void clearSelection() {
+    selected.clear();
+    selectedErased.clear();
+  }
+
+  /// Ticket 27: erases the selection from Seraph and the device. See
+  /// [GalleryEraseService.erase].
+  Future<EraseResult?> eraseSelected() async {
+    final result = await eraseService?.erase(selected.toList());
+    clearSelection();
+    await reload();
+    return result;
+  }
+
+  /// Ticket 27: the explicit "back this up again" for erased photos in the
+  /// selection. Returns how many were released for upload.
+  Future<int> backUpAgainSelected() async {
+    final count = await mirror.backUpAgain(selectedErased.toList());
+    clearSelection();
+    await reload();
+    return count;
+  }
 
   /// Ticket 26: how many photos could be freed right now and how many bytes
   /// that reclaims - what the confirmation dialog shows before the user
@@ -235,6 +270,7 @@ class GalleryGridController extends GetxController {
   Future<FreeUpResult?> freeUpSpace(List<int> ids) async {
     final result = await localScanService?.freeUpSpace(ids);
     selected.removeAll(ids);
+    selectedErased.removeAll(ids);
     await reload();
     return result;
   }
