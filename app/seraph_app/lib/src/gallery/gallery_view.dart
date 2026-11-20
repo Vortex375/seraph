@@ -161,18 +161,6 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
                       ? null
                       : () => controller.syncNow(force: true),
                 )),
-            Obx(() {
-              final status = controller.localPermission.value;
-              if (status != LocalPermissionStatus.granted &&
-                  status != LocalPermissionStatus.partial) {
-                return const SizedBox.shrink();
-              }
-              return IconButton(
-                icon: const Icon(Icons.cleaning_services_outlined),
-                tooltip: 'Free up space',
-                onPressed: _freeUpSpace,
-              );
-            }),
             IconButton(
               icon: const Icon(Icons.folder_special_outlined),
               tooltip: 'Gallery folders',
@@ -184,7 +172,8 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
           _SelectionBar(
               controller: controller,
               onFreeUp: _freeUpSelected,
-              onErase: _eraseSelected),
+              onErase: _eraseSelected,
+              onBackUpAgain: _backUpAgainSelected),
           _LocalPermissionBanner(controller: controller),
           _SummaryBar(controller: controller),
           _FilterChipsBar(controller: controller),
@@ -262,25 +251,54 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
     ));
   }
 
+  /// Ticket 27: "back this up again" for erased photos - confirmed because it
+  /// reverses a deliberate Erase and starts uploading to Seraph.
+  Future<void> _backUpAgainSelected() async {
+    final count = controller.selectedErased.length;
+    final messenger = ScaffoldMessenger.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Back up ${count == 1 ? 'this photo' : '$count photos'} '
+            'again?'),
+        content: const Text(
+            'These photos were erased from Seraph and kept on this device. '
+            'Backing them up again uploads fresh copies to Seraph.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Back up again')),
+        ],
+      ),
+    );
+    if (confirmed != true) {
+      return;
+    }
+    await controller.backUpAgainSelected();
+    messenger.showSnackBar(const SnackBar(
+        content: Text('Queued for backup at the next sync.')));
+  }
+
   Future<void> _freeUpSelected() =>
-      _freeUpSpace(only: controller.selected.toSet());
+      _freeUpSpace(controller.selected.toSet());
 
   /// Ticket 26: offers to trash the device copies of every photo Seraph holds,
   /// showing how much space that reclaims before anything happens. The
   /// photos stay in the gallery as Cloud only, and the system trash keeps
   /// them recoverable for thirty days.
-  Future<void> _freeUpSpace({Set<int>? only}) async {
+  Future<void> _freeUpSpace(Set<int> only) async {
     final preview = await controller.freeUpPreview(only: only);
     if (!mounted) {
       return;
     }
     final messenger = ScaffoldMessenger.of(context);
     if (preview.ids.isEmpty) {
-      messenger.showSnackBar(SnackBar(
-          content: Text(only == null
-              ? 'No backed-up photos on this device to free up.'
-              : 'None of the selected photos is a backed-up photo on this '
-                  'device.')));
+      messenger.showSnackBar(const SnackBar(
+          content: Text('None of the selected photos is a backed-up photo on this '
+              'device.')));
       return;
     }
     final mb = (preview.bytes / (1024 * 1024)).toStringAsFixed(1);
@@ -759,11 +777,13 @@ class _SelectionBar extends StatelessWidget {
     required this.controller,
     required this.onFreeUp,
     required this.onErase,
+    required this.onBackUpAgain,
   });
 
   final GalleryGridController controller;
   final VoidCallback onFreeUp;
   final VoidCallback onErase;
+  final VoidCallback onBackUpAgain;
 
   @override
   Widget build(BuildContext context) {
@@ -785,34 +805,25 @@ class _SelectionBar extends StatelessWidget {
               onPressed: controller.clearSelection,
             ),
             Expanded(child: Text('$count selected')),
-            Flexible(
-              child: Wrap(
-                alignment: WrapAlignment.end,
-                children: [
-                  if (controller.selectedErased.isNotEmpty)
-                    TextButton.icon(
-                      icon: const Icon(Icons.cloud_upload_outlined),
-                      label: const Text('Back up again'),
-                      onPressed: () => unawaited(controller
-                          .backUpAgainSelected()),
-                    ),
-                  if (canFree)
-                    TextButton.icon(
-                      icon: const Icon(Icons.cleaning_services_outlined),
-                      label: const Text('Free up space'),
-                      onPressed: onFreeUp,
-                    ),
-                  if (controller.eraseService != null)
-                    TextButton.icon(
-                      style: TextButton.styleFrom(
-                          foregroundColor: Theme.of(context).colorScheme.error),
-                      icon: const Icon(Icons.delete_forever_outlined),
-                      label: const Text('Erase'),
-                      onPressed: onErase,
-                    ),
-                ],
+            if (controller.selectedErased.isNotEmpty)
+              IconButton(
+                icon: const Icon(Icons.cloud_upload_outlined),
+                tooltip: 'Back up again',
+                onPressed: onBackUpAgain,
               ),
-            ),
+            if (canFree)
+              IconButton(
+                icon: const Icon(Icons.cleaning_services_outlined),
+                tooltip: 'Free up space',
+                onPressed: onFreeUp,
+              ),
+            if (controller.eraseService != null)
+              IconButton(
+                icon: Icon(Icons.delete_forever_outlined,
+                    color: Theme.of(context).colorScheme.error),
+                tooltip: 'Erase',
+                onPressed: onErase,
+              ),
           ],
         ),
       );

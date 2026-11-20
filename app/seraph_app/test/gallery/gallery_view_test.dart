@@ -930,7 +930,7 @@ void main() {
 
     await tester.longPress(find.byType(GalleryTile).first);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Erase'));
+    await tester.tap(find.byTooltip('Erase'));
     await tester.pumpAndSettle();
 
     expect(find.textContaining('CANNOT be recovered'), findsOneWidget);
