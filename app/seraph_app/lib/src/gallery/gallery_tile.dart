@@ -24,9 +24,14 @@ class GalleryTile extends StatelessWidget {
     required this.loader,
     required this.localLoader,
     this.decodeWidth,
+    this.selected = false,
   });
 
   final GalleryItem? item;
+
+  /// Whether the tile is part of the grid's multi-selection: dimmed, with a
+  /// check mark. Purely visual - never changes the tile's size.
+  final bool selected;
   final GalleryImageLoader loader;
 
   /// Ticket 28: loads a device photo's actual pixels through the Local
@@ -56,6 +61,23 @@ class GalleryTile extends StatelessWidget {
       fit: StackFit.expand,
       children: [
         _content(context, current),
+        if (selected) ...[
+          ColoredBox(
+            color: Theme.of(context)
+                .colorScheme
+                .primary
+                .withValues(alpha: 0.35),
+          ),
+          Positioned(
+            top: 4,
+            right: 4,
+            child: Icon(
+              Icons.check_circle,
+              size: 22,
+              color: Theme.of(context).colorScheme.onPrimary,
+            ),
+          ),
+        ],
         Positioned(
           left: 3,
           bottom: 3,

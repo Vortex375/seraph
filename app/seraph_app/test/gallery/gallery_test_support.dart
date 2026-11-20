@@ -127,6 +127,34 @@ class FakeLocalSource implements LocalSource {
     }
   }
 
+  // --- Ticket 26: free up space ---
+
+  /// Whether the next [trash] call's system dialog is confirmed. A test sets
+  /// this to false to simulate the user cancelling.
+  bool confirmTrash = true;
+
+  /// Every batch [trash] was called with, in order - what a test asserts
+  /// against to check a non-Verified item never reached the platform.
+  final List<List<LocalMediaItem>> trashCalls = [];
+
+  /// Confirmed trash removes the photos from what the next [fullScan] sees
+  /// (MediaStore excludes trashed items); a cancelled dialog changes nothing.
+  @override
+  Future<bool> trash(List<LocalMediaItem> items) async {
+    trashCalls.add(items);
+    if (!confirmTrash) {
+      return false;
+    }
+    final gone = {
+      for (final i in items) _localKey(i.relativePath, i.displayName),
+    };
+    _items = [
+      for (final i in _items)
+        if (!gone.contains(_localKey(i.relativePath, i.displayName))) i,
+    ];
+    return true;
+  }
+
   @override
   Future<int> currentGeneration() async => generation;
 

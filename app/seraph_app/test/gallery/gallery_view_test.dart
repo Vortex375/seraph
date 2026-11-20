@@ -891,6 +891,35 @@ void main() {
     });
   });
 
+  testWidgets('long-press starts a selection; taps toggle; clear ends it',
+      (tester) async {
+    await setUpGallery(itemCount: 6);
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('selected'), findsNothing);
+
+    await tester.longPress(find.byType(GalleryTile).first);
+    await tester.pumpAndSettle();
+    expect(find.text('1 selected'), findsOneWidget);
+    expect(find.byIcon(Icons.check_circle), findsOneWidget);
+
+    // While selecting, a tap adds to the selection instead of opening.
+    await tester.tap(find.byType(GalleryTile).at(1));
+    await tester.pumpAndSettle();
+    expect(find.text('2 selected'), findsOneWidget);
+
+    // Tapping a selected tile removes it.
+    await tester.tap(find.byType(GalleryTile).at(1));
+    await tester.pumpAndSettle();
+    expect(find.text('1 selected'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Clear selection'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('selected'), findsNothing);
+    expect(controller.isSelecting, isFalse);
+  });
+
   testWidgets('a narrow phone window keeps a usable column count',
       (tester) async {
     await setUpGallery(itemCount: 20);

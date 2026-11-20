@@ -918,6 +918,9 @@ class _ThrowingLocalSource implements LocalSource {
   Future<void> openAppSettings() async {}
 
   @override
+  Future<bool> trash(List<LocalMediaItem> items) async => false;
+
+  @override
   Future<Uint8List?> loadThumbnail({
     required String relativePath,
     required String displayName,

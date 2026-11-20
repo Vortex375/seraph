@@ -161,6 +161,18 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
                       ? null
                       : () => controller.syncNow(force: true),
                 )),
+            Obx(() {
+              final status = controller.localPermission.value;
+              if (status != LocalPermissionStatus.granted &&
+                  status != LocalPermissionStatus.partial) {
+                return const SizedBox.shrink();
+              }
+              return IconButton(
+                icon: const Icon(Icons.cleaning_services_outlined),
+                tooltip: 'Free up space',
+                onPressed: _freeUpSpace,
+              );
+            }),
             IconButton(
               icon: const Icon(Icons.folder_special_outlined),
               tooltip: 'Gallery folders',
@@ -169,6 +181,7 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
           ]),
       body: Column(
         children: [
+          _SelectionBar(controller: controller, onFreeUp: _freeUpSelected),
           _LocalPermissionBanner(controller: controller),
           _SummaryBar(controller: controller),
           _FilterChipsBar(controller: controller),
@@ -195,6 +208,56 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
         ],
       ),
     );
+  }
+
+  Future<void> _freeUpSelected() =>
+      _freeUpSpace(only: controller.selected.toSet());
+
+  /// Ticket 26: offers to trash the device copies of every photo Seraph holds,
+  /// showing how much space that reclaims before anything happens. The
+  /// photos stay in the gallery as Cloud only, and the system trash keeps
+  /// them recoverable for thirty days.
+  Future<void> _freeUpSpace({Set<int>? only}) async {
+    final preview = await controller.freeUpPreview(only: only);
+    if (!mounted) {
+      return;
+    }
+    final messenger = ScaffoldMessenger.of(context);
+    if (preview.ids.isEmpty) {
+      messenger.showSnackBar(SnackBar(
+          content: Text(only == null
+              ? 'No backed-up photos on this device to free up.'
+              : 'None of the selected photos is a backed-up photo on this '
+                  'device.')));
+      return;
+    }
+    final mb = (preview.bytes / (1024 * 1024)).toStringAsFixed(1);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Free up space'),
+        content: Text(
+            'Move ${preview.ids.length} backed-up photos ($mb MB) from this '
+            'device to the trash? They stay in your gallery and in Seraph, and '
+            'can be restored from the trash for 30 days.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Free up space')),
+        ],
+      ),
+    );
+    if (confirmed != true) {
+      return;
+    }
+    final result = await controller.freeUpSpace(preview.ids);
+    if (result != null && result.freed > 0) {
+      messenger.showSnackBar(SnackBar(
+          content: Text('Freed ${result.freed} photos.')));
+    }
   }
 
   /// The date-range action (the gallery-metadata feature): the year jump
@@ -246,6 +309,9 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
             // the mirror has been read; the item count deliberately does not
             // change when that happens.
             controller.revision.value;
+            // Subscribes the grid to selection changes; the per-tile
+            // check is read lazily in itemBuilder, outside this Obx.
+            controller.selected.length;
             final total = controller.totalCount.value;
             return GridView.builder(
               controller: _scroll,
@@ -259,9 +325,15 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
               itemBuilder: (context, index) {
                 final item = controller.itemAt(index);
                 return GestureDetector(
-                  onTap: () => _openPhoto(index),
+                  onTap: () => controller.isSelecting
+                      ? (item == null ? null : controller.toggleSelected(item))
+                      : _openPhoto(index),
+                  onLongPress:
+                      item == null ? null : () => controller.toggleSelected(item),
                   child: GalleryTile(
                     item: item,
+                    selected: item != null &&
+                        controller.selected.contains(item.id),
                     loader: loader,
                     localLoader: localLoader,
                     decodeWidth: decodeWidth,
@@ -627,6 +699,48 @@ class _SummaryBar extends StatelessWidget {
 /// Local Source at all, or (deliberately - see the class body) once access
 /// has been explicitly refused, so the cloud-only gallery is never nagged at
 /// after an honest "no".
+/// Shown while the grid has a selection: the count, a clear button, and the
+/// selection-scoped "Free up space" action (only Synced photos among the
+/// selection are freed - see [LocalScanService.freeUpSpace]).
+class _SelectionBar extends StatelessWidget {
+  const _SelectionBar({required this.controller, required this.onFreeUp});
+
+  final GalleryGridController controller;
+  final VoidCallback onFreeUp;
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      final count = controller.selected.length;
+      if (count == 0) {
+        return const SizedBox.shrink();
+      }
+      final canFree = controller.localPermission.value ==
+              LocalPermissionStatus.granted ||
+          controller.localPermission.value == LocalPermissionStatus.partial;
+      return Material(
+        color: Theme.of(context).colorScheme.secondaryContainer,
+        child: Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.close),
+              tooltip: 'Clear selection',
+              onPressed: controller.clearSelection,
+            ),
+            Expanded(child: Text('$count selected')),
+            if (canFree)
+              TextButton.icon(
+                icon: const Icon(Icons.cleaning_services_outlined),
+                label: const Text('Free up space'),
+                onPressed: onFreeUp,
+              ),
+          ],
+        ),
+      );
+    });
+  }
+}
+
 class _LocalPermissionBanner extends StatefulWidget {
   const _LocalPermissionBanner({required this.controller});
 

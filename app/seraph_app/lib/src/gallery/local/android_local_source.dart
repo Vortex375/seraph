@@ -236,6 +236,32 @@ class AndroidLocalSource implements LocalSource {
     }
   }
 
+  @override
+  Future<bool> trash(List<LocalMediaItem> items) async {
+    if (items.isEmpty) {
+      return false;
+    }
+    try {
+      final trashed = await _channel.invokeMethod<bool>('trashPhotos', {
+        'items': [
+          for (final item in items)
+            {
+              'relativePath': item.relativePath,
+              'displayName': item.displayName,
+            },
+        ],
+      });
+      return trashed ?? false;
+    } on MissingPluginException {
+      return false;
+    } on PlatformException {
+      // No Activity to show the dialog from, a request already pending, or
+      // nothing resolvable: nothing was trashed, and the caller treats it
+      // exactly like a cancelled dialog.
+      return false;
+    }
+  }
+
   LocalPermissionStatus _parseStatus(String? raw) {
     switch (raw) {
       case 'granted':

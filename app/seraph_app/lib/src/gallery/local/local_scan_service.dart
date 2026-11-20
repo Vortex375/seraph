@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:seraph_app/src/gallery/local/local_source.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
+import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 
 /// Drives one full Local Source scan into the mirror - the device-side twin
 /// of `GallerySyncService`, which does the same job for the cloud delta feed.
@@ -197,6 +198,51 @@ class LocalScanService {
   /// The device photo-access grant right now, without prompting for it -
   /// [LocalPermissionStatus.unsupported] on a platform with no Local Source,
   /// exactly like [localSource] being null everywhere else in this class.
+  /// Ticket 26: moves the device copies of [itemIds] to the platform trash in
+  /// one batch, then rescans so the mirror marks them Cloud only.
+  ///
+  /// **Verified-only is enforced here, not in the UI**: the ids are
+  /// re-resolved against the mirror via [GalleryMirror.freeableItems] at call
+  /// time, and anything that is not currently Synced is dropped before the
+  /// platform is ever asked - a stale screen holding an old id cannot free a
+  /// photo's only copy. [FreeUpResult.skipped] counts what was dropped.
+  ///
+  /// A cancelled dialog changes nothing (no rescan needed). Restoring a freed
+  /// photo from the trash later is just the next scan seeing it again, which
+  /// re-merges onto its cloud row (Synced) rather than creating a duplicate.
+  Future<FreeUpResult> freeUpSpace(Iterable<int> itemIds) async {
+    final source = localSource;
+    final requested = itemIds.toSet();
+    final freeable = source == null
+        ? const <GalleryItem>[]
+        : await mirror.freeableItems(ids: requested);
+    final skipped = requested.length - freeable.length;
+    if (source == null || freeable.isEmpty) {
+      return FreeUpResult(freed: 0, skipped: skipped, bytes: 0);
+    }
+
+    final confirmed = await source.trash([
+      for (final row in freeable)
+        LocalMediaItem(
+          relativePath: row.localRelativePath!,
+          displayName: row.localDisplayName!,
+          size: row.localSize!,
+          dateTakenMillis: row.localDateTaken!,
+          dateModifiedMillis: 0,
+        ),
+    ]);
+    if (!confirmed) {
+      return FreeUpResult(freed: 0, skipped: skipped, bytes: 0, cancelled: true);
+    }
+
+    await scan();
+    return FreeUpResult(
+      freed: freeable.length,
+      skipped: skipped,
+      bytes: freeable.fold<int>(0, (sum, r) => sum + r.localSize!),
+    );
+  }
+
   Future<LocalPermissionStatus> permissionStatus() async {
     final source = localSource;
     if (source == null) {
@@ -226,4 +272,21 @@ class LocalScanService {
     }
     await source.openAppSettings();
   }
+}
+
+/// What [LocalScanService.freeUpSpace] did: [freed] items trashed ([bytes]
+/// reclaimed), [skipped] requested ids dropped for not being Synced, and
+/// [cancelled] when the user dismissed the system dialog.
+class FreeUpResult {
+  const FreeUpResult({
+    required this.freed,
+    required this.skipped,
+    required this.bytes,
+    this.cancelled = false,
+  });
+
+  final int freed;
+  final int skipped;
+  final int bytes;
+  final bool cancelled;
 }

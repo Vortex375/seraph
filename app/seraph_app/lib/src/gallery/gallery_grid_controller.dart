@@ -198,6 +198,47 @@ class GalleryGridController extends GetxController {
     super.onClose();
   }
 
+  /// Grid multi-select: ids of the items the user has picked (long-press to
+  /// start, tap to add or remove). Keyed on the mirror row id, which is
+  /// stable across reloads, so a selection survives scrolling and syncs.
+  final RxSet<int> selected = <int>{}.obs;
+
+  bool get isSelecting => selected.isNotEmpty;
+
+  void toggleSelected(GalleryItem item) {
+    if (!selected.remove(item.id)) {
+      selected.add(item.id);
+    }
+  }
+
+  void clearSelection() => selected.clear();
+
+  /// Ticket 26: how many photos could be freed right now and how many bytes
+  /// that reclaims - what the confirmation dialog shows before the user
+  /// commits. Null count/zero bytes when there is nothing to free.
+  ///
+  /// [only] narrows the answer to those item ids (the grid selection); ids
+  /// that are not Synced are simply absent from the result.
+  Future<({List<int> ids, int bytes})> freeUpPreview({Iterable<int>? only}) async {
+    if (localScanService?.localSource == null) {
+      return (ids: <int>[], bytes: 0);
+    }
+    final rows = await mirror.freeableItems(ids: only);
+    return (
+      ids: [for (final r in rows) r.id],
+      bytes: rows.fold<int>(0, (sum, r) => sum + (r.localSize ?? 0)),
+    );
+  }
+
+  /// Frees [ids] via [LocalScanService.freeUpSpace] (which re-checks that each
+  /// is still Synced) and repaints.
+  Future<FreeUpResult?> freeUpSpace(List<int> ids) async {
+    final result = await localScanService?.freeUpSpace(ids);
+    selected.removeAll(ids);
+    await reload();
+    return result;
+  }
+
   /// Re-reads the item count and drops every loaded page, so the next build
   /// re-reads what it needs. Called after a sync, or when the set of Gallery
   /// Source Folders changes.

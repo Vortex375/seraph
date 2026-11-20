@@ -69,7 +69,8 @@ import java.util.concurrent.Executors
  * (`HdrPhotoImageView`, viewType `seraph/hdr_photo`), which reports on its
  * own per-view channels rather than this one - see `HdrPhotoView.kt`.
  */
-class SeraphLocalMediaPlugin : FlutterPlugin, ActivityAware, PluginRegistry.RequestPermissionsResultListener {
+class SeraphLocalMediaPlugin : FlutterPlugin, ActivityAware, PluginRegistry.RequestPermissionsResultListener,
+    PluginRegistry.ActivityResultListener {
 
     private val channelName = "seraph/local_media"
 
@@ -90,6 +91,10 @@ class SeraphLocalMediaPlugin : FlutterPlugin, ActivityAware, PluginRegistry.Requ
     // The on-attach ACCESS_MEDIA_LOCATION top-up for installs that granted
     // photo access before it was requested; no Dart caller awaits it.
     private val mediaLocationRequestCode = 4202
+
+    // Held across `trashPhotos` -> the system trash dialog's activity result.
+    private var pendingTrashResult: MethodChannel.Result? = null
+    private val trashRequestCode = 4203
 
     private var channel: MethodChannel? = null
     private var localMediaChannelForObserver: MethodChannel? = null
@@ -120,6 +125,7 @@ class SeraphLocalMediaPlugin : FlutterPlugin, ActivityAware, PluginRegistry.Requ
                 }
                 "loadThumbnail" -> handleLoadThumbnail(call, result)
                 "loadOriginal" -> handleLoadOriginal(call, result)
+                "trashPhotos" -> handleTrashPhotos(call, result)
                 "setHdrColorMode" -> handleSetHdrColorMode(call, result)
                 else -> result.notImplemented()
             }
@@ -154,6 +160,7 @@ class SeraphLocalMediaPlugin : FlutterPlugin, ActivityAware, PluginRegistry.Requ
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
         activity = binding.activity
         binding.addRequestPermissionsResultListener(this)
+        binding.addActivityResultListener(this)
         // Photo access granted before ACCESS_MEDIA_LOCATION was requested
         // (or by an older app version) never goes through
         // handleRequestPermission again, so top it up here. The system
@@ -178,6 +185,7 @@ class SeraphLocalMediaPlugin : FlutterPlugin, ActivityAware, PluginRegistry.Requ
     override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
         activity = binding.activity
         binding.addRequestPermissionsResultListener(this)
+        binding.addActivityResultListener(this)
     }
 
     override fun onDetachedFromActivity() {
@@ -185,6 +193,71 @@ class SeraphLocalMediaPlugin : FlutterPlugin, ActivityAware, PluginRegistry.Requ
         // No Activity to deliver a pending result through anymore.
         pendingPermissionResult?.success("denied")
         pendingPermissionResult = null
+        pendingTrashResult?.success(false)
+        pendingTrashResult = null
+    }
+
+    // --- PluginRegistry.ActivityResultListener ---------------------------
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
+        if (requestCode != trashRequestCode) {
+            return false
+        }
+        val result = pendingTrashResult ?: return true
+        pendingTrashResult = null
+        result.success(resultCode == Activity.RESULT_OK)
+        return true
+    }
+
+    // --- Trash (ticket 26) -------------------------------------------------
+
+    /**
+     * Free up space: one `MediaStore.createTrashRequest` for the whole batch,
+     * i.e. a single system dialog, and the files stay recoverable from the
+     * system trash for thirty days (deliberately not `createDeleteRequest`).
+     * Replies true only when the user confirmed; false for a cancelled
+     * dialog. Items that no longer resolve are skipped; if none resolve the
+     * reply is false without showing a dialog. Needs an Activity - a
+     * headless engine reports a `NO_ACTIVITY` error, which the Dart side
+     * treats like a cancel.
+     */
+    private fun handleTrashPhotos(call: MethodCall, result: MethodChannel.Result) {
+        val act = activity
+        val ctx = appContext
+        if (act == null || ctx == null) {
+            result.error("NO_ACTIVITY", "Trashing photos needs a foreground Activity", null)
+            return
+        }
+        if (pendingTrashResult != null) {
+            result.error("REQUEST_IN_PROGRESS", "A trash request is already pending", null)
+            return
+        }
+        val requested = call.argument<List<Map<String, Any?>>>("items") ?: emptyList()
+        executor.execute {
+            val uris = requested.mapNotNull {
+                val path = it["relativePath"] as? String
+                val name = it["displayName"] as? String
+                if (path == null || name == null) null else resolveUri(path, name)
+            }
+            runOnUiThread {
+                if (uris.isEmpty()) {
+                    result.success(false)
+                    return@runOnUiThread
+                }
+                if (pendingTrashResult != null) {
+                    result.error("REQUEST_IN_PROGRESS", "A trash request is already pending", null)
+                    return@runOnUiThread
+                }
+                try {
+                    val sender = MediaStore.createTrashRequest(ctx.contentResolver, uris, true).intentSender
+                    pendingTrashResult = result
+                    act.startIntentSenderForResult(sender, trashRequestCode, null, 0, 0, 0)
+                } catch (e: Exception) {
+                    pendingTrashResult = null
+                    result.error("TRASH_FAILED", e.message, null)
+                }
+            }
+        }
     }
 
     // --- PluginRegistry.RequestPermissionsResultListener ------------------

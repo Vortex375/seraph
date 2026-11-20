@@ -2147,6 +2147,32 @@ class GalleryMirror {
     return GalleryMirrorPage(items: items, totalCount: totalCount);
   }
 
+  /// Ticket 26: the items whose device copy may be freed - rows currently
+  /// [_originBoth] (Synced: Seraph itself reported the file back, see
+  /// [applyPage]; never merely "the device believes it uploaded") that still
+  /// carry a full local identity. Read from the row, not from any UI state,
+  /// so it is what [LocalScanService.freeUpSpace] re-checks at the moment of
+  /// freeing and a stale screen cannot widen it. [ids], if given, narrows
+  /// the answer to those rows; an id that is not freeable is simply absent.
+  Future<List<GalleryItem>> freeableItems({Iterable<int>? ids}) {
+    final query = _db.select(_db.galleryItems)
+      ..where((t) =>
+          t.origin.equals(_originBoth) &
+          t.localRelativePath.isNotNull() &
+          t.localDisplayName.isNotNull() &
+          t.localSize.isNotNull() &
+          t.localDateTaken.isNotNull())
+      ..orderBy([
+        (t) => OrderingTerm(expression: t.capturedAt, mode: OrderingMode.desc),
+        (t) => OrderingTerm(expression: t.id, mode: OrderingMode.desc),
+      ]);
+    if (ids != null) {
+      final wanted = ids.toList();
+      query.where((t) => t.id.isIn(wanted));
+    }
+    return query.get();
+  }
+
   /// One page of the mirror in the same Capture-Date-descending order as
   /// [queryPage], but WITHOUT the total count.
   ///

@@ -231,6 +231,18 @@ abstract class LocalSource {
     required String displayName,
   });
 
+  /// Ticket 26: moves the device copies of [items] to the platform trash
+  /// (Android's `MediaStore.createTrashRequest`, recoverable for thirty days)
+  /// behind one system confirmation dialog for the whole batch. Resolves to
+  /// true only when the user confirmed and the platform trashed the files;
+  /// false when the dialog was cancelled, nothing could be resolved, or no
+  /// Local Source exists - in every false case nothing was changed.
+  ///
+  /// This is a dumb platform primitive: it does NOT decide whether trashing
+  /// is safe. The Verified-only rule is enforced by
+  /// [LocalScanService.freeUpSpace], which is the only caller.
+  Future<bool> trash(List<LocalMediaItem> items);
+
   /// Releases whatever platform resources this instance holds - on Android,
   /// the method-channel handler backing [changes] and the [changes]
   /// controller itself.
