@@ -12,12 +12,16 @@ label photos.
 
 **Blocked by:** 03
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
-- [ ] Analysis stores tags above threshold; none below.
-- [ ] Changing a threshold in config re-tags existing photos at startup with no ML calls (fake server
+- [x] Analysis stores tags above threshold; none below.
+- [x] Changing a threshold in config re-tags existing photos at startup with no ML calls (fake server
       asserts zero visual requests).
 - [ ] Calibration results for the initial tag set are recorded in this ticket.
-- [ ] Gates: `go test ./...` in `gallery-ai`.
+- [x] Gates: `go test ./...` in `gallery-ai`.
 
 ## Comments
+
+2026-11-21 (coordinator): Implementation committed. All defaults use the uncalibrated threshold 0.25. Remaining
+human step: run the calibration helper (`SERAPH_TAG_CALIBRATE_DIR=... go test ./galleryai -run TestTagCalibration -v`,
+see gallery-ai/README.md) on hand-labelled photos, set per-tag thresholds in config, record precision here.

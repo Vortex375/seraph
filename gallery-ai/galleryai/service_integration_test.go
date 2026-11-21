@@ -116,6 +116,9 @@ type fakeML struct {
 	calls   atomic.Int32
 	status  atomic.Int32
 	entries atomic.Value // last "entries" form field
+
+	textStatus atomic.Int32 // status for text (tag prompt) requests
+	visual     atomic.Int32 // image requests seen
 }
 
 func vec(first float32) string {
@@ -125,9 +128,18 @@ func vec(first float32) string {
 	return string(b)
 }
 
+// vec2 is a 512-d vector with only the first two components set.
+func vec2(a, b float32) string {
+	v := make([]float32, 512)
+	v[0], v[1] = a, b
+	out, _ := json.Marshal(v)
+	return string(out)
+}
+
 func newFakeML(t *testing.T) *fakeML {
 	f := &fakeML{}
 	f.status.Store(200)
+	f.textStatus.Store(200)
 	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.calls.Add(1)
 		if s := int(f.status.Load()); s != 200 {
@@ -140,6 +152,20 @@ func newFakeML(t *testing.T) *fakeML {
 		}
 		f.entries.Store(r.FormValue("entries"))
 		w.Header().Set("Content-Type", "application/json")
+		if text := r.FormValue("text"); text != "" {
+			if s := int(f.textStatus.Load()); s != 200 {
+				http.Error(w, "boom", s)
+				return
+			}
+			// prompt "match" is parallel to the fake image embedding, anything else orthogonal
+			emb := vec2(0, 1)
+			if text == "match" {
+				emb = vec2(1, 0)
+			}
+			json.NewEncoder(w).Encode(map[string]any{"clip": emb})
+			return
+		}
+		f.visual.Add(1)
 		json.NewEncoder(w).Encode(map[string]any{
 			"clip": vec(1),
 			"facial-recognition": []map[string]any{{
@@ -173,19 +199,35 @@ type env struct {
 	js     jetstream.JetStream
 	ml     *fakeML
 	thumbs *fakeThumbs
+	stop   func()
 }
 
 func start(t *testing.T) *env { return startSeeded(t, "") }
 
 // startSeeded runs seedSQL (if any) before the service starts.
 func startSeeded(t *testing.T, seedSQL string) *env {
+	return startWith(t, startOpts{seed: seedSQL})
+}
+
+type startOpts struct {
+	seed string
+	keep bool // keep the database content of a previous start (no truncate)
+	tags []galleryai.TagConfig
+	hook func(*pgxpool.Pool) // runs once before the re-tag pass records its result
+	down bool                // ML text requests fail until fakeML.textStatus is reset
+}
+
+func startWith(t *testing.T, o startOpts) *env {
+	seedSQL := o.seed
 	requireIntegration(t)
 
 	pool, err := pgxpool.New(context.Background(), dbURL)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	_, err = pool.Exec(context.Background(), `TRUNCATE photos, persons, faces, photo_embeddings, photo_tags CASCADE`)
-	require.NoError(t, err)
+	if !o.keep {
+		_, err = pool.Exec(context.Background(), `TRUNCATE photos, persons, faces, photo_embeddings, photo_tags CASCADE; UPDATE tag_state SET config_hash = ''`)
+		require.NoError(t, err)
+	}
 	if seedSQL != "" {
 		_, err = pool.Exec(context.Background(), seedSQL)
 		require.NoError(t, err)
@@ -198,15 +240,25 @@ func startSeeded(t *testing.T, seedSQL string) *env {
 	require.NoError(t, err)
 
 	e := &env{pool: pool, js: js, ml: newFakeML(t), thumbs: &fakeThumbs{}}
-	cfg := galleryai.Config{MLURL: e.ml.srv.URL, ClipModel: "clip-test", FaceModel: "buffalo_l", FaceMinScore: 0.7, MaxAckPending: 2}
+	if o.down {
+		e.ml.textStatus.Store(503)
+	}
+	cfg := galleryai.Config{MLURL: e.ml.srv.URL, ClipModel: "clip-test", FaceModel: "buffalo_l", FaceMinScore: 0.7, MaxAckPending: 2, Tags: o.tags}
 	svc := galleryai.New(galleryai.Params{
 		Config: cfg, Pool: pool, ML: galleryai.NewMLClient(cfg), Thumbs: e.thumbs, Js: js,
 		Logger: logging.New(logging.Params{}), Tracing: tracing.NewNoopTracing(),
 	})
 	galleryai.SetRetryDelay(svc, 200*time.Millisecond)
+	galleryai.SetTagRetryDelay(svc, 50*time.Millisecond)
+	if o.hook != nil {
+		var once sync.Once
+		galleryai.SetBeforeTagStateWrite(svc, func() { once.Do(func() { o.hook(pool) }) })
+	}
 	require.NoError(t, svc.Start())
+	var stopOnce sync.Once
+	e.stop = func() { stopOnce.Do(svc.Stop) }
 	t.Cleanup(func() {
-		svc.Stop()
+		e.stop()
 		js.DeleteStream(context.Background(), events.GalleryPhotoChangedStream)
 	})
 	return e
@@ -378,6 +430,124 @@ func TestModelSweepReanalysesOnlyStaleLivePhotos(t *testing.T) {
 		{"/old2.jpg", 8, false, &m},
 	}, got)
 	assert.Equal(t, 0, e.count(t, "photo_embeddings WHERE path IN ('/current.jpg', '/gone.jpg')"))
+}
+
+// tag fixtures: the fake image embedding is (1,0); prompt "match" embeds to (1,0), anything else to (0,1)
+func tagSet(mixedThreshold float64) []galleryai.TagConfig {
+	return []galleryai.TagConfig{
+		{Tag: "hit", Prompts: []string{"match"}, Threshold: 0.9},
+		{Tag: "miss", Prompts: []string{"other"}, Threshold: 0.1},
+		{Tag: "mixed", Prompts: []string{"match", "other"}, Threshold: mixedThreshold}, // cosine 0.7071
+	}
+}
+
+func (e *env) tags(t *testing.T) map[string]float64 {
+	rows, err := e.pool.Query(context.Background(), `SELECT tag, score FROM photo_tags ORDER BY tag`)
+	require.NoError(t, err)
+	defer rows.Close()
+	got := map[string]float64{}
+	for rows.Next() {
+		var tag string
+		var score float64
+		require.NoError(t, rows.Scan(&tag, &score))
+		got[tag] = score
+	}
+	return got
+}
+
+func TestAnalysisStoresTagsAboveThresholdOnly(t *testing.T) {
+	e := startWith(t, startOpts{tags: tagSet(0.7)})
+	e.publish(t, events.GalleryPhotoUpserted, 1)
+	e.waitAcked(t)
+	require.Eventually(t, func() bool { return e.count(t, "photo_tags") > 0 }, 10*time.Second, 50*time.Millisecond)
+
+	got := e.tags(t)
+	assert.Len(t, got, 2)
+	assert.InDelta(t, 1.0, got["hit"], 1e-5)
+	assert.InDelta(t, 0.7071, got["mixed"], 1e-3)
+}
+
+// seeds one live photo per path with embedding (1,0), the current model and stale tags
+const seedTagged = `
+	INSERT INTO photos (provider_id, path, seq, model) VALUES ('p', '/1.jpg', 1, 'clip-test'), ('p', '/2.jpg', 2, 'clip-test');
+	INSERT INTO photo_embeddings SELECT provider_id, path, ('[1,' || repeat('0,', 510) || '0]')::vector FROM photos;
+	INSERT INTO photo_tags SELECT provider_id, path, 'stale', 1 FROM photos;`
+
+func TestTagConfigChangeRetagsFromStoredEmbeddingsWithoutImageCalls(t *testing.T) {
+	cfgHash := func(e *env) string {
+		var h string
+		require.NoError(t, e.pool.QueryRow(context.Background(), `SELECT config_hash FROM tag_state`).Scan(&h))
+		return h
+	}
+
+	e1 := startWith(t, startOpts{seed: seedTagged, tags: tagSet(0.7)})
+	require.Eventually(t, func() bool { return cfgHash(e1) != "" }, 10*time.Second, 50*time.Millisecond)
+	assert.Equal(t, 4, e1.count(t, "photo_tags")) // hit + mixed on both photos, stale gone
+	e1.stop()
+
+	e2 := startWith(t, startOpts{keep: true, tags: tagSet(0.8)})
+	require.Eventually(t, func() bool { return e2.count(t, "photo_tags") == 2 }, 10*time.Second, 50*time.Millisecond)
+	assert.Equal(t, map[string]float64{"hit": 1}, roundTags(e2.tags(t)))
+	assert.EqualValues(t, 0, e2.ml.visual.Load(), "re-tagging must not call the ML server for images")
+	assert.EqualValues(t, 0, e2.thumbs.calls.Load())
+	e2.stop()
+
+	// unchanged config: no pass, so a hand-planted tag survives
+	e3 := startWith(t, startOpts{keep: true, tags: tagSet(0.8)})
+	_, err := e3.pool.Exec(context.Background(), `INSERT INTO photo_tags VALUES ('p', '/1.jpg', 'planted', 1)`)
+	require.NoError(t, err)
+	e3.stop()
+	e4 := startWith(t, startOpts{keep: true, tags: tagSet(0.8)})
+	time.Sleep(500 * time.Millisecond)
+	assert.Equal(t, 3, e4.count(t, "photo_tags"))
+}
+
+func roundTags(m map[string]float64) map[string]float64 {
+	for k, v := range m {
+		m[k] = float64(int(v*100+0.5)) / 100
+	}
+	return m
+}
+
+func TestPhotosStoredBeforeTagEmbeddingsReadyGetTagged(t *testing.T) {
+	// first run completes a pass, so only store's "tagging skipped" mark can trigger the next one
+	e1 := startWith(t, startOpts{tags: tagSet(0.7)})
+	require.Eventually(t, func() bool {
+		var h string
+		e1.pool.QueryRow(context.Background(), `SELECT config_hash FROM tag_state`).Scan(&h)
+		return h != ""
+	}, 10*time.Second, 50*time.Millisecond)
+	e1.stop()
+
+	e2 := startWith(t, startOpts{keep: true, tags: tagSet(0.7), down: true})
+	e2.publish(t, events.GalleryPhotoUpserted, 1)
+	e2.waitAcked(t)
+	assert.Equal(t, 1, e2.count(t, "photo_embeddings"))
+	assert.Equal(t, 0, e2.count(t, "photo_tags"))
+
+	e2.ml.textStatus.Store(200) // ML text endpoint recovers; the background retry picks it up
+	require.Eventually(t, func() bool { return e2.count(t, "photo_tags") == 2 }, 10*time.Second, 50*time.Millisecond)
+}
+
+// A store that skipped tagging commits after the re-tag pass processed its batches
+// but before the pass records its result: the pass must notice and run again.
+func TestRetagRerunsWhenTaggingWasSkippedDuringPass(t *testing.T) {
+	e := startWith(t, startOpts{seed: seedTagged, tags: tagSet(0.7), hook: func(pool *pgxpool.Pool) {
+		_, err := pool.Exec(context.Background(), `
+			INSERT INTO photos (provider_id, path, seq, model) VALUES ('p', '/late.jpg', 3, 'clip-test');
+			INSERT INTO photo_embeddings VALUES ('p', '/late.jpg', ('[1,' || repeat('0,', 510) || '0]')::vector);
+			UPDATE tag_state SET config_hash = 'pending:' || gen_random_uuid()`)
+		assert.NoError(t, err)
+	}})
+	require.Eventually(t, func() bool {
+		return e.count(t, "photo_tags WHERE path = '/late.jpg'") == 2
+	}, 10*time.Second, 50*time.Millisecond)
+	assert.Equal(t, 6, e.count(t, "photo_tags"))
+	require.Eventually(t, func() bool {
+		var h string
+		e.pool.QueryRow(context.Background(), `SELECT config_hash FROM tag_state`).Scan(&h)
+		return h != "" && !strings.HasPrefix(h, "pending:")
+	}, 10*time.Second, 50*time.Millisecond)
 }
 
 func TestEnsureDatabaseCreatesMissingDatabaseIdempotently(t *testing.T) {

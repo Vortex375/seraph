@@ -18,7 +18,12 @@
 
 package galleryai
 
-import "github.com/spf13/viper"
+import (
+	"errors"
+	"fmt"
+
+	"github.com/spf13/viper"
+)
 
 // Config is gallery-ai's settings. Keys live under "gallery.ai." so the
 // environment variable names come out as SERAPH_GALLERY_AI_*.
@@ -29,14 +34,29 @@ type Config struct {
 	FaceModel     string
 	FaceMinScore  float64
 	MaxAckPending int
+	Tags          []TagConfig
 }
 
-func NewConfig(v *viper.Viper) Config {
+func NewConfig(v *viper.Viper) (Config, error) {
 	v.SetDefault("gallery.ai.ml.url", "http://localhost:3003")
 	v.SetDefault("gallery.ai.clip.model", "ViT-B-32__openai")
 	v.SetDefault("gallery.ai.face.model", "buffalo_l")
 	v.SetDefault("gallery.ai.face.minScore", 0.7)
 	v.SetDefault("gallery.ai.maxAckPending", 2)
+
+	// gallery.ai.tags replaces the whole default list when set (config file; list of {tag, prompts, threshold})
+	tags := DefaultTags
+	if v.IsSet("gallery.ai.tags") {
+		tags = nil
+		if err := v.UnmarshalKey("gallery.ai.tags", &tags); err != nil {
+			return Config{}, fmt.Errorf("read gallery.ai.tags: %w", err)
+		}
+	}
+	for _, t := range tags {
+		if t.Tag == "" || len(t.Prompts) == 0 {
+			return Config{}, errors.New("gallery.ai.tags: every tag needs a name and at least one prompt")
+		}
+	}
 
 	return Config{
 		DBURL:         v.GetString("gallery.ai.db.url"),
@@ -45,5 +65,6 @@ func NewConfig(v *viper.Viper) Config {
 		FaceModel:     v.GetString("gallery.ai.face.model"),
 		FaceMinScore:  v.GetFloat64("gallery.ai.face.minScore"),
 		MaxAckPending: v.GetInt("gallery.ai.maxAckPending"),
-	}
+		Tags:          tags,
+	}, nil
 }

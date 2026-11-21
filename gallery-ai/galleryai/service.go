@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -45,6 +46,9 @@ const consumerName = "SERAPH_GALLERY_AI"
 // defaultRetryDelay is how long a transiently failed message waits before
 // JetStream redelivers it.
 const defaultRetryDelay = 30 * time.Second
+
+// defaultTagRetryDelay is the first wait before retrying the tag embeddings; it doubles up to maxTagRetryDelay.
+const defaultTagRetryDelay = 5 * time.Second
 
 type Params struct {
 	fx.In
@@ -68,6 +72,13 @@ type Service struct {
 	tracer     trace.Tracer
 	retryDelay time.Duration
 
+	// tags is nil until the tag embeddings are computed; store tags nothing before that
+	tags          atomic.Pointer[[]TagEmbedding]
+	tagRetryDelay time.Duration
+
+	// test hook: runs between the re-tag batches and the final tag_state write
+	beforeTagStateWrite func()
+
 	iter   jetstream.MessagesContext
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
@@ -83,6 +94,8 @@ func New(p Params) *Service {
 		log:        p.Logger.GetLogger("gallery-ai"),
 		tracer:     p.Tracing.TracerProvider.Tracer("gallery-ai"),
 		retryDelay: defaultRetryDelay,
+
+		tagRetryDelay: defaultTagRetryDelay,
 	}
 }
 
@@ -118,8 +131,12 @@ func (s *Service) Start() error {
 	}
 	s.cancel = cancel
 
-	s.wg.Add(2)
+	s.wg.Add(3)
 	go s.loop(ctx)
+	go func() {
+		defer s.wg.Done()
+		s.prepareTags(ctx)
+	}()
 	go func() {
 		defer s.wg.Done()
 		s.sweep(ctx)
@@ -227,7 +244,7 @@ func (s *Service) analyseAndStore(ctx context.Context, ev events.GalleryPhotoCha
 
 // store applies one event in a single transaction: it upserts the photos row
 // unless a newer (or, for upserts, equal) seq is already stored, then replaces
-// the photo's embedding, tags and faces. A nil analysis leaves the photo with
+// the photo's embedding, tags (when the tag embeddings are ready) and faces. A nil analysis leaves the photo with
 // none of them (tombstone, or recorded error). rescan additionally accepts an
 // equal seq for a live photo stored under a different model, so the sweep can
 // re-analyse at the stored seq; a newer stored seq (or a tombstone) still wins.
@@ -286,6 +303,15 @@ func (s *Service) store(ctx context.Context, ev events.GalleryPhotoChangedEvent,
 			ev.ProviderID, ev.Path, vectorLiteral(a.Embedding)); err != nil {
 			return fmt.Errorf("insert embedding: %w", err)
 		}
+		// tags are a pure function of the embedding and the tag config, so they commit with the embedding
+		if tags := s.tags.Load(); tags != nil {
+			if err := insertTags(ctx, tx, ev.ProviderID, ev.Path, a.Embedding, *tags); err != nil {
+				return err
+			}
+		} else if _, err := tx.Exec(ctx, `UPDATE tag_state SET config_hash = 'pending:' || gen_random_uuid()`); err != nil {
+			// tag embeddings not ready: mark photo_tags as needing the re-tag pass
+			return fmt.Errorf("reset tag state: %w", err)
+		}
 		for _, f := range a.Faces {
 			if _, err := tx.Exec(ctx, `
 				INSERT INTO faces (provider_id, path, box_x1, box_y1, box_x2, box_y2, score, embedding)
@@ -320,7 +346,7 @@ func (s *Service) store(ctx context.Context, ev events.GalleryPhotoChangedEvent,
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit: %w", err)
 	}
-	// tickets 04/05 (tagging, face clustering) hook in here, after commit
+	// ticket 05 (face clustering) hooks in here, after commit
 	return nil
 }
 

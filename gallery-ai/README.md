@@ -35,6 +35,41 @@ Environment variables (`SERAPH_` prefix, `.` becomes `_`), plus the usual `SERAP
 
 The `gallery` service only publishes events when `SERAPH_AI_ENABLED=true`.
 
+## Tags
+
+Zero-shot content tags: each tag has English prompts; at startup their CLIP text embeddings are computed via the ML
+container, averaged per tag and L2-normalised. A photo gets every tag whose cosine similarity to its stored image
+embedding reaches the tag's threshold, stored with the score in `photo_tags`. Tagging happens in the same
+transaction as storing the embedding.
+
+Config (config file key `gallery.ai.tags`, replaces the whole default list when set):
+
+    gallery:
+      ai:
+        tags:
+          - tag: pet
+            prompts: ["a photo of a dog", "a photo of a cat"]
+            threshold: 0.25
+
+Defaults: person, group, pet, animal, building, city, nature, beach, mountains, food, vehicle, document,
+screenshot, night (`DefaultTags` in `galleryai/tags.go`), all at threshold `0.25`. **These thresholds are
+uncalibrated**: 0.25 is a guess for CLIP ViT-B/32 (matches around 0.22-0.30, non-matches 0.15-0.20).
+
+If the ML server is unreachable at startup, the tag embeddings are retried in the background with backoff; photos
+analysed meanwhile get no tags. Once the embeddings are ready, a re-tag pass recomputes `photo_tags` for all live
+photos from the stored embeddings (no image requests to the ML server) if the hash of the tag config plus CLIP
+model, kept in `tag_state`, differs from the one the tags were last computed for. A photo stored without tagging
+resets that hash, so the pass also catches up on those.
+
+### Calibrating thresholds
+
+Run the real ML container (compose or `docker run`, port 3003), then print per-tag scores for a directory of
+images and choose thresholds by comparing them with what the photos show:
+
+    SERAPH_TAG_CALIBRATE_DIR=/path/to/photos go test ./galleryai -run TestTagCalibration -v -timeout 30m
+
+`SERAPH_GALLERY_AI_ML_URL` selects the ML server (default `http://localhost:3003`).
+
 ## Existing photos
 
 Photos that existed before gallery-ai was deployed arrive through gallery's one-time replay (see gallery).

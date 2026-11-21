@@ -23,3 +23,7 @@ import "time"
 func SetRetryDelay(s *Service, d time.Duration) { s.retryDelay = d }
 
 func PermanentForTest(err error) error { return permanent(err) }
+
+func SetTagRetryDelay(s *Service, d time.Duration) { s.tagRetryDelay = d }
+
+func SetBeforeTagStateWrite(s *Service, f func()) { s.beforeTagStateWrite = f }
