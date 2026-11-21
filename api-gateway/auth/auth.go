@@ -790,6 +790,12 @@ func (a *oidcAuth) verifyToken(introspection *zoidc.IntrospectionResponse) bool 
 }
 
 func (a *oidcAuth) IsSpaceAdmin(ctx context.Context) bool {
+	// the middleware stores claims on the request context; a *gin.Context
+	// only falls through to it with engine.ContextWithFallback, which the
+	// gateway does not set
+	if gc, ok := ctx.(*gin.Context); ok && gc.Request != nil {
+		ctx = gc.Request.Context()
+	}
 	claims, ok := ctx.Value(introspectionClaimsKey{}).(map[string]any)
 	if !ok || claims == nil {
 		return false
