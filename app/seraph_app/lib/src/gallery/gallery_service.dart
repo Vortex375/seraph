@@ -98,14 +98,19 @@ class GalleryService {
   }
 
   Future<T> _getAi<T>(String path, Map<String, dynamic>? query,
-      T Function(Map<String, dynamic>?) parse) async {
+          T Function(Map<String, dynamic>?) parse) =>
+      _ai(() async {
+        final response = await dio.get<Map<String, dynamic>>(
+          path,
+          queryParameters: query,
+          options: Options(headers: await _getRequestHeaders()),
+        );
+        return parse(response.data);
+      });
+
+  Future<T> _ai<T>(Future<T> Function() call) async {
     try {
-      final response = await dio.get<Map<String, dynamic>>(
-        path,
-        queryParameters: query,
-        options: Options(headers: await _getRequestHeaders()),
-      );
-      return parse(response.data);
+      return await call();
     } on DioException catch (e) {
       final data = e.response?.data;
       if (e.response?.statusCode == 503 &&
@@ -136,4 +141,19 @@ class GalleryService {
 
   Future<List<GalleryPerson>> people() =>
       _getAi('/api/gallery/people', null, GalleryPerson.listFromJson);
+
+  /// Renames a person (empty name makes them unnamed); returns the updated
+  /// person.
+  Future<GalleryPerson> renamePerson(String id, String name) => _ai(() async {
+        final response = await dio.patch<Map<String, dynamic>>(
+          '/api/gallery/people/$id',
+          data: {'name': name},
+          options: Options(headers: await _getRequestHeaders()),
+        );
+        final person = response.data?['person'];
+        if (person is! Map<String, dynamic>) {
+          throw Exception('Failed to rename person');
+        }
+        return GalleryPerson.fromJson(person);
+      });
 }

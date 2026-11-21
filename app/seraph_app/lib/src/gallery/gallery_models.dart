@@ -112,19 +112,30 @@ class GalleryPerson {
     required this.id,
     required this.name,
     required this.photoCount,
+    this.cover,
   });
 
   final String id;
   final String name;
   final int photoCount;
 
+  /// The face to show for this person; null when the server sent none.
+  final GalleryPersonCover? cover;
+
   factory GalleryPerson.fromJson(Map<String, dynamic> json) {
+    final cover = json['cover'];
     return GalleryPerson(
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? '',
       photoCount: json['photoCount'] as int? ?? 0,
+      cover: cover is Map<String, dynamic>
+          ? GalleryPersonCover.fromJson(cover)
+          : null,
     );
   }
+
+  GalleryPerson withName(String name) =>
+      GalleryPerson(id: id, name: name, photoCount: photoCount, cover: cover);
 
   /// Named people first (by name), then unnamed ones by photo count.
   static List<GalleryPerson> listFromJson(Map<String, dynamic>? json) {
@@ -139,6 +150,36 @@ class GalleryPerson {
       return b.photoCount.compareTo(a.photoCount);
     });
     return people;
+  }
+}
+
+/// A face's box, normalised 0..1 relative to the photo as displayed.
+class GalleryFaceBox {
+  const GalleryFaceBox(this.x1, this.y1, this.x2, this.y2);
+
+  final double x1, y1, x2, y2;
+}
+
+/// The photo (Space coordinates) and face box a person's avatar is cropped from.
+class GalleryPersonCover {
+  const GalleryPersonCover({
+    required this.providerId,
+    required this.path,
+    required this.box,
+  });
+
+  final String providerId;
+  final String path;
+  final GalleryFaceBox box;
+
+  factory GalleryPersonCover.fromJson(Map<String, dynamic> json) {
+    final b = json['box'];
+    double n(String k) => b is Map ? (b[k] as num?)?.toDouble() ?? 0 : 0;
+    return GalleryPersonCover(
+      providerId: json['providerId'] as String? ?? '',
+      path: json['path'] as String? ?? '',
+      box: GalleryFaceBox(n('x1'), n('y1'), n('x2'), n('y2')),
+    );
   }
 }
 

@@ -7,9 +7,13 @@ server answers `ai-unavailable`.
 
 **Blocked by:** 07, 08
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Face crops show the face, not the whole photo, at grid size.
-- [ ] Renaming updates the grid and the Person chip in search.
-- [ ] Tapping a Person shows their photos.
-- [ ] Gates: `flutter analyze` zero issues; `flutter test`; `flutter build web --release --base-href=/app/`.
+- [x] Face crops show the face, not the whole photo, at grid size.
+- [x] Renaming updates the grid and the Person chip in search.
+- [x] Tapping a Person shows their photos.
+- [x] Gates: `flutter analyze` zero issues; `flutter test`; `flutter build web --release --base-href=/app/`.
+
+## Comments
+
+2026-11-21 (coordinator): Gates passed. Face-crop rendering is only covered via the crop-math unit tests; check it by eye on real faces.

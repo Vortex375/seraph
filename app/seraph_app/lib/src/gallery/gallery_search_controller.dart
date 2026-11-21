@@ -83,6 +83,29 @@ class GallerySearchController extends GetxController {
     }
   }
 
+  /// Renames a person; the shared [people] list drives both the People grid
+  /// and the search chips. Returns false on failure.
+  Future<bool> renamePerson(String id, String name) async {
+    try {
+      final updated = await service.renamePerson(id, name.trim());
+      people.value = [
+        for (final p in people) p.id == id ? p.withName(updated.name) : p
+      ];
+      return true;
+    } on GalleryAiUnavailableException {
+      available.value = false;
+    } catch (_) {}
+    return false;
+  }
+
+  /// Search for exactly one person's photos (the People screen's tap).
+  void showPerson(String id) {
+    text.value = '';
+    tag.value = null;
+    personId.value = id;
+    unawaited(search());
+  }
+
   void setTag(String? value) {
     tag.value = tag.value == value ? null : value;
     unawaited(search());

@@ -7,6 +7,7 @@ import 'package:seraph_app/src/gallery/gallery_grid_controller.dart';
 import 'package:seraph_app/src/gallery/gallery_image_loader.dart';
 import 'package:seraph_app/src/gallery/gallery_item_display.dart';
 import 'package:seraph_app/src/gallery/gallery_photo_viewer.dart';
+import 'package:seraph_app/src/gallery/gallery_people_view.dart';
 import 'package:seraph_app/src/gallery/gallery_search_controller.dart';
 import 'package:seraph_app/src/gallery/gallery_search_view.dart';
 import 'package:seraph_app/src/gallery/gallery_source_folders_view.dart';
@@ -121,11 +122,20 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
           actions: [
             if (_search != null)
               Obx(() => _search.available.value == true
-                  ? IconButton(
-                      icon: const Icon(Icons.search),
-                      tooltip: 'Search photos',
-                      onPressed: () => Get.to(() => const GallerySearchView()),
-                    )
+                  ? Row(mainAxisSize: MainAxisSize.min, children: [
+                      IconButton(
+                        icon: const Icon(Icons.search),
+                        tooltip: 'Search photos',
+                        onPressed: () =>
+                            Get.to(() => const GallerySearchView()),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.people),
+                        tooltip: 'People',
+                        onPressed: () =>
+                            Get.to(() => const GalleryPeopleView()),
+                      ),
+                    ])
                   : const SizedBox.shrink()),
             IconButton(
               icon: const Icon(Icons.date_range),
