@@ -8,10 +8,14 @@ shows them as a grid in score order, opening the existing viewer. Shows analysis
 
 **Blocked by:** 06
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Typing a query shows matching photos in score order; tapping opens the viewer.
-- [ ] Tag and Person chips narrow the results and combine with the text.
-- [ ] A result with no mirror row yet (not synced) is skipped, not shown as a broken tile.
-- [ ] Search is hidden when the server reports `ai-unavailable`.
-- [ ] Gates: `flutter analyze` zero issues; `flutter test`; `flutter build web --release --base-href=/app/`.
+- [x] Typing a query shows matching photos in score order; tapping opens the viewer.
+- [x] Tag and Person chips narrow the results and combine with the text.
+- [x] A result with no mirror row yet (not synced) is skipped, not shown as a broken tile.
+- [x] Search is hidden when the server reports `ai-unavailable`.
+- [x] Gates: `flutter analyze` zero issues; `flutter test`; `flutter build web --release --base-href=/app/`.
+
+## Comments
+
+2026-11-21 (coordinator): Gates passed (analyze 0 issues, full flutter test, web release build). Not yet exercised by hand on a device or in the browser.

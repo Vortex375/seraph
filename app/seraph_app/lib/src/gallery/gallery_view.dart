@@ -7,6 +7,8 @@ import 'package:seraph_app/src/gallery/gallery_grid_controller.dart';
 import 'package:seraph_app/src/gallery/gallery_image_loader.dart';
 import 'package:seraph_app/src/gallery/gallery_item_display.dart';
 import 'package:seraph_app/src/gallery/gallery_photo_viewer.dart';
+import 'package:seraph_app/src/gallery/gallery_search_controller.dart';
+import 'package:seraph_app/src/gallery/gallery_search_view.dart';
 import 'package:seraph_app/src/gallery/gallery_source_folders_view.dart';
 import 'package:seraph_app/src/gallery/gallery_tile.dart';
 import 'package:seraph_app/src/gallery/local/local_image_loader.dart';
@@ -48,6 +50,12 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
   final LocalImageLoader localLoader = Get.find();
   final ScrollController _scroll = ScrollController();
 
+  /// Null where AI search is not wired (tests, builds without it).
+  final GallerySearchController? _search =
+      Get.isRegistered<GallerySearchController>()
+          ? Get.find<GallerySearchController>()
+          : null;
+
   /// Index of the first tile in the topmost visible row - what the date
   /// heading reports on.
   final ValueNotifier<int> _firstVisibleIndex = ValueNotifier<int>(0);
@@ -60,6 +68,8 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
     super.initState();
     _scroll.addListener(_onScroll);
     WidgetsBinding.instance.addObserver(this);
+    // Re-probed on every open: hidden again if the server says ai-unavailable.
+    _search?.probe();
   }
 
   @override
@@ -109,6 +119,14 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
           name: 'Gallery',
           routeName: GalleryView.routeName,
           actions: [
+            if (_search != null)
+              Obx(() => _search.available.value == true
+                  ? IconButton(
+                      icon: const Icon(Icons.search),
+                      tooltip: 'Search photos',
+                      onPressed: () => Get.to(() => const GallerySearchView()),
+                    )
+                  : const SizedBox.shrink()),
             IconButton(
               icon: const Icon(Icons.date_range),
               tooltip: 'Filter by date',
@@ -278,12 +296,11 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
       return;
     }
     await controller.backUpAgainSelected();
-    messenger.showSnackBar(const SnackBar(
-        content: Text('Queued for backup at the next sync.')));
+    messenger.showSnackBar(
+        const SnackBar(content: Text('Queued for backup at the next sync.')));
   }
 
-  Future<void> _freeUpSelected() =>
-      _freeUpSpace(controller.selected.toSet());
+  Future<void> _freeUpSelected() => _freeUpSpace(controller.selected.toSet());
 
   /// Ticket 26: offers to trash the device copies of every photo Seraph holds,
   /// showing how much space that reclaims before anything happens. The
@@ -297,8 +314,9 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
     final messenger = ScaffoldMessenger.of(context);
     if (preview.ids.isEmpty) {
       messenger.showSnackBar(const SnackBar(
-          content: Text('None of the selected photos is a backed-up photo on this '
-              'device.')));
+          content:
+              Text('None of the selected photos is a backed-up photo on this '
+                  'device.')));
       return;
     }
     final mb = (preview.bytes / (1024 * 1024)).toStringAsFixed(1);
@@ -325,8 +343,8 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
     }
     final result = await controller.freeUpSpace(preview.ids);
     if (result != null && result.freed > 0) {
-      messenger.showSnackBar(SnackBar(
-          content: Text('Freed ${result.freed} photos.')));
+      messenger.showSnackBar(
+          SnackBar(content: Text('Freed ${result.freed} photos.')));
     }
   }
 
@@ -398,12 +416,13 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
                   onTap: () => controller.isSelecting
                       ? (item == null ? null : controller.toggleSelected(item))
                       : _openPhoto(index),
-                  onLongPress:
-                      item == null ? null : () => controller.toggleSelected(item),
+                  onLongPress: item == null
+                      ? null
+                      : () => controller.toggleSelected(item),
                   child: GalleryTile(
                     item: item,
-                    selected: item != null &&
-                        controller.selected.contains(item.id),
+                    selected:
+                        item != null && controller.selected.contains(item.id),
                     loader: loader,
                     localLoader: localLoader,
                     decodeWidth: decodeWidth,
@@ -792,9 +811,9 @@ class _SelectionBar extends StatelessWidget {
       if (count == 0) {
         return const SizedBox.shrink();
       }
-      final canFree = controller.localPermission.value ==
-              LocalPermissionStatus.granted ||
-          controller.localPermission.value == LocalPermissionStatus.partial;
+      final canFree =
+          controller.localPermission.value == LocalPermissionStatus.granted ||
+              controller.localPermission.value == LocalPermissionStatus.partial;
       return Material(
         color: Theme.of(context).colorScheme.secondaryContainer,
         child: Row(

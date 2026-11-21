@@ -25,9 +25,13 @@ import 'package:seraph_app/src/gallery/mirror/gallery_upload_service.dart';
 class GalleryPhotoViewerView extends StatefulWidget {
   static const routeName = '/gallery/photo';
 
-  const GalleryPhotoViewerView({super.key, this.initialIndex = 0});
+  const GalleryPhotoViewerView({super.key, this.initialIndex = 0, this.items});
 
   final int initialIndex;
+
+  /// When given (search results), the viewer pages through exactly these
+  /// items instead of the grid's Capture Date order.
+  final List<GalleryItem>? items;
 
   @override
   State<GalleryPhotoViewerView> createState() => _GalleryPhotoViewerViewState();
@@ -84,8 +88,16 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
     _transformController.addListener(() {
       _isZoomedIn.value = _transformController.value.getMaxScaleOnAxis() > 1.0;
     });
-    controller.ensureRangeLoaded(
-        widget.initialIndex - 1, widget.initialIndex + 1);
+    if (widget.items == null) {
+      controller.ensureRangeLoaded(
+          widget.initialIndex - 1, widget.initialIndex + 1);
+    }
+  }
+
+  GalleryItem? _itemAt(int index) {
+    final items = widget.items;
+    if (items == null) return controller.itemAt(index);
+    return index >= 0 && index < items.length ? items[index] : null;
   }
 
   @override
@@ -225,9 +237,11 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
                     // has loaded, fall back to the month label, which the
                     // boundary map can answer synchronously and which is
                     // never wrong (a photo on the 25th is still in August).
-                    final item = controller.itemAt(index);
+                    final item = _itemAt(index);
                     final exact = item?.capturedAtWallTime;
-                    final month = controller.knownDateAt(index);
+                    final month = widget.items == null
+                        ? controller.knownDateAt(index)
+                        : null;
                     final label = exact != null
                         ? galleryDayLabel(exact)
                         : month == null
@@ -245,7 +259,7 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
                       valueListenable: _currentIndex,
                       builder: (context, index, _) => Obx(() {
                         controller.revision.value;
-                        final item = controller.itemAt(index);
+                        final item = _itemAt(index);
                         if (item == null ||
                             item.availability !=
                                 GalleryAvailability.deviceOnly ||
@@ -280,7 +294,7 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
                     valueListenable: _currentIndex,
                     builder: (context, index, _) => Obx(() {
                       controller.revision.value;
-                      final item = controller.itemAt(index);
+                      final item = _itemAt(index);
                       return IconButton(
                         icon: const Icon(Icons.info_outline),
                         tooltip: 'Photo details',
@@ -294,7 +308,7 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
             : null,
         body: Obx(() {
           controller.revision.value;
-          final total = controller.totalCount.value;
+          final total = widget.items?.length ?? controller.totalCount.value;
           if (total == 0) {
             return const SizedBox.shrink();
           }
@@ -311,10 +325,12 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
                   : const PageScrollPhysics(),
               onPageChanged: (index) {
                 _currentIndex.value = index;
-                controller.ensureRangeLoaded(index - 1, index + 1);
+                if (widget.items == null) {
+                  controller.ensureRangeLoaded(index - 1, index + 1);
+                }
               },
               itemBuilder: (context, index) {
-                final item = controller.itemAt(index);
+                final item = _itemAt(index);
                 if (item == null) {
                   return const Center(child: CircularProgressIndicator());
                 }

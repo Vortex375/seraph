@@ -2205,6 +2205,28 @@ class GalleryMirror {
 
   // --- Ticket 27: Erase ---
 
+  /// The cloud-backed rows (Synced or Cloud only) for Space coordinates
+  /// [keys] as (providerId, path), in the order of [keys]. A key without a
+  /// mirror row (not synced yet) is skipped. Device only rows carry no
+  /// Space coordinates, so they never match.
+  Future<List<GalleryItem>> itemsBySpaceKeys(
+      List<(String, String)> keys) async {
+    final byKey = <(String, String), GalleryItem>{};
+    for (var i = 0; i < keys.length; i += 500) {
+      final paths = keys.skip(i).take(500).map((k) => k.$2).toList();
+      final rows = await (_db.select(_db.galleryItems)
+            ..where((t) => t.path.isIn(paths) & t.providerId.isNotNull()))
+          .get();
+      for (final row in rows) {
+        byKey[(row.providerId!, row.path!)] = row;
+      }
+    }
+    return [
+      for (final key in keys)
+        if (byKey[key] case final row?) row,
+    ];
+  }
+
   /// The rows for [ids], whatever their Availability - everything can be
   /// erased: a Synced or Cloud only row loses its Seraph copy, a Device only
   /// one is merely kept from ever being uploaded.

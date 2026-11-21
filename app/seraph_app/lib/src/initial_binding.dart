@@ -6,6 +6,7 @@ import 'package:seraph_app/src/file_browser/file_service.dart';
 import 'package:seraph_app/src/file_browser/selection_controller.dart';
 import 'package:seraph_app/src/gallery/gallery_grid_controller.dart';
 import 'package:seraph_app/src/gallery/gallery_image_loader.dart';
+import 'package:seraph_app/src/gallery/gallery_search_controller.dart';
 import 'package:seraph_app/src/gallery/gallery_service.dart';
 import 'package:seraph_app/src/gallery/local/local_image_loader.dart';
 import 'package:seraph_app/src/gallery/local/local_scan_service.dart';
@@ -44,6 +45,7 @@ class InitialBinding extends Bindings {
     // second, redundant connection to the same file from this same isolate.
     final galleryMirrorDatabase = Get.find<GalleryMirrorDatabase>();
     final galleryMirror = Get.find<GalleryMirror>();
+    Get.put(GallerySearchController(Get.find<GalleryService>(), galleryMirror));
     final gallerySyncService =
         Get.put(GallerySyncService(Get.find(), Get.find(), galleryMirror));
     // Local Source defaults to the platform's own (Android only, in this
@@ -107,5 +109,4 @@ class InitialBinding extends Bindings {
       fenix: true,
     );
   }
-
 }

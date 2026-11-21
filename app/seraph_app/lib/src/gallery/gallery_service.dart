@@ -96,4 +96,44 @@ class GalleryService {
     }
     throw Exception('Failed to rescan gallery source folder');
   }
+
+  Future<T> _getAi<T>(String path, Map<String, dynamic>? query,
+      T Function(Map<String, dynamic>?) parse) async {
+    try {
+      final response = await dio.get<Map<String, dynamic>>(
+        path,
+        queryParameters: query,
+        options: Options(headers: await _getRequestHeaders()),
+      );
+      return parse(response.data);
+    } on DioException catch (e) {
+      final data = e.response?.data;
+      if (e.response?.statusCode == 503 &&
+          data is Map &&
+          data['error'] == 'ai-unavailable') {
+        throw const GalleryAiUnavailableException();
+      }
+      rethrow;
+    }
+  }
+
+  /// Search hits in Space coordinates, best match first. Throws
+  /// [GalleryAiUnavailableException] when the AI service is not available.
+  Future<List<GallerySearchHit>> search(
+      {String q = '', String? tag, String? personId}) {
+    return _getAi(
+        '/api/gallery/search',
+        {
+          if (q.isNotEmpty) 'q': q,
+          if (tag != null) 'tag': tag,
+          if (personId != null) 'person': personId,
+        },
+        GallerySearchHit.listFromJson);
+  }
+
+  Future<GalleryAnalysisStatus> analysisStatus() => _getAi(
+      '/api/gallery/analysis/status', null, GalleryAnalysisStatus.fromJson);
+
+  Future<List<GalleryPerson>> people() =>
+      _getAi('/api/gallery/people', null, GalleryPerson.listFromJson);
 }
