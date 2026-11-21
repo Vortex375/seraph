@@ -7,7 +7,7 @@ mentions how many were skipped. Skip the Job entirely when the count is 0.
 
 **Blocked by:** 01
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 - [ ] Rescanning a folder with N metadata-pending photos yields `gallery.metadata.<id>` going from
       `done` 0 / `total` N to `completed` with `done` = N.

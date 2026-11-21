@@ -15,7 +15,7 @@
 
 **Blocked by:** —
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 - [ ] A job's updates arrive on `seraph.jobs.<key>` and land in the `SERAPH_JOBS` KV under `<key>`.
 - [ ] 100 `Progress` calls within 1 s publish at most one message immediately plus one trailing message

@@ -9,7 +9,7 @@
 
 **Blocked by:** 01
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 - [ ] A non-admin user gets 403; an admin (and no-auth mode) gets 200.
 - [ ] Each entry has `key`, `description`, `statusMessage`, `state`, `done`, `total`, `pending`, `time`.

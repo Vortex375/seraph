@@ -6,7 +6,7 @@ thumbnails". Stop the poller with the consumer.
 
 **Blocked by:** 01
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 - [ ] With warm requests queued, `thumbnailer.warm` reports `running` and a `pending` that falls as they
       are processed.

@@ -10,7 +10,7 @@
 
 **Blocked by:** 01
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 - [ ] With photo-changed events queued, `gallery-ai.analysis` reports `running` with a falling `pending`,
       then `idle`.
