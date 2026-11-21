@@ -33,7 +33,7 @@
 - [x] A replayed `upserted` event for a photo already analysed at that `seq` is acked without an ML call.
 - [x] Changing the configured CLIP model re-analyses existing rows.
 - [x] Opt-in contract test (`SERAPH_ML_CONTRACT=1`) against the pinned real image passes.
-- [ ] `docker compose up` starts the ML container and `gallery-ai`; a newly uploaded gallery photo gets
+- [x] `docker compose up` starts the ML container and `gallery-ai`; a newly uploaded gallery photo gets
       analysed end to end.
 - [x] Gates: `go build ./...`, `go test ./...` in `gallery-ai`, integration tests running.
 
@@ -42,3 +42,10 @@
 2026-11-21 (coordinator): Resolved in 6e17d8d + the package B commit. Unit/integration suite runs (7 pass, contract test opt-in);
 the contract test passed once against the real v3.4.2 image (no face in the test JPEG, so face parsing is only covered by the
 fake). Not verified: a full `docker compose up` end-to-end run and the Docker image build — do that before deploying.
+
+2026-11-21 (coordinator): End-to-end run on the dev stack (project `seraph`, docker-compose.dev.yml, image built from
+this branch): gallery replayed its 6 photos, gallery-ai analysed all 6 (embeddings stored, no errors), and
+`seraph.gallery.search` (text, tag, no-filter), `seraph.gallery.analysis.status` and `seraph.gallery.people` answered
+correctly over NATS with Space keys. The dev photos are test fixtures (2 distinct images, no faces), so tags were sparse
+at the uncalibrated threshold and no Persons formed. gallery-ai now waits for the ML container's healthcheck. Not
+exercised: the gateway REST routes with a real login token, and the app UI.

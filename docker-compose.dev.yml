@@ -223,9 +223,13 @@ services:
     command:
       - gallery-ai
     depends_on:
-      - nats
-      - agents-db
-      - immich-machine-learning
+      nats:
+        condition: service_started
+      agents-db:
+        condition: service_started
+      # the ML server refuses connections while it loads models
+      immich-machine-learning:
+        condition: service_healthy
     networks:
       - internal
     environment:
