@@ -69,7 +69,11 @@
       {"name": "key", "type": "string"},
 			{"name": "description", "type": "string"},
       {"name": "statusMessage", "type": "string"},
-      {"name": "properties", "type": {"type": "map", "values": "string"}}
+      {"name": "properties", "type": {"type": "map", "values": "string"}},
+      {"name": "state", "type": "string", "default": ""},
+      {"name": "done", "type": "long", "default": 0},
+      {"name": "total", "type": "long", "default": -1},
+      {"name": "pending", "type": "long", "default": -1}
     ]
   },
   {
