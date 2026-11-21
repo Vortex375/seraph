@@ -1,13 +1,13 @@
 import 'dart:async';
 
 import 'package:get/get.dart';
+import 'package:seraph_app/src/gallery/gallery_grid_controller.dart';
 import 'package:seraph_app/src/gallery/gallery_models.dart';
 import 'package:seraph_app/src/gallery/gallery_service.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 
-/// State behind AI search in Gallery Mode: the query (free text, one tag, one
-/// person), the results joined to the local mirror, and whether the server
+/// State behind AI search in Gallery Mode: the query (free text, one tag), the results joined to the local mirror, and whether the server
 /// offers AI at all.
 class GallerySearchController extends GetxController {
   GallerySearchController(this.service, this.mirror);
@@ -25,7 +25,6 @@ class GallerySearchController extends GetxController {
 
   final RxString text = ''.obs;
   final Rxn<String> tag = Rxn<String>();
-  final Rxn<String> personId = Rxn<String>();
 
   int _generation = 0;
 
@@ -42,7 +41,7 @@ class GallerySearchController extends GetxController {
     }
   }
 
-  /// Loads the chips' people and the analysis progress.
+  /// Loads the people (for the People screen and dialog) and the analysis progress.
   Future<void> loadChips() async {
     try {
       status.value = await service.analysisStatus();
@@ -54,9 +53,7 @@ class GallerySearchController extends GetxController {
 
   Future<void> search() async {
     final generation = ++_generation;
-    if (text.value.trim().isEmpty &&
-        tag.value == null &&
-        personId.value == null) {
+    if (text.value.trim().isEmpty && tag.value == null) {
       results.clear();
       searched.value = false;
       searching.value = false;
@@ -64,8 +61,7 @@ class GallerySearchController extends GetxController {
     }
     searching.value = true;
     try {
-      final hits = await service.search(
-          q: text.value.trim(), tag: tag.value, personId: personId.value);
+      final hits = await service.search(q: text.value.trim(), tag: tag.value);
       final items = await mirror
           .itemsBySpaceKeys([for (final h in hits) (h.providerId, h.path)]);
       if (generation != _generation) return;
@@ -83,8 +79,8 @@ class GallerySearchController extends GetxController {
     }
   }
 
-  /// Renames a person; the shared [people] list drives both the People grid
-  /// and the search chips. Returns false on failure.
+  /// Renames a person; the shared [people] list drives the People grid
+  /// and dialog. Returns false on failure.
   Future<bool> renamePerson(String id, String name) async {
     try {
       final updated = await service.renamePerson(id, name.trim());
@@ -99,7 +95,7 @@ class GallerySearchController extends GetxController {
   }
 
   /// Assigns a face (see [GalleryService.assignFace]) and refreshes the shared
-  /// [people] list so the People screen and search chips follow. Returns false
+  /// [people] list so the People screen follows. Returns false
   /// on failure.
   Future<bool> assignFace(String faceId,
       {String? personId, String? newPersonName}) async {
@@ -114,21 +110,25 @@ class GallerySearchController extends GetxController {
     return false;
   }
 
-  /// Search for exactly one person's photos (the People screen's tap).
-  void showPerson(String id) {
-    text.value = '';
-    tag.value = null;
-    personId.value = id;
-    unawaited(search());
+  /// Filters the main grid [grid] to [person]'s photos: fetches their Space
+  /// keys from the server, then sets the grid's person filter. Returns false
+  /// on failure (the filter is left as it was).
+  Future<bool> filterByPerson(
+      GalleryGridController grid, GalleryPerson person) async {
+    try {
+      // ponytail: person filter capped at 1000 photos (search max limit); page the search if a person exceeds it
+      final hits = await service.search(personId: person.id, limit: 1000);
+      await grid
+          .setPerson(person, {for (final h in hits) (h.providerId, h.path)});
+      return true;
+    } on GalleryAiUnavailableException {
+      available.value = false;
+    } catch (_) {}
+    return false;
   }
 
   void setTag(String? value) {
     tag.value = tag.value == value ? null : value;
-    unawaited(search());
-  }
-
-  void setPerson(String? value) {
-    personId.value = personId.value == value ? null : value;
     unawaited(search());
   }
 }

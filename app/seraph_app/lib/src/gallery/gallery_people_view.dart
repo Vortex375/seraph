@@ -5,7 +5,6 @@ import 'package:get/get.dart';
 import 'package:seraph_app/src/gallery/gallery_image_loader.dart';
 import 'package:seraph_app/src/gallery/gallery_models.dart';
 import 'package:seraph_app/src/gallery/gallery_search_controller.dart';
-import 'package:seraph_app/src/gallery/gallery_search_view.dart';
 import 'package:seraph_app/src/gallery/gallery_tile.dart';
 
 /// The square region (in pixels) of an [imageWidth] x [imageHeight] photo to
@@ -25,8 +24,8 @@ Rect faceCropRect(GalleryFaceBox box, double imageWidth, double imageHeight,
   return Rect.fromLTWH(left, top, side, side);
 }
 
-/// People in the user's photos: a grid of face crops; tap shows that person's
-/// photos (the search view filtered to them), the edit icon renames.
+/// People in the user's photos: a grid of face crops; tap filters the main grid to
+/// that person and returns to it, the edit icon renames.
 class GalleryPeopleView extends StatefulWidget {
   const GalleryPeopleView({super.key});
 
@@ -69,9 +68,15 @@ class _GalleryPeopleViewState extends State<GalleryPeopleView> {
   Widget _tile(BuildContext context, GalleryPerson p) {
     final label = p.name.isEmpty ? 'Unnamed' : p.name;
     return InkWell(
-      onTap: () {
-        search.showPerson(p.id);
-        Get.to(() => const GallerySearchView());
+      onTap: () async {
+        final nav = Navigator.of(context);
+        final messenger = ScaffoldMessenger.of(context);
+        if (await search.filterByPerson(Get.find(), p)) {
+          nav.pop();
+        } else {
+          messenger.showSnackBar(
+              const SnackBar(content: Text('Could not load that person')));
+        }
       },
       child: Column(
         children: [

@@ -7,6 +7,7 @@ import 'package:seraph_app/src/gallery/mirror/gallery_erase_service.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 import 'package:seraph_app/src/gallery/gallery_item_display.dart';
+import 'package:seraph_app/src/gallery/gallery_models.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_sync_service.dart';
 
 /// The gallery's list, as the grid and the full-screen viewer both see it.
@@ -254,7 +255,8 @@ class GalleryGridController extends GetxController {
   ///
   /// [only] narrows the answer to those item ids (the grid selection); ids
   /// that are not Synced are simply absent from the result.
-  Future<({List<int> ids, int bytes})> freeUpPreview({Iterable<int>? only}) async {
+  Future<({List<int> ids, int bytes})> freeUpPreview(
+      {Iterable<int>? only}) async {
     if (localScanService?.localSource == null) {
       return (ids: <int>[], bytes: 0);
     }
@@ -382,6 +384,21 @@ class GalleryGridController extends GetxController {
       return;
     }
     filter.value = filter.value.copyWith(clearPlace: true);
+    await reload();
+  }
+
+  /// Sets the person filter ([keys] are the person's photos' Space keys) and
+  /// reloads.
+  Future<void> setPerson(GalleryPerson person, Set<(String, String)> keys) =>
+      setFilter(
+          filter.value.copyWith(person: GalleryPersonFilter(person, keys)));
+
+  /// Removes the person filter and reloads.
+  Future<void> clearPerson() async {
+    if (filter.value.person == null) {
+      return;
+    }
+    filter.value = filter.value.copyWith(clearPerson: true);
     await reload();
   }
 

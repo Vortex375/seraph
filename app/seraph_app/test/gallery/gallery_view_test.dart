@@ -9,7 +9,12 @@ import 'package:seraph_app/src/file_viewer/file_viewer_view.dart';
 import 'package:seraph_app/src/gallery/gallery_grid_controller.dart';
 import 'package:seraph_app/src/gallery/gallery_image_loader.dart';
 import 'package:seraph_app/src/gallery/gallery_item_display.dart';
+import 'package:seraph_app/src/gallery/gallery_models.dart';
+import 'package:seraph_app/src/gallery/gallery_people_view.dart';
 import 'package:seraph_app/src/gallery/gallery_photo_viewer.dart';
+import 'package:seraph_app/src/gallery/gallery_search_controller.dart';
+import 'package:seraph_app/src/gallery/gallery_search_view.dart';
+import 'package:seraph_app/src/gallery/gallery_service.dart';
 import 'package:seraph_app/src/gallery/gallery_tile.dart';
 import 'package:seraph_app/src/gallery/gallery_view.dart';
 import 'package:seraph_app/src/gallery/local/local_image_loader.dart';
@@ -92,6 +97,50 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(SystemChannels.platform, null);
   });
+
+  Future<void> openFilterMenu(WidgetTester tester, String item) async {
+    await tester.tap(find.byTooltip('Filter'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(item));
+    await tester.pumpAndSettle();
+  }
+
+  /// A search controller whose server knows Anna (photos 0 and 2) and an
+  /// unnamed person.
+  GallerySearchController putSearch() {
+    final dio = Dio();
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+      handler.resolve(Response(
+        requestOptions: options,
+        statusCode: 200,
+        data: options.path.endsWith('/people')
+            ? {
+                'people': [
+                  {'id': 'p1', 'name': 'Anna', 'photoCount': 2},
+                  {'id': 'p2', 'name': '', 'photoCount': 1},
+                ]
+              }
+            : options.path.endsWith('/search')
+                ? {
+                    'items': [
+                      for (final i in [0, 2])
+                        {
+                          'providerId': 'space-a',
+                          'path': '/Photos/photo-$i.jpg',
+                          'score': 1
+                        }
+                    ]
+                  }
+                : {'analysed': 3, 'pending': 0, 'failed': 0},
+      ));
+    }));
+    final search = GallerySearchController(
+        GalleryService(FakeSettingsController(), FakeLoginController(),
+            dio: dio),
+        mirror);
+    search.available.value = true;
+    return Get.put(search);
+  }
 
   Widget wrap() {
     return GetMaterialApp(
@@ -960,8 +1009,7 @@ void main() {
     await tester.pumpWidget(wrap());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(Icons.date_range));
-    await tester.pumpAndSettle();
+    await openFilterMenu(tester, 'Date…');
     expect(find.text('Filter by capture date'), findsOneWidget);
 
     // Jump straight to 2024 via the year dropdown...
@@ -1025,8 +1073,7 @@ void main() {
     await tester.pumpWidget(wrap());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(Icons.travel_explore));
-    await tester.pumpAndSettle();
+    await openFilterMenu(tester, 'Place…');
 
     await tester.enterText(find.byType(TextField), 'por');
     await tester.pumpAndSettle();
@@ -1045,6 +1092,133 @@ void main() {
     await tester.pumpAndSettle();
     expect(controller.filter.value.place, isNull);
     expect(find.byType(Chip), findsNothing);
+  });
+
+  testWidgets('the filter menu badge counts the active filters and offers '
+      'Clear filters only when one is on', (tester) async {
+    await setUpGallery(itemCount: 3);
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<Badge>(find.byType(Badge)).isLabelVisible, isFalse);
+    await tester.tap(find.byTooltip('Filter'));
+    await tester.pumpAndSettle();
+    expect(find.text('Clear filters'), findsNothing);
+    expect(find.text('People…'), findsNothing, reason: 'no AI, no people');
+    await tester.tapAt(Offset.zero);
+    await tester.pumpAndSettle();
+
+    await controller.setAvailability(GalleryAvailabilityFilter.cloudOnly);
+    await controller.setDateRange(
+        DateTime.utc(2020, 1, 1), DateTime.utc(2030, 12, 31));
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<Badge>(find.byType(Badge)).isLabelVisible, isTrue);
+    expect(find.descendant(of: find.byType(Badge), matching: find.text('2')),
+        findsOneWidget);
+
+    await openFilterMenu(tester, 'Clear filters');
+    expect(controller.filter.value.isActive, isFalse);
+  });
+
+  testWidgets('the app bar keeps Search, Filter and the overflow menu',
+      (tester) async {
+    await setUpGallery(itemCount: 3);
+    putSearch();
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Search photos'), findsOneWidget);
+    expect(find.byTooltip('Filter'), findsOneWidget);
+    await tester.tap(find.byTooltip('More'));
+    await tester.pumpAndSettle();
+    expect(find.text('Check for new photos'), findsOneWidget);
+    expect(find.text('Gallery folders'), findsOneWidget);
+    expect(find.text('Manage people'), findsOneWidget);
+  });
+
+  testWidgets('People... filters the grid to the picked person, shows a '
+      'removable chip, and combines with another filter', (tester) async {
+    await setUpGallery(itemCount: 3);
+    putSearch();
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    await openFilterMenu(tester, 'People…');
+    expect(find.text('Unnamed'), findsOneWidget);
+    await tester.tap(find.text('Anna'));
+    await tester.pumpAndSettle();
+
+    expect(controller.filter.value.person?.person.id, 'p1');
+    expect(controller.totalCount.value, 2);
+    expect(find.widgetWithText(Chip, 'Anna'), findsOneWidget);
+
+    await controller.setAvailability(GalleryAvailabilityFilter.notBackedUp);
+    await tester.pumpAndSettle();
+    expect(controller.totalCount.value, 0, reason: 'person AND availability');
+    await controller.setAvailability(GalleryAvailabilityFilter.all);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.descendant(
+        of: find.widgetWithText(Chip, 'Anna'),
+        matching: find.byIcon(Icons.cancel)));
+    await tester.pumpAndSettle();
+    expect(controller.filter.value.person, isNull);
+    expect(controller.totalCount.value, 3);
+  });
+
+  testWidgets('AI becoming unavailable clears the person filter',
+      (tester) async {
+    await setUpGallery(itemCount: 3);
+    final search = putSearch();
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+    await controller.setPerson(
+        const GalleryPerson(id: 'p1', name: 'Anna', photoCount: 2),
+        {('space-a', '/Photos/photo-0.jpg')});
+    expect(controller.totalCount.value, 1);
+
+    search.available.value = false;
+    await tester.pumpAndSettle();
+
+    expect(controller.filter.value.person, isNull);
+    expect(controller.totalCount.value, 3);
+  });
+
+  testWidgets('tapping a person on the People screen filters the grid and '
+      'returns to it', (tester) async {
+    await setUpGallery(itemCount: 3);
+    putSearch();
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('More'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Manage people'));
+    await tester.pumpAndSettle();
+    expect(find.byType(GalleryPeopleView), findsOneWidget);
+
+    await tester.tap(find.text('Anna'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(GalleryPeopleView), findsNothing);
+    expect(find.byType(GalleryView), findsOneWidget);
+    expect(controller.filter.value.person?.person.id, 'p1');
+    expect(controller.totalCount.value, 2);
+  });
+
+  testWidgets('the search view no longer offers person chips', (tester) async {
+    await setUpGallery(itemCount: 1);
+    putSearch();
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Search photos'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(GallerySearchView), findsOneWidget);
+    expect(find.text('Anna'), findsNothing);
+    expect(find.byType(FilterChip), findsWidgets, reason: 'tag chips remain');
   });
 }
 

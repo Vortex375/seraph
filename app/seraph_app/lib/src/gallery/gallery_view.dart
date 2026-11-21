@@ -6,6 +6,7 @@ import 'package:seraph_app/src/app_bar/app_bar.dart';
 import 'package:seraph_app/src/gallery/gallery_grid_controller.dart';
 import 'package:seraph_app/src/gallery/gallery_image_loader.dart';
 import 'package:seraph_app/src/gallery/gallery_item_display.dart';
+import 'package:seraph_app/src/gallery/gallery_models.dart';
 import 'package:seraph_app/src/gallery/gallery_photo_viewer.dart';
 import 'package:seraph_app/src/gallery/gallery_people_view.dart';
 import 'package:seraph_app/src/gallery/gallery_search_controller.dart';
@@ -61,6 +62,8 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
   /// heading reports on.
   final ValueNotifier<int> _firstVisibleIndex = ValueNotifier<int>(0);
 
+  Worker? _aiWorker;
+
   int _crossAxisCount = 3;
   double _rowExtent = 1;
 
@@ -71,12 +74,19 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     // Re-probed on every open: hidden again if the server says ai-unavailable.
     _search?.probe();
+    // Without AI there is no person filter: drop it if the server goes away.
+    _aiWorker = _search == null
+        ? null
+        : ever(_search.available, (available) {
+            if (available == false) controller.clearPerson();
+          });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _scroll.removeListener(_onScroll);
+    _aiWorker?.dispose();
     _scroll.dispose();
     _firstVisibleIndex.dispose();
     super.dispose();
@@ -122,78 +132,82 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
           actions: [
             if (_search != null)
               Obx(() => _search.available.value == true
-                  ? Row(mainAxisSize: MainAxisSize.min, children: [
-                      IconButton(
-                        icon: const Icon(Icons.search),
-                        tooltip: 'Search photos',
-                        onPressed: () =>
-                            Get.to(() => const GallerySearchView()),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.people),
-                        tooltip: 'People',
-                        onPressed: () =>
-                            Get.to(() => const GalleryPeopleView()),
-                      ),
-                    ])
+                  ? IconButton(
+                      icon: const Icon(Icons.search),
+                      tooltip: 'Search photos',
+                      onPressed: () => Get.to(() => const GallerySearchView()),
+                    )
                   : const SizedBox.shrink()),
-            IconButton(
-              icon: const Icon(Icons.date_range),
-              tooltip: 'Filter by date',
-              onPressed: _pickDateRange,
-            ),
-            IconButton(
-              icon: const Icon(Icons.travel_explore),
-              tooltip: 'Filter by place',
-              onPressed: _pickPlace,
-            ),
-            Obx(() => PopupMenuButton<GalleryAvailabilityFilter>(
-                  tooltip: 'Filter',
-                  icon: Icon(
-                    controller.filter.value.isActive
-                        ? Icons.filter_alt
-                        : Icons.filter_list,
+            Obx(() {
+              final filter = controller.filter.value;
+              final ai = _search?.available.value == true;
+              return PopupMenuButton<String>(
+                tooltip: 'Filter',
+                icon: Badge(
+                  isLabelVisible: filter.activeCount > 0,
+                  label: Text('${filter.activeCount}'),
+                  child: const Icon(Icons.filter_list),
+                ),
+                onSelected: (value) => switch (value) {
+                  'people' => _pickPerson(),
+                  'place' => _pickPlace(),
+                  'date' => _pickDateRange(),
+                  'backup' => _pickAvailability(),
+                  _ => controller.clearFilters(),
+                },
+                itemBuilder: (context) => [
+                  if (ai)
+                    const PopupMenuItem(
+                        value: 'people', child: Text('People…')),
+                  const PopupMenuItem(value: 'place', child: Text('Place…')),
+                  const PopupMenuItem(value: 'date', child: Text('Date…')),
+                  const PopupMenuItem(
+                      value: 'backup', child: Text('Backup status…')),
+                  if (filter.isActive)
+                    const PopupMenuItem(
+                        value: 'clear', child: Text('Clear filters')),
+                ],
+              );
+            }),
+            Obx(() {
+              final ai = _search?.available.value == true;
+              final syncing = controller.isSyncing.value;
+              return PopupMenuButton<String>(
+                tooltip: 'More',
+                icon: syncing
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.more_vert),
+                onSelected: (value) => switch (value) {
+                  'refresh' =>
+                    // Forced (ticket 30): a manual tap is the user explicitly
+                    // asking for a fresh look, so this bypasses both the
+                    // throttle and the incremental-scan default rather than
+                    // possibly doing nothing at all if pressed again soon
+                    // after the gallery opened.
+                    controller.syncNow(force: true),
+                  'folders' => _openFolders(),
+                  _ => Get.to(() => const GalleryPeopleView()),
+                },
+                itemBuilder: (context) => [
+                  PopupMenuItem(
+                    value: 'refresh',
+                    enabled: !syncing,
+                    child: Text(syncing
+                        ? 'Checking for new photos…'
+                        : 'Check for new photos'),
                   ),
-                  initialValue: controller.filter.value.availability,
-                  onSelected: controller.setAvailability,
-                  itemBuilder: (context) => const [
-                    PopupMenuItem(
-                      value: GalleryAvailabilityFilter.all,
-                      child: Text('All photos'),
-                    ),
-                    PopupMenuItem(
-                      value: GalleryAvailabilityFilter.notBackedUp,
-                      child: Text('Not backed up'),
-                    ),
-                    PopupMenuItem(
-                      value: GalleryAvailabilityFilter.cloudOnly,
-                      child: Text('Cloud only'),
-                    ),
-                  ],
-                )),
-            Obx(() => IconButton(
-                  icon: controller.isSyncing.value
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.refresh),
-                  tooltip: 'Check for new photos',
-                  // Forced (ticket 30): a manual tap is the user explicitly
-                  // asking for a fresh look, so this bypasses both the
-                  // throttle and the incremental-scan default rather than
-                  // possibly doing nothing at all if pressed again soon after
-                  // the gallery opened.
-                  onPressed: controller.isSyncing.value
-                      ? null
-                      : () => controller.syncNow(force: true),
-                )),
-            IconButton(
-              icon: const Icon(Icons.folder_special_outlined),
-              tooltip: 'Gallery folders',
-              onPressed: _openFolders,
-            ),
+                  const PopupMenuItem(
+                      value: 'folders', child: Text('Gallery folders')),
+                  if (ai)
+                    const PopupMenuItem(
+                        value: 'people', child: Text('Manage people')),
+                ],
+              );
+            }),
           ]),
       body: Column(
         children: [
@@ -204,7 +218,7 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
               onBackUpAgain: _backUpAgainSelected),
           _LocalPermissionBanner(controller: controller),
           _SummaryBar(controller: controller),
-          _FilterChipsBar(controller: controller),
+          _FilterChipsBar(controller: controller, loader: loader),
           Expanded(
             child: Obx(() {
               if (controller.isLoading.value) {
@@ -374,6 +388,52 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
     );
     if (picked != null) {
       await controller.setDateRange(picked.start, picked.end);
+    }
+  }
+
+  /// The backup-status action: the existing Availability options in a dialog,
+  /// the active one ticked.
+  Future<void> _pickAvailability() async {
+    final current = controller.filter.value.availability;
+    final picked = await showDialog<GalleryAvailabilityFilter>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Backup status'),
+        children: [
+          for (final (value, label) in const [
+            (GalleryAvailabilityFilter.all, 'All photos'),
+            (GalleryAvailabilityFilter.notBackedUp, 'Not backed up'),
+            (GalleryAvailabilityFilter.cloudOnly, 'Cloud only'),
+          ])
+            ListTile(
+              title: Text(label),
+              trailing: value == current ? const Icon(Icons.check) : null,
+              onTap: () => Navigator.pop(ctx, value),
+            ),
+        ],
+      ),
+    );
+    if (picked != null) {
+      await controller.setAvailability(picked);
+    }
+  }
+
+  /// The people action: pick a face in the dialog, then the grid is
+  /// restricted to that person's photos (see [GallerySearchController.filterByPerson]).
+  Future<void> _pickPerson() async {
+    final search = _search;
+    if (search == null) {
+      return;
+    }
+    final picked = await showDialog<GalleryPerson>(
+      context: context,
+      builder: (_) => _PeopleDialog(search: search, loader: loader),
+    );
+    if (picked != null && !await search.filterByPerson(controller, picked)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not load that person')));
+      }
     }
   }
 
@@ -980,9 +1040,10 @@ class _LocalPermissionBannerState extends State<_LocalPermissionBanner> {
 /// range, Place), each removing its own part when dismissed, and none of
 /// them touching the others (the parts combine).
 class _FilterChipsBar extends StatelessWidget {
-  const _FilterChipsBar({required this.controller});
+  const _FilterChipsBar({required this.controller, required this.loader});
 
   final GalleryGridController controller;
+  final GalleryImageLoader loader;
 
   @override
   Widget build(BuildContext context) {
@@ -1020,6 +1081,14 @@ class _FilterChipsBar extends StatelessWidget {
               };
         chips.add(_chip(label, onDeleted: controller.clearPlace));
       }
+      final person = filter.person?.person;
+      if (person != null) {
+        chips.add(Chip(
+          avatar: ClipOval(child: FaceAvatar(person: person, loader: loader)),
+          label: Text(person.name.isEmpty ? 'Unnamed' : person.name),
+          onDeleted: controller.clearPerson,
+        ));
+      }
       return SizedBox(
         height: 56,
         child: ListView(
@@ -1051,6 +1120,74 @@ class _FilterChipsBar extends StatelessWidget {
     }
     final single = from ?? to!;
     return 'Since ${localizations.formatMediumDate(single)}';
+  }
+}
+
+/// The people dialog: the people grid (face, name, photo count); picking one
+/// pops it. Loads the shared people list on open.
+class _PeopleDialog extends StatefulWidget {
+  const _PeopleDialog({required this.search, required this.loader});
+
+  final GallerySearchController search;
+  final GalleryImageLoader loader;
+
+  @override
+  State<_PeopleDialog> createState() => _PeopleDialogState();
+}
+
+class _PeopleDialogState extends State<_PeopleDialog> {
+  @override
+  void initState() {
+    super.initState();
+    widget.search.loadChips();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Filter by person'),
+      content: SizedBox(
+        width: 360,
+        child: Obx(() {
+          final people = widget.search.people.toList();
+          if (people.isEmpty) return const Text('No people yet');
+          return GridView.builder(
+            shrinkWrap: true,
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: 100,
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+              childAspectRatio: 0.8,
+            ),
+            itemCount: people.length,
+            itemBuilder: (context, i) {
+              final p = people[i];
+              return InkWell(
+                onTap: () => Navigator.pop(context, p),
+                child: Column(children: [
+                  Expanded(
+                    child: AspectRatio(
+                      aspectRatio: 1,
+                      child: ClipOval(
+                          child: FaceAvatar(person: p, loader: widget.loader)),
+                    ),
+                  ),
+                  Text(p.name.isEmpty ? 'Unnamed' : p.name,
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                  Text('${p.photoCount}',
+                      style: Theme.of(context).textTheme.bodySmall),
+                ]),
+              );
+            },
+          );
+        }),
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel')),
+      ],
+    );
   }
 }
 

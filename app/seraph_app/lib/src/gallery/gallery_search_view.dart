@@ -7,8 +7,7 @@ import 'package:seraph_app/src/gallery/gallery_search_controller.dart';
 import 'package:seraph_app/src/gallery/gallery_tile.dart';
 import 'package:seraph_app/src/gallery/local/local_image_loader.dart';
 
-/// AI search over the user's photos: free text, a tag chip and a person chip,
-/// combined. Results are the existing [GalleryTile]s in the server's score
+/// AI search over the user's photos: free text and a tag chip, combined. Results are the existing [GalleryTile]s in the server's score
 /// order; a tap opens the existing viewer on just those results.
 class GallerySearchView extends StatefulWidget {
   const GallerySearchView({super.key});
@@ -81,17 +80,12 @@ class _GallerySearchViewState extends State<GallerySearchView> {
 
   Widget _chips() {
     return Obx(() {
-      final people = search.people.where((p) => p.name.isNotEmpty).toList();
       return SizedBox(
         height: 48,
         child: ListView(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           children: [
-            for (final p in people)
-              _chip(p.name, search.personId.value == p.id,
-                  () => search.setPerson(p.id),
-                  icon: Icons.person),
             for (final t in galleryAiTags)
               _chip(t, search.tag.value == t, () => search.setTag(t)),
           ],
@@ -100,12 +94,10 @@ class _GallerySearchViewState extends State<GallerySearchView> {
     });
   }
 
-  Widget _chip(String label, bool selected, VoidCallback onTap,
-      {IconData? icon}) {
+  Widget _chip(String label, bool selected, VoidCallback onTap) {
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: FilterChip(
-        avatar: icon == null ? null : Icon(icon, size: 16),
         label: Text(label),
         selected: selected,
         onSelected: (_) => onTap(),

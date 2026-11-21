@@ -125,13 +125,14 @@ class GalleryService {
   /// Search hits in Space coordinates, best match first. Throws
   /// [GalleryAiUnavailableException] when the AI service is not available.
   Future<List<GallerySearchHit>> search(
-      {String q = '', String? tag, String? personId}) {
+      {String q = '', String? tag, String? personId, int? limit}) {
     return _getAi(
         '/api/gallery/search',
         {
           if (q.isNotEmpty) 'q': q,
           if (tag != null) 'tag': tag,
           if (personId != null) 'person': personId,
+          if (limit != null) 'limit': limit,
         },
         GallerySearchHit.listFromJson);
   }

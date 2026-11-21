@@ -1,6 +1,9 @@
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart' show setEquals;
+import 'package:seraph_app/src/gallery/gallery_models.dart';
 import 'package:seraph_app/src/gallery/local/local_media_item.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_delta_models.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
@@ -308,6 +311,46 @@ class GalleryPlaceFilter {
   int get hashCode => Object.hash(level, countryCode, admin1Code, localityId);
 }
 
+/// The person half of [GalleryFilter]: the person (for the chip) and the
+/// Space keys (providerId, path) of their photos, fetched from the server.
+class GalleryPersonFilter {
+  const GalleryPersonFilter(this.person, this.keys);
+
+  final GalleryPerson person;
+  final Set<(String, String)> keys;
+
+  @override
+  bool operator ==(Object other) =>
+      other is GalleryPersonFilter &&
+      other.person.id == person.id &&
+      setEquals(other.keys, keys);
+
+  @override
+  int get hashCode => Object.hash(person.id, keys.length);
+}
+
+/// `lhs IN (SELECT value FROM json_each(?))`: membership in a JSON array
+/// bound as ONE parameter, so the size of the set never meets SQLite's
+/// bound-variable limit (999 on old builds). json_each is built into every
+/// SQLite since 3.38 (the sqlite3 package's native and wasm builds).
+class _InJsonArray extends Expression<bool> {
+  _InJsonArray(this.lhs, this.json);
+
+  final Expression<String> lhs;
+  final String json;
+
+  @override
+  Precedence get precedence => Precedence.comparisonEq;
+
+  @override
+  void writeInto(GenerationContext context) {
+    lhs.writeInto(context);
+    context.buffer.write(' IN (SELECT value FROM json_each(');
+    Variable<String>(json).writeInto(context);
+    context.buffer.write('))');
+  }
+}
+
 /// The ONE filter value object the gallery's read path takes
 /// (the gallery-metadata feature): Availability, an optional inclusive date
 /// range in capture wall time, and an optional Place - combinable in any
@@ -319,6 +362,7 @@ class GalleryFilter {
     this.capturedFrom,
     this.capturedTo,
     this.place,
+    this.person,
   });
 
   const GalleryFilter.all() : this();
@@ -333,6 +377,8 @@ class GalleryFilter {
 
   final GalleryPlaceFilter? place;
 
+  final GalleryPersonFilter? person;
+
   /// True when anything at all is being filtered - what the UI uses to
   /// switch to the "no photos match this filter" empty state and to decide
   /// whether filter chips are shown.
@@ -340,15 +386,18 @@ class GalleryFilter {
       availability != GalleryAvailabilityFilter.all ||
       capturedFrom != null ||
       capturedTo != null ||
-      place != null;
+      place != null ||
+      person != null;
 
   GalleryFilter copyWith({
     GalleryAvailabilityFilter? availability,
     DateTime? capturedFrom,
     DateTime? capturedTo,
     GalleryPlaceFilter? place,
+    GalleryPersonFilter? person,
     bool clearDateRange = false,
     bool clearPlace = false,
+    bool clearPerson = false,
   }) =>
       GalleryFilter(
         availability: availability ?? this.availability,
@@ -356,7 +405,16 @@ class GalleryFilter {
             clearDateRange ? null : (capturedFrom ?? this.capturedFrom),
         capturedTo: clearDateRange ? null : (capturedTo ?? this.capturedTo),
         place: clearPlace ? null : (place ?? this.place),
+        person: clearPerson ? null : (person ?? this.person),
       );
+
+  /// How many of the filters are on (Availability, date range, Place,
+  /// person) - the filter menu's badge.
+  int get activeCount =>
+      (availability != GalleryAvailabilityFilter.all ? 1 : 0) +
+      (capturedFrom != null || capturedTo != null ? 1 : 0) +
+      (place != null ? 1 : 0) +
+      (person != null ? 1 : 0);
 
   @override
   bool operator ==(Object other) =>
@@ -364,11 +422,12 @@ class GalleryFilter {
       other.availability == availability &&
       other.capturedFrom == capturedFrom &&
       other.capturedTo == capturedTo &&
-      other.place == place;
+      other.place == place &&
+      other.person == person;
 
   @override
   int get hashCode =>
-      Object.hash(availability, capturedFrom, capturedTo, place);
+      Object.hash(availability, capturedFrom, capturedTo, place, person);
 }
 
 /// One place suggestion in the gallery's place search (ticket 06): a
@@ -2402,6 +2461,14 @@ class GalleryMirror {
     final place = filter.place;
     if (place != null) {
       predicate = predicate & _placePredicate(t, place);
+    }
+    final person = filter.person;
+    if (person != null) {
+      predicate = predicate &
+          _InJsonArray(
+              t.providerId + Constant<String>('\u001f') + t.path,
+              jsonEncode(
+                  [for (final k in person.keys) '${k.$1}\u001f${k.$2}']));
     }
     return predicate;
   }
