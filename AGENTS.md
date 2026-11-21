@@ -274,6 +274,37 @@ Typing:
 - Follow existing patterns around NATS topics, tracing, and Mongo DB access.
 - Keep changes localized to the service/module you are working on.
 
+## Production access (`.env.seraph-prod`)
+
+If `.env.seraph-prod` exists in the repo root, it holds credentials for the production instance.
+It is gitignored; never commit it, print its values, or copy it elsewhere. Keep it at mode `600`.
+
+Format (plain `KEY=value` lines, no `export`):
+
+- `SERAPH_URL`: base URL of the production API.
+- `OIDC_TOKEN_URL`: the OIDC provider's token endpoint.
+- `OIDC_CLIENT_ID`: the public client ID used for the refresh grant.
+- `SERAPH_REFRESH_TOKEN`: an OIDC refresh token. There is no stored access token.
+
+To get access, run a refresh-token grant:
+
+1. `POST` to `OIDC_TOKEN_URL` with form fields `grant_type=refresh_token`, `refresh_token=$SERAPH_REFRESH_TOKEN`
+   and `client_id=$OIDC_CLIENT_ID`.
+2. The response contains an `access_token` that lives about 300 seconds. Send it as
+   `Authorization: Bearer <token>` to `SERAPH_URL`. Refresh again when it expires.
+3. **The provider rotates refresh tokens.** Each successful grant invalidates the old
+   `SERAPH_REFRESH_TOKEN` and returns a new `refresh_token`. Write the new one back into
+   `.env.seraph-prod` immediately, before doing anything else (write to a temp file with mode `600`, then
+   rename over the original so a crash cannot truncate it). If the write is lost, access is lost
+   and the user must issue a new token.
+
+Rules:
+
+- Use it only when the task needs production, and keep requests read-only unless the user says otherwise.
+- Never log or echo tokens; report only status codes and non-secret facts.
+- If the refresh fails with an `invalid_grant`-style error, stop and tell the user. Do not retry in a loop.
+- Do not refresh just to check that the file is valid; every refresh rotates the token.
+
 ## Agent skills
 
 ### Issue tracker
