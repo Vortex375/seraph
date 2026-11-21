@@ -156,4 +156,25 @@ class GalleryService {
         }
         return GalleryPerson.fromJson(person);
       });
+
+  /// Tags and faces of one photo, by Space coordinates.
+  Future<GalleryPhotoAnalysis> photoAnalysis(String providerId, String path) =>
+      _getAi(
+          '/api/gallery/photos/analysis',
+          {'providerId': providerId, 'path': path},
+          GalleryPhotoAnalysis.fromJson);
+
+  /// Assigns a face: to [personId], to a new person called [newPersonName],
+  /// or - with neither - removes it from its person (`"personId": null`).
+  Future<void> assignFace(String faceId,
+          {String? personId, String? newPersonName}) =>
+      _ai(() async {
+        await dio.put<Map<String, dynamic>>(
+          '/api/gallery/faces/$faceId/person',
+          data: newPersonName != null
+              ? {'newPersonName': newPersonName}
+              : {'personId': personId},
+          options: Options(headers: await _getRequestHeaders()),
+        );
+      });
 }

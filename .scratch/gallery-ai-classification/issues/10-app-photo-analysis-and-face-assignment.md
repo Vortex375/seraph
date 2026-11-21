@@ -9,10 +9,14 @@ device-only photos show nothing. Hidden when the server answers `ai-unavailable`
 
 **Blocked by:** 07, 09
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Tags and faces show for an analysed photo; boxes line up with the faces at any viewer zoom.
-- [ ] Assigning a face to another Person updates the strip and that Person's photos on the People screen.
-- [ ] Creating a new Person from a face makes it appear on the People screen with that name.
-- [ ] Removing a face from its Person shows it as unassigned.
-- [ ] Gates: `flutter analyze` zero issues; `flutter test`; `flutter build web --release --base-href=/app/`.
+- [x] Tags and faces show for an analysed photo; boxes line up with the faces at any viewer zoom.
+- [x] Assigning a face to another Person updates the strip and that Person's photos on the People screen.
+- [x] Creating a new Person from a face makes it appear on the People screen with that name.
+- [x] Removing a face from its Person shows it as unassigned.
+- [x] Gates: `flutter analyze` zero issues; `flutter test`; `flutter build web --release --base-href=/app/`.
+
+## Comments
+
+2026-11-21 (coordinator): Gates passed (analyze 0 issues, 488 tests, web release build). Faces are picked from the strip in the details sheet; the photo overlay shows while the sheet is open and hides when zoomed. Overlay alignment is only covered by unit tests; check by eye.

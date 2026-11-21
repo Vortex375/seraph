@@ -183,6 +183,82 @@ class GalleryPersonCover {
   }
 }
 
+/// One classifier tag of a photo, from `GET /api/gallery/photos/analysis`.
+class GalleryPhotoTag {
+  const GalleryPhotoTag(this.tag, this.score);
+
+  final String tag;
+  final double score;
+}
+
+/// A face found in a photo. [box] is normalised to the displayed photo;
+/// [personId] is null while the face is unassigned.
+class GalleryPhotoFace {
+  const GalleryPhotoFace({
+    required this.id,
+    required this.box,
+    this.personId,
+    this.personName = '',
+    this.manual = false,
+  });
+
+  final String id;
+  final GalleryFaceBox box;
+  final String? personId;
+  final String personName;
+  final bool manual;
+
+  factory GalleryPhotoFace.fromJson(Map<String, dynamic> json) {
+    final b = json['box'];
+    double n(String k) => b is Map ? (b[k] as num?)?.toDouble() ?? 0 : 0;
+    return GalleryPhotoFace(
+      id: json['id'] as String? ?? '',
+      box: GalleryFaceBox(n('x1'), n('y1'), n('x2'), n('y2')),
+      personId: json['personId'] as String?,
+      personName: json['personName'] as String? ?? '',
+      manual: json['manual'] as bool? ?? false,
+    );
+  }
+}
+
+/// `GET /api/gallery/photos/analysis`: [analysed] is false until the AI
+/// service has processed the photo.
+class GalleryPhotoAnalysis {
+  const GalleryPhotoAnalysis({
+    this.analysed = false,
+    this.analysisError = '',
+    this.tags = const [],
+    this.faces = const [],
+  });
+
+  final bool analysed;
+  final String analysisError;
+  final List<GalleryPhotoTag> tags;
+  final List<GalleryPhotoFace> faces;
+
+  factory GalleryPhotoAnalysis.fromJson(Map<String, dynamic>? json) {
+    final tags = json?['tags'];
+    final faces = json?['faces'];
+    return GalleryPhotoAnalysis(
+      analysed: json?['analysed'] as bool? ?? false,
+      analysisError: json?['analysisError'] as String? ?? '',
+      tags: tags is List
+          ? [
+              for (final t in tags.cast<Map<String, dynamic>>())
+                GalleryPhotoTag(t['tag'] as String? ?? '',
+                    (t['score'] as num?)?.toDouble() ?? 0)
+            ]
+          : const [],
+      faces: faces is List
+          ? [
+              for (final f in faces)
+                GalleryPhotoFace.fromJson(f as Map<String, dynamic>)
+            ]
+          : const [],
+    );
+  }
+}
+
 /// The gateway answered 503 `ai-unavailable`: the AI service is not deployed
 /// or not reachable, so the app hides its AI features.
 class GalleryAiUnavailableException implements Exception {

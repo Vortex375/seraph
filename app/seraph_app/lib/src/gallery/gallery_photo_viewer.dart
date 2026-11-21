@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
@@ -7,6 +8,7 @@ import 'package:seraph_app/src/file_viewer/file_viewer_view.dart';
 import 'package:seraph_app/src/gallery/gallery_grid_controller.dart';
 import 'package:seraph_app/src/gallery/gallery_image_loader.dart';
 import 'package:seraph_app/src/gallery/gallery_item_display.dart';
+import 'package:seraph_app/src/gallery/gallery_photo_analysis.dart';
 import 'package:seraph_app/src/gallery/gallery_tile.dart';
 import 'package:seraph_app/src/gallery/gallery_view.dart';
 import 'package:seraph_app/src/gallery/hdr_photo_view.dart';
@@ -79,6 +81,10 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
   /// `FileViewerController`'s wiring.
   late final TransformationController _transformController;
 
+  /// Face boxes of the photo whose details are open; drawn over that photo.
+  final ValueNotifier<GalleryFaceOverlay?> _faceOverlay =
+      ValueNotifier<GalleryFaceOverlay?>(null);
+
   @override
   void initState() {
     super.initState();
@@ -112,6 +118,7 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
     _isZoomedIn.dispose();
     _uploading.dispose();
     _isUiVisible.dispose();
+    _faceOverlay.dispose();
     super.dispose();
   }
 
@@ -130,6 +137,7 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
       showDragHandle: true,
       builder: (context) => GalleryPhotoDetails(
         item: item,
+        faceOverlay: _faceOverlay,
         // Pop back to the Gallery: this dismisses the details modal sheet
         // AND the photo viewer, stopping at the Gallery route. Then push
         // the file browser at the folder the photo lives in on top of it,
@@ -156,7 +164,7 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
               '${FileViewerView.routeName}?path=${item.spaceDisplayPath}');
         },
       ),
-    );
+    ).whenComplete(() => _faceOverlay.value = null);
   }
 
   /// Ticket 19's "user presses a button on a photo and it lands in Seraph":
@@ -341,6 +349,7 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
                   onToggleUi: _toggleUi,
                   transformationController: _transformController,
                   isZoomedIn: _isZoomedIn,
+                  faceOverlay: _faceOverlay,
                 );
               },
             ),
@@ -377,10 +386,14 @@ class GalleryPhotoPage extends StatefulWidget {
     required this.onToggleUi,
     required this.transformationController,
     required this.isZoomedIn,
+    this.faceOverlay,
   });
 
   final GalleryItem item;
   final GalleryImageLoader loader;
+
+  /// Face boxes to draw over this photo while its details are open.
+  final ValueListenable<GalleryFaceOverlay?>? faceOverlay;
 
   /// Ticket 28: loads the device copy's full-resolution bytes through the
   /// Local Source seam. Always given - see [GalleryTile.localLoader]'s doc.
@@ -468,11 +481,18 @@ class _GalleryPhotoPageState extends State<GalleryPhotoPage> {
     // native path is still on its thumbnail); once the native view is
     // zoomed it claims gestures and reports taps over its channel instead.
     // Both compete in one gesture arena, so a tap toggles exactly once.
-    return GestureDetector(
+    final photo = GestureDetector(
       onTap: widget.onToggleUi,
       behavior: HitTestBehavior.opaque,
       child: child,
     );
+    final overlay = widget.faceOverlay;
+    if (overlay == null) return photo;
+    return Stack(fit: StackFit.expand, children: [
+      photo,
+      GalleryFaceBoxOverlay(
+          item: widget.item, overlay: overlay, isZoomedIn: widget.isZoomedIn),
+    ]);
   }
 
   /// Device copy first, cloud stack as the fallback - the same preference
@@ -764,7 +784,11 @@ class GalleryPhotoDetails extends StatelessWidget {
     required this.item,
     this.onOpenFolder,
     this.onOpenFile,
+    this.faceOverlay,
   });
+
+  /// Receives the photo's face boxes once its analysis is loaded.
+  final ValueNotifier<GalleryFaceOverlay?>? faceOverlay;
 
   final GalleryItem item;
 
@@ -829,6 +853,7 @@ class GalleryPhotoDetails extends StatelessWidget {
               subtitle: Text(row.value),
               onTap: row.onTap,
             ),
+          GalleryPhotoAnalysisSection(item: item, overlay: faceOverlay),
         ],
       ),
     );

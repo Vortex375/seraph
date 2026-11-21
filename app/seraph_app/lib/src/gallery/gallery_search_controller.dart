@@ -98,6 +98,22 @@ class GallerySearchController extends GetxController {
     return false;
   }
 
+  /// Assigns a face (see [GalleryService.assignFace]) and refreshes the shared
+  /// [people] list so the People screen and search chips follow. Returns false
+  /// on failure.
+  Future<bool> assignFace(String faceId,
+      {String? personId, String? newPersonName}) async {
+    try {
+      await service.assignFace(faceId,
+          personId: personId, newPersonName: newPersonName);
+      people.value = await service.people();
+      return true;
+    } on GalleryAiUnavailableException {
+      available.value = false;
+    } catch (_) {}
+    return false;
+  }
+
   /// Search for exactly one person's photos (the People screen's tap).
   void showPerson(String id) {
     text.value = '';
