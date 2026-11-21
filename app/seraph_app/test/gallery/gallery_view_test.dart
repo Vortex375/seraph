@@ -160,6 +160,14 @@ void main() {
             initialIndex: int.tryParse(Get.parameters['index'] ?? '') ?? 0,
           ),
         ),
+        GetPage(
+          name: GallerySearchView.routeName,
+          page: () => const GallerySearchView(),
+        ),
+        GetPage(
+          name: GalleryPeopleView.routeName,
+          page: () => const GalleryPeopleView(),
+        ),
         // A minimal stand-in: the folder-jump test asserts the route, not the
         // file browser's contents, so the page does not stand up the real
         // FileBrowserView (which would `Get.find` controllers the test does

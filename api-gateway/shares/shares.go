@@ -92,6 +92,10 @@ func (h *sharesHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup, public
 			return
 		}
 
+		if res.Share == nil {
+			// a nil slice encodes as null, which the app cannot iterate
+			res.Share = []shares.Share{}
+		}
 		ctx.JSON(http.StatusOK, res.Share)
 	}
 

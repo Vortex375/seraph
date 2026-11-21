@@ -285,7 +285,12 @@ class _GalleryPhotoAnalysisSectionState
                 ),
               ),
             ),
-            Text(f.personName.isEmpty ? 'Unnamed' : f.personName,
+            Text(
+                f.personId == null
+                    ? 'Unknown'
+                    : f.personName.isEmpty
+                        ? 'Unnamed'
+                        : f.personName,
                 maxLines: 1, overflow: TextOverflow.ellipsis),
           ]),
         ),

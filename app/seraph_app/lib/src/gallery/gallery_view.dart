@@ -135,7 +135,7 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
                   ? IconButton(
                       icon: const Icon(Icons.search),
                       tooltip: 'Search photos',
-                      onPressed: () => Get.to(() => const GallerySearchView()),
+                      onPressed: () => Get.toNamed(GallerySearchView.routeName),
                     )
                   : const SizedBox.shrink()),
             Obx(() {
@@ -190,7 +190,7 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
                     // after the gallery opened.
                     controller.syncNow(force: true),
                   'folders' => _openFolders(),
-                  _ => Get.to(() => const GalleryPeopleView()),
+                  _ => Get.toNamed(GalleryPeopleView.routeName),
                 },
                 itemBuilder: (context) => [
                   PopupMenuItem(

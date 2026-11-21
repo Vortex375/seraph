@@ -10,6 +10,8 @@ import 'package:seraph_app/src/gallery/local/local_image_loader.dart';
 /// AI search over the user's photos: free text and a tag chip, combined. Results are the existing [GalleryTile]s in the server's score
 /// order; a tap opens the existing viewer on just those results.
 class GallerySearchView extends StatefulWidget {
+  static const routeName = '/gallery/search';
+
   const GallerySearchView({super.key});
 
   @override
@@ -127,10 +129,11 @@ class _GallerySearchViewState extends State<GallerySearchView> {
           ),
           itemCount: items.length,
           itemBuilder: (context, index) => GestureDetector(
-            onTap: () => Get.to(() => GalleryPhotoViewerView(
-                  initialIndex: index,
-                  items: items,
-                )),
+            // named after the search screen: the result list can't survive a
+            // reload, so a reloaded URL lands back on search
+            onTap: () => Get.to(
+                () => GalleryPhotoViewerView(initialIndex: index, items: items),
+                routeName: GallerySearchView.routeName),
             child: GalleryTile(
               item: items[index],
               loader: loader,

@@ -130,11 +130,13 @@ type PhotoTag struct {
 	Score float64 `json:"score"`
 }
 
+// PhotoFace omits personId/personName while the face is unassigned: clients read a
+// missing personId as "no person".
 type PhotoFace struct {
 	ID         string `json:"id"`
 	Box        Box    `json:"box"`
-	PersonID   string `json:"personId"`
-	PersonName string `json:"personName"`
+	PersonID   string `json:"personId,omitempty"`
+	PersonName string `json:"personName,omitempty"`
 	Manual     bool   `json:"manual"`
 }
 

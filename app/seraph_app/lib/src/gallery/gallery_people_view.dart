@@ -6,6 +6,7 @@ import 'package:seraph_app/src/gallery/gallery_image_loader.dart';
 import 'package:seraph_app/src/gallery/gallery_models.dart';
 import 'package:seraph_app/src/gallery/gallery_search_controller.dart';
 import 'package:seraph_app/src/gallery/gallery_tile.dart';
+import 'package:seraph_app/src/gallery/gallery_view.dart';
 
 /// The square region (in pixels) of an [imageWidth] x [imageHeight] photo to
 /// draw as a face avatar: centred on [box] (normalised 0..1), [margin] of the
@@ -27,6 +28,8 @@ Rect faceCropRect(GalleryFaceBox box, double imageWidth, double imageHeight,
 /// People in the user's photos: a grid of face crops; tap filters the main grid to
 /// that person and returns to it, the edit icon renames.
 class GalleryPeopleView extends StatefulWidget {
+  static const routeName = '/gallery/people';
+
   const GalleryPeopleView({super.key});
 
   @override
@@ -72,7 +75,8 @@ class _GalleryPeopleViewState extends State<GalleryPeopleView> {
         final nav = Navigator.of(context);
         final messenger = ScaffoldMessenger.of(context);
         if (await search.filterByPerson(Get.find(), p)) {
-          nav.pop();
+          // opened by URL there is no grid underneath to return to
+          nav.canPop() ? nav.pop() : Get.offNamed(GalleryView.routeName);
         } else {
           messenger.showSnackBar(
               const SnackBar(content: Text('Could not load that person')));
@@ -191,6 +195,9 @@ class _FaceAvatarState extends State<FaceAvatar> {
       child: image == null || box == null
           ? const Icon(Icons.person)
           : CustomPaint(
+              // fill whatever box we get; a childless CustomPaint is 0x0
+              // under loose constraints (a Chip's avatar slot)
+              size: Size.infinite,
               painter: _FacePainter(
                   image,
                   faceCropRect(

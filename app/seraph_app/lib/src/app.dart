@@ -5,7 +5,9 @@ import 'package:seraph_app/src/file_browser/file_browser_controller.dart';
 import 'package:seraph_app/src/file_browser/file_browser_view.dart';
 import 'package:seraph_app/src/file_viewer/file_viewer_controller.dart';
 import 'package:seraph_app/src/file_viewer/file_viewer_view.dart';
+import 'package:seraph_app/src/gallery/gallery_people_view.dart';
 import 'package:seraph_app/src/gallery/gallery_photo_viewer.dart';
+import 'package:seraph_app/src/gallery/gallery_search_view.dart';
 import 'package:seraph_app/src/gallery/gallery_source_folders_view.dart';
 import 'package:seraph_app/src/gallery/gallery_view.dart';
 import 'package:seraph_app/src/initial_binding.dart';
@@ -73,6 +75,14 @@ class MyApp extends StatelessWidget {
           transition: Transition.noTransition,
         ),
         GetPage(name: GalleryView.routeName, page: () => const GalleryView()),
+        GetPage(
+          name: GallerySearchView.routeName,
+          page: () => const GallerySearchView(),
+        ),
+        GetPage(
+          name: GalleryPeopleView.routeName,
+          page: () => const GalleryPeopleView(),
+        ),
         GetPage(
           name: GallerySourceFoldersView.routeName,
           page: () => const GallerySourceFoldersView(),
