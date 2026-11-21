@@ -271,6 +271,15 @@ func (g *GalleryProvider) dispatchPhotoChanged(ctx context.Context, providerId s
 		return
 	}
 
+	if err := g.publishPhotoChanged(ctx, providerId, filePath, change, seq); err != nil {
+		g.log.Error("failed to publish GalleryPhotoChangedEvent; gallery-ai will not see this change until the photo is touched again",
+			"providerId", providerId, "path", filePath, "change", change, "error", err)
+	}
+}
+
+// publishPhotoChanged publishes one GalleryPhotoChangedEvent and returns the
+// error; callers guard on g.js/g.aiEnabled.
+func (g *GalleryProvider) publishPhotoChanged(ctx context.Context, providerId string, filePath string, change string, seq int64) error {
 	data, err := json.Marshal(events.GalleryPhotoChangedEvent{
 		ProviderID: providerId,
 		Path:       filePath,
@@ -278,14 +287,12 @@ func (g *GalleryProvider) dispatchPhotoChanged(ctx context.Context, providerId s
 		Seq:        seq,
 	})
 	if err != nil {
-		g.log.Error("failed to marshal GalleryPhotoChangedEvent", "error", err)
-		return
+		return fmt.Errorf("marshal GalleryPhotoChangedEvent: %w", err)
 	}
-
 	if _, err := g.js.Publish(ctx, events.GalleryPhotoChangedTopic, data); err != nil {
-		g.log.Error("failed to publish GalleryPhotoChangedEvent; gallery-ai will not see this change until the photo is touched again",
-			"providerId", providerId, "path", filePath, "change", change, "error", err)
+		return fmt.Errorf("publish GalleryPhotoChangedEvent: %w", err)
 	}
+	return nil
 }
 
 // ensurePhotoChangedStream declares the work queue stream

@@ -309,6 +309,10 @@ func (g *GalleryProvider) Start() error {
 	// every other startup pass so Start() returns promptly.
 	g.startDotfileSweep(backfillCtx)
 
+	// one-off replay of existing photos to gallery-ai (only with ai.enabled);
+	// see runPhotoReplay's docs.
+	g.startPhotoReplay(backfillCtx)
+
 	// background metadata sweep: re-extracts every photo still below the
 	// current extraction version (clearing MetadataPending as it goes) and
 	// re-resolves Places from stored coordinates below the current geo

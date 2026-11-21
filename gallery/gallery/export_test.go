@@ -18,7 +18,10 @@
 
 package gallery
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 // SetPrefixCacheRetryInterval shortens the prefix cache retry for tests and
 // returns a func restoring the previous value.
@@ -26,4 +29,9 @@ func SetPrefixCacheRetryInterval(d time.Duration) func() {
 	prev := prefixCacheRetryInterval
 	prefixCacheRetryInterval = d
 	return func() { prefixCacheRetryInterval = prev }
+}
+
+// RunPhotoReplay runs one photo replay pass synchronously.
+func (g *GalleryProvider) RunPhotoReplay(ctx context.Context) error {
+	return g.runPhotoReplay(ctx)
 }

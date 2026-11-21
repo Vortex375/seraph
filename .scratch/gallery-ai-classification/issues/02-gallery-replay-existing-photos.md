@@ -14,12 +14,12 @@ one-time replay of existing photos"):
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] With `ai.enabled` on and no marker, every non-deleted photo is published exactly once as
+- [x] With `ai.enabled` on and no marker, every non-deleted photo is published exactly once as
       `upserted` with its current `seq`; deleted photos are not.
-- [ ] After a restart mid-walk, the walk resumes after the last published `_id`.
-- [ ] Once done, a restart publishes nothing.
-- [ ] With `ai.enabled` off, nothing is published and no marker is written.
-- [ ] Deleting the marker makes the next startup replay again.
-- [ ] Gates: `go test ./...` in `gallery`, integration tests running (check the counts, not just `ok`).
+- [x] After a restart mid-walk, the walk resumes after the last published `_id`.
+- [x] Once done, a restart publishes nothing.
+- [x] With `ai.enabled` off, nothing is published and no marker is written.
+- [x] Deleting the marker makes the next startup replay again.
+- [x] Gates: `go test ./...` in `gallery`, integration tests running (check the counts, not just `ok`).
