@@ -9,9 +9,9 @@ mentions how many were skipped. Skip the Job entirely when the count is 0.
 
 **Status:** ready-for-agent
 
-- [ ] Rescanning a folder with N metadata-pending photos yields `gallery.metadata.<id>` going from
+- [x] Rescanning a folder with N metadata-pending photos yields `gallery.metadata.<id>` going from
       `done` 0 / `total` N to `completed` with `done` = N.
-- [ ] A photo whose extraction fails counts as done and is reported in `statusMessage`; the Job still
+- [x] A photo whose extraction fails counts as done and is reported in `statusMessage`; the Job still
       completes.
-- [ ] A folder with no pending photos publishes no `gallery.metadata.<id>` entry.
-- [ ] Gates: `go test ./...` in `gallery` with `DOCKER_HOST` set; no `SKIP`.
+- [x] A folder with no pending photos publishes no `gallery.metadata.<id>` entry.
+- [x] Gates: `go test ./...` in `gallery` with `DOCKER_HOST` set; no `SKIP`.

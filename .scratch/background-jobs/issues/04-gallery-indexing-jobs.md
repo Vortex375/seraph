@@ -14,12 +14,12 @@
 
 **Status:** ready-for-agent
 
-- [ ] Adding a Gallery Source Folder over a fixture with N photos yields `gallery.backfill.<id>` ending
+- [x] Adding a Gallery Source Folder over a fixture with N photos yields `gallery.backfill.<id>` ending
       `completed` with `done` = N.
-- [ ] A rescan yields `gallery.rescan.<id>` ending `completed`; a rescan against an unreachable provider
+- [x] A rescan yields `gallery.rescan.<id>` ending `completed`; a rescan against an unreachable provider
       ends `failed` with the error.
-- [ ] With the ingest queue drained, `gallery.ingest` reports `idle` / `pending` 0.
-- [ ] With AI enabled and a fresh replay, `gallery.replay` counts up to the photo count and completes; a
+- [x] With the ingest queue drained, `gallery.ingest` reports `idle` / `pending` 0.
+- [x] With AI enabled and a fresh replay, `gallery.replay` counts up to the photo count and completes; a
       publish failure ends it `failed`.
-- [ ] Reporting never fails or slows the indexing itself beyond the reporter's own publishes.
-- [ ] Gates: `go test ./...` in `gallery` with `DOCKER_HOST` set; confirm no `SKIP` in `-v` output.
+- [x] Reporting never fails or slows the indexing itself beyond the reporter's own publishes.
+- [x] Gates: `go test ./...` in `gallery` with `DOCKER_HOST` set; confirm no `SKIP` in `-v` output.

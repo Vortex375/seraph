@@ -30,6 +30,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"umbasa.net/seraph/events"
 	"umbasa.net/seraph/file-provider/fileprovider"
+	"umbasa.net/seraph/messaging"
 )
 
 // THE POINT OF THIS FILE - why RESCAN is not just "run backfill again".
@@ -206,27 +207,46 @@ func (g *GalleryProvider) runRescan(ctx context.Context, folderId primitive.Obje
 		return
 	}
 
+	job := messaging.NewJob(g.nc, "gallery.rescan."+folderId.Hex(),
+		fmt.Sprintf("Gallery rescan of %s%s", folder.SpaceProviderId, folder.Path))
+	defer job.Close()
+	job.Progress(0, -1, "Resolving folder")
+
 	p, ok := g.resolveFolderPrefix(ctx, *folder)
 	if !ok {
 		// resolveFolderPrefix already logged why
+		job.Fail(errors.New("folder does not resolve to a Space"))
 		return
 	}
 
+	var jobErr error
+	job.Progress(0, -1, "Walking folder")
 	walk, err := g.walkRescan(ctx, p)
 	if err != nil {
+		jobErr = err
 		g.log.Error("rescan: walk failed; the folder may still be stale", "error", err, "providerId", p.providerId, "path", p.path)
 		// still attempt the metadata heal below - a walk failure (e.g. an
 		// unreadable folder root) does not mean nothing on disk changed, and
 		// healing is independent of how far the walk got
 	} else {
 		g.log.Debug("rescan: walk complete", "providerId", p.providerId, "path", p.path)
+		job.Progress(0, -1, "Tombstoning missing photos")
 		if err := g.tombstoneMissing(ctx, p, walk); err != nil {
 			g.log.Error("rescan: tombstoning photos missing from disk failed", "error", err, "providerId", p.providerId, "path", p.path)
+			jobErr = err
 		}
 	}
 
-	if err := g.healPendingMetadata(ctx, p); err != nil {
+	job.Progress(0, -1, "Healing pending metadata")
+	if err := g.healPendingMetadata(ctx, folderId, p); err != nil {
 		g.log.Error("rescan: healing MetadataPending photos failed", "error", err, "providerId", p.providerId, "path", p.path)
+		jobErr = err
+	}
+
+	if jobErr != nil {
+		job.Fail(jobErr)
+	} else {
+		job.Complete("")
 	}
 }
 
@@ -398,7 +418,7 @@ func (g *GalleryProvider) walkDir(ctx context.Context, client fileprovider.Clien
 // disk, or a transient File Provider error) is logged and skipped rather
 // than aborting the rest of the heal pass, matching backfillUpsert's
 // per-entry error handling.
-func (g *GalleryProvider) healPendingMetadata(ctx context.Context, p prefix) error {
+func (g *GalleryProvider) healPendingMetadata(ctx context.Context, folderId primitive.ObjectID, p prefix) error {
 	filter := prefixFilter(p)
 	filter["metadataPending"] = true
 	// Tombstoned photos are deliberately excluded. markDeleted (ingest.go)
@@ -422,6 +442,15 @@ func (g *GalleryProvider) healPendingMetadata(ctx context.Context, p prefix) err
 	var pending []GalleryPhoto
 	if err := cur.All(ctx, &pending); err != nil {
 		return fmt.Errorf("finding MetadataPending photos under %s/%s: %w", p.providerId, p.path, err)
+	}
+
+	// no Job at all when there is nothing to heal
+	var job *messaging.Job
+	if len(pending) > 0 {
+		job = messaging.NewJob(g.nc, "gallery.metadata."+folderId.Hex(),
+			fmt.Sprintf("Metadata extraction under %s%s", p.providerId, p.path))
+		defer job.Close()
+		job.Progress(0, int64(len(pending)), "")
 	}
 
 	healed, errored := 0, 0
@@ -459,9 +488,13 @@ func (g *GalleryProvider) healPendingMetadata(ctx context.Context, p prefix) err
 			errored++
 			g.log.Error("rescan: failed to heal MetadataPending photo; leaving it pending",
 				"error", err, "providerId", photo.ProviderId, "path", photo.Path)
-			continue
+		} else {
+			healed++
 		}
-		healed++
+		job.Progress(int64(healed+errored), int64(len(pending)), skippedMessage(errored))
+	}
+	if job != nil {
+		job.Complete(skippedMessage(errored))
 	}
 
 	g.log.Info("gallery: metadata heal pass complete",
@@ -543,4 +576,11 @@ func (g *GalleryProvider) rescanSourceFolder(ctx context.Context, req *GallerySo
 	return &GallerySourceFolderCrudResponse{
 		SourceFolder: []GallerySourceFolder{*folder},
 	}
+}
+
+func skippedMessage(n int) string {
+	if n == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d skipped after errors", n)
 }

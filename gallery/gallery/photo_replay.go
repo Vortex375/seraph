@@ -27,6 +27,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"umbasa.net/seraph/events"
+	"umbasa.net/seraph/messaging"
 )
 
 // photoReplayMarkerId is the _id of the one-off photo replay's marker
@@ -65,12 +66,12 @@ func (g *GalleryProvider) startPhotoReplay(ctx context.Context) {
 // persisted in the marker so a restart resumes after it; the marker is set
 // done at the end. Republishing is harmless: gallery-ai drops events whose
 // seq it has already processed.
-func (g *GalleryProvider) runPhotoReplay(ctx context.Context) error {
+func (g *GalleryProvider) runPhotoReplay(ctx context.Context) (err error) {
 	var marker struct {
 		LastId primitive.ObjectID `bson:"lastId"`
 		Done   bool               `bson:"done"`
 	}
-	err := g.sequences.counters.FindOne(ctx, bson.M{"_id": photoReplayMarkerId}).Decode(&marker)
+	err = g.sequences.counters.FindOne(ctx, bson.M{"_id": photoReplayMarkerId}).Decode(&marker)
 	if err != nil && err != mongo.ErrNoDocuments {
 		return fmt.Errorf("reading photo replay marker: %w", err)
 	}
@@ -81,6 +82,26 @@ func (g *GalleryProvider) runPhotoReplay(ctx context.Context) error {
 
 	lastId := marker.LastId
 	published := 0
+
+	remaining := bson.M{"deleted": bson.M{"$ne": true}}
+	if !lastId.IsZero() {
+		remaining["_id"] = bson.M{"$gt": lastId}
+	}
+	total, countErr := g.photos.CountDocuments(ctx, remaining)
+	if countErr != nil {
+		return fmt.Errorf("counting gallery photos to replay: %w", countErr)
+	}
+	job := messaging.NewJob(g.nc, "gallery.replay", "Replaying gallery photos to gallery-ai")
+	defer job.Close()
+	job.Progress(0, total, "")
+	defer func() {
+		switch {
+		case err == nil:
+			job.Complete(fmt.Sprintf("%d photos replayed", published))
+		case ctx.Err() == nil: // a shutdown is resumed on restart, not a failure
+			job.Fail(err)
+		}
+	}()
 	for {
 		filter := bson.M{"deleted": bson.M{"$ne": true}}
 		if !lastId.IsZero() {
@@ -119,6 +140,7 @@ func (g *GalleryProvider) runPhotoReplay(ctx context.Context) error {
 			}
 			lastId = d.Id
 			published++
+			job.Progress(int64(published), total, "")
 		}
 
 		// persist progress up to the last photo actually published, so a
