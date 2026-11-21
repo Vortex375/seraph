@@ -67,3 +67,8 @@ const ThumbnailWarmTopic = "seraph.thumbnail.warm"
 // the publisher's read model - see ThumbnailWarmUnsupportedNotice's docs.
 const ThumbnailWarmUnsupportedStream = "SERAPH_THUMBNAIL_WARM_UNSUPPORTED"
 const ThumbnailWarmUnsupportedTopic = "seraph.thumbnail.warm.unsupported"
+
+// GalleryPhotoChangedStream/Topic is the durable JetStream work queue the
+// gallery service publishes GalleryPhotoChangedEvent to - see its docs.
+const GalleryPhotoChangedStream = "SERAPH_GALLERY_PHOTO_CHANGED"
+const GalleryPhotoChangedTopic = "seraph.gallery.photo.changed"
