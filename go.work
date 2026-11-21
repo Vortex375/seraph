@@ -11,6 +11,7 @@ use (
 	./file-provider-dir
 	./file-provider-smb
 	./gallery
+	./gallery-ai
 	./jobs
 	./log-viewer
 	./logging
