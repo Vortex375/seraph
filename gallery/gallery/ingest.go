@@ -648,7 +648,12 @@ func (g *GalleryProvider) reportIngestJob(ctx context.Context, cons jetstream.Co
 			g.log.Debug("gallery.ingest job: failed to read consumer info", "error", err)
 			return
 		}
-		job.Pending(int64(info.NumPending)+int64(info.NumAckPending), "")
+		n := int64(info.NumPending) + int64(info.NumAckPending)
+		msg := "Up to date"
+		if n > 0 {
+			msg = fmt.Sprintf("%d files waiting", n)
+		}
+		job.Pending(n, msg)
 	}
 
 	poll()

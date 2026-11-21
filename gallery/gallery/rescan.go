@@ -246,7 +246,7 @@ func (g *GalleryProvider) runRescan(ctx context.Context, folderId primitive.Obje
 	if jobErr != nil {
 		job.Fail(jobErr)
 	} else {
-		job.Complete("")
+		job.Complete("Rescan finished")
 	}
 }
 
