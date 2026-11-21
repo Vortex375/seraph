@@ -28,6 +28,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"go.uber.org/fx"
+	"umbasa.net/seraph/api-gateway/auth"
 	"umbasa.net/seraph/api-gateway/gateway-handler"
 	"umbasa.net/seraph/events"
 	"umbasa.net/seraph/jobs/jobs"
@@ -43,9 +44,10 @@ var Module = fx.Module("jobs",
 type Params struct {
 	fx.In
 
-	Log *logging.Logger
-	Nc  *nats.Conn
-	Js  jetstream.JetStream
+	Log  *logging.Logger
+	Nc   *nats.Conn
+	Js   jetstream.JetStream
+	Auth auth.Auth
 }
 
 type Result struct {
@@ -58,6 +60,7 @@ type jobsHandler struct {
 	logger *logging.Logger
 	log    *slog.Logger
 	kv     jetstream.KeyValue
+	auth   auth.Auth
 }
 
 type JobWithTimestamp struct {
@@ -74,14 +77,20 @@ func New(p Params) (Result, error) {
 	return Result{
 		Handler: &jobsHandler{
 			logger: p.Log,
-			log:    p.Log.GetLogger("preview"),
+			log:    p.Log.GetLogger("jobs"),
 			kv:     kv,
+			auth:   p.Auth,
 		},
 	}, nil
 }
 
 func (h *jobsHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup, publicApiGroup *gin.RouterGroup) {
 	apiGroup.GET("jobs", func(ctx *gin.Context) {
+		if !h.auth.IsSpaceAdmin(ctx) {
+			ctx.AbortWithStatus(http.StatusForbidden)
+			return
+		}
+
 		watcher, err := h.kv.WatchAll(ctx)
 		if err != nil {
 			ctx.AbortWithError(http.StatusInternalServerError, err)
@@ -96,7 +105,13 @@ func (h *jobsHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup, publicAp
 			}
 
 			ev := events.JobEvent{}
-			ev.Unmarshal(v.Value())
+			// Entries written before the progress fields existed may decode
+			// "successfully" with zero values; messaging.Job always sets state,
+			// so an empty state marks them as old-schema.
+			if err := ev.Unmarshal(v.Value()); err != nil || ev.State == "" {
+				h.log.Warn("skipping undecodable job entry", "key", v.Key(), "error", err)
+				continue
+			}
 
 			values = append(values, JobWithTimestamp{
 				JobEvent: ev,

@@ -20,6 +20,7 @@ import 'package:seraph_app/src/search/search_view.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
 import 'package:seraph_app/src/share/share_controller.dart';
 import 'package:seraph_app/src/share/share_view.dart';
+import 'package:seraph_app/src/jobs/jobs_view.dart';
 import 'package:seraph_app/src/spaces_admin/spaces_list_view.dart';
 
 import 'login/login_view.dart';
@@ -121,6 +122,7 @@ class MyApp extends StatelessWidget {
           name: SpacesListView.routeName,
           page: () => const SpacesListView(),
         ),
+        GetPage(name: JobsView.routeName, page: () => const JobsView()),
       ];
     }
 

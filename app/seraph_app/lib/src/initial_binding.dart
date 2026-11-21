@@ -22,6 +22,7 @@ import 'package:seraph_app/src/media_player/audio_player_controller.dart';
 import 'package:seraph_app/src/search/search_service.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
 import 'package:seraph_app/src/spaces_admin/spaces_list_controller.dart';
+import 'package:seraph_app/src/jobs/jobs_service.dart';
 import 'package:seraph_app/src/spaces_admin/spaces_service.dart';
 
 class InitialBinding extends Bindings {
@@ -37,6 +38,7 @@ class InitialBinding extends Bindings {
     Get.put(AudioPlayerController());
     Get.put(SpacesService(Get.find(), Get.find()));
     Get.put(SpacesListController(Get.find()));
+    Get.put(JobsService(Get.find(), Get.find()));
     Get.put(GalleryService(Get.find(), Get.find()));
     // Both already opened and registered in main.dart, ahead of
     // LoginController - see that file's comment for why (ticket 23's

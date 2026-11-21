@@ -13,14 +13,14 @@
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The "Jobs" entry is absent for a non-admin and present for an admin.
-- [ ] A Batch Job with `total > 0` shows a determinate bar at `done / total`; with `total` unknown and
+- [x] The "Jobs" entry is absent for a non-admin and present for an admin.
+- [x] A Batch Job with `total > 0` shows a determinate bar at `done / total`; with `total` unknown and
       `running`, an indeterminate bar; `completed` shows no bar.
-- [ ] A Queue Job with `pending` 1234 shows "1,234 waiting"; `idle` shows no bar.
-- [ ] A `running` Job last updated 3 minutes ago shows "stalled".
-- [ ] A 403 shows "Only space admins can see jobs"; a network error shows a retry message.
-- [ ] Polling stops when leaving the screen (no requests while another screen is shown).
-- [ ] Gates: `flutter analyze` (zero issues), `flutter test`, `flutter build web --release
+- [x] A Queue Job with `pending` 1234 shows "1,234 waiting"; `idle` shows no bar.
+- [x] A `running` Job last updated 3 minutes ago shows "stalled".
+- [x] A 403 shows "Only space admins can see jobs"; a network error shows a retry message.
+- [x] Polling stops when leaving the screen (no requests while another screen is shown).
+- [x] Gates: `flutter analyze` (zero issues), `flutter test`, `flutter build web --release
       --base-href=/app/`.

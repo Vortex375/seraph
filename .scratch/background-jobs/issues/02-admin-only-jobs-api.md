@@ -9,11 +9,11 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A non-admin user gets 403; an admin (and no-auth mode) gets 200.
-- [ ] Each entry has `key`, `description`, `statusMessage`, `state`, `done`, `total`, `pending`, `time`.
-- [ ] An entry written with the pre-01 schema is left out of the list and logged; the request still
+- [x] A non-admin user gets 403; an admin (and no-auth mode) gets 200.
+- [x] Each entry has `key`, `description`, `statusMessage`, `state`, `done`, `total`, `pending`, `time`.
+- [x] An entry written with the pre-01 schema is left out of the list and logged; the request still
       returns 200 with the other entries.
-- [ ] An empty bucket returns `[]`, not `null`.
-- [ ] Gates: `go test ./...` in `api-gateway`.
+- [x] An empty bucket returns `[]`, not `null`.
+- [x] Gates: `go test ./...` in `api-gateway`.
