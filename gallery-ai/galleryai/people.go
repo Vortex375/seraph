@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"umbasa.net/seraph/messaging"
 )
 
 // clusterLockKey is the Postgres advisory lock every clustering step runs under.
@@ -34,7 +35,8 @@ const clusterLockKey = 0x5e7a0f05
 // clusterFaces clusters the unassigned, non-manual faces that match where (a SQL
 // condition over faces, with args), one transaction each. pass is false right
 // after a photo was stored, true for the periodic full pass (see clusterFace).
-func (s *Service) clusterFaces(ctx context.Context, pass bool, where string, args ...any) error {
+// job (may be nil) gets the progress of the run.
+func (s *Service) clusterFaces(ctx context.Context, job *messaging.Job, pass bool, where string, args ...any) error {
 	rows, err := s.pool.Query(ctx, `SELECT id FROM faces WHERE person_id IS NULL AND NOT manual AND (`+where+`) ORDER BY id`, args...)
 	if err != nil {
 		return fmt.Errorf("list faces to cluster: %w", err)
@@ -43,9 +45,16 @@ func (s *Service) clusterFaces(ctx context.Context, pass bool, where string, arg
 	if err != nil {
 		return fmt.Errorf("list faces to cluster: %w", err)
 	}
-	for _, id := range ids {
+	total := int64(len(ids))
+	if job != nil {
+		job.Progress(0, total, fmt.Sprintf("0 of %d faces", total))
+	}
+	for i, id := range ids {
 		if err := s.clusterFace(ctx, id, pass); err != nil {
 			return fmt.Errorf("cluster face %s: %w", id, err)
+		}
+		if job != nil {
+			job.Progress(int64(i+1), total, fmt.Sprintf("%d of %d faces", i+1, total))
 		}
 	}
 	return nil
@@ -56,7 +65,15 @@ func (s *Service) clusterFaces(ctx context.Context, pass bool, where string, arg
 // covers faces never clustered (crash, or failure after the photo was stored).
 // A failed pass re-arms clusterDirty.
 func (s *Service) clusterPass(ctx context.Context) error {
-	err := s.clusterFaces(ctx, true, `true`)
+	job := messaging.NewJob(s.nc, "gallery-ai.clustering", "Face clustering")
+	defer job.Close()
+	err := s.clusterFaces(ctx, job, true, `true`)
+	switch {
+	case err == nil:
+		job.Complete("Face clustering finished")
+	case ctx.Err() == nil:
+		job.Fail(err)
+	}
 	if err != nil {
 		s.clusterDirty.Store(true)
 	}

@@ -216,6 +216,44 @@ type env struct {
 	thumbs *fakeThumbs
 	svc    *galleryai.Service
 	stop   func()
+	jobs   *jobLog
+}
+
+// jobLog records every JobEvent published on seraph.jobs.>, in order per key.
+type jobLog struct {
+	mu     sync.Mutex
+	events map[string][]events.JobEvent
+}
+
+func subscribeJobs(t *testing.T, nc *nats.Conn) *jobLog {
+	l := &jobLog{events: map[string][]events.JobEvent{}}
+	sub, err := nc.Subscribe(events.JobsTopic, func(m *nats.Msg) {
+		ev := events.JobEvent{}
+		if ev.Unmarshal(m.Data) == nil {
+			l.mu.Lock()
+			l.events[ev.Key] = append(l.events[ev.Key], ev)
+			l.mu.Unlock()
+		}
+	})
+	require.NoError(t, err)
+	require.NoError(t, nc.Flush())
+	t.Cleanup(func() { sub.Unsubscribe() })
+	return l
+}
+
+func (l *jobLog) history(key string) []events.JobEvent {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]events.JobEvent(nil), l.events[key]...)
+}
+
+// last is the latest event of key, or the zero event.
+func (l *jobLog) last(key string) events.JobEvent {
+	h := l.history(key)
+	if len(h) == 0 {
+		return events.JobEvent{}
+	}
+	return h[len(h)-1]
 }
 
 func start(t *testing.T) *env { return startSeeded(t, "") }
@@ -265,6 +303,8 @@ func startWith(t *testing.T, o startOpts) *env {
 		Logger: logging.New(logging.Params{}), Tracing: tracing.NewNoopTracing(),
 	})
 	e.svc = svc
+	e.jobs = subscribeJobs(t, nc)
+	galleryai.SetPollInterval(svc, 100*time.Millisecond)
 	galleryai.SetRetryDelay(svc, 200*time.Millisecond)
 	galleryai.SetTagRetryDelay(svc, 50*time.Millisecond)
 	if o.hook != nil {
@@ -413,6 +453,51 @@ func TestML503LeavesMessageUnackedUntilRecovery(t *testing.T) {
 	assert.Equal(t, 1, e.count(t, "photo_embeddings"))
 }
 
+// With ML down every message is NAK'd for redelivery; the analysis Job must keep
+// reporting that backlog, then go idle once everything is analysed.
+func TestAnalysisJobReportsBacklogThroughMLOutageThenIdle(t *testing.T) {
+	e := start(t)
+	e.ml.status.Store(503)
+	const n = 6
+	for i := range n {
+		data, _ := json.Marshal(events.GalleryPhotoChangedEvent{ProviderID: "p", Path: fmt.Sprintf("/%d.jpg", i), Change: events.GalleryPhotoUpserted, Seq: 1})
+		_, err := e.js.Publish(context.Background(), events.GalleryPhotoChangedTopic, data)
+		require.NoError(t, err)
+	}
+
+	require.Eventually(t, func() bool { return e.jobs.last("gallery-ai.analysis").Pending == n }, 10*time.Second, 20*time.Millisecond)
+	// let several NAK/redelivery rounds (200 ms) and polls (100 ms) pass
+	calls := e.ml.calls.Load()
+	require.Eventually(t, func() bool { return e.ml.calls.Load() >= calls+n }, 10*time.Second, 20*time.Millisecond)
+	last := e.jobs.last("gallery-ai.analysis")
+	assert.Equal(t, "running", last.State)
+	assert.EqualValues(t, n, last.Pending)
+	assert.Equal(t, "0 analysed, 6 waiting", last.StatusMessage)
+	assert.Equal(t, "AI classification", last.Description)
+
+	e.ml.status.Store(200)
+	require.Eventually(t, func() bool { return e.jobs.last("gallery-ai.analysis").State == "idle" }, 10*time.Second, 20*time.Millisecond)
+	last = e.jobs.last("gallery-ai.analysis")
+	assert.EqualValues(t, 0, last.Pending)
+	assert.Equal(t, "6 analysed, 0 waiting", last.StatusMessage)
+
+	// the backlog only ever falls once all events are queued
+	prev, full := int64(n), false
+	for _, ev := range e.jobs.history("gallery-ai.analysis") {
+		full = full || ev.Pending == n
+		if full {
+			assert.LessOrEqual(t, ev.Pending, prev)
+			prev = ev.Pending
+		}
+	}
+}
+
+func TestGroupDigits(t *testing.T) {
+	for in, want := range map[int64]string{0: "0", 12: "12", 4210: "4,210", 12876: "12,876", 1234567: "1,234,567"} {
+		assert.Equal(t, want, galleryai.GroupDigits(in))
+	}
+}
+
 func TestModelSweepReanalysesOnlyStaleLivePhotos(t *testing.T) {
 	e := startSeeded(t, `INSERT INTO photos (provider_id, path, seq, deleted, model) VALUES
 		('p', '/old1.jpg', 7, false, 'old'),
@@ -500,6 +585,10 @@ func TestTagConfigChangeRetagsFromStoredEmbeddingsWithoutImageCalls(t *testing.T
 	e1 := startWith(t, startOpts{seed: seedTagged, tags: tagSet(0.7)})
 	require.Eventually(t, func() bool { return cfgHash(e1) != "" }, 10*time.Second, 50*time.Millisecond)
 	assert.Equal(t, 4, e1.count(t, "photo_tags")) // hit + mixed on both photos, stale gone
+	require.Eventually(t, func() bool { return e1.jobs.last("gallery-ai.tagging").State == "completed" }, 10*time.Second, 50*time.Millisecond)
+	tagging := e1.jobs.last("gallery-ai.tagging")
+	assert.EqualValues(t, 2, tagging.Total)
+	assert.Equal(t, tagging.Total, tagging.Done)
 	e1.stop()
 
 	e2 := startWith(t, startOpts{keep: true, tags: tagSet(0.8)})

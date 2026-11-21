@@ -10,12 +10,12 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] With photo-changed events queued, `gallery-ai.analysis` reports `running` with a falling `pending`,
+- [x] With photo-changed events queued, `gallery-ai.analysis` reports `running` with a falling `pending`,
       then `idle`.
-- [ ] Changing the tag config yields `gallery-ai.tagging` ending `completed` with `done` = `total`.
-- [ ] A gated clustering pass that is skipped publishes nothing; one that runs ends `completed`.
-- [ ] With the ML container down, analysis keeps reporting its backlog (it does not go `idle` while
+- [x] Changing the tag config yields `gallery-ai.tagging` ending `completed` with `done` = `total`.
+- [x] A gated clustering pass that is skipped publishes nothing; one that runs ends `completed`.
+- [x] With the ML container down, analysis keeps reporting its backlog (it does not go `idle` while
       messages are being NAK'd).
-- [ ] Gates: `go test ./...` in `gallery-ai` with `DOCKER_HOST` set; no `SKIP` beyond the opt-in ML tests.
+- [x] Gates: `go test ./...` in `gallery-ai` with `DOCKER_HOST` set; no `SKIP` beyond the opt-in ML tests.
