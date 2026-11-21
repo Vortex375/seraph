@@ -85,6 +85,22 @@ All clustering runs under one Postgres advisory lock. Faces whose clustering fai
 false`, e.g. after a crash) are picked up by the same pass. A person that loses all its
 faces is deleted; one that loses its cover face gets another cover.
 
+## API
+
+Internal NATS request/reply topics (JSON, queue group = topic name; types in `galleryai/messages.go`). Every request
+carries the caller's physical `prefixes` (`[{providerId, path}]`, path `/` = the whole provider); only live photos under
+one of them are visible, and no prefixes match nothing. Every response has an `error` string. The gallery service
+fronts these with user-scoped topics.
+
+| Topic | Request | Response |
+| --- | --- | --- |
+| `seraph.gallery.ai.search` | `prefixes, text?, tag?, personId?, limit` (default 200, max 1000) | `items[{providerId, path, score}]`; `text` ranks by CLIP similarity, otherwise newest first |
+| `seraph.gallery.ai.status` | `prefixes` | `analysed, pending, failed` (photos not yet delivered to gallery-ai are not counted) |
+| `seraph.gallery.ai.people` | `prefixes` | `people[{id, name, photoCount, cover{providerId, path, box}}]`, counts and cover from visible photos only |
+| `seraph.gallery.ai.person.rename` | `prefixes, id, name` (empty = unnamed) | `person`; `not found` if not visible |
+| `seraph.gallery.ai.photo` | `prefixes, providerId, path` | `analysed, analysisError, tags[], faces[{id, box, personId, personName, manual}]` |
+| `seraph.gallery.ai.face.assign` | `prefixes, faceId` and exactly one of `personId`, `newPersonName`, `unassign` | `face` |
+
 ## Existing photos
 
 Photos that existed before gallery-ai was deployed arrive through gallery's one-time replay (see gallery).

@@ -30,6 +30,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/fx"
@@ -58,6 +59,7 @@ type Params struct {
 	ML      *MLClient
 	Thumbs  ThumbnailSource
 	Js      jetstream.JetStream
+	Nc      *nats.Conn
 	Logger  *logging.Logger
 	Tracing *tracing.Tracing
 }
@@ -68,6 +70,7 @@ type Service struct {
 	ml         *MLClient
 	thumbs     ThumbnailSource
 	js         jetstream.JetStream
+	nc         *nats.Conn
 	log        *slog.Logger
 	tracer     trace.Tracer
 	retryDelay time.Duration
@@ -83,6 +86,7 @@ type Service struct {
 	beforeTagStateWrite func()
 
 	iter   jetstream.MessagesContext
+	subs   []*nats.Subscription
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 }
@@ -94,6 +98,7 @@ func New(p Params) *Service {
 		ml:         p.ML,
 		thumbs:     p.Thumbs,
 		js:         p.Js,
+		nc:         p.Nc,
 		log:        p.Logger.GetLogger("gallery-ai"),
 		tracer:     p.Tracing.TracerProvider.Tracer("gallery-ai"),
 		retryDelay: defaultRetryDelay,
@@ -136,6 +141,12 @@ func (s *Service) Start() error {
 	}
 	s.cancel = cancel
 
+	if err := s.subscribeAPI(); err != nil {
+		cancel()
+		s.iter.Stop()
+		return err
+	}
+
 	s.wg.Add(4)
 	go s.loop(ctx)
 	go s.clusterLoop(ctx)
@@ -151,6 +162,9 @@ func (s *Service) Start() error {
 }
 
 func (s *Service) Stop() {
+	for _, sub := range s.subs {
+		sub.Unsubscribe()
+	}
 	s.cancel()
 	s.iter.Stop()
 	s.wg.Wait()
@@ -335,18 +349,8 @@ func (s *Service) store(ctx context.Context, ev events.GalleryPhotoChangedEvent,
 			affected = append(affected, *id)
 		}
 	}
-	if len(affected) > 0 {
-		if _, err := tx.Exec(ctx, `
-			DELETE FROM persons p WHERE p.id::text = ANY($1)
-			AND NOT EXISTS (SELECT 1 FROM faces f WHERE f.person_id = p.id)`, affected); err != nil {
-			return fmt.Errorf("delete empty persons: %w", err)
-		}
-		if _, err := tx.Exec(ctx, `
-			UPDATE persons p SET cover_face_id =
-				(SELECT f.id FROM faces f WHERE f.person_id = p.id ORDER BY f.score DESC LIMIT 1)
-			WHERE p.id::text = ANY($1) AND p.cover_face_id IS NULL`, affected); err != nil {
-			return fmt.Errorf("re-cover persons: %w", err)
-		}
+	if err := cleanupPersons(ctx, tx, affected); err != nil {
+		return err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -413,4 +417,24 @@ func (s *Service) sweep(ctx context.Context) {
 		last := batch[len(batch)-1]
 		lastProvider, lastPath = last.ProviderID, last.Path
 	}
+}
+
+// cleanupPersons deletes the given persons that have no faces left and gives a cover
+// (their best-scoring face) to those without one.
+func cleanupPersons(ctx context.Context, tx pgx.Tx, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM persons p WHERE p.id::text = ANY($1)
+		AND NOT EXISTS (SELECT 1 FROM faces f WHERE f.person_id = p.id)`, ids); err != nil {
+		return fmt.Errorf("delete empty persons: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE persons p SET cover_face_id =
+			(SELECT f.id FROM faces f WHERE f.person_id = p.id ORDER BY f.score DESC LIMIT 1)
+		WHERE p.id::text = ANY($1) AND p.cover_face_id IS NULL`, ids); err != nil {
+		return fmt.Errorf("re-cover persons: %w", err)
+	}
+	return nil
 }

@@ -211,6 +211,7 @@ func (f *fakeThumbs) Thumbnail(ctx context.Context, providerID, path string) ([]
 type env struct {
 	pool   *pgxpool.Pool
 	js     jetstream.JetStream
+	nc     *nats.Conn
 	ml     *fakeML
 	thumbs *fakeThumbs
 	svc    *galleryai.Service
@@ -254,13 +255,13 @@ func startWith(t *testing.T, o startOpts) *env {
 	js, err := jetstream.New(nc)
 	require.NoError(t, err)
 
-	e := &env{pool: pool, js: js, ml: newFakeML(t), thumbs: &fakeThumbs{}}
+	e := &env{pool: pool, js: js, nc: nc, ml: newFakeML(t), thumbs: &fakeThumbs{}}
 	if o.down {
 		e.ml.textStatus.Store(503)
 	}
 	cfg := galleryai.Config{MLURL: e.ml.srv.URL, ClipModel: "clip-test", FaceModel: "buffalo_l", FaceMinScore: 0.7, MaxDistance: 0.5, MinFaces: 3, DeferredInterval: time.Hour, MaxAckPending: 2, Tags: o.tags}
 	svc := galleryai.New(galleryai.Params{
-		Config: cfg, Pool: pool, ML: galleryai.NewMLClient(cfg), Thumbs: e.thumbs, Js: js,
+		Config: cfg, Pool: pool, ML: galleryai.NewMLClient(cfg), Thumbs: e.thumbs, Js: js, Nc: nc,
 		Logger: logging.New(logging.Params{}), Tracing: tracing.NewNoopTracing(),
 	})
 	e.svc = svc
