@@ -25,6 +25,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -33,6 +34,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"umbasa.net/seraph/events"
+	"umbasa.net/seraph/logging"
+	"umbasa.net/seraph/tracing"
 )
 
 // resetWarmStreams removes the durable warm-request and warm-unsupported
@@ -541,4 +544,76 @@ func TestRedispatchingSamePhotoIsHarmless(t *testing.T) {
 
 func fixturePath(thumbName string) string {
 	return filepath.Join(tmpDir, thumbName)
+}
+
+func TestWarmJobReportsPendingThenIdleOnce(t *testing.T) {
+	nc, err := nats.Connect(natsServer.ClientURL())
+	require.NoError(t, err)
+	js, err := jetstream.New(nc)
+	require.NoError(t, err)
+	resetWarmStreams(t, js)
+
+	var mu sync.Mutex
+	var evs []events.JobEvent
+	sub, err := nc.Subscribe(fmt.Sprintf(events.JobsTopicPattern, "thumbnailer.warm"), func(m *nats.Msg) {
+		ev := events.JobEvent{}
+		if ev.Unmarshal(m.Data) == nil {
+			mu.Lock()
+			evs = append(evs, ev)
+			mu.Unlock()
+		}
+	})
+	require.NoError(t, err)
+	defer sub.Unsubscribe()
+
+	// queue work before the consumer starts so the first poll sees a backlog
+	const count = 40
+	for i := 0; i < count; i++ {
+		name := writeFixtureJpeg(t, fmt.Sprintf("fixture_warm_job_%d.jpg", i), 300, 300)
+		publishThumbnailWarm(t, js, events.ThumbnailWarmRequest{ProviderID: "testinput", Path: name})
+	}
+
+	logger := logging.New(logging.Params{})
+	res, _ := NewThumbnailer(Params{Nc: nc, Js: js, Tracing: tracing.NewNoopTracing(), Logger: logger}, "test", "", tmpFs)
+	res.Thumbnailer.warmPollInterval = 200 * time.Millisecond
+	require.NoError(t, res.Thumbnailer.Start())
+	defer res.Thumbnailer.Stop()
+
+	count_ := func(state string) (n int) {
+		mu.Lock()
+		defer mu.Unlock()
+		for _, e := range evs {
+			if e.State == state {
+				n++
+			}
+		}
+		return
+	}
+	require.Eventually(t, func() bool { return count_("idle") >= 1 }, 60*time.Second, 100*time.Millisecond)
+	// stay quiet while idle: several more polls must not republish
+	time.Sleep(1500 * time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, 1, countIdle(evs), "idle published exactly once")
+	require.GreaterOrEqual(t, len(evs), 2)
+	first, last := evs[0], evs[len(evs)-1]
+	assert.Equal(t, "running", first.State)
+	assert.Greater(t, first.Pending, int64(0))
+	assert.Equal(t, "idle", last.State)
+	assert.Equal(t, int64(0), last.Pending)
+	for i := 1; i < len(evs); i++ {
+		if evs[i].State == "running" {
+			assert.LessOrEqual(t, evs[i].Pending, evs[i-1].Pending, "pending must not grow")
+		}
+	}
+}
+
+func countIdle(evs []events.JobEvent) (n int) {
+	for _, e := range evs {
+		if e.State == "idle" {
+			n++
+		}
+	}
+	return
 }

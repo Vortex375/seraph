@@ -245,7 +245,15 @@ func TestLoneFaceJoinsPersonThatAppearsLaterAndIdleTickDoesNothing(t *testing.T)
 		assert.Equal(t, m["/3.jpg"], m[p], p)
 	}
 
+	require.Eventually(t, func() bool { return e.jobs.last("gallery-ai.clustering").State == "completed" }, 10*time.Second, 50*time.Millisecond)
+	clustering := e.jobs.last("gallery-ai.clustering")
+	assert.Equal(t, clustering.Total, clustering.Done)
+
 	drain()
+	time.Sleep(200 * time.Millisecond) // let in-flight job events arrive
+	published := len(e.jobs.history("gallery-ai.clustering"))
 	assert.False(t, galleryai.ClusterTick(e.svc, ctx)) // nothing assigned since the last pass
+	time.Sleep(200 * time.Millisecond)
+	assert.Len(t, e.jobs.history("gallery-ai.clustering"), published, "a gated pass must publish nothing")
 	assert.Equal(t, 1, e.count(t, "persons"))
 }

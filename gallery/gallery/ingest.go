@@ -36,6 +36,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"umbasa.net/seraph/events"
 	"umbasa.net/seraph/file-provider/fileprovider"
+	"umbasa.net/seraph/messaging"
 	"umbasa.net/seraph/util"
 )
 
@@ -301,6 +302,12 @@ func (g *GalleryProvider) startIngestConsumer(ctx context.Context) (*ingestConsu
 
 	g.wg.Add(1)
 	go ic.loop(ctx, &g.wg)
+
+	g.wg.Add(1)
+	go func() {
+		defer g.wg.Done()
+		g.reportIngestJob(ctx, cons)
+	}()
 
 	return ic, nil
 }
@@ -625,4 +632,39 @@ func resolveCaptureDate(r *bytes.Reader, ev *events.FileChangedEvent) (capturedA
 	}
 
 	return time.Now().Unix(), nil, CaptureDateSourceIndexed, exifReason
+}
+
+// reportIngestJob reports the ingest queue's backlog as the Queue Job
+// gallery.ingest, polling the consumer every 10 s until ctx is cancelled.
+func (g *GalleryProvider) reportIngestJob(ctx context.Context, cons jetstream.Consumer) {
+	job := messaging.NewJob(g.nc, "gallery.ingest", "Gallery ingest")
+	defer job.Close()
+
+	poll := func() {
+		infoCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		info, err := cons.Info(infoCtx)
+		if err != nil {
+			g.log.Debug("gallery.ingest job: failed to read consumer info", "error", err)
+			return
+		}
+		n := int64(info.NumPending) + int64(info.NumAckPending)
+		msg := "Up to date"
+		if n > 0 {
+			msg = fmt.Sprintf("%d files waiting", n)
+		}
+		job.Pending(n, msg)
+	}
+
+	poll()
+	t := time.NewTicker(10 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			poll()
+		}
+	}
 }

@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -36,6 +37,7 @@ import (
 	"go.uber.org/fx"
 	"umbasa.net/seraph/events"
 	"umbasa.net/seraph/logging"
+	"umbasa.net/seraph/messaging"
 	"umbasa.net/seraph/tracing"
 	"umbasa.net/seraph/util"
 )
@@ -50,6 +52,9 @@ const defaultRetryDelay = 30 * time.Second
 
 // defaultTagRetryDelay is the first wait before retrying the tag embeddings; it doubles up to maxTagRetryDelay.
 const defaultTagRetryDelay = 5 * time.Second
+
+// defaultPollInterval is how often the analysis Job reads the consumer's backlog.
+const defaultPollInterval = 10 * time.Second
 
 type Params struct {
 	fx.In
@@ -74,6 +79,9 @@ type Service struct {
 	log        *slog.Logger
 	tracer     trace.Tracer
 	retryDelay time.Duration
+
+	// how often the analysis Job polls the consumer
+	pollInterval time.Duration
 
 	// tags is nil until the tag embeddings are computed; store tags nothing before that
 	tags          atomic.Pointer[[]TagEmbedding]
@@ -102,6 +110,8 @@ func New(p Params) *Service {
 		log:        p.Logger.GetLogger("gallery-ai"),
 		tracer:     p.Tracing.TracerProvider.Tracer("gallery-ai"),
 		retryDelay: defaultRetryDelay,
+
+		pollInterval: defaultPollInterval,
 
 		tagRetryDelay: defaultTagRetryDelay,
 	}
@@ -147,7 +157,8 @@ func (s *Service) Start() error {
 		return err
 	}
 
-	s.wg.Add(4)
+	s.wg.Add(5)
+	go s.reportAnalysis(ctx, cons)
 	go s.loop(ctx)
 	go s.clusterLoop(ctx)
 	go func() {
@@ -168,6 +179,51 @@ func (s *Service) Stop() {
 	s.cancel()
 	s.iter.Stop()
 	s.wg.Wait()
+}
+
+// reportAnalysis publishes the consumer backlog as the gallery-ai.analysis Queue Job.
+// Messages NAK'd for redelivery stay in NumAckPending, so a down ML container keeps
+// the Job running instead of idle.
+func (s *Service) reportAnalysis(ctx context.Context, cons jetstream.Consumer) {
+	defer s.wg.Done()
+	job := messaging.NewJob(s.nc, "gallery-ai.analysis", "AI classification")
+	defer job.Close()
+
+	poll := func() {
+		info, err := cons.Info(ctx)
+		if err != nil {
+			if ctx.Err() == nil {
+				s.log.Warn("cannot read consumer info for the analysis job", "error", err)
+			}
+			return
+		}
+		var analysed int64
+		if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM photos WHERE NOT deleted AND model IS NOT NULL`).Scan(&analysed); err != nil {
+			if ctx.Err() == nil {
+				s.log.Warn("cannot count analysed photos for the analysis job", "error", err)
+			}
+			return
+		}
+		pending := int64(info.NumPending) + int64(info.NumAckPending)
+		job.Pending(pending, fmt.Sprintf("%s analysed, %s waiting", groupDigits(analysed), groupDigits(pending)))
+	}
+	for {
+		poll()
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(s.pollInterval):
+		}
+	}
+}
+
+// groupDigits formats n with thousands separators, e.g. 4,210.
+func groupDigits(n int64) string {
+	str := strconv.FormatInt(n, 10)
+	for i := len(str) - 3; i > 0 && str[i-1] != '-'; i -= 3 {
+		str = str[:i] + "," + str[i:]
+	}
+	return str
 }
 
 // loop dispatches each message to its own goroutine, never holding more than
@@ -359,7 +415,7 @@ func (s *Service) store(ctx context.Context, ev events.GalleryPhotoChangedEvent,
 	// a failure here must not fail the event (it would only be redelivered as stale): the
 	// faces stay `clustered = false` and the next clustering pass picks them up
 	if a != nil && len(a.Faces) > 0 {
-		if err := s.clusterFaces(ctx, false, `NOT clustered AND provider_id = $1 AND path = $2`, ev.ProviderID, ev.Path); err != nil {
+		if err := s.clusterFaces(ctx, nil, false, `NOT clustered AND provider_id = $1 AND path = $2`, ev.ProviderID, ev.Path); err != nil {
 			s.clusterDirty.Store(true)
 			s.log.Error("face clustering failed; the periodic pass will retry", "provider", ev.ProviderID, "path", ev.Path, "error", err)
 		}

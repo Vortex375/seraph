@@ -35,3 +35,7 @@ func ClusterPass(s *Service, ctx context.Context) error { return s.clusterPass(c
 
 // ClusterTick runs the gated periodic step and reports whether it ran a pass.
 func ClusterTick(s *Service, ctx context.Context) bool { return s.clusterTick(ctx) }
+
+func SetPollInterval(s *Service, d time.Duration) { s.pollInterval = d }
+
+func GroupDigits(n int64) string { return groupDigits(n) }

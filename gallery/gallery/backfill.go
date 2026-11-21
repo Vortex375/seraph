@@ -32,6 +32,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"umbasa.net/seraph/events"
+	"umbasa.net/seraph/messaging"
 )
 
 // backfillParallel bounds how many Gallery Source Folders are backfilled
@@ -192,6 +193,14 @@ func (g *GalleryProvider) runBackfill(ctx context.Context, folderId primitive.Ob
 
 	cursor := folder.BackfillCursor
 
+	// a resumed backfill reports under the same key; done counts entries
+	// upserted by this run (the file index list API has no total)
+	job := messaging.NewJob(g.nc, "gallery.backfill."+folderId.Hex(),
+		fmt.Sprintf("Gallery backfill of %s%s", folder.SpaceProviderId, folder.Path))
+	defer job.Close()
+	var upserted int64
+	job.Progress(0, -1, "Reading file index")
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -203,11 +212,13 @@ func (g *GalleryProvider) runBackfill(ctx context.Context, folderId primitive.Ob
 		if err != nil {
 			g.log.Error("backfill: file index list request failed; will retry on next resume",
 				"error", err, "providerId", p.providerId, "path", p.path)
+			job.Fail(err)
 			return
 		}
 		if reply.Error != "" {
 			g.log.Error("backfill: file index returned an error; will retry on next resume",
 				"error", reply.Error, "providerId", p.providerId, "path", p.path)
+			job.Fail(errors.New(reply.Error))
 			return
 		}
 
@@ -221,7 +232,10 @@ func (g *GalleryProvider) runBackfill(ctx context.Context, folderId primitive.Ob
 			if err := g.backfillUpsert(ctx, entry); err != nil {
 				g.log.Error("backfill: failed to upsert entry; skipping it for this pass",
 					"error", err, "providerId", entry.ProviderId, "path", entry.Path)
+				continue
 			}
+			upserted++
+			job.Progress(upserted, -1, "Reading file index")
 		}
 
 		cursor = reply.NextCursor
@@ -233,6 +247,7 @@ func (g *GalleryProvider) runBackfill(ctx context.Context, folderId primitive.Ob
 
 		if done {
 			g.log.Debug("backfill complete", "providerId", p.providerId, "path", p.path)
+			job.Complete(fmt.Sprintf("%d photos added", upserted))
 			return
 		}
 	}

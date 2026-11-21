@@ -108,3 +108,12 @@ An explicit, user-initiated action that removes both the Seraph copy and the
 device copy of a Gallery Item. Distinct from deleting on one side, which never
 affects the other.
 _Avoid_: delete, purge, remove everywhere
+
+### Operations
+
+**Job**:
+One background process Seraph reports progress for, identified by a key —
+either a *Queue Job* (an open-ended work queue, reporting its backlog) or a
+*Batch Job* (a finite pass, reporting done out of total). Visible to space
+admins only.
+_Avoid_: task, process, activity

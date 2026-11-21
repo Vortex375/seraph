@@ -144,9 +144,13 @@ type JobEvent struct {
 	Description   string            `avro:"description" json:"description"`
 	StatusMessage string            `avro:"statusMessage" json:"statusMessage"`
 	Properties    map[string]string `avro:"properties" json:"properties"`
+	State         string            `avro:"state" json:"state"`
+	Done          int64             `avro:"done" json:"done"`
+	Total         int64             `avro:"total" json:"total"`
+	Pending       int64             `avro:"pending" json:"pending"`
 }
 
-var schemaJobEvent = avro.MustParse(`{"name":"seraph.events.JobEvent","type":"record","fields":[{"name":"event","type":"seraph.events.Event"},{"name":"key","type":"string"},{"name":"description","type":"string"},{"name":"statusMessage","type":"string"},{"name":"properties","type":{"type":"map","values":"string"}}]}`)
+var schemaJobEvent = avro.MustParse(`{"name":"seraph.events.JobEvent","type":"record","fields":[{"name":"event","type":"seraph.events.Event"},{"name":"key","type":"string"},{"name":"description","type":"string"},{"name":"statusMessage","type":"string"},{"name":"properties","type":{"type":"map","values":"string"}},{"name":"state","type":"string"},{"name":"done","type":"long"},{"name":"total","type":"long"},{"name":"pending","type":"long"}]}`)
 
 // Schema returns the schema for JobEvent.
 func (o *JobEvent) Schema() avro.Schema {

@@ -21,6 +21,8 @@ package gallery
 import (
 	"context"
 	"time"
+
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // SetPrefixCacheRetryInterval shortens the prefix cache retry for tests and
@@ -34,4 +36,9 @@ func SetPrefixCacheRetryInterval(d time.Duration) func() {
 // RunPhotoReplay runs one photo replay pass synchronously.
 func (g *GalleryProvider) RunPhotoReplay(ctx context.Context) error {
 	return g.runPhotoReplay(ctx)
+}
+
+// HealPendingMetadata runs one metadata heal pass over a physical prefix.
+func (g *GalleryProvider) HealPendingMetadata(ctx context.Context, folderId primitive.ObjectID, providerId, path string) error {
+	return g.healPendingMetadata(ctx, folderId, prefix{providerId: providerId, path: path})
 }

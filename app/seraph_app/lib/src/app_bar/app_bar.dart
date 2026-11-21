@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:seraph_app/src/chat/chat_view.dart';
 import 'package:seraph_app/src/file_browser/file_browser_view.dart';
 import 'package:seraph_app/src/gallery/gallery_view.dart';
+import 'package:seraph_app/src/jobs/jobs_view.dart';
 import 'package:seraph_app/src/login/login_controller.dart';
 import 'package:seraph_app/src/media_player/history_view.dart';
 import 'package:seraph_app/src/share/share_controller.dart';
@@ -79,11 +80,16 @@ Widget _buildDropdown(bool isAdmin, String currentRoute) {
       child: Text('Recent playlists', overflow: TextOverflow.ellipsis),
     ),
     const DropdownMenuItem(enabled: false, child: Divider()),
-    if (isAdmin)
-      const DropdownMenuItem(
+    if (isAdmin) ...const [
+      DropdownMenuItem(
         value: SpacesListView.routeName,
         child: Text('Spaces Admin', overflow: TextOverflow.ellipsis),
       ),
+      DropdownMenuItem(
+        value: JobsView.routeName,
+        child: Text('Jobs', overflow: TextOverflow.ellipsis),
+      ),
+    ],
     const DropdownMenuItem(
       value: SettingsView.routeName,
       child: Text('App Settings', overflow: TextOverflow.ellipsis),

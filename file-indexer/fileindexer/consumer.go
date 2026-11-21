@@ -31,6 +31,7 @@ import (
 	"umbasa.net/seraph/events"
 	"umbasa.net/seraph/file-provider/fileprovider"
 	"umbasa.net/seraph/logging"
+	"umbasa.net/seraph/messaging"
 	"umbasa.net/seraph/tracing"
 	"umbasa.net/seraph/util"
 )
@@ -51,6 +52,7 @@ type consumer struct {
 	fileInfoStream jetstream.Stream
 	consumer       jetstream.Consumer
 	kv             jetstream.KeyValue
+	job            *messaging.Job
 
 	limiter          util.Limiter
 	progressThrottle throttle.Throttle
@@ -130,6 +132,7 @@ func NewConsumer(p ConsumerParams) (Consumer, error) {
 		fileInfoStream: stream,
 		consumer:       c,
 		kv:             kv,
+		job:            messaging.NewJob(p.Nc, "file-indexer", "Indexing files"),
 
 		limiter:          limiter,
 		progressThrottle: progressThrottle,
@@ -181,6 +184,7 @@ func (c *consumer) Stop() {
 	c.cancel()
 	c.limiter.Join()
 	c.progressThrottle.Stop()
+	c.job.Close()
 }
 
 func (c *consumer) handleMessage(msg jetstream.Msg) {
@@ -705,16 +709,5 @@ func (c *consumer) updateProgress() {
 	}
 	c.log.Info(statusMessage, "remaining", remaining)
 
-	ev := events.JobEvent{
-		Event: events.Event{
-			ID:      uuid.NewString(),
-			Version: 1,
-		},
-		Key:           "SERAPH_FILE_INDEXER",
-		Description:   "Indexing files",
-		StatusMessage: statusMessage,
-	}
-	data, _ := ev.Marshal()
-	topic := fmt.Sprintf(events.JobsTopicPattern, "SERAPH_FILE_INDEXER")
-	c.nc.Publish(topic, data)
+	c.job.Pending(int64(remaining), statusMessage)
 }

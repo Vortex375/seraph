@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"umbasa.net/seraph/messaging"
 )
 
 // TagConfig is one zero-shot content tag: a photo gets the tag when its CLIP
@@ -201,6 +202,24 @@ func (s *Service) retag(ctx context.Context) {
 			return
 		}
 
+		job := messaging.NewJob(s.nc, "gallery-ai.tagging", "AI tagging")
+		// abort ends the pass's Job as failed, unless the service is just shutting down
+		abort := func(err error) {
+			if ctx.Err() == nil {
+				job.Fail(err)
+			}
+			job.Close()
+		}
+		var total int64
+		if err := s.pool.QueryRow(ctx, `
+			SELECT count(*) FROM photos p JOIN photo_embeddings e ON e.provider_id = p.provider_id AND e.path = p.path
+			WHERE NOT p.deleted`).Scan(&total); err != nil {
+			s.log.Error("re-tag: count photos failed", "error", err)
+			abort(err)
+			return
+		}
+		job.Progress(0, total, fmt.Sprintf("0 of %d photos", total))
+
 		var lastProvider, lastPath string
 		done := 0
 		for {
@@ -209,13 +228,19 @@ func (s *Service) retag(ctx context.Context) {
 				if ctx.Err() == nil {
 					s.log.Error("re-tag aborted", "error", err)
 				}
+				abort(err)
 				return
 			}
 			if n == 0 {
 				break
 			}
 			done += n
+			job.Progress(int64(done), total, fmt.Sprintf("%d of %d photos", done, total))
 		}
+		// photos may have come or gone since the count; the pass is over, so done is the total
+		job.Progress(int64(done), int64(done), fmt.Sprintf("%d of %d photos", done, done))
+		job.Complete(fmt.Sprintf("%d photos tagged", done))
+		job.Close()
 		if s.beforeTagStateWrite != nil {
 			s.beforeTagStateWrite()
 		}

@@ -100,8 +100,19 @@ func (j *jobs) Start() error {
 	var err error
 	j.ctx, err = j.consumer.Consume(func(msg jetstream.Msg) {
 		ev := events.JobEvent{}
-		ev.Unmarshal(msg.Data())
-		j.kv.Put(context.Background(), ev.Key, msg.Data())
+		if err := ev.Unmarshal(msg.Data()); err != nil {
+			j.log.Warn("dropping undecodable job event", "subject", msg.Subject(), "error", err)
+			msg.Term()
+			return
+		}
+		if _, err := j.kv.Put(context.Background(), ev.Key, msg.Data()); err != nil {
+			j.log.Error("failed to store job "+ev.Key, "error", err)
+			msg.Nak()
+			return
+		}
+		// unacked, every event was redelivered after AckWait and rewritten,
+		// refreshing each Job's update time forever (no Job could look stalled)
+		msg.Ack()
 		j.log.Debug("update "+ev.Key, "key", ev.Key, "description", ev.Description, "statusMessage", ev.StatusMessage)
 	})
 	return err
