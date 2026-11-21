@@ -19,17 +19,52 @@
 package galleryai
 
 import (
+	"context"
 	"embed"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 //go:embed migrations/*.sql
 var migrations embed.FS
+
+// EnsureDatabase creates the database named in dbURL if it does not exist yet,
+// connecting to the server's "postgres" database. An "already exists" error
+// (a concurrent creator won the race) counts as success.
+func EnsureDatabase(ctx context.Context, dbURL string) error {
+	cfg, err := pgx.ParseConfig(dbURL)
+	if err != nil {
+		return fmt.Errorf("parse database url: %w", err)
+	}
+	name := cfg.Database
+	cfg.Database = "postgres"
+	conn, err := pgx.ConnectConfig(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("connect to postgres: %w", err)
+	}
+	defer conn.Close(ctx)
+
+	var exists bool
+	if err := conn.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)`, name).Scan(&exists); err != nil {
+		return fmt.Errorf("check database: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	_, err = conn.Exec(ctx, `CREATE DATABASE `+pgx.Identifier{name}.Sanitize())
+	var pgErr *pgconn.PgError
+	if err != nil && !(errors.As(err, &pgErr) && pgErr.Code == "42P04") {
+		return fmt.Errorf("create database %s: %w", name, err)
+	}
+	return nil
+}
 
 // ApplyMigrations brings the gallery_ai database schema up to date.
 func ApplyMigrations(dbURL string) error {

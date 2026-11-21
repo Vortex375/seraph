@@ -175,7 +175,10 @@ type env struct {
 	thumbs *fakeThumbs
 }
 
-func start(t *testing.T) *env {
+func start(t *testing.T) *env { return startSeeded(t, "") }
+
+// startSeeded runs seedSQL (if any) before the service starts.
+func startSeeded(t *testing.T, seedSQL string) *env {
 	requireIntegration(t)
 
 	pool, err := pgxpool.New(context.Background(), dbURL)
@@ -183,6 +186,10 @@ func start(t *testing.T) *env {
 	t.Cleanup(pool.Close)
 	_, err = pool.Exec(context.Background(), `TRUNCATE photos, persons, faces, photo_embeddings, photo_tags CASCADE`)
 	require.NoError(t, err)
+	if seedSQL != "" {
+		_, err = pool.Exec(context.Background(), seedSQL)
+		require.NoError(t, err)
+	}
 
 	nc, err := nats.Connect(natsServer.ClientURL())
 	require.NoError(t, err)
@@ -335,4 +342,48 @@ func TestML503LeavesMessageUnackedUntilRecovery(t *testing.T) {
 	e.ml.status.Store(200)
 	e.waitAcked(t)
 	assert.Equal(t, 1, e.count(t, "photo_embeddings"))
+}
+
+func TestModelSweepReanalysesOnlyStaleLivePhotos(t *testing.T) {
+	e := startSeeded(t, `INSERT INTO photos (provider_id, path, seq, deleted, model) VALUES
+		('p', '/old1.jpg', 7, false, 'old'),
+		('p', '/old2.jpg', 8, false, NULL),
+		('p', '/current.jpg', 9, false, 'clip-test'),
+		('p', '/gone.jpg', 10, true, NULL)`)
+
+	require.Eventually(t, func() bool { return e.count(t, "photo_embeddings") == 2 }, 10*time.Second, 50*time.Millisecond)
+	assert.EqualValues(t, 2, e.ml.calls.Load())
+	assert.EqualValues(t, 2, e.thumbs.calls.Load())
+
+	rows, err := e.pool.Query(context.Background(), `SELECT path, seq, deleted, model FROM photos ORDER BY path`)
+	require.NoError(t, err)
+	type row struct {
+		path    string
+		seq     int64
+		deleted bool
+		model   *string
+	}
+	var got []row
+	for rows.Next() {
+		var r row
+		require.NoError(t, rows.Scan(&r.path, &r.seq, &r.deleted, &r.model))
+		got = append(got, r)
+	}
+	rows.Close()
+	m := "clip-test"
+	assert.Equal(t, []row{
+		{"/current.jpg", 9, false, &m},
+		{"/gone.jpg", 10, true, nil},
+		{"/old1.jpg", 7, false, &m},
+		{"/old2.jpg", 8, false, &m},
+	}, got)
+	assert.Equal(t, 0, e.count(t, "photo_embeddings WHERE path IN ('/current.jpg', '/gone.jpg')"))
+}
+
+func TestEnsureDatabaseCreatesMissingDatabaseIdempotently(t *testing.T) {
+	requireIntegration(t)
+	url := strings.Replace(dbURL, "/gallery_ai_test?", "/gallery_ai_created?", 1)
+	require.NoError(t, galleryai.EnsureDatabase(context.Background(), url))
+	require.NoError(t, galleryai.EnsureDatabase(context.Background(), url))
+	require.NoError(t, galleryai.ApplyMigrations(url))
 }

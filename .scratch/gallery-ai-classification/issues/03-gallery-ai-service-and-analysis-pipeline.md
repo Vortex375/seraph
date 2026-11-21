@@ -22,17 +22,23 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] With a fake ML server (httptest), an `upserted` event stores one embedding and the returned faces
+- [x] With a fake ML server (httptest), an `upserted` event stores one embedding and the returned faces
       with boxes normalised by `imageWidth`/`imageHeight`.
-- [ ] An `upserted` event with a `seq` lower than the stored one is acked without calling the ML server.
-- [ ] A `deleted` event removes embedding, tags and faces; a later stale `upserted` does not resurrect them.
-- [ ] Thumbnailer `ErrorClassUnsupportedFormat` records the error and acks; ML 503 leaves the message
+- [x] An `upserted` event with a `seq` lower than the stored one is acked without calling the ML server.
+- [x] A `deleted` event removes embedding, tags and faces; a later stale `upserted` does not resurrect them.
+- [x] Thumbnailer `ErrorClassUnsupportedFormat` records the error and acks; ML 503 leaves the message
       unacked.
-- [ ] A replayed `upserted` event for a photo already analysed at that `seq` is acked without an ML call.
-- [ ] Changing the configured CLIP model re-analyses existing rows.
-- [ ] Opt-in contract test (`SERAPH_ML_CONTRACT=1`) against the pinned real image passes.
+- [x] A replayed `upserted` event for a photo already analysed at that `seq` is acked without an ML call.
+- [x] Changing the configured CLIP model re-analyses existing rows.
+- [x] Opt-in contract test (`SERAPH_ML_CONTRACT=1`) against the pinned real image passes.
 - [ ] `docker compose up` starts the ML container and `gallery-ai`; a newly uploaded gallery photo gets
       analysed end to end.
-- [ ] Gates: `go build ./...`, `go test ./...` in `gallery-ai`, integration tests running.
+- [x] Gates: `go build ./...`, `go test ./...` in `gallery-ai`, integration tests running.
+
+## Comments
+
+2026-11-21 (coordinator): Resolved in 6e17d8d + the package B commit. Unit/integration suite runs (7 pass, contract test opt-in);
+the contract test passed once against the real v3.4.2 image (no face in the test JPEG, so face parsing is only covered by the
+fake). Not verified: a full `docker compose up` end-to-end run and the Docker image build — do that before deploying.

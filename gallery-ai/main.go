@@ -61,6 +61,9 @@ func newPool(cfg galleryai.Config, lc fx.Lifecycle) (*pgxpool.Pool, error) {
 	if cfg.DBURL == "" {
 		return nil, fmt.Errorf("SERAPH_GALLERY_AI_DB_URL is not set")
 	}
+	if err := galleryai.EnsureDatabase(context.Background(), cfg.DBURL); err != nil {
+		return nil, fmt.Errorf("ensure database: %w", err)
+	}
 	if err := galleryai.ApplyMigrations(cfg.DBURL); err != nil {
 		return nil, fmt.Errorf("apply migrations: %w", err)
 	}

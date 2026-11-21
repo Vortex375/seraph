@@ -118,8 +118,12 @@ func (s *Service) Start() error {
 	}
 	s.cancel = cancel
 
-	s.wg.Add(1)
+	s.wg.Add(2)
 	go s.loop(ctx)
+	go func() {
+		defer s.wg.Done()
+		s.sweep(ctx)
+	}()
 	return nil
 }
 
@@ -183,7 +187,7 @@ func (s *Service) handle(ctx context.Context, ev events.GalleryPhotoChangedEvent
 	case events.GalleryPhotoUpserted:
 		return s.upserted(ctx, ev)
 	case events.GalleryPhotoDeleted:
-		return s.store(ctx, ev, true, nil, "")
+		return s.store(ctx, ev, true, false, nil, "")
 	default:
 		s.log.Error("unknown change in GalleryPhotoChangedEvent", "change", ev.Change)
 		return nil
@@ -200,7 +204,12 @@ func (s *Service) upserted(ctx context.Context, ev events.GalleryPhotoChangedEve
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("read photo: %w", err)
 	}
+	return s.analyseAndStore(ctx, ev, false)
+}
 
+// analyseAndStore runs the ML analysis for ev and stores the outcome. rescan
+// is set by the model-version sweep, see store.
+func (s *Service) analyseAndStore(ctx context.Context, ev events.GalleryPhotoChangedEvent, rescan bool) error {
 	img, err := s.thumbs.Thumbnail(ctx, ev.ProviderID, ev.Path)
 	var analysis *Analysis
 	if err == nil {
@@ -209,18 +218,20 @@ func (s *Service) upserted(ctx context.Context, ev events.GalleryPhotoChangedEve
 	if err != nil {
 		if isPermanent(err) {
 			s.log.Warn("photo cannot be analysed", "provider", ev.ProviderID, "path", ev.Path, "error", err)
-			return s.store(ctx, ev, false, nil, err.Error())
+			return s.store(ctx, ev, false, rescan, nil, err.Error())
 		}
 		return err
 	}
-	return s.store(ctx, ev, false, analysis, "")
+	return s.store(ctx, ev, false, rescan, analysis, "")
 }
 
 // store applies one event in a single transaction: it upserts the photos row
 // unless a newer (or, for upserts, equal) seq is already stored, then replaces
 // the photo's embedding, tags and faces. A nil analysis leaves the photo with
-// none of them (tombstone, or recorded error).
-func (s *Service) store(ctx context.Context, ev events.GalleryPhotoChangedEvent, deleted bool, a *Analysis, errText string) error {
+// none of them (tombstone, or recorded error). rescan additionally accepts an
+// equal seq for a live photo stored under a different model, so the sweep can
+// re-analyse at the stored seq; a newer stored seq (or a tombstone) still wins.
+func (s *Service) store(ctx context.Context, ev events.GalleryPhotoChangedEvent, deleted, rescan bool, a *Analysis, errText string) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin: %w", err)
@@ -246,8 +257,9 @@ func (s *Service) store(ctx context.Context, ev events.GalleryPhotoChangedEvent,
 		ON CONFLICT (provider_id, path) DO UPDATE SET
 			seq = EXCLUDED.seq, deleted = EXCLUDED.deleted, model = EXCLUDED.model,
 			analysed_at = EXCLUDED.analysed_at, error = EXCLUDED.error
-		WHERE photos.seq < EXCLUDED.seq OR (EXCLUDED.deleted AND photos.seq = EXCLUDED.seq)`,
-		ev.ProviderID, ev.Path, ev.Seq, deleted, model, analysedAt, errCol)
+		WHERE photos.seq < EXCLUDED.seq OR (EXCLUDED.deleted AND photos.seq = EXCLUDED.seq)
+			OR ($8 AND photos.seq = EXCLUDED.seq AND NOT photos.deleted AND photos.model IS DISTINCT FROM EXCLUDED.model)`,
+		ev.ProviderID, ev.Path, ev.Seq, deleted, model, analysedAt, errCol, rescan)
 	if err != nil {
 		return fmt.Errorf("upsert photo: %w", err)
 	}
@@ -310,4 +322,56 @@ func (s *Service) store(ctx context.Context, ev events.GalleryPhotoChangedEvent,
 	}
 	// tickets 04/05 (tagging, face clustering) hook in here, after commit
 	return nil
+}
+
+// sweepBatch is how many stale-model photos the sweep loads per query.
+const sweepBatch = 100
+
+// sweep re-analyses live photos whose stored model differs from the configured
+// CLIP model, sequentially in keyset-paged batches. It runs concurrently with
+// the consumer; store's seq conditions keep it from overwriting newer events.
+// A transient failure (ML or thumbnailer down) ends the sweep; the next start
+// picks the remaining photos up again.
+func (s *Service) sweep(ctx context.Context) {
+	var lastProvider, lastPath string
+	done := 0
+	for {
+		rows, err := s.pool.Query(ctx, `
+			SELECT provider_id, path, seq FROM photos
+			WHERE NOT deleted AND model IS DISTINCT FROM $1 AND (provider_id, path) > ($2, $3)
+			ORDER BY provider_id, path LIMIT $4`, s.cfg.ClipModel, lastProvider, lastPath, sweepBatch)
+		if err != nil {
+			s.log.Error("model sweep query failed", "error", err)
+			return
+		}
+		batch, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (events.GalleryPhotoChangedEvent, error) {
+			ev := events.GalleryPhotoChangedEvent{Change: events.GalleryPhotoUpserted}
+			err := r.Scan(&ev.ProviderID, &ev.Path, &ev.Seq)
+			return ev, err
+		})
+		if err != nil {
+			s.log.Error("model sweep query failed", "error", err)
+			return
+		}
+		if len(batch) == 0 {
+			if done > 0 {
+				s.log.Info("model sweep finished", "model", s.cfg.ClipModel, "photos", done)
+			}
+			return
+		}
+		for _, ev := range batch {
+			if ctx.Err() != nil {
+				return
+			}
+			if err := s.analyseAndStore(ctx, ev, true); err != nil {
+				if ctx.Err() == nil {
+					s.log.Error("model sweep aborted", "provider", ev.ProviderID, "path", ev.Path, "error", err)
+				}
+				return
+			}
+			done++
+		}
+		last := batch[len(batch)-1]
+		lastProvider, lastPath = last.ProviderID, last.Path
+	}
 }

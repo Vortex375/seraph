@@ -4,6 +4,7 @@ volumes:
   thumbs:
   agents-pgdata:
   agents-data:
+  immich-ml-cache:
 
 networks:
   internal:
@@ -213,7 +214,34 @@ services:
     environment:
       SERAPH_NATS_URL: nats://nats:4222
       SERAPH_MONGO_URL: mongodb://mongodb:27017/
+      SERAPH_AI_ENABLED: true
       SERAPH_LOG_LEVEL: debug
+
+  gallery-ai:
+    image: seraph
+    restart: always
+    command:
+      - gallery-ai
+    depends_on:
+      - nats
+      - agents-db
+      - immich-machine-learning
+    networks:
+      - internal
+    environment:
+      SERAPH_NATS_URL: nats://nats:4222
+      SERAPH_GALLERY_AI_DB_URL: postgres://${DB_USER:-ai}:${DB_PASS:-ai}@agents-db:5432/gallery_ai?sslmode=disable
+      SERAPH_GALLERY_AI_ML_URL: http://immich-machine-learning:3003
+      SERAPH_LOG_LEVEL: debug
+
+  immich-machine-learning:
+    # keep the tag in sync with mlImage in gallery-ai/galleryai/ml_contract_test.go
+    image: ghcr.io/immich-app/immich-machine-learning:v3.4.2
+    restart: always
+    networks:
+      - internal
+    volumes:
+      - immich-ml-cache:/cache
 
   jobs:
     image: seraph

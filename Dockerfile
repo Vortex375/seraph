@@ -9,7 +9,7 @@ ARG TARGETOS TARGETARCH
 # (shared with audio-metadata-build) keeps unchanged packages compiled.
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /out/ \
-    ./api-gateway ./file-indexer ./thumbnailer ./shares ./spaces ./gallery ./jobs \
+    ./api-gateway ./file-indexer ./thumbnailer ./shares ./spaces ./gallery ./gallery-ai ./jobs \
     ./file-provider-dir ./file-provider-smb ./log-viewer
 
 # Build audio-metadata, the only cgo service: TagLib from Debian, built on the
@@ -61,7 +61,7 @@ RUN apk add mailcap
 # audio-metadata build, with cc for its libstdc++ and TagLib's libraries.
 FROM gcr.io/distroless/cc-debian13
 COPY --from=mime /etc/mime.types /etc/mime.types
-COPY --from=build /out/api-gateway /out/file-indexer /out/thumbnailer /out/shares /out/spaces /out/gallery /out/jobs /out/file-provider-dir /out/file-provider-smb /out/log-viewer /bin
+COPY --from=build /out/api-gateway /out/file-indexer /out/thumbnailer /out/shares /out/spaces /out/gallery /out/gallery-ai /out/jobs /out/file-provider-dir /out/file-provider-smb /out/log-viewer /bin
 COPY --from=audio-metadata-build /out/audio-metadata /bin/audio-metadata
 COPY --from=audio-metadata-build /out/lib/ /usr/lib/
 COPY --from=flutter /app/build/web /srv/app
