@@ -76,6 +76,9 @@ type Service struct {
 	tags          atomic.Pointer[[]TagEmbedding]
 	tagRetryDelay time.Duration
 
+	// set when a face was assigned since the last full clustering pass; starts true
+	clusterDirty atomic.Bool
+
 	// test hook: runs between the re-tag batches and the final tag_state write
 	beforeTagStateWrite func()
 
@@ -85,7 +88,7 @@ type Service struct {
 }
 
 func New(p Params) *Service {
-	return &Service{
+	s := &Service{
 		cfg:        p.Config,
 		pool:       p.Pool,
 		ml:         p.ML,
@@ -97,6 +100,8 @@ func New(p Params) *Service {
 
 		tagRetryDelay: defaultTagRetryDelay,
 	}
+	s.clusterDirty.Store(true)
+	return s
 }
 
 // Start creates (or reattaches to) the durable consumer and processes events
@@ -131,8 +136,9 @@ func (s *Service) Start() error {
 	}
 	s.cancel = cancel
 
-	s.wg.Add(3)
+	s.wg.Add(4)
 	go s.loop(ctx)
+	go s.clusterLoop(ctx)
 	go func() {
 		defer s.wg.Done()
 		s.prepareTags(ctx)
@@ -346,7 +352,14 @@ func (s *Service) store(ctx context.Context, ev events.GalleryPhotoChangedEvent,
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit: %w", err)
 	}
-	// ticket 05 (face clustering) hooks in here, after commit
+	// a failure here must not fail the event (it would only be redelivered as stale): the
+	// faces stay `clustered = false` and the next clustering pass picks them up
+	if a != nil && len(a.Faces) > 0 {
+		if err := s.clusterFaces(ctx, false, `NOT clustered AND provider_id = $1 AND path = $2`, ev.ProviderID, ev.Path); err != nil {
+			s.clusterDirty.Store(true)
+			s.log.Error("face clustering failed; the periodic pass will retry", "provider", ev.ProviderID, "path", ev.Path, "error", err)
+		}
+	}
 	return nil
 }
 

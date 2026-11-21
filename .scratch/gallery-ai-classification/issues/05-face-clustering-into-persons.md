@@ -10,13 +10,19 @@ input but count as neighbours (spec "People clustering").
 
 **Blocked by:** 03
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Three near-identical face embeddings in three photos form one Person; a fourth joins it.
-- [ ] A single isolated face stays unassigned.
-- [ ] A non-core face near an existing Person is assigned on its deferred pass.
-- [ ] Two well-separated clusters form two Persons.
-- [ ] Faces with `manual = true` are never reassigned, but count as matches and lend their Person to
+- [x] Three near-identical face embeddings in three photos form one Person; a fourth joins it.
+- [x] A single isolated face stays unassigned.
+- [x] A non-core face near an existing Person is assigned on its deferred pass.
+- [x] Two well-separated clusters form two Persons.
+- [x] Faces with `manual = true` are never reassigned, but count as matches and lend their Person to
       nearby new faces.
-- [ ] Deleting all photos of a Person deletes the Person; deleting its cover photo moves the cover.
-- [ ] Gates: `go test ./...` in `gallery-ai`.
+- [x] Deleting all photos of a Person deletes the Person; deleting its cover photo moves the cover.
+- [x] Gates: `go test ./...` in `gallery-ai`.
+
+## Comments
+
+2026-11-21 (coordinator): Resolved. Deviation from Immich's per-face rule: a lone face is deferred, and the timed pass
+re-checks every unassigned non-manual face (gated on "something was assigned since the last pass"), so faces that
+arrive before their Person exists are attached later instead of stranded.

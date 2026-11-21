@@ -18,7 +18,10 @@
 
 package galleryai
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 func SetRetryDelay(s *Service, d time.Duration) { s.retryDelay = d }
 
@@ -27,3 +30,8 @@ func PermanentForTest(err error) error { return permanent(err) }
 func SetTagRetryDelay(s *Service, d time.Duration) { s.tagRetryDelay = d }
 
 func SetBeforeTagStateWrite(s *Service, f func()) { s.beforeTagStateWrite = f }
+
+func ClusterPass(s *Service, ctx context.Context) error { return s.clusterPass(ctx) }
+
+// ClusterTick runs the gated periodic step and reports whether it ran a pass.
+func ClusterTick(s *Service, ctx context.Context) bool { return s.clusterTick(ctx) }

@@ -22,6 +22,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -119,6 +120,8 @@ type fakeML struct {
 
 	textStatus atomic.Int32 // status for text (tag prompt) requests
 	visual     atomic.Int32 // image requests seen
+
+	faces sync.Map // photo path -> []string face embeddings (vec JSON); default one face vec(2)
 }
 
 func vec(first float32) string {
@@ -166,15 +169,26 @@ func newFakeML(t *testing.T) *fakeML {
 			return
 		}
 		f.visual.Add(1)
-		json.NewEncoder(w).Encode(map[string]any{
-			"clip": vec(1),
-			"facial-recognition": []map[string]any{{
+		embs := []string{vec(2)}
+		if img, _, err := r.FormFile("image"); err == nil {
+			path, _ := io.ReadAll(img)
+			if v, ok := f.faces.Load(string(path)); ok {
+				embs = v.([]string)
+			}
+		}
+		faces := []map[string]any{}
+		for _, emb := range embs {
+			faces = append(faces, map[string]any{
 				"boundingBox": map[string]int{"x1": 100, "y1": 50, "x2": 200, "y2": 150},
-				"embedding":   vec(2),
+				"embedding":   emb,
 				"score":       0.9,
-			}},
-			"imageWidth":  400,
-			"imageHeight": 200,
+			})
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"clip":               vec(1),
+			"facial-recognition": faces,
+			"imageWidth":         400,
+			"imageHeight":        200,
 		})
 	}))
 	t.Cleanup(f.srv.Close)
@@ -191,7 +205,7 @@ func (f *fakeThumbs) Thumbnail(ctx context.Context, providerID, path string) ([]
 	if f.err != nil {
 		return nil, f.err
 	}
-	return []byte("jpeg"), nil
+	return []byte(path), nil
 }
 
 type env struct {
@@ -199,6 +213,7 @@ type env struct {
 	js     jetstream.JetStream
 	ml     *fakeML
 	thumbs *fakeThumbs
+	svc    *galleryai.Service
 	stop   func()
 }
 
@@ -243,11 +258,12 @@ func startWith(t *testing.T, o startOpts) *env {
 	if o.down {
 		e.ml.textStatus.Store(503)
 	}
-	cfg := galleryai.Config{MLURL: e.ml.srv.URL, ClipModel: "clip-test", FaceModel: "buffalo_l", FaceMinScore: 0.7, MaxAckPending: 2, Tags: o.tags}
+	cfg := galleryai.Config{MLURL: e.ml.srv.URL, ClipModel: "clip-test", FaceModel: "buffalo_l", FaceMinScore: 0.7, MaxDistance: 0.5, MinFaces: 3, DeferredInterval: time.Hour, MaxAckPending: 2, Tags: o.tags}
 	svc := galleryai.New(galleryai.Params{
 		Config: cfg, Pool: pool, ML: galleryai.NewMLClient(cfg), Thumbs: e.thumbs, Js: js,
 		Logger: logging.New(logging.Params{}), Tracing: tracing.NewNoopTracing(),
 	})
+	e.svc = svc
 	galleryai.SetRetryDelay(svc, 200*time.Millisecond)
 	galleryai.SetTagRetryDelay(svc, 50*time.Millisecond)
 	if o.hook != nil {

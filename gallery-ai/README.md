@@ -31,6 +31,9 @@ Environment variables (`SERAPH_` prefix, `.` becomes `_`), plus the usual `SERAP
 | `SERAPH_GALLERY_AI_CLIP_MODEL` | `ViT-B-32__openai` | changing it triggers the sweep |
 | `SERAPH_GALLERY_AI_FACE_MODEL` | `buffalo_l` | |
 | `SERAPH_GALLERY_AI_FACE_MINSCORE` | `0.7` | |
+| `SERAPH_GALLERY_AI_FACE_MAXDISTANCE` | `0.5` | max cosine distance for faces to be the same person |
+| `SERAPH_GALLERY_AI_FACE_MINFACES` | `3` | faces (itself included) within that distance needed to start a new person |
+| `SERAPH_GALLERY_AI_FACE_DEFERREDINTERVAL` | `5m` | how often the unassigned faces are re-clustered |
 | `SERAPH_GALLERY_AI_MAXACKPENDING` | `2` | concurrent analyses |
 
 The `gallery` service only publishes events when `SERAPH_AI_ENABLED=true`.
@@ -69,6 +72,18 @@ images and choose thresholds by comparing them with what the photos show:
     SERAPH_TAG_CALIBRATE_DIR=/path/to/photos go test ./galleryai -run TestTagCalibration -v -timeout 30m
 
 `SERAPH_GALLERY_AI_ML_URL` selects the ML server (default `http://localhost:3003`).
+
+## People
+
+Faces are grouped into persons with Immich's incremental algorithm (`handleRecognizeFaces`), right after a photo's
+faces are stored. A face with at least `minFaces` faces (itself included) within `maxDistance` is a core face and
+joins the person of its nearest matched face, or starts a new one. A non-core face is marked `deferred` and retried
+by the periodic pass, where it may only join an existing person within `maxDistance`. That pass re-processes every
+unassigned face (so a lone face still joins a person that appears later), at startup and then every interval, but only
+if a face was assigned since the previous full pass. Faces with `manual = true` are never reassigned, but count as neighbours and lend their person.
+All clustering runs under one Postgres advisory lock. Faces whose clustering failed or never happened (`clustered =
+false`, e.g. after a crash) are picked up by the same pass. A person that loses all its
+faces is deleted; one that loses its cover face gets another cover.
 
 ## Existing photos
 

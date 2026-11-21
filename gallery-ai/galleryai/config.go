@@ -21,6 +21,7 @@ package galleryai
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -28,13 +29,16 @@ import (
 // Config is gallery-ai's settings. Keys live under "gallery.ai." so the
 // environment variable names come out as SERAPH_GALLERY_AI_*.
 type Config struct {
-	DBURL         string
-	MLURL         string
-	ClipModel     string
-	FaceModel     string
-	FaceMinScore  float64
-	MaxAckPending int
-	Tags          []TagConfig
+	DBURL            string
+	MLURL            string
+	ClipModel        string
+	FaceModel        string
+	FaceMinScore     float64
+	MaxDistance      float64       // max cosine distance for two faces to be the same person
+	MinFaces         int           // matches (itself included) a face needs to start a new person
+	DeferredInterval time.Duration // how often never-clustered and deferred faces are reprocessed
+	MaxAckPending    int
+	Tags             []TagConfig
 }
 
 func NewConfig(v *viper.Viper) (Config, error) {
@@ -42,6 +46,9 @@ func NewConfig(v *viper.Viper) (Config, error) {
 	v.SetDefault("gallery.ai.clip.model", "ViT-B-32__openai")
 	v.SetDefault("gallery.ai.face.model", "buffalo_l")
 	v.SetDefault("gallery.ai.face.minScore", 0.7)
+	v.SetDefault("gallery.ai.face.maxDistance", 0.5)
+	v.SetDefault("gallery.ai.face.minFaces", 3)
+	v.SetDefault("gallery.ai.face.deferredInterval", 5*time.Minute)
 	v.SetDefault("gallery.ai.maxAckPending", 2)
 
 	// gallery.ai.tags replaces the whole default list when set (config file; list of {tag, prompts, threshold})
@@ -59,12 +66,15 @@ func NewConfig(v *viper.Viper) (Config, error) {
 	}
 
 	return Config{
-		DBURL:         v.GetString("gallery.ai.db.url"),
-		MLURL:         v.GetString("gallery.ai.ml.url"),
-		ClipModel:     v.GetString("gallery.ai.clip.model"),
-		FaceModel:     v.GetString("gallery.ai.face.model"),
-		FaceMinScore:  v.GetFloat64("gallery.ai.face.minScore"),
-		MaxAckPending: v.GetInt("gallery.ai.maxAckPending"),
-		Tags:          tags,
+		DBURL:            v.GetString("gallery.ai.db.url"),
+		MLURL:            v.GetString("gallery.ai.ml.url"),
+		ClipModel:        v.GetString("gallery.ai.clip.model"),
+		FaceModel:        v.GetString("gallery.ai.face.model"),
+		FaceMinScore:     v.GetFloat64("gallery.ai.face.minScore"),
+		MaxDistance:      v.GetFloat64("gallery.ai.face.maxDistance"),
+		MinFaces:         v.GetInt("gallery.ai.face.minFaces"),
+		DeferredInterval: v.GetDuration("gallery.ai.face.deferredInterval"),
+		MaxAckPending:    v.GetInt("gallery.ai.maxAckPending"),
+		Tags:             tags,
 	}, nil
 }
