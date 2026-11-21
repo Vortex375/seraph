@@ -174,7 +174,10 @@ func (s *Service) search(ctx context.Context, req *SearchRequest) (*SearchRespon
 
 func (s *Service) status(ctx context.Context, req *StatusRequest) (*StatusResponse, error) {
 	pred, args := prefixFilter(req.Prefixes, "p", nil)
-	res := &StatusResponse{}
+	res := &StatusResponse{Tags: make([]string, 0, len(s.cfg.Tags))}
+	for _, t := range s.cfg.Tags {
+		res.Tags = append(res.Tags, t.Tag)
+	}
 	err := s.pool.QueryRow(ctx, `
 		SELECT count(*) FILTER (WHERE e.path IS NOT NULL),
 		       count(*) FILTER (WHERE e.path IS NULL AND p.error IS NULL),

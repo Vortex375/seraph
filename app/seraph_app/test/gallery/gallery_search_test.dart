@@ -43,9 +43,15 @@ void main() {
     expect(hits[1].score, 1.0);
     expect(GallerySearchHit.listFromJson({'items': null}), isEmpty);
 
-    final status = GalleryAnalysisStatus.fromJson(
-        {'analysed': 3, 'pending': 2, 'failed': 1});
+    final status = GalleryAnalysisStatus.fromJson({
+      'analysed': 3,
+      'pending': 2,
+      'failed': 1,
+      'tags': ['pet', 'beach']
+    });
     expect((status.analysed, status.pending, status.failed), (3, 2, 1));
+    expect(status.tags, ['pet', 'beach']);
+    expect(GalleryAnalysisStatus.fromJson({}).tags, isEmpty);
 
     final people = GalleryPerson.listFromJson({
       'people': [

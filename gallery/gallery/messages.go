@@ -317,10 +317,11 @@ type GalleryAnalysisStatusRequest struct {
 }
 
 type GalleryAnalysisStatusResponse struct {
-	Error    string `json:"error"`
-	Analysed int    `json:"analysed"`
-	Pending  int    `json:"pending"`
-	Failed   int    `json:"failed"`
+	Error    string   `json:"error"`
+	Analysed int      `json:"analysed"`
+	Pending  int      `json:"pending"`
+	Failed   int      `json:"failed"`
+	Tags     []string `json:"tags"`
 }
 
 type GalleryPeopleRequest struct {

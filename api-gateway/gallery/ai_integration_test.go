@@ -108,7 +108,7 @@ func TestPeopleRenameAndStatusAndPhotoRoutes(t *testing.T) {
 	defer srv.Close()
 
 	rename := stubTopic(t, nc, gallery.GalleryPeopleRenameTopic, gallery.GalleryPersonResponse{})
-	stubTopic(t, nc, gallery.GalleryAnalysisStatusTopic, gallery.GalleryAnalysisStatusResponse{Analysed: 1, Pending: 2, Failed: 3})
+	stubTopic(t, nc, gallery.GalleryAnalysisStatusTopic, gallery.GalleryAnalysisStatusResponse{Analysed: 1, Pending: 2, Failed: 3, Tags: []string{"pet"}})
 	photo := stubTopic(t, nc, gallery.GalleryPhotoAnalysisTopic, gallery.GalleryPhotoAnalysisResponse{Analysed: true})
 
 	code, _ := do(t, "PATCH", srv.URL+"/api/gallery/people/p1", `{"name":"Ann"}`)
@@ -123,7 +123,7 @@ func TestPeopleRenameAndStatusAndPhotoRoutes(t *testing.T) {
 
 	code, body := do(t, "GET", srv.URL+"/api/gallery/analysis/status", "")
 	assert.Equal(t, http.StatusOK, code)
-	assert.JSONEq(t, `{"error":"","analysed":1,"pending":2,"failed":3}`, body)
+	assert.JSONEq(t, `{"error":"","analysed":1,"pending":2,"failed":3,"tags":["pet"]}`, body)
 
 	code, _ = do(t, "GET", srv.URL+"/api/gallery/photos/analysis?providerId=photos&path=/a/b.jpg", "")
 	assert.Equal(t, http.StatusOK, code)

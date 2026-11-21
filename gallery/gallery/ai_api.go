@@ -158,7 +158,7 @@ func (g *GalleryProvider) aiStatus(ctx context.Context, req *GalleryAnalysisStat
 	if errStr != "" {
 		return &GalleryAnalysisStatusResponse{Error: errStr}
 	}
-	return &GalleryAnalysisStatusResponse{Analysed: res.Analysed, Pending: res.Pending, Failed: res.Failed}
+	return &GalleryAnalysisStatusResponse{Analysed: res.Analysed, Pending: res.Pending, Failed: res.Failed, Tags: res.Tags}
 }
 
 // personToSpace translates the cover of p; false when it is outside the folders.

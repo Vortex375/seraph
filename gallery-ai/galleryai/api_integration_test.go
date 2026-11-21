@@ -169,7 +169,7 @@ func TestSearchTextWithMLDownIsError(t *testing.T) {
 }
 
 func TestStatusCountsWithinPrefixes(t *testing.T) {
-	e := start(t)
+	e := startWith(t, startOpts{tags: tagSet(0.7)})
 	e.seedPhoto(t, "p", "/in/done.jpg", 1, 0)
 	e.seedPhoto(t, "p", "/out/done.jpg", 1, 0)
 	ctx := context.Background()
@@ -181,9 +181,10 @@ func TestStatusCountsWithinPrefixes(t *testing.T) {
 	require.NoError(t, err)
 
 	res := call[galleryai.StatusResponse](t, e, galleryai.StatusTopic, galleryai.StatusRequest{Prefixes: pfx("p", "/in")})
-	assert.Equal(t, galleryai.StatusResponse{Analysed: 1, Pending: 1, Failed: 2}, res)
+	tags := []string{"hit", "miss", "mixed"}
+	assert.Equal(t, galleryai.StatusResponse{Analysed: 1, Pending: 1, Failed: 2, Tags: tags}, res)
 	res = call[galleryai.StatusResponse](t, e, galleryai.StatusTopic, galleryai.StatusRequest{})
-	assert.Equal(t, galleryai.StatusResponse{}, res)
+	assert.Equal(t, galleryai.StatusResponse{Tags: tags}, res)
 }
 
 func TestPeopleVisibilityCountCoverAndRename(t *testing.T) {

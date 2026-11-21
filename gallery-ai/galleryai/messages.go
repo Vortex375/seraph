@@ -69,12 +69,14 @@ type StatusRequest struct {
 }
 
 // StatusResponse counts live photos gallery-ai has received. Pending are those with neither an
-// embedding nor an error; photos not yet delivered to gallery-ai are not counted.
+// embedding nor an error; photos not yet delivered to gallery-ai are not counted. Tags lists the
+// configured tag names, the values search accepts as tag.
 type StatusResponse struct {
-	Error    string `json:"error"`
-	Analysed int    `json:"analysed"`
-	Pending  int    `json:"pending"`
-	Failed   int    `json:"failed"`
+	Error    string   `json:"error"`
+	Analysed int      `json:"analysed"`
+	Pending  int      `json:"pending"`
+	Failed   int      `json:"failed"`
+	Tags     []string `json:"tags"`
 }
 
 // Box is a normalised face bounding box.

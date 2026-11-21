@@ -35,26 +35,6 @@ class GallerySourceFolder {
   }
 }
 
-/// The tag names the gallery-ai service classifies photos with
-/// (`gallery-ai/galleryai/tags.go` `DefaultTags`). There is no tags endpoint,
-/// so the search chips hardcode the same list.
-const List<String> galleryAiTags = [
-  'people',
-  'pet',
-  'food',
-  'landscape',
-  'beach',
-  'mountain',
-  'city',
-  'night',
-  'document',
-  'screenshot',
-  'vehicle',
-  'building',
-  'flower',
-  'sport',
-];
-
 /// One search hit, in Space coordinates - not yet joined to a mirror row.
 class GallerySearchHit {
   const GallerySearchHit({
@@ -84,23 +64,27 @@ class GallerySearchHit {
   }
 }
 
-/// `GET /api/gallery/analysis/status`.
+/// `GET /api/gallery/analysis/status`. [tags] are the tag names the server
+/// is configured with, the values search accepts as `tag`.
 class GalleryAnalysisStatus {
   const GalleryAnalysisStatus({
     this.analysed = 0,
     this.pending = 0,
     this.failed = 0,
+    this.tags = const [],
   });
 
   final int analysed;
   final int pending;
   final int failed;
+  final List<String> tags;
 
   factory GalleryAnalysisStatus.fromJson(Map<String, dynamic>? json) {
     return GalleryAnalysisStatus(
       analysed: json?['analysed'] as int? ?? 0,
       pending: json?['pending'] as int? ?? 0,
       failed: json?['failed'] as int? ?? 0,
+      tags: (json?['tags'] as List?)?.whereType<String>().toList() ?? const [],
     );
   }
 }

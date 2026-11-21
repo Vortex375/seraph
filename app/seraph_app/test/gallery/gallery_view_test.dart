@@ -131,7 +131,12 @@ void main() {
                         }
                     ]
                   }
-                : {'analysed': 3, 'pending': 0, 'failed': 0},
+                : {
+                    'analysed': 3,
+                    'pending': 0,
+                    'failed': 0,
+                    'tags': ['pet', 'beach'],
+                  },
       ));
     }));
     final search = GallerySearchController(

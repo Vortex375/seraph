@@ -119,11 +119,11 @@ func TestAIStatusAndAssignPassThrough(t *testing.T) {
 	nc := setupAIUser(t)
 
 	status := fakeAI(t, nc, galleryai.StatusTopic, func(galleryai.StatusRequest) any {
-		return galleryai.StatusResponse{Analysed: 3, Pending: 2, Failed: 1}
+		return galleryai.StatusResponse{Analysed: 3, Pending: 2, Failed: 1, Tags: []string{"pet"}}
 	})
 	st := ask[gallery.GalleryAnalysisStatusRequest, gallery.GalleryAnalysisStatusResponse](t, nc, gallery.GalleryAnalysisStatusTopic,
 		gallery.GalleryAnalysisStatusRequest{UserId: "pino"})
-	assert.Equal(t, gallery.GalleryAnalysisStatusResponse{Analysed: 3, Pending: 2, Failed: 1}, st)
+	assert.Equal(t, gallery.GalleryAnalysisStatusResponse{Analysed: 3, Pending: 2, Failed: 1, Tags: []string{"pet"}}, st)
 	assert.ElementsMatch(t, pinoPrefixes, (*status)[0].Prefixes)
 
 	assign := fakeAI(t, nc, galleryai.FaceAssignTopic, func(r galleryai.FaceAssignRequest) any {

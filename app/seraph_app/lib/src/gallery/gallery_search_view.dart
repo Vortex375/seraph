@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:seraph_app/src/gallery/gallery_image_loader.dart';
-import 'package:seraph_app/src/gallery/gallery_models.dart';
 import 'package:seraph_app/src/gallery/gallery_photo_viewer.dart';
 import 'package:seraph_app/src/gallery/gallery_search_controller.dart';
 import 'package:seraph_app/src/gallery/gallery_tile.dart';
@@ -88,7 +87,7 @@ class _GallerySearchViewState extends State<GallerySearchView> {
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           children: [
-            for (final t in galleryAiTags)
+            for (final t in search.status.value.tags)
               _chip(t, search.tag.value == t, () => search.setTag(t)),
           ],
         ),
