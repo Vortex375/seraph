@@ -312,7 +312,9 @@ func (g *GalleryProvider) backfillUpsert(ctx context.Context, entry events.FileI
 	// while the upsert that might use it is still in flight - see
 	// sequenceAllocator's docs.
 	inserted := false
+	var stampedSeq int64
 	err := g.withSequence(ctx, func(seq int64) error {
+		stampedSeq = seq
 		filter := bson.M{"providerId": entry.ProviderId, "path": entry.Path}
 		update := bson.M{
 			"$setOnInsert": bson.M{
@@ -358,6 +360,7 @@ func (g *GalleryProvider) backfillUpsert(ctx context.Context, entry events.FileI
 	// events.ThumbnailWarmRequest's docs) but is needless amplification
 	// across thousands of backfilled entries with nothing to gain.
 	if inserted {
+		g.dispatchPhotoChanged(ctx, entry.ProviderId, entry.Path, events.GalleryPhotoUpserted, stampedSeq)
 		g.dispatchThumbnailWarm(ctx, entry.ProviderId, entry.Path)
 	}
 

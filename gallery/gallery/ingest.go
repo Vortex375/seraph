@@ -427,12 +427,28 @@ func (ic *ingestConsumer) handleMessage(ctx context.Context, msg jetstream.Msg) 
 // document silently vanishing from a query it can no longer distinguish from
 // "never existed".
 func (g *GalleryProvider) markDeleted(ctx context.Context, providerId string, filePath string) error {
-	return g.withSequence(ctx, func(seq int64) error {
+	var stampedSeq int64
+	var matched bool
+	err := g.withSequence(ctx, func(seq int64) error {
 		filter := bson.M{"providerId": providerId, "path": filePath}
 		update := bson.M{"$set": bson.M{"deleted": true, "seq": seq}}
-		_, err := g.photos.UpdateOne(ctx, filter, update)
-		return err
+		res, err := g.photos.UpdateOne(ctx, filter, update)
+		if err != nil {
+			return err
+		}
+		stampedSeq = seq
+		matched = res.MatchedCount > 0
+		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	// nothing to tell consumers about a photo that was never in the read model
+	if matched {
+		g.dispatchPhotoChanged(ctx, providerId, filePath, events.GalleryPhotoDeleted, stampedSeq)
+	}
+	return nil
 }
 
 // upsertPhoto extracts metadata for a created/changed file and writes it
@@ -457,7 +473,9 @@ func (g *GalleryProvider) upsertPhoto(ctx context.Context, ev *events.FileChange
 
 	lat, lon, place := resolvePhotoPlace(meta)
 
+	var stampedSeq int64
 	err = g.withSequence(ctx, func(seq int64) error {
+		stampedSeq = seq
 		filter := bson.M{"providerId": ev.ProviderID, "path": ev.Path}
 		update := bson.M{
 			"$set": bson.M{
@@ -496,6 +514,8 @@ func (g *GalleryProvider) upsertPhoto(ctx context.Context, ev *events.FileChange
 	if err != nil {
 		return err
 	}
+
+	g.dispatchPhotoChanged(ctx, ev.ProviderID, ev.Path, events.GalleryPhotoUpserted, stampedSeq)
 
 	// dispatch background Thumbnail pre-generation now that this photo is in
 	// the read model - fire-and-forget onto the durable warm work queue, not

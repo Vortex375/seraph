@@ -19,15 +19,15 @@ config `ai.enabled`, default `false`. See spec "Gallery: change event".
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A live Created event for a photo publishes one `upserted` event with physical coordinates and the
+- [x] A live Created event for a photo publishes one `upserted` event with physical coordinates and the
       stored `seq`.
-- [ ] A Changed event for an existing photo publishes `upserted` with the new `seq`.
-- [ ] A Deleted event (and the "file gone" fallback path) publishes `deleted` with the new `seq`.
-- [ ] Backfill publishes only for newly inserted rows.
-- [ ] A metadata sweep pass publishes nothing.
-- [ ] With `ai.enabled` off, nothing is published.
-- [ ] Publishing failure is logged and does not fail ingestion (same policy as `dispatchThumbnailWarm`).
-- [ ] Gates: `go test ./...` in `gallery` and `events`, with the integration tests actually running
+- [x] A Changed event for an existing photo publishes `upserted` with the new `seq`.
+- [x] A Deleted event (and the "file gone" fallback path) publishes `deleted` with the new `seq`.
+- [x] Backfill publishes only for newly inserted rows.
+- [x] A metadata sweep pass publishes nothing.
+- [x] With `ai.enabled` off, nothing is published.
+- [x] Publishing failure is logged and does not fail ingestion (same policy as `dispatchThumbnailWarm`).
+- [x] Gates: `go test ./...` in `gallery` and `events`, with the integration tests actually running
       (check the counts, not just `ok`).

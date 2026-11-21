@@ -151,6 +151,16 @@ func shutdown() {
 	}
 }
 
+// testAIEnabled is the gallery config ai.enabled handed to providers built
+// by getGalleryProvider; set it with enableAI.
+var testAIEnabled bool
+
+func enableAI(t *testing.T) {
+	t.Helper()
+	testAIEnabled = true
+	t.Cleanup(func() { testAIEnabled = false })
+}
+
 func getGalleryProvider(t *testing.T) (*gallery.GalleryProvider, *nats.Conn, *mongo.Database) {
 	nc, err := nats.Connect(natsServer.ClientURL())
 	if err != nil {
@@ -176,7 +186,11 @@ func getGalleryProvider(t *testing.T) (*gallery.GalleryProvider, *nats.Conn, *mo
 	logger.SetLevel(slog.LevelDebug)
 	db := mongoClient.Database("gallery_test")
 
+	gv := viper.New()
+	gv.Set("ai.enabled", testAIEnabled)
+
 	res2, err := gallery.New(gallery.Params{
+		Viper:   gv,
 		Nc:      nc,
 		Js:      js,
 		Logger:  logger,

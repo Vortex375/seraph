@@ -260,3 +260,47 @@ func (g *GalleryProvider) recordUnsupported(ctx context.Context, providerId stri
 		return err
 	})
 }
+
+// dispatchPhotoChanged publishes a GalleryPhotoChangedEvent fire-and-forget
+// onto the durable work queue gallery-ai consumes, with the same failure
+// policy as dispatchThumbnailWarm: a failed publish is logged and never
+// fails the write it follows. seq is the photo's seq as stamped by that
+// write. A no-op unless ai.enabled is set (nothing would consume the queue).
+func (g *GalleryProvider) dispatchPhotoChanged(ctx context.Context, providerId string, filePath string, change string, seq int64) {
+	if g.js == nil || !g.aiEnabled {
+		return
+	}
+
+	data, err := json.Marshal(events.GalleryPhotoChangedEvent{
+		ProviderID: providerId,
+		Path:       filePath,
+		Change:     change,
+		Seq:        seq,
+	})
+	if err != nil {
+		g.log.Error("failed to marshal GalleryPhotoChangedEvent", "error", err)
+		return
+	}
+
+	if _, err := g.js.Publish(ctx, events.GalleryPhotoChangedTopic, data); err != nil {
+		g.log.Error("failed to publish GalleryPhotoChangedEvent; gallery-ai will not see this change until the photo is touched again",
+			"providerId", providerId, "path", filePath, "change", change, "error", err)
+	}
+}
+
+// ensurePhotoChangedStream declares the work queue stream
+// GalleryPhotoChangedEvent is published to; only when ai.enabled is set.
+func (g *GalleryProvider) ensurePhotoChangedStream(ctx context.Context) error {
+	if g.js == nil || !g.aiEnabled {
+		return nil
+	}
+	_, err := g.js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
+		Name:      events.GalleryPhotoChangedStream,
+		Subjects:  []string{events.GalleryPhotoChangedTopic},
+		Retention: jetstream.WorkQueuePolicy,
+	})
+	if err != nil {
+		return fmt.Errorf("create/update %s stream: %w", events.GalleryPhotoChangedStream, err)
+	}
+	return nil
+}

@@ -31,6 +31,7 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -55,6 +56,7 @@ type Params struct {
 	Logger  *logging.Logger
 	Tracing *tracing.Tracing
 	Mig     Migrations
+	Viper   *viper.Viper `optional:"true"`
 }
 
 type Result struct {
@@ -69,6 +71,10 @@ type GalleryProvider struct {
 	nc      *nats.Conn
 	js      jetstream.JetStream
 	logging *logging.Logger
+
+	// aiEnabled (config ai.enabled, default false) gates publishing
+	// GalleryPhotoChangedEvent; see dispatchPhotoChanged.
+	aiEnabled bool
 
 	sourceFolders     *mongo.Collection
 	photos            *mongo.Collection
@@ -139,6 +145,7 @@ func New(p Params) (Result, error) {
 			nc:                p.Nc,
 			js:                p.Js,
 			logging:           p.Logger,
+			aiEnabled:         p.Viper != nil && p.Viper.GetBool("ai.enabled"),
 			sourceFolders:     p.Db.Collection("gallerySourceFolders"),
 			photos:            p.Db.Collection("galleryPhotos"),
 			pendingTombstones: p.Db.Collection("galleryPendingTombstones"),
@@ -257,6 +264,10 @@ func (g *GalleryProvider) Start() error {
 	// see ensureThumbnailWarmStream's docs.
 	if err := g.ensureThumbnailWarmStream(context.Background()); err != nil {
 		g.log.Error("failed to declare thumbnail warm stream; warm dispatch will fail until it exists", "error", err)
+	}
+
+	if err := g.ensurePhotoChangedStream(context.Background()); err != nil {
+		g.log.Error("failed to declare gallery photo-changed stream; change events will fail to publish until it exists", "error", err)
 	}
 
 	warmUnsupportedCtx, warmUnsupportedCancel := context.WithCancel(context.Background())
