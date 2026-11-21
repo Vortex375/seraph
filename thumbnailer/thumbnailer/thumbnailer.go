@@ -148,9 +148,11 @@ type Thumbnailer struct {
 	limiter      util.Limiter
 	invalidation *invalidationConsumer
 	warm         *warmConsumer
-	ctx          context.Context
-	cancel       context.CancelFunc
-	wg           sync.WaitGroup
+	// warmPollInterval, when set (tests), replaces the 10 s backlog poll.
+	warmPollInterval time.Duration
+	ctx              context.Context
+	cancel           context.CancelFunc
+	wg               sync.WaitGroup
 }
 
 func NewThumbnailer(p Params, fileProviderId string, path string, thumbnailStorage fileprovider.Client) (Result, error) {

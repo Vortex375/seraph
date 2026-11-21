@@ -6,9 +6,9 @@ thumbnails". Stop the poller with the consumer.
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] With warm requests queued, `thumbnailer.warm` reports `running` and a `pending` that falls as they
+- [x] With warm requests queued, `thumbnailer.warm` reports `running` and a `pending` that falls as they
       are processed.
-- [ ] Once the queue is empty it reports `idle` / `pending` 0, once (no repeated publishes while idle).
-- [ ] Gates: `go test ./...` in `thumbnailer`.
+- [x] Once the queue is empty it reports `idle` / `pending` 0, once (no repeated publishes while idle).
+- [x] Gates: `go test ./...` in `thumbnailer`.

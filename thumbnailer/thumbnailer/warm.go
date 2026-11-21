@@ -24,9 +24,11 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
 	"umbasa.net/seraph/events"
+	"umbasa.net/seraph/messaging"
 	"umbasa.net/seraph/util"
 )
 
@@ -107,10 +109,18 @@ func (t *Thumbnailer) startWarmConsumer(ctx context.Context) (*warmConsumer, err
 		iter:     iter,
 		limiter:  util.NewLimiter(warmParallel),
 		dispatch: util.NewLimiter(warmDispatchParallel),
+		job:      messaging.NewJob(t.nc, "thumbnailer.warm", "Warming thumbnails"),
+		pollStop: make(chan struct{}),
 	}
 
-	t.wg.Add(1)
+	interval := t.warmPollInterval
+	if interval == 0 {
+		interval = warmPollInterval
+	}
+
+	t.wg.Add(2)
 	go wc.loop(ctx, &t.wg)
+	go wc.pollJob(cons, interval, &t.wg)
 
 	return wc, nil
 }
@@ -130,12 +140,54 @@ type warmConsumer struct {
 	// deadlock as soon as more messages are in flight than warmParallel
 	// allows.
 	dispatch util.Limiter
+
+	// job reports the backlog (queued + in flight) as Queue Job
+	// "thumbnailer.warm"; pollJob feeds it until pollStop is closed.
+	job      *messaging.Job
+	pollStop chan struct{}
+}
+
+// warmPollInterval is how often the consumer's backlog is reported.
+const warmPollInterval = 10 * time.Second
+
+func (wc *warmConsumer) pollJob(cons jetstream.Consumer, interval time.Duration, wg *sync.WaitGroup) {
+	defer wg.Done()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		info, err := cons.Info(ctx)
+		cancel()
+		if err != nil {
+			wc.t.log.Warn("failed to read warm consumer info", "error", err)
+		} else if n := int64(info.NumPending) + int64(info.NumAckPending); n > 0 {
+			wc.job.Pending(n, formatCount(n)+" thumbnails waiting")
+		} else {
+			wc.job.Pending(0, "Up to date")
+		}
+		select {
+		case <-wc.pollStop:
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+// formatCount renders n with thousands separators, e.g. 1,234.
+func formatCount(n int64) string {
+	s := fmt.Sprint(n)
+	for i := len(s) - 3; i > 0; i -= 3 {
+		s = s[:i] + "," + s[i:]
+	}
+	return s
 }
 
 func (wc *warmConsumer) stop() {
 	if wc == nil {
 		return
 	}
+	close(wc.pollStop)
+	wc.job.Close()
 	wc.iter.Stop()
 }
 
