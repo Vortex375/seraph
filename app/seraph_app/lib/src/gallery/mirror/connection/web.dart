@@ -10,7 +10,9 @@ import 'package:drift/wasm.dart';
 /// serves:
 /// - `sqlite3.wasm` - from the sqlite3.dart release matching the pinned
 ///   `sqlite3` package version (3.5.0).
-/// - `drift_worker.js` - the prebuilt worker shipped inside the drift package.
+/// - `drift_worker.js` - compiled from `tool/drift_worker.dart` against the
+///   pinned `drift` version; rebuild it whenever pubspec.lock moves drift:
+///   `dart compile js -O4 tool/drift_worker.dart -o web/drift_worker.js`.
 ///
 /// The URIs are RELATIVE so they resolve against whatever base href the app is
 /// served under; the Dockerfile builds with `--base-href=/app/`, so hardcoding

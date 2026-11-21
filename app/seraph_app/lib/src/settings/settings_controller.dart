@@ -87,7 +87,9 @@ class SettingsController extends GetxController {
         _serverUrl = 'http://localhost:8080'.obs;
       } else {
         //TODO: support context path!?
-        _serverUrl = Uri.base.replace(path: '').removeFragment().toString().obs;
+        // origin, not Uri.base minus its path: a query string on the page URL
+        // (e.g. /app/?foo) would otherwise end up in front of every API path
+        _serverUrl = Uri.base.origin.obs;
       }
       _serverUrlConfirmed = true.obs;
       _oidcIssuer = null.obs;
