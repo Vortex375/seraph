@@ -9,7 +9,7 @@ device-only photos show nothing. Hidden when the server answers `ai-unavailable`
 
 **Blocked by:** 07, 09
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 - [ ] Tags and faces show for an analysed photo; boxes line up with the faces at any viewer zoom.
 - [ ] Assigning a face to another Person updates the strip and that Person's photos on the People screen.

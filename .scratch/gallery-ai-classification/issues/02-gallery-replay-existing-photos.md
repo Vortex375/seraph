@@ -14,7 +14,7 @@ one-time replay of existing photos"):
 
 **Blocked by:** 01
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 - [ ] With `ai.enabled` on and no marker, every non-deleted photo is published exactly once as
       `upserted` with its current `seq`; deleted photos are not.

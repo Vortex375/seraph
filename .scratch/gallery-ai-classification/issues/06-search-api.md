@@ -13,7 +13,7 @@
 
 **Blocked by:** 03, 04 (tag filter), 05 (person filter)
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 - [ ] A user gets results only from photos under their own Gallery Source Folders; another user's photos
       never appear, even when they match better.

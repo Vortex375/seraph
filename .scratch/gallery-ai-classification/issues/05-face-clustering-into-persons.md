@@ -10,7 +10,7 @@ input but count as neighbours (spec "People clustering").
 
 **Blocked by:** 03
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 - [ ] Three near-identical face embeddings in three photos form one Person; a fourth joins it.
 - [ ] A single isolated face stays unassigned.

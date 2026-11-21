@@ -22,7 +22,7 @@
 
 **Blocked by:** 01
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 - [ ] With a fake ML server (httptest), an `upserted` event stores one embedding and the returned faces
       with boxes normalised by `imageWidth`/`imageHeight`.

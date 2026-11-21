@@ -1,6 +1,6 @@
 # Gallery AI: content tags, people and semantic search
 
-Status: needs-triage
+Status: ready-for-agent
 
 Phase: specification. Decided in conversation on 2026-11-21. Tickets in `issues/`.
 

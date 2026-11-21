@@ -8,7 +8,7 @@ shows them as a grid in score order, opening the existing viewer. Shows analysis
 
 **Blocked by:** 06
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 - [ ] Typing a query shows matching photos in score order; tapping opens the viewer.
 - [ ] Tag and Person chips narrow the results and combine with the text.

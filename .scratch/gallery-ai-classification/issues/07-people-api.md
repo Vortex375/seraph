@@ -20,7 +20,7 @@ without faces is deleted, a moved-away cover face is replaced, a new Person's co
 
 **Blocked by:** 04, 05
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 - [ ] A Person who appears only in photos outside the caller's folders is not listed and cannot be
       renamed or assigned to by them.

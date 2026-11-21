@@ -19,7 +19,7 @@ config `ai.enabled`, default `false`. See spec "Gallery: change event".
 
 **Blocked by:** None — can start immediately.
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 - [ ] A live Created event for a photo publishes one `upserted` event with physical coordinates and the
       stored `seq`.

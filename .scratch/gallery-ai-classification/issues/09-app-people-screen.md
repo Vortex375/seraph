@@ -7,7 +7,7 @@ server answers `ai-unavailable`.
 
 **Blocked by:** 07, 08
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 - [ ] Face crops show the face, not the whole photo, at grid size.
 - [ ] Renaming updates the grid and the Person chip in search.

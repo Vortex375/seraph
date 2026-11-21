@@ -12,7 +12,7 @@ label photos.
 
 **Blocked by:** 03
 
-**Status:** needs-triage
+**Status:** ready-for-agent
 
 - [ ] Analysis stores tags above threshold; none below.
 - [ ] Changing a threshold in config re-tags existing photos at startup with no ML calls (fake server
