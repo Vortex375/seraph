@@ -150,6 +150,34 @@ func translate(folders []resolvedFolder, providerId string, filePath string) (sp
 	return "", "", false
 }
 
+// toPhysical is the inverse of translate: it maps SPACE coordinates to the
+// physical (providerId, path) of the first resolved folder whose Space
+// folder contains them. ok is false when no folder of the user does, which
+// callers report exactly like a photo that does not exist.
+func toPhysical(folders []resolvedFolder, spaceProviderId string, spacePath string) (providerId string, filePath string, ok bool) {
+	if !strings.HasPrefix(spacePath, "/") {
+		return "", "", false
+	}
+	spacePath = path.Clean(spacePath) // also resolves any ".." before the containment check
+	for _, f := range folders {
+		if f.spaceProviderId != spaceProviderId {
+			continue
+		}
+		rest := ""
+		switch {
+		case f.spacePath == "/":
+			rest = spacePath
+		case spacePath == f.spacePath:
+		case strings.HasPrefix(spacePath, f.spacePath+"/"):
+			rest = strings.TrimPrefix(spacePath, f.spacePath)
+		default:
+			continue
+		}
+		return f.providerId, path.Join(f.path, rest), true
+	}
+	return "", "", false
+}
+
 // listCursor is the decoded form of a GalleryListRequest.Cursor: a position
 // in the (capturedAt desc, _id asc) keyset the query is paged over. Encoding
 // it as an opaque string (rather than exposing capturedAt/_id directly)

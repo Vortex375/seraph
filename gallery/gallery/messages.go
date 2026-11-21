@@ -18,6 +18,8 @@
 
 package gallery
 
+import "umbasa.net/seraph/gallery-ai/galleryai"
+
 // Operations understood by [GallerySourceFolderCrudRequest].
 const (
 	GallerySourceFolderOperationList   = "LIST"
@@ -277,4 +279,97 @@ type GalleryDeltaResponse struct {
 	// so resuming from it is guaranteed not to miss a change that arrived
 	// after this poll started scanning but was assigned a Seq at or below it.
 	NextSince int64 `json:"nextSince"`
+}
+
+// User-scoped fronts for the gallery-ai topics (seraph.gallery.ai.*). Each
+// resolves UserId's folders, passes their physical locations to gallery-ai and
+// translates every result back to SPACE coordinates, dropping what does not
+// translate. The gateway takes UserId from the session, never from the client.
+const (
+	GallerySearchTopic         = "seraph.gallery.search"
+	GalleryAnalysisStatusTopic = "seraph.gallery.analysis.status"
+	GalleryPeopleTopic         = "seraph.gallery.people"
+	GalleryPeopleRenameTopic   = "seraph.gallery.people.rename"
+	GalleryPhotoAnalysisTopic  = "seraph.gallery.photo.analysis"
+	GalleryFacesAssignTopic    = "seraph.gallery.faces.assign"
+)
+
+// ErrorAIUnavailable is the Error of every response above when gallery-ai does
+// not answer. Other gallery-ai errors (e.g. "not found") are passed through.
+const ErrorAIUnavailable = "ai-unavailable"
+
+type GallerySearchRequest struct {
+	UserId   string `json:"userId"`
+	Text     string `json:"text,omitempty"`
+	Tag      string `json:"tag,omitempty"`
+	PersonId string `json:"personId,omitempty"`
+	Limit    int    `json:"limit"`
+}
+
+// GallerySearchResponse items carry SPACE coordinates, best match first.
+type GallerySearchResponse struct {
+	Error string                 `json:"error"`
+	Items []galleryai.SearchItem `json:"items"`
+}
+
+type GalleryAnalysisStatusRequest struct {
+	UserId string `json:"userId"`
+}
+
+type GalleryAnalysisStatusResponse struct {
+	Error    string `json:"error"`
+	Analysed int    `json:"analysed"`
+	Pending  int    `json:"pending"`
+	Failed   int    `json:"failed"`
+}
+
+type GalleryPeopleRequest struct {
+	UserId string `json:"userId"`
+}
+
+// GalleryPeopleResponse covers are in SPACE coordinates.
+type GalleryPeopleResponse struct {
+	Error  string             `json:"error"`
+	People []galleryai.Person `json:"people"`
+}
+
+type GalleryPersonRenameRequest struct {
+	UserId string `json:"userId"`
+	Id     string `json:"id"`
+	// Name may be empty, which makes the person unnamed.
+	Name string `json:"name"`
+}
+
+type GalleryPersonResponse struct {
+	Error  string            `json:"error"`
+	Person *galleryai.Person `json:"person"`
+}
+
+// GalleryPhotoAnalysisRequest identifies the photo by SPACE coordinates.
+type GalleryPhotoAnalysisRequest struct {
+	UserId     string `json:"userId"`
+	ProviderId string `json:"providerId"`
+	Path       string `json:"path"`
+}
+
+type GalleryPhotoAnalysisResponse struct {
+	Error         string                `json:"error"`
+	Analysed      bool                  `json:"analysed"`
+	AnalysisError string                `json:"analysisError"`
+	Tags          []galleryai.PhotoTag  `json:"tags"`
+	Faces         []galleryai.PhotoFace `json:"faces"`
+}
+
+// GalleryFaceAssignRequest sets exactly one of PersonId, NewPersonName and Unassign.
+type GalleryFaceAssignRequest struct {
+	UserId        string `json:"userId"`
+	FaceId        string `json:"faceId"`
+	PersonId      string `json:"personId,omitempty"`
+	NewPersonName string `json:"newPersonName,omitempty"`
+	Unassign      bool   `json:"unassign,omitempty"`
+}
+
+type GalleryFaceResponse struct {
+	Error string               `json:"error"`
+	Face  *galleryai.PhotoFace `json:"face"`
 }

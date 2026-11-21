@@ -20,16 +20,16 @@ without faces is deleted, a moved-away cover face is replaced, a new Person's co
 
 **Blocked by:** 04, 05
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A Person who appears only in photos outside the caller's folders is not listed and cannot be
+- [x] A Person who appears only in photos outside the caller's folders is not listed and cannot be
       renamed or assigned to by them.
-- [ ] `photoCount` and the cover reflect only the caller's visible photos.
-- [ ] `GET gallery/photos/analysis` returns tags with scores and faces with id, normalised box, Person and
+- [x] `photoCount` and the cover reflect only the caller's visible photos.
+- [x] `GET gallery/photos/analysis` returns tags with scores and faces with id, normalised box, Person and
       `manual` for a photo given by Space coordinates; a not-yet-analysed photo answers `analysed: false`.
-- [ ] Assigning a face to another Person moves it and sets `manual`; the old Person is deleted if empty.
-- [ ] `newPersonName` creates a Person with that name and this face as cover.
-- [ ] Unassigning leaves `person_id` NULL; a later clustering pass does not reassign it.
-- [ ] A body with none or more than one of the three fields is rejected with 400.
-- [ ] Assigning a face in a photo the caller cannot see is rejected.
-- [ ] Gates: `go test ./...` in `gallery-ai`, `gallery`, `api-gateway`.
+- [x] Assigning a face to another Person moves it and sets `manual`; the old Person is deleted if empty.
+- [x] `newPersonName` creates a Person with that name and this face as cover.
+- [x] Unassigning leaves `person_id` NULL; a later clustering pass does not reassign it.
+- [x] A body with none or more than one of the three fields is rejected with 400.
+- [x] Assigning a face in a photo the caller cannot see is rejected.
+- [x] Gates: `go test ./...` in `gallery-ai`, `gallery`, `api-gateway`.

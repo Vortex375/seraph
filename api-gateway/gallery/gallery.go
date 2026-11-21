@@ -19,6 +19,7 @@
 package gallery
 
 import (
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -263,6 +264,148 @@ func (h *galleryHandler) Setup(app *gin.Engine, apiGroup *gin.RouterGroup, publi
 
 		ctx.JSON(http.StatusOK, res)
 	})
+	apiGroup.GET("gallery/search", func(ctx *gin.Context) {
+		limit := 0
+		if l := ctx.Query("limit"); l != "" {
+			parsed, err := strconv.Atoi(l)
+			if err != nil || parsed < 0 {
+				ctx.AbortWithError(http.StatusBadRequest, errors.New("invalid limit"))
+				return
+			}
+			limit = parsed
+		}
+
+		req := gallery.GallerySearchRequest{
+			UserId:   h.auth.GetUserId(ctx.Request.Context()),
+			Text:     ctx.Query("q"),
+			Tag:      ctx.Query("tag"),
+			PersonId: ctx.Query("person"),
+			Limit:    limit,
+		}
+		res := gallery.GallerySearchResponse{}
+		if h.askAI(ctx, gallery.GallerySearchTopic, &req, &res, &res.Error) {
+			ctx.JSON(http.StatusOK, res)
+		}
+	})
+
+	apiGroup.GET("gallery/analysis/status", func(ctx *gin.Context) {
+		req := gallery.GalleryAnalysisStatusRequest{UserId: h.auth.GetUserId(ctx.Request.Context())}
+		res := gallery.GalleryAnalysisStatusResponse{}
+		if h.askAI(ctx, gallery.GalleryAnalysisStatusTopic, &req, &res, &res.Error) {
+			ctx.JSON(http.StatusOK, res)
+		}
+	})
+
+	apiGroup.GET("gallery/people", func(ctx *gin.Context) {
+		req := gallery.GalleryPeopleRequest{UserId: h.auth.GetUserId(ctx.Request.Context())}
+		res := gallery.GalleryPeopleResponse{}
+		if h.askAI(ctx, gallery.GalleryPeopleTopic, &req, &res, &res.Error) {
+			ctx.JSON(http.StatusOK, res)
+		}
+	})
+
+	apiGroup.PATCH("gallery/people/:id", func(ctx *gin.Context) {
+		body := struct {
+			Name *string `json:"name"`
+		}{}
+		if err := ctx.ShouldBindJSON(&body); err != nil || body.Name == nil {
+			ctx.AbortWithError(http.StatusBadRequest, errors.New("name is required"))
+			return
+		}
+
+		req := gallery.GalleryPersonRenameRequest{
+			UserId: h.auth.GetUserId(ctx.Request.Context()),
+			Id:     ctx.Param("id"),
+			Name:   *body.Name,
+		}
+		res := gallery.GalleryPersonResponse{}
+		if h.askAI(ctx, gallery.GalleryPeopleRenameTopic, &req, &res, &res.Error) {
+			ctx.JSON(http.StatusOK, res)
+		}
+	})
+
+	apiGroup.GET("gallery/photos/analysis", func(ctx *gin.Context) {
+		providerId, photoPath := ctx.Query("providerId"), ctx.Query("path")
+		if providerId == "" || !strings.HasPrefix(photoPath, "/") {
+			ctx.AbortWithError(http.StatusBadRequest, errors.New("providerId and a path starting with '/' are required"))
+			return
+		}
+
+		req := gallery.GalleryPhotoAnalysisRequest{
+			UserId:     h.auth.GetUserId(ctx.Request.Context()),
+			ProviderId: providerId,
+			Path:       photoPath,
+		}
+		res := gallery.GalleryPhotoAnalysisResponse{}
+		if h.askAI(ctx, gallery.GalleryPhotoAnalysisTopic, &req, &res, &res.Error) {
+			ctx.JSON(http.StatusOK, res)
+		}
+	})
+
+	apiGroup.PUT("gallery/faces/:id/person", func(ctx *gin.Context) {
+		// exactly one of personId (string), newPersonName (string) or personId
+		// null (unassign); an absent personId is different from a null one
+		body := map[string]json.RawMessage{}
+		if err := ctx.ShouldBindJSON(&body); err != nil {
+			ctx.AbortWithError(http.StatusBadRequest, errors.New("invalid body"))
+			return
+		}
+		rawPerson, hasPerson := body["personId"]
+		rawName, hasName := body["newPersonName"]
+		if hasPerson == hasName {
+			ctx.AbortWithError(http.StatusBadRequest, errors.New("exactly one of personId and newPersonName is required"))
+			return
+		}
+
+		req := gallery.GalleryFaceAssignRequest{
+			UserId: h.auth.GetUserId(ctx.Request.Context()),
+			FaceId: ctx.Param("id"),
+		}
+		raw := rawName
+		if hasPerson {
+			raw = rawPerson
+		}
+		var value *string
+		if err := json.Unmarshal(raw, &value); err != nil || (value == nil && !hasPerson) || (value != nil && *value == "") {
+			ctx.AbortWithError(http.StatusBadRequest, errors.New("personId and newPersonName must be non-empty strings (personId may be null)"))
+			return
+		}
+		switch {
+		case value == nil:
+			req.Unassign = true
+		case hasPerson:
+			req.PersonId = *value
+		default:
+			req.NewPersonName = *value
+		}
+
+		res := gallery.GalleryFaceResponse{}
+		if h.askAI(ctx, gallery.GalleryFacesAssignTopic, &req, &res, &res.Error) {
+			ctx.JSON(http.StatusOK, res)
+		}
+	})
+}
+
+// askAI sends req to a gallery AI topic and decodes into res. It returns true
+// when the response is usable; otherwise it has already aborted ctx:
+// "ai-unavailable" is a 503 with a JSON body (the app detects it by that),
+// "not found" a 404, any other error a 500.
+func (h *galleryHandler) askAI(ctx *gin.Context, topic string, req any, res any, resError *string) bool {
+	if err := messaging.Request(ctx.Request.Context(), h.nc, topic, messaging.Json(req), messaging.Json(res)); err != nil {
+		ctx.AbortWithError(http.StatusInternalServerError, err)
+		return false
+	}
+	switch *resError {
+	case "":
+		return true
+	case gallery.ErrorAIUnavailable:
+		ctx.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": gallery.ErrorAIUnavailable})
+	case "not found":
+		ctx.AbortWithError(http.StatusNotFound, errors.New(*resError))
+	default:
+		ctx.AbortWithError(http.StatusInternalServerError, errors.New(*resError))
+	}
+	return false
 }
 
 func (h *galleryHandler) request(ctx *gin.Context, req *gallery.GallerySourceFolderCrudRequest) (*gallery.GallerySourceFolderCrudResponse, error) {

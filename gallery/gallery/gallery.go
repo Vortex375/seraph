@@ -89,6 +89,7 @@ type GalleryProvider struct {
 	crudSub  *nats.Subscription
 	listSub  *nats.Subscription
 	deltaSub *nats.Subscription
+	aiSubs   []*nats.Subscription
 
 	// prefixCache and the durable file-change consumer implement event
 	// ingestion; see ingest.go.
@@ -224,6 +225,10 @@ func (g *GalleryProvider) Start() error {
 	}
 	g.deltaSub = deltaSub
 
+	if err := g.startAIApi(); err != nil {
+		return err
+	}
+
 	// created before the first prefix cache refresh: a refresh that cannot
 	// reach the Spaces service schedules its retry on this context
 	backfillCtx, backfillCancel := context.WithCancel(context.Background())
@@ -344,6 +349,9 @@ func (g *GalleryProvider) Stop() error {
 		if err != nil {
 			return fmt.Errorf("while stopping GalleryProvider: %w", err)
 		}
+	}
+	if err := g.stopAIApi(); err != nil {
+		return err
 	}
 	if g.ingest != nil {
 		g.ingest.stop()

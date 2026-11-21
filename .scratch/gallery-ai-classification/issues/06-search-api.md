@@ -13,12 +13,12 @@
 
 **Blocked by:** 03, 04 (tag filter), 05 (person filter)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A user gets results only from photos under their own Gallery Source Folders; another user's photos
+- [x] A user gets results only from photos under their own Gallery Source Folders; another user's photos
       never appear, even when they match better.
-- [ ] Results carry Space coordinates that `GET preview` accepts.
-- [ ] `q`, `tag` and `person` combine (AND).
-- [ ] A path prefix containing `%` or `_` does not match sibling folders.
-- [ ] With `gallery-ai` stopped, the gateway answers with the `ai-unavailable` error, not a 500 hang.
-- [ ] Gates: `go test ./...` in `gallery-ai`, `gallery`, `api-gateway`.
+- [x] Results carry Space coordinates that `GET preview` accepts.
+- [x] `q`, `tag` and `person` combine (AND).
+- [x] A path prefix containing `%` or `_` does not match sibling folders.
+- [x] With `gallery-ai` stopped, the gateway answers with the `ai-unavailable` error, not a 500 hang.
+- [x] Gates: `go test ./...` in `gallery-ai`, `gallery`, `api-gateway`.
