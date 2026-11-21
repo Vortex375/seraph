@@ -9,7 +9,7 @@
 
 **Blocked by:** 01
 
-**Status:** done
+**Status:** resolved
 
 - [x] A non-admin user gets 403; an admin (and no-auth mode) gets 200.
 - [x] Each entry has `key`, `description`, `statusMessage`, `state`, `done`, `total`, `pending`, `time`.

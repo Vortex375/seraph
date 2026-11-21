@@ -12,7 +12,7 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] Adding a Gallery Source Folder over a fixture with N photos yields `gallery.backfill.<id>` ending
       `completed` with `done` = N.

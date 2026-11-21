@@ -15,9 +15,9 @@
 
 **Blocked by:** —
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A job's updates arrive on `seraph.jobs.<key>` and land in the `SERAPH_JOBS` KV under `<key>`.
+- [x] A job's updates arrive on `seraph.jobs.<key>` and land in the `SERAPH_JOBS` KV under `<key>`.
 - [x] 100 `Progress` calls within 1 s publish at most one message immediately plus one trailing message
       carrying the last values.
 - [x] `Complete`, `Fail` and `Pending(0, …)` publish at once, even inside a throttle window.
@@ -33,3 +33,9 @@
 Queue Job publishes `idle` once; running Jobs stay fresh through the heartbeat), with
 `TestJobIdleQueuePublishesOnce`. The two unticked criteria (KV landing, file-indexer states) are verified
 end to end in the deploy check after 02–07.
+
+**Deploy check (2026-11-21):** On the dev stack every key (file-indexer, gallery.*, thumbnailer.warm,
+gallery-ai.*) lands in the KV and lists through `/api/jobs`; file-indexer shows `idle` "Indexing complete.".
+The deploy also exposed that the `jobs` service never acked, so every entry was rewritten every 30 s (fixed
+in `jobs: ack stored Job events`, with a test). The file-indexer `running` state was not observed live (no
+indexing was in flight); it rests on the reporter tests.

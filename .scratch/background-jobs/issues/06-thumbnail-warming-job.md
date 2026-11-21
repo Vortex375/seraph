@@ -6,7 +6,7 @@ thumbnails". Stop the poller with the consumer.
 
 **Blocked by:** 01
 
-**Status:** done
+**Status:** resolved
 
 - [x] With warm requests queued, `thumbnailer.warm` reports `running` and a `pending` that falls as they
       are processed.

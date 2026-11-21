@@ -13,7 +13,7 @@
 
 **Blocked by:** 02
 
-**Status:** done
+**Status:** resolved
 
 - [x] The "Jobs" entry is absent for a non-admin and present for an admin.
 - [x] A Batch Job with `total > 0` shows a determinate bar at `done / total`; with `total` unknown and

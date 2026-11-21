@@ -1,6 +1,6 @@
 # Background jobs: progress reporting and an admin Jobs screen
 
-Status: ready-for-agent
+Status: resolved
 
 Phase: specification. Drafted on 2026-11-21. Tickets in `issues/`.
 
