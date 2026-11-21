@@ -7,7 +7,6 @@ import 'package:seraph_app/src/gallery/mirror/gallery_erase_service.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror_database.dart';
 import 'package:seraph_app/src/gallery/gallery_item_display.dart';
-import 'package:seraph_app/src/gallery/gallery_models.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_sync_service.dart';
 
 /// The gallery's list, as the grid and the full-screen viewer both see it.
@@ -295,9 +294,12 @@ class GalleryGridController extends GetxController {
     // synchronously for every index - including ones whose page has not
     // loaded - with no per-drag async work. See [_boundaries]'s doc for why
     // the local-time conversion happens here in Dart, not in SQL.
+    // A ranked (text search) grid is not in date order: no boundaries.
     _boundaries
       ..clear()
-      ..addAll(await _buildMonthBoundaries(filterValue));
+      ..addAll(filterValue.ranked
+          ? const <_MonthBoundary>[]
+          : await _buildMonthBoundaries(filterValue));
     summary.value = await mirror.availabilitySummary();
     localPermission.value = await localScanService?.permissionStatus() ??
         LocalPermissionStatus.unsupported;
@@ -384,21 +386,6 @@ class GalleryGridController extends GetxController {
       return;
     }
     filter.value = filter.value.copyWith(clearPlace: true);
-    await reload();
-  }
-
-  /// Sets the person filter ([keys] are the person's photos' Space keys) and
-  /// reloads.
-  Future<void> setPerson(GalleryPerson person, Set<(String, String)> keys) =>
-      setFilter(
-          filter.value.copyWith(person: GalleryPersonFilter(person, keys)));
-
-  /// Removes the person filter and reloads.
-  Future<void> clearPerson() async {
-    if (filter.value.person == null) {
-      return;
-    }
-    filter.value = filter.value.copyWith(clearPerson: true);
     await reload();
   }
 

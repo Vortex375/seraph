@@ -27,13 +27,9 @@ import 'package:seraph_app/src/gallery/mirror/gallery_upload_service.dart';
 class GalleryPhotoViewerView extends StatefulWidget {
   static const routeName = '/gallery/photo';
 
-  const GalleryPhotoViewerView({super.key, this.initialIndex = 0, this.items});
+  const GalleryPhotoViewerView({super.key, this.initialIndex = 0});
 
   final int initialIndex;
-
-  /// When given (search results), the viewer pages through exactly these
-  /// items instead of the grid's Capture Date order.
-  final List<GalleryItem>? items;
 
   @override
   State<GalleryPhotoViewerView> createState() => _GalleryPhotoViewerViewState();
@@ -94,17 +90,11 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
     _transformController.addListener(() {
       _isZoomedIn.value = _transformController.value.getMaxScaleOnAxis() > 1.0;
     });
-    if (widget.items == null) {
-      controller.ensureRangeLoaded(
-          widget.initialIndex - 1, widget.initialIndex + 1);
-    }
+    controller.ensureRangeLoaded(
+        widget.initialIndex - 1, widget.initialIndex + 1);
   }
 
-  GalleryItem? _itemAt(int index) {
-    final items = widget.items;
-    if (items == null) return controller.itemAt(index);
-    return index >= 0 && index < items.length ? items[index] : null;
-  }
+  GalleryItem? _itemAt(int index) => controller.itemAt(index);
 
   @override
   void dispose() {
@@ -247,9 +237,7 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
                     // never wrong (a photo on the 25th is still in August).
                     final item = _itemAt(index);
                     final exact = item?.capturedAtWallTime;
-                    final month = widget.items == null
-                        ? controller.knownDateAt(index)
-                        : null;
+                    final month = controller.knownDateAt(index);
                     final label = exact != null
                         ? galleryDayLabel(exact)
                         : month == null
@@ -316,7 +304,7 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
             : null,
         body: Obx(() {
           controller.revision.value;
-          final total = widget.items?.length ?? controller.totalCount.value;
+          final total = controller.totalCount.value;
           if (total == 0) {
             return const SizedBox.shrink();
           }
@@ -333,9 +321,7 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
                   : const PageScrollPhysics(),
               onPageChanged: (index) {
                 _currentIndex.value = index;
-                if (widget.items == null) {
-                  controller.ensureRangeLoaded(index - 1, index + 1);
-                }
+                controller.ensureRangeLoaded(index - 1, index + 1);
               },
               itemBuilder: (context, index) {
                 final item = _itemAt(index);

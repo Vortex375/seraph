@@ -13,7 +13,6 @@ import 'package:seraph_app/src/gallery/gallery_models.dart';
 import 'package:seraph_app/src/gallery/gallery_people_view.dart';
 import 'package:seraph_app/src/gallery/gallery_photo_viewer.dart';
 import 'package:seraph_app/src/gallery/gallery_search_controller.dart';
-import 'package:seraph_app/src/gallery/gallery_search_view.dart';
 import 'package:seraph_app/src/gallery/gallery_service.dart';
 import 'package:seraph_app/src/gallery/gallery_tile.dart';
 import 'package:seraph_app/src/gallery/gallery_view.dart';
@@ -164,10 +163,6 @@ void main() {
           page: () => GalleryPhotoViewerView(
             initialIndex: int.tryParse(Get.parameters['index'] ?? '') ?? 0,
           ),
-        ),
-        GetPage(
-          name: GallerySearchView.routeName,
-          page: () => const GallerySearchView(),
         ),
         GetPage(
           name: GalleryPeopleView.routeName,
@@ -1162,7 +1157,7 @@ void main() {
     await tester.tap(find.text('Anna'));
     await tester.pumpAndSettle();
 
-    expect(controller.filter.value.person?.person.id, 'p1');
+    expect(controller.filter.value.ai?.person?.id, 'p1');
     expect(controller.totalCount.value, 2);
     expect(find.widgetWithText(Chip, 'Anna'), findsOneWidget);
 
@@ -1176,25 +1171,102 @@ void main() {
         of: find.widgetWithText(Chip, 'Anna'),
         matching: find.byIcon(Icons.cancel)));
     await tester.pumpAndSettle();
-    expect(controller.filter.value.person, isNull);
+    expect(controller.filter.value.ai, isNull);
     expect(controller.totalCount.value, 3);
   });
 
-  testWidgets('AI becoming unavailable clears the person filter',
+  Future<void> searchFor(WidgetTester tester, String text) async {
+    await tester.tap(find.byTooltip('Search photos'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), text);
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('the search field filters the grid to a text pill that can be '
+      'removed, and hides the scrubber meanwhile', (tester) async {
+    await setUpGallery(itemCount: 3);
+    putSearch();
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+    const handle = Key('gallery-scrubber-handle');
+    expect(find.byKey(handle), findsOneWidget);
+
+    await searchFor(tester, ' sunrise ');
+
+    expect(find.byType(TextField), findsNothing, reason: 'field closes');
+    expect(controller.filter.value.ai?.text, 'sunrise');
+    expect(controller.totalCount.value, 2);
+    expect(find.widgetWithText(InputChip, 'sunrise'), findsOneWidget);
+    expect(find.byKey(handle), findsNothing);
+
+    await tester.tap(find.widgetWithText(InputChip, 'sunrise'));
+    await tester.pumpAndSettle();
+    expect(find.byType(TextField), findsOneWidget);
+    expect(tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'sunrise');
+    await tester.enterText(find.byType(TextField), 'sunrise');
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.descendant(
+        of: find.widgetWithText(InputChip, 'sunrise'),
+        matching: find.byTooltip('Delete')));
+    await tester.pumpAndSettle();
+    expect(controller.filter.value.ai, isNull);
+    expect(controller.totalCount.value, 3);
+    expect(find.byKey(handle), findsOneWidget);
+  });
+
+  testWidgets('Tag... is not offered without AI', (tester) async {
+    await setUpGallery(itemCount: 3);
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Filter'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Place…'), findsOneWidget);
+    expect(find.text('Tag…'), findsNothing);
+  });
+
+  testWidgets('Tag... filters by tag and keeps the text', (tester) async {
+    await setUpGallery(itemCount: 3);
+    putSearch();
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+    await searchFor(tester, 'sunrise');
+    await openFilterMenu(tester, 'Tag…');
+    await tester.tap(find.text('beach'));
+    await tester.pumpAndSettle();
+
+    expect(controller.filter.value.ai?.text, 'sunrise');
+    expect(controller.filter.value.ai?.tag, 'beach');
+    expect(find.widgetWithText(Chip, 'beach'), findsOneWidget);
+
+    await tester.tap(find.descendant(
+        of: find.widgetWithText(Chip, 'beach'),
+        matching: find.byTooltip('Delete')));
+    await tester.pumpAndSettle();
+    expect(controller.filter.value.ai?.tag, isNull);
+    expect(controller.filter.value.ai?.text, 'sunrise');
+  });
+
+  testWidgets('AI becoming unavailable clears the AI filter',
       (tester) async {
     await setUpGallery(itemCount: 3);
     final search = putSearch();
     await tester.pumpWidget(wrap());
     await tester.pumpAndSettle();
-    await controller.setPerson(
-        const GalleryPerson(id: 'p1', name: 'Anna', photoCount: 2),
-        {('space-a', '/Photos/photo-0.jpg')});
+    await controller.setFilter(const GalleryFilter(
+        ai: GalleryAiFilter(
+            person: GalleryPerson(id: 'p1', name: 'Anna', photoCount: 2),
+            keys: [('space-a', '/Photos/photo-0.jpg')])));
     expect(controller.totalCount.value, 1);
 
     search.available.value = false;
     await tester.pumpAndSettle();
 
-    expect(controller.filter.value.person, isNull);
+    expect(controller.filter.value.ai, isNull);
     expect(controller.totalCount.value, 3);
   });
 
@@ -1216,22 +1288,8 @@ void main() {
 
     expect(find.byType(GalleryPeopleView), findsNothing);
     expect(find.byType(GalleryView), findsOneWidget);
-    expect(controller.filter.value.person?.person.id, 'p1');
+    expect(controller.filter.value.ai?.person?.id, 'p1');
     expect(controller.totalCount.value, 2);
-  });
-
-  testWidgets('the search view no longer offers person chips', (tester) async {
-    await setUpGallery(itemCount: 1);
-    putSearch();
-    await tester.pumpWidget(wrap());
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byTooltip('Search photos'));
-    await tester.pumpAndSettle();
-
-    expect(find.byType(GallerySearchView), findsOneWidget);
-    expect(find.text('Anna'), findsNothing);
-    expect(find.byType(FilterChip), findsWidgets, reason: 'tag chips remain');
   });
 }
 

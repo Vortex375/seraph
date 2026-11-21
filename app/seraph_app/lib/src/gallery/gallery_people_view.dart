@@ -74,7 +74,7 @@ class _GalleryPeopleViewState extends State<GalleryPeopleView> {
       onTap: () async {
         final nav = Navigator.of(context);
         final messenger = ScaffoldMessenger.of(context);
-        if (await search.filterByPerson(Get.find(), p)) {
+        if (await search.applyAi(Get.find(), person: p)) {
           // opened by URL there is no grid underneath to return to
           nav.canPop() ? nav.pop() : Get.offNamed(GalleryView.routeName);
         } else {

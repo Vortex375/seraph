@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:drift/drift.dart';
-import 'package:flutter/foundation.dart' show setEquals;
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:seraph_app/src/gallery/gallery_models.dart';
 import 'package:seraph_app/src/gallery/local/local_media_item.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_delta_models.dart';
@@ -311,22 +311,29 @@ class GalleryPlaceFilter {
   int get hashCode => Object.hash(level, countryCode, admin1Code, localityId);
 }
 
-/// The person half of [GalleryFilter]: the person (for the chip) and the
-/// Space keys (providerId, path) of their photos, fetched from the server.
-class GalleryPersonFilter {
-  const GalleryPersonFilter(this.person, this.keys);
+/// The AI half of [GalleryFilter]: the free text, tag and person the server
+/// answered together in ONE search call (it combines them), plus the Space
+/// keys (providerId, path) of the hits in the server's score order.
+/// [person] is kept for the pill's avatar.
+class GalleryAiFilter {
+  const GalleryAiFilter(
+      {this.text, this.tag, this.person, this.keys = const []});
 
-  final GalleryPerson person;
-  final Set<(String, String)> keys;
+  final String? text;
+  final String? tag;
+  final GalleryPerson? person;
+  final List<(String, String)> keys;
 
   @override
   bool operator ==(Object other) =>
-      other is GalleryPersonFilter &&
-      other.person.id == person.id &&
-      setEquals(other.keys, keys);
+      other is GalleryAiFilter &&
+      other.text == text &&
+      other.tag == tag &&
+      other.person?.id == person?.id &&
+      listEquals(other.keys, keys);
 
   @override
-  int get hashCode => Object.hash(person.id, keys.length);
+  int get hashCode => Object.hash(text, tag, person?.id, keys.length);
 }
 
 /// `lhs IN (SELECT value FROM json_each(?))`: membership in a JSON array
@@ -351,10 +358,35 @@ class _InJsonArray extends Expression<bool> {
   }
 }
 
+/// `(SELECT key FROM json_each(?) WHERE value = provider_id || '\u001f' || path)`:
+/// the position of a row's Space key in a JSON array bound as ONE parameter
+/// (json_each's `key` is the array index) - its relevance rank. NULL when
+/// absent. The columns are table-qualified: json_each has its own `path` and
+/// `id` columns that would otherwise shadow ours.
+class _SpaceKeyRank extends Expression<int> {
+  _SpaceKeyRank(this.t, this.json);
+
+  final $GalleryItemsTable t;
+  final String json;
+
+  @override
+  Precedence get precedence => Precedence.primary;
+
+  @override
+  void writeInto(GenerationContext context) {
+    final table = t.aliasedName;
+    context.buffer.write('(SELECT key FROM json_each(');
+    Variable<String>(json).writeInto(context);
+    context.buffer.write(') WHERE value = $table.${t.providerId.name} || '
+        "'\u001f'"
+        ' || $table.${t.path.name})');
+  }
+}
+
 /// The ONE filter value object the gallery's read path takes
 /// (the gallery-metadata feature): Availability, an optional inclusive date
 /// range in capture wall time, and an optional Place - combinable in any
-/// mix, always membership-only (ordering never changes). Replaces the bare
+/// mix, membership-only (ordering stays Capture Date unless [ranked]). Replaces the bare
 /// [GalleryAvailabilityFilter] the read path took before.
 class GalleryFilter {
   const GalleryFilter({
@@ -362,7 +394,7 @@ class GalleryFilter {
     this.capturedFrom,
     this.capturedTo,
     this.place,
-    this.person,
+    this.ai,
   });
 
   const GalleryFilter.all() : this();
@@ -377,7 +409,12 @@ class GalleryFilter {
 
   final GalleryPlaceFilter? place;
 
-  final GalleryPersonFilter? person;
+  final GalleryAiFilter? ai;
+
+  /// True while a free-text search is active: the grid is then ordered by
+  /// the server's relevance ([GalleryAiFilter.keys]) instead of Capture
+  /// Date, and has no month boundaries. Tag and person are plain membership.
+  bool get ranked => ai?.text != null;
 
   /// True when anything at all is being filtered - what the UI uses to
   /// switch to the "no photos match this filter" empty state and to decide
@@ -387,17 +424,17 @@ class GalleryFilter {
       capturedFrom != null ||
       capturedTo != null ||
       place != null ||
-      person != null;
+      ai != null;
 
   GalleryFilter copyWith({
     GalleryAvailabilityFilter? availability,
     DateTime? capturedFrom,
     DateTime? capturedTo,
     GalleryPlaceFilter? place,
-    GalleryPersonFilter? person,
+    GalleryAiFilter? ai,
     bool clearDateRange = false,
     bool clearPlace = false,
-    bool clearPerson = false,
+    bool clearAi = false,
   }) =>
       GalleryFilter(
         availability: availability ?? this.availability,
@@ -405,16 +442,18 @@ class GalleryFilter {
             clearDateRange ? null : (capturedFrom ?? this.capturedFrom),
         capturedTo: clearDateRange ? null : (capturedTo ?? this.capturedTo),
         place: clearPlace ? null : (place ?? this.place),
-        person: clearPerson ? null : (person ?? this.person),
+        ai: clearAi ? null : (ai ?? this.ai),
       );
 
-  /// How many of the filters are on (Availability, date range, Place,
-  /// person) - the filter menu's badge.
+  /// How many of the filters are on (Availability, date range, Place, and
+  /// the AI text, tag and person each) - the filter menu's badge.
   int get activeCount =>
       (availability != GalleryAvailabilityFilter.all ? 1 : 0) +
       (capturedFrom != null || capturedTo != null ? 1 : 0) +
       (place != null ? 1 : 0) +
-      (person != null ? 1 : 0);
+      (ai?.text != null ? 1 : 0) +
+      (ai?.tag != null ? 1 : 0) +
+      (ai?.person != null ? 1 : 0);
 
   @override
   bool operator ==(Object other) =>
@@ -423,11 +462,11 @@ class GalleryFilter {
       other.capturedFrom == capturedFrom &&
       other.capturedTo == capturedTo &&
       other.place == place &&
-      other.person == person;
+      other.ai == ai;
 
   @override
   int get hashCode =>
-      Object.hash(availability, capturedFrom, capturedTo, place, person);
+      Object.hash(availability, capturedFrom, capturedTo, place, ai);
 }
 
 /// One place suggestion in the gallery's place search (ticket 06): a
@@ -2200,6 +2239,27 @@ class GalleryMirror {
     return _countMatching((t) => t.localRelativePath.isIn(covered));
   }
 
+  /// The page order: Capture Date descending, or - while [GalleryFilter.ranked]
+  /// - the position of each row's Space key in the AI hits' score order.
+  List<OrderClauseGenerator<$GalleryItemsTable>> _pageOrder(
+          GalleryFilter filter) =>
+      filter.ranked
+          ? [
+              (t) => OrderingTerm(
+                  expression: _SpaceKeyRank(
+                      t,
+                      jsonEncode([
+                        for (final k in filter.ai!.keys)
+                          '${k.$1}\u001f${k.$2}'
+                      ]))),
+              (t) => OrderingTerm(expression: t.id, mode: OrderingMode.desc),
+            ]
+          : [
+              (t) => OrderingTerm(
+                  expression: t.capturedAt, mode: OrderingMode.desc),
+              (t) => OrderingTerm(expression: t.id, mode: OrderingMode.desc),
+            ];
+
   /// One page of the mirror, Capture Date descending (newest first, matching
   /// the server listing's order), with a total row count. Works with no
   /// network - it is a plain local query.
@@ -2221,10 +2281,7 @@ class GalleryMirror {
     final unselectedFolders = await _unselectedFolders();
 
     final query = _db.select(_db.galleryItems)
-      ..orderBy([
-        (t) => OrderingTerm(expression: t.capturedAt, mode: OrderingMode.desc),
-        (t) => OrderingTerm(expression: t.id, mode: OrderingMode.desc),
-      ])
+      ..orderBy(_pageOrder(filter))
       ..limit(limit, offset: offset)
       ..where((t) => _filterPredicate(t, unselectedFolders, filter));
 
@@ -2374,10 +2431,7 @@ class GalleryMirror {
     final unselectedFolders = await _unselectedFolders();
 
     final query = _db.select(_db.galleryItems)
-      ..orderBy([
-        (t) => OrderingTerm(expression: t.capturedAt, mode: OrderingMode.desc),
-        (t) => OrderingTerm(expression: t.id, mode: OrderingMode.desc),
-      ])
+      ..orderBy(_pageOrder(filter))
       ..limit(limit, offset: offset)
       ..where((t) => _filterPredicate(t, unselectedFolders, filter));
 
@@ -2462,13 +2516,13 @@ class GalleryMirror {
     if (place != null) {
       predicate = predicate & _placePredicate(t, place);
     }
-    final person = filter.person;
-    if (person != null) {
+    final ai = filter.ai;
+    if (ai != null) {
       predicate = predicate &
           _InJsonArray(
               t.providerId + Constant<String>('\u001f') + t.path,
               jsonEncode(
-                  [for (final k in person.keys) '${k.$1}\u001f${k.$2}']));
+                  [for (final k in ai.keys) '${k.$1}\u001f${k.$2}']));
     }
     return predicate;
   }

@@ -10,7 +10,6 @@ import 'package:seraph_app/src/gallery/gallery_models.dart';
 import 'package:seraph_app/src/gallery/gallery_photo_viewer.dart';
 import 'package:seraph_app/src/gallery/gallery_people_view.dart';
 import 'package:seraph_app/src/gallery/gallery_search_controller.dart';
-import 'package:seraph_app/src/gallery/gallery_search_view.dart';
 import 'package:seraph_app/src/gallery/gallery_source_folders_view.dart';
 import 'package:seraph_app/src/gallery/gallery_tile.dart';
 import 'package:seraph_app/src/gallery/local/local_image_loader.dart';
@@ -64,6 +63,10 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
 
   Worker? _aiWorker;
 
+  /// The app-bar title is the search field while this is true.
+  bool _searching = false;
+  final TextEditingController _searchText = TextEditingController();
+
   int _crossAxisCount = 3;
   double _rowExtent = 1;
 
@@ -74,11 +77,14 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     // Re-probed on every open: hidden again if the server says ai-unavailable.
     _search?.probe();
-    // Without AI there is no person filter: drop it if the server goes away.
+    // Without AI there is no AI filter: drop it if the server goes away.
     _aiWorker = _search == null
         ? null
         : ever(_search.available, (available) {
-            if (available == false) controller.clearPerson();
+            if (available == false) {
+              controller
+                  .setFilter(controller.filter.value.copyWith(clearAi: true));
+            }
           });
   }
 
@@ -87,6 +93,7 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _scroll.removeListener(_onScroll);
     _aiWorker?.dispose();
+    _searchText.dispose();
     _scroll.dispose();
     _firstVisibleIndex.dispose();
     super.dispose();
@@ -129,13 +136,25 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
       appBar: seraphAppBar(context,
           name: 'Gallery',
           routeName: GalleryView.routeName,
+          title: _searching
+              ? TextField(
+                  controller: _searchText,
+                  autofocus: true,
+                  textInputAction: TextInputAction.search,
+                  decoration: const InputDecoration(
+                      hintText: 'Search photos', border: InputBorder.none),
+                  onSubmitted: _submitSearch,
+                )
+              : null,
           actions: [
             if (_search != null)
               Obx(() => _search.available.value == true
                   ? IconButton(
-                      icon: const Icon(Icons.search),
-                      tooltip: 'Search photos',
-                      onPressed: () => Get.toNamed(GallerySearchView.routeName),
+                      icon: Icon(_searching ? Icons.close : Icons.search),
+                      tooltip: _searching ? 'Close search' : 'Search photos',
+                      onPressed: () => _searching
+                          ? setState(() => _searching = false)
+                          : _openSearch(),
                     )
                   : const SizedBox.shrink()),
             Obx(() {
@@ -150,6 +169,7 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
                 ),
                 onSelected: (value) => switch (value) {
                   'people' => _pickPerson(),
+                  'tag' => _pickTag(),
                   'place' => _pickPlace(),
                   'date' => _pickDateRange(),
                   'backup' => _pickAvailability(),
@@ -159,6 +179,8 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
                   if (ai)
                     const PopupMenuItem(
                         value: 'people', child: Text('People…')),
+                  if (ai)
+                    const PopupMenuItem(value: 'tag', child: Text('Tag…')),
                   const PopupMenuItem(value: 'place', child: Text('Place…')),
                   const PopupMenuItem(value: 'date', child: Text('Date…')),
                   const PopupMenuItem(
@@ -218,7 +240,11 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
               onBackUpAgain: _backUpAgainSelected),
           _LocalPermissionBanner(controller: controller),
           _SummaryBar(controller: controller),
-          _FilterChipsBar(controller: controller, loader: loader),
+          _FilterChipsBar(
+              controller: controller,
+              search: _search,
+              loader: loader,
+              onEditText: _openSearch),
           Expanded(
             child: Obx(() {
               if (controller.isLoading.value) {
@@ -419,7 +445,7 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
   }
 
   /// The people action: pick a face in the dialog, then the grid is
-  /// restricted to that person's photos (see [GallerySearchController.filterByPerson]).
+  /// restricted to that person's photos (see [GallerySearchController.applyAi]).
   Future<void> _pickPerson() async {
     final search = _search;
     if (search == null) {
@@ -429,11 +455,64 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
       context: context,
       builder: (_) => _PeopleDialog(search: search, loader: loader),
     );
-    if (picked != null && !await search.filterByPerson(controller, picked)) {
+    if (picked != null &&
+        !await search.applyAi(controller,
+            text: controller.filter.value.ai?.text,
+            tag: controller.filter.value.ai?.tag,
+            person: picked)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Could not load that person')));
       }
+    }
+  }
+
+  /// The tag action: pick a tag in the dialog, then the grid is restricted
+  /// to it together with the current text and person.
+  Future<void> _pickTag() async {
+    final search = _search;
+    if (search == null) {
+      return;
+    }
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (_) => _TagDialog(search: search),
+    );
+    final ai = controller.filter.value.ai;
+    if (picked != null &&
+        !await search.applyAi(controller,
+            text: ai?.text, tag: picked, person: ai?.person)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not load that tag')));
+      }
+    }
+  }
+
+  /// Shows the search field in the app bar, prefilled with the current query.
+  void _openSearch() {
+    _searchText.text = controller.filter.value.ai?.text ?? '';
+    setState(() => _searching = true);
+  }
+
+  /// Applies the submitted text next to the current tag and person.
+  Future<void> _submitSearch(String value) async {
+    final search = _search;
+    final text = value.trim();
+    if (search == null || text.isEmpty) {
+      return;
+    }
+    final ai = controller.filter.value.ai;
+    final ok = await search.applyAi(controller,
+        text: text, tag: ai?.tag, person: ai?.person);
+    if (!mounted) {
+      return;
+    }
+    if (ok) {
+      setState(() => _searching = false);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not search photos')));
     }
   }
 
@@ -501,27 +580,30 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
               },
             );
           }),
-          Positioned(
-            top: 8,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: _DateHeading(
-                controller: controller,
-                index: _firstVisibleIndex,
+          // A ranked (text search) grid is not in date order: no date to show.
+          if (!controller.filter.value.ranked) ...[
+            Positioned(
+              top: 8,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: _DateHeading(
+                  controller: controller,
+                  index: _firstVisibleIndex,
+                ),
               ),
             ),
-          ),
-          Positioned(
-            top: 0,
-            bottom: 0,
-            right: 0,
-            child: GalleryDateScrubber(
-              controller: controller,
-              scrollController: _scroll,
-              indexAtFraction: (fraction) => _indexAtFraction(fraction),
+            Positioned(
+              top: 0,
+              bottom: 0,
+              right: 0,
+              child: GalleryDateScrubber(
+                controller: controller,
+                scrollController: _scroll,
+                indexAtFraction: (fraction) => _indexAtFraction(fraction),
+              ),
             ),
-          ),
+          ],
         ],
       );
     });
@@ -1040,10 +1122,18 @@ class _LocalPermissionBannerState extends State<_LocalPermissionBanner> {
 /// range, Place), each removing its own part when dismissed, and none of
 /// them touching the others (the parts combine).
 class _FilterChipsBar extends StatelessWidget {
-  const _FilterChipsBar({required this.controller, required this.loader});
+  const _FilterChipsBar(
+      {required this.controller,
+      required this.search,
+      required this.loader,
+      required this.onEditText});
 
   final GalleryGridController controller;
+  final GallerySearchController? search;
   final GalleryImageLoader loader;
+
+  /// Tapping the text pill: reopens the search field.
+  final VoidCallback onEditText;
 
   @override
   Widget build(BuildContext context) {
@@ -1081,28 +1171,58 @@ class _FilterChipsBar extends StatelessWidget {
               };
         chips.add(_chip(label, onDeleted: controller.clearPlace));
       }
-      final person = filter.person?.person;
+      final ai = filter.ai;
+      final text = ai?.text;
+      if (text != null) {
+        chips.add(InputChip(
+          avatar: const Icon(Icons.search, size: 18),
+          label: Text(text),
+          onPressed: onEditText,
+          onDeleted: () =>
+              search?.applyAi(controller, tag: ai!.tag, person: ai.person),
+        ));
+      }
+      final tag = ai?.tag;
+      if (tag != null) {
+        chips.add(_chip(tag,
+            onDeleted: () => search?.applyAi(controller,
+                text: ai!.text, person: ai.person)));
+      }
+      final person = ai?.person;
       if (person != null) {
         chips.add(Chip(
           avatar: ClipOval(child: FaceAvatar(person: person, loader: loader)),
           label: Text(person.name.isEmpty ? 'Unnamed' : person.name),
-          onDeleted: controller.clearPerson,
+          onDeleted: () =>
+              search?.applyAi(controller, text: ai!.text, tag: ai.tag),
         ));
       }
-      return SizedBox(
-        height: 56,
-        child: ListView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          children: [
-            for (final chip in chips)
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: chip,
-              ),
-          ],
+      final pending = search?.status.value.pending ?? 0;
+      return Column(children: [
+        SizedBox(
+          height: 56,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            children: [
+              for (final chip in chips)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: chip,
+                ),
+            ],
+          ),
         ),
-      );
+        if (ai != null && pending > 0)
+          Padding(
+            padding: const EdgeInsets.only(left: 16, bottom: 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text('Analysing photos… $pending left',
+                  style: Theme.of(context).textTheme.bodySmall),
+            ),
+          ),
+      ]);
     });
   }
 
@@ -1179,6 +1299,51 @@ class _PeopleDialogState extends State<_PeopleDialog> {
                 ]),
               );
             },
+          );
+        }),
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel')),
+      ],
+    );
+  }
+}
+
+/// The tag dialog: the tags the analysis has produced; picking one pops it.
+/// Loads the analysis status on open.
+class _TagDialog extends StatefulWidget {
+  const _TagDialog({required this.search});
+
+  final GallerySearchController search;
+
+  @override
+  State<_TagDialog> createState() => _TagDialogState();
+}
+
+class _TagDialogState extends State<_TagDialog> {
+  @override
+  void initState() {
+    super.initState();
+    widget.search.loadChips();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Filter by tag'),
+      content: SizedBox(
+        width: 360,
+        child: Obx(() {
+          final tags = widget.search.status.value.tags;
+          if (tags.isEmpty) return const Text('No tags yet');
+          return SingleChildScrollView(
+            child: Wrap(spacing: 8, children: [
+              for (final t in tags)
+                ActionChip(
+                    label: Text(t), onPressed: () => Navigator.pop(context, t)),
+            ]),
           );
         }),
       ),

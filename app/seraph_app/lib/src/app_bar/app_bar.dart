@@ -16,36 +16,38 @@ AppBar seraphAppBar(
   String routeName = '',
   List<Widget> actions = const [],
   PreferredSizeWidget? bottom,
+  Widget? title,
 }) {
   final ShareController shareController = Get.find();
   final bool hasLoginController = Get.isRegistered<LoginController>();
 
   return AppBar(
-    title: Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        const Flexible(
-          fit: FlexFit.loose,
-          child: Text('Seraph', overflow: TextOverflow.ellipsis),
+    title: title ??
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const Flexible(
+              fit: FlexFit.loose,
+              child: Text('Seraph', overflow: TextOverflow.ellipsis),
+            ),
+            const SizedBox(width: 12),
+            if (!shareController.shareMode.value)
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: _buildNavDropdown(hasLoginController, routeName),
+                ),
+              ),
+            if (shareController.shareMode.value)
+              Expanded(
+                child: Text(
+                  shareController.title.value ?? '',
+                  style: const TextStyle(fontSize: 18),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+          ],
         ),
-        const SizedBox(width: 12),
-        if (!shareController.shareMode.value)
-          Expanded(
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: _buildNavDropdown(hasLoginController, routeName),
-            ),
-          ),
-        if (shareController.shareMode.value)
-          Expanded(
-            child: Text(
-              shareController.title.value ?? '',
-              style: const TextStyle(fontSize: 18),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-      ],
-    ),
     actions: actions,
     bottom: bottom,
   );

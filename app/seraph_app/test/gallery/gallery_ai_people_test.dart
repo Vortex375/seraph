@@ -1,12 +1,10 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/painting.dart';
-import 'package:seraph_app/src/gallery/gallery_grid_controller.dart';
 import 'package:seraph_app/src/gallery/gallery_models.dart';
 import 'package:seraph_app/src/gallery/gallery_people_view.dart';
 import 'package:seraph_app/src/gallery/gallery_search_controller.dart';
 import 'package:seraph_app/src/gallery/gallery_service.dart';
-import 'package:seraph_app/src/gallery/mirror/gallery_erase_service.dart';
 import 'package:seraph_app/src/gallery/mirror/gallery_mirror.dart';
 
 import 'gallery_test_support.dart';
@@ -79,30 +77,6 @@ void main() {
       '/Photos/photo-2.jpg',
       '/Photos/photo-0.jpg',
     ]);
-  });
-
-  test('controller search joins hits to the mirror', () async {
-    final db = openTestMirrorDatabase();
-    addTearDown(db.close);
-    final mirror = GalleryMirror(db);
-    await populateMirror(db, count: 2);
-    Map<String, dynamic>? seen;
-    final controller = GallerySearchController(_service((o) {
-      seen = o.queryParameters;
-      return _ok(o, {
-        'items': [
-          {'providerId': 'space-a', 'path': '/Photos/photo-1.jpg', 'score': 1},
-          {'providerId': 'space-a', 'path': '/gone.jpg', 'score': 0.5},
-        ]
-      });
-    }), mirror);
-
-    controller.text.value = 'dog';
-    controller.setTag('pet');
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-
-    expect(seen, {'q': 'dog', 'tag': 'pet'});
-    expect(controller.results.map((i) => i.path), ['/Photos/photo-1.jpg']);
   });
 
   test('ai-unavailable hides the entry', () async {
@@ -181,97 +155,6 @@ void main() {
     expect(await controller.renamePerson('1', ' Anna '), true);
     expect(sentName, 'Anna');
     expect(controller.people.map((p) => p.name), ['Zoe', 'Anna']);
-  });
-
-  test('person filter restricts the mirror query and combines with others',
-      () async {
-    final db = openTestMirrorDatabase();
-    addTearDown(db.close);
-    final mirror = GalleryMirror(db);
-    await populateMirror(db, count: 5); // /Photos/photo-{0..4}.jpg, 1 day apart
-    const anna = GalleryPerson(id: 'p1', name: 'Anna', photoCount: 3);
-    final filter = GalleryFilter(
-      person: GalleryPersonFilter(anna, {
-        ('space-a', '/Photos/photo-0.jpg'),
-        ('space-a', '/Photos/photo-1.jpg'),
-        ('space-a', '/Photos/photo-3.jpg'),
-        ('other', '/Photos/photo-4.jpg'), // wrong provider: never matches
-        ('space-a', "/it's \"odd\".jpg"), // quoting survives, matches nothing
-      }),
-    );
-
-    Future<List<String>> paths(GalleryFilter f) async =>
-        [for (final i in await mirror.queryItems(filter: f)) i.path!];
-
-    expect(await paths(filter),
-        ['/Photos/photo-0.jpg', '/Photos/photo-1.jpg', '/Photos/photo-3.jpg']);
-    expect(await mirror.totalCount(filter: filter), 3);
-
-    // Combined with a date range: only photo-1 (newest - 1 day) onwards.
-    final newest =
-        DateTime.fromMillisecondsSinceEpoch(1770000000 * 1000, isUtc: true);
-    final day = DateTime.utc(newest.year, newest.month, newest.day);
-    final combined = GalleryFilter(
-        person: filter.person,
-        capturedFrom: day.subtract(const Duration(days: 1)),
-        capturedTo: day);
-    expect(
-        await paths(combined), ['/Photos/photo-0.jpg', '/Photos/photo-1.jpg']);
-
-    // Combined with availability: every row is Cloud only, so Not backed up
-    // leaves nothing.
-    expect(
-        await paths(GalleryFilter(
-            person: filter.person,
-            availability: GalleryAvailabilityFilter.notBackedUp)),
-        isEmpty);
-  });
-
-  test('person filter handles a full 1000-photo key set', () async {
-    final db = openTestMirrorDatabase();
-    addTearDown(db.close);
-    final mirror = GalleryMirror(db);
-    await populateMirror(db, count: 3);
-    const p = GalleryPerson(id: 'p', name: 'P', photoCount: 1000);
-    final keys = {
-      for (var i = 0; i < 1000; i++) ('space-a', '/Photos/photo-$i.jpg')
-    };
-    expect(
-        await mirror.totalCount(
-            filter: GalleryFilter(person: GalleryPersonFilter(p, keys))),
-        3);
-  });
-
-  test('filterByPerson fetches the keys and sets the grid filter', () async {
-    final db = openTestMirrorDatabase();
-    addTearDown(db.close);
-    final mirror = GalleryMirror(db);
-    await populateMirror(db, count: 3);
-    Map<String, dynamic>? seen;
-    final controller = GallerySearchController(_service((o) {
-      seen = o.queryParameters;
-      return _ok(o, {
-        'items': [
-          {'providerId': 'space-a', 'path': '/Photos/photo-1.jpg', 'score': 1},
-        ]
-      });
-    }), mirror);
-    final grid = GalleryGridController(
-        mirror: mirror,
-        eraseService:
-            GalleryEraseService(mirror, FakeGalleryUploadBackend(), null));
-    await grid.open();
-    const anna = GalleryPerson(id: 'p1', name: 'Anna', photoCount: 1);
-
-    expect(await controller.filterByPerson(grid, anna), true);
-
-    expect(seen, {'person': 'p1', 'limit': 1000});
-    expect(grid.filter.value.person?.person.id, 'p1');
-    expect(grid.totalCount.value, 1);
-
-    await grid.clearPerson();
-    expect(grid.filter.value.person, isNull);
-    expect(grid.totalCount.value, 3);
   });
 
   test('ai-unavailable on rename hides the entry', () async {
