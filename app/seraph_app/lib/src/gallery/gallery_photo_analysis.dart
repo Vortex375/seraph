@@ -291,7 +291,8 @@ class _GalleryPhotoAnalysisSectionState
                     : f.personName.isEmpty
                         ? 'Unnamed'
                         : f.personName,
-                maxLines: 1, overflow: TextOverflow.ellipsis),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis),
           ]),
         ),
       ),

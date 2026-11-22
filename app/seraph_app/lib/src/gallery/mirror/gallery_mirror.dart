@@ -2263,8 +2263,7 @@ class GalleryMirror {
                   expression: _SpaceKeyRank(
                       t,
                       jsonEncode([
-                        for (final k in filter.ai!.keys)
-                          '${k.$1}\u001f${k.$2}'
+                        for (final k in filter.ai!.keys) '${k.$1}\u001f${k.$2}'
                       ]))),
               (t) => OrderingTerm(expression: t.id, mode: OrderingMode.desc),
             ]
@@ -2533,10 +2532,8 @@ class GalleryMirror {
     final ai = filter.ai;
     if (ai != null) {
       predicate = predicate &
-          _InJsonArray(
-              t.providerId + Constant<String>('\u001f') + t.path,
-              jsonEncode(
-                  [for (final k in ai.keys) '${k.$1}\u001f${k.$2}']));
+          _InJsonArray(t.providerId + Constant<String>('\u001f') + t.path,
+              jsonEncode([for (final k in ai.keys) '${k.$1}\u001f${k.$2}']));
     }
     return predicate;
   }

@@ -281,8 +281,7 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
             // delta-feed cursor reset that makes the backfill actually reach
             // already-synced rows lives in the `from < 15` step below, and
             // applies to every pre-15 database, this one included.
-            await (delete(syncCursors)
-                  ..where((t) => t.source.equals('server')))
+            await (delete(syncCursors)..where((t) => t.source.equals('server')))
                 .go();
             await m.addColumn(galleryItems, galleryItems.capturedAtOffset);
             await m.addColumn(galleryItems, galleryItems.lat);
@@ -321,8 +320,7 @@ class GalleryMirrorDatabase extends _$GalleryMirrorDatabase {
             // v13, so gating the reset on `from < 14` would never run for
             // exactly the mirrors that need it. Every pre-15 database gets
             // the reset; every v15+ database never re-runs it.
-            await (delete(syncCursors)
-                  ..where((t) => t.source.equals('server')))
+            await (delete(syncCursors)..where((t) => t.source.equals('server')))
                 .go();
           }
           if (from < 16) {

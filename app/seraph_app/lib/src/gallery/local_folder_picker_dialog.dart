@@ -130,9 +130,7 @@ class _LocalFolderPickerDialogState extends State<LocalFolderPickerDialog> {
               ? 'Already used by another Sync Pair'
               : '${folder.photoCount} photo${folder.photoCount == 1 ? '' : 's'}'),
           enabled: !covered,
-          onTap: covered
-              ? null
-              : () => Navigator.of(context).pop(folder.path),
+          onTap: covered ? null : () => Navigator.of(context).pop(folder.path),
         );
       },
     );

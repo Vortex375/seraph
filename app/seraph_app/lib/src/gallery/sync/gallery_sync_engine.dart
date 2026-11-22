@@ -245,8 +245,7 @@ class GallerySyncEngine {
     }
 
     final retryItems = await mirror.itemsNeedingUploadRetry();
-    final pendingItems =
-        await mirror.itemsPendingUpload(nowMillis: nowMillis);
+    final pendingItems = await mirror.itemsPendingUpload(nowMillis: nowMillis);
     final retryIds = retryItems.map((item) => item.id).toSet();
 
     final queue = Queue<GalleryItem>()
@@ -254,8 +253,8 @@ class GallerySyncEngine {
       ..addAll(pendingItems);
 
     final totalItems = queue.length;
-    final totalBytes = queue.fold<int>(
-        0, (sum, item) => sum + _approximateBytes(item));
+    final totalBytes =
+        queue.fold<int>(0, (sum, item) => sum + _approximateBytes(item));
 
     if (totalItems == 0) {
       await mirror.writeSyncRunState(
@@ -413,7 +412,8 @@ class GallerySyncEngine {
       finalStatus = syncStatusCompleted;
     }
 
-    final newStreak = breakerTripped ? previousState.globalBackoffStreak + 1 : 0;
+    final newStreak =
+        breakerTripped ? previousState.globalBackoffStreak + 1 : 0;
     final newBackoffUntil = breakerTripped
         ? _now().millisecondsSinceEpoch +
             cappedExponentialBackoffMillis(

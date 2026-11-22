@@ -41,10 +41,9 @@ class GalleryMediaUrls {
     return '${_base()}/dav/p$encoded';
   }
 
-  String _base() =>
-      serverUrl.endsWith('/')
-          ? serverUrl.substring(0, serverUrl.length - 1)
-          : serverUrl;
+  String _base() => serverUrl.endsWith('/')
+      ? serverUrl.substring(0, serverUrl.length - 1)
+      : serverUrl;
 }
 
 /// `/<providerId><path>` - the single string both endpoints take as a

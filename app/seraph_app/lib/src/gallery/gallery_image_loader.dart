@@ -63,7 +63,8 @@ class GalleryImageLoader {
 
   int _writesSinceEviction = 0;
 
-  GalleryMediaUrls get _urls => GalleryMediaUrls(settingsController.serverUrl.value);
+  GalleryMediaUrls get _urls =>
+      GalleryMediaUrls(settingsController.serverUrl.value);
 
   /// Bytes of the thumbnail of [providerId]/[path] at [size], from the cache
   /// if present and from the preview endpoint otherwise.
@@ -168,7 +169,8 @@ class GalleryImageLoader {
     return {};
   }
 
-  Future<Uint8List?> _readCache(String providerId, String path, int size) async {
+  Future<Uint8List?> _readCache(
+      String providerId, String path, int size) async {
     final row = await (db.select(db.cachedThumbnails)
           ..where((t) =>
               t.providerId.equals(providerId) &
@@ -208,9 +210,9 @@ class GalleryImageLoader {
   /// fifty entries.
   Future<void> evictOverflow() async {
     final countExp = db.cachedThumbnails.providerId.count();
-    final countRow =
-        await (db.selectOnly(db.cachedThumbnails)..addColumns([countExp]))
-            .getSingle();
+    final countRow = await (db.selectOnly(db.cachedThumbnails)
+          ..addColumns([countExp]))
+        .getSingle();
     final total = countRow.read(countExp) ?? 0;
     final overflow = total - maxCachedThumbnails;
     if (overflow <= 0) {

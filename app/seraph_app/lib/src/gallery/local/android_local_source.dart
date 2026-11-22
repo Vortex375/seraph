@@ -90,7 +90,8 @@ class AndroidLocalSource implements LocalSource {
   }
 
   @override
-  Future<LocalIncrementalScanResult> incrementalScan(int sinceGeneration) async {
+  Future<LocalIncrementalScanResult> incrementalScan(
+      int sinceGeneration) async {
     Map<Object?, Object?>? raw;
     try {
       raw = await _channel.invokeMapMethod<Object?, Object?>(
@@ -118,8 +119,7 @@ class AndroidLocalSource implements LocalSource {
   @override
   Future<int> currentGeneration() async {
     try {
-      final generation =
-          await _channel.invokeMethod<int>('currentGeneration');
+      final generation = await _channel.invokeMethod<int>('currentGeneration');
       return generation ?? 0;
     } on MissingPluginException {
       // No native handler - no generation to speak of. 0 means the next

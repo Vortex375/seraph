@@ -93,8 +93,7 @@ class LocalImageLoader {
     });
   }
 
-  Future<Uint8List?> _dedup(
-      String key, Future<Uint8List?> Function() request) {
+  Future<Uint8List?> _dedup(String key, Future<Uint8List?> Function() request) {
     final existing = _inFlight[key];
     if (existing != null) {
       return existing;
@@ -144,8 +143,7 @@ class LocalGalleryImage extends ImageProvider<LocalGalleryImage> {
     return MultiFrameImageStreamCompleter(
       codec: _load(key, decode),
       scale: 1.0,
-      debugLabel:
-          'LocalGalleryImage(${key.relativePath}${key.displayName}, '
+      debugLabel: 'LocalGalleryImage(${key.relativePath}${key.displayName}, '
           '${key.width}x${key.height})',
     );
   }
@@ -159,7 +157,8 @@ class LocalGalleryImage extends ImageProvider<LocalGalleryImage> {
         : await key.loader.thumbnail(key.relativePath, key.displayName, w, h);
 
     if (bytes == null || bytes.isEmpty) {
-      throw LocalGalleryImageUnavailable('${key.relativePath}${key.displayName}');
+      throw LocalGalleryImageUnavailable(
+          '${key.relativePath}${key.displayName}');
     }
     return decode(await ui.ImmutableBuffer.fromUint8List(bytes));
   }

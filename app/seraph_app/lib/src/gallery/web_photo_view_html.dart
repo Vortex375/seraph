@@ -119,8 +119,8 @@ class _HdrPhotoPageWebState extends State<HdrPhotoPageWeb> {
       setState(() => _failed = true);
       return;
     }
-    final blob = web.Blob([bytes.toJS].toJS, web.BlobPropertyBag(
-        type: 'image/jpeg'));
+    final blob =
+        web.Blob([bytes.toJS].toJS, web.BlobPropertyBag(type: 'image/jpeg'));
     final url = web.URL.createObjectURL(blob);
     final img = (web.document.createElement('img') as web.HTMLImageElement)
       ..src = url
@@ -134,8 +134,8 @@ class _HdrPhotoPageWebState extends State<HdrPhotoPageWeb> {
       ..style.pointerEvents = 'none';
     img.addEventListener('load', _onImgLoad.toJS);
     img.addEventListener('error', _onImgError.toJS);
-    ui_web.platformViewRegistry.registerViewFactory(
-        _viewType, (int viewId) => img);
+    ui_web.platformViewRegistry
+        .registerViewFactory(_viewType, (int viewId) => img);
     setState(() {
       _failed = false;
       _blobUrl = url;
@@ -261,8 +261,7 @@ class _HdrPhotoPageWebState extends State<HdrPhotoPageWeb> {
     _scale = clamped;
     _tx = tx.clamp(-maxTx, maxTx);
     _ty = ty.clamp(-maxTy, maxTy);
-    img.style.transform =
-        'translate(${_tx}px, ${_ty}px) scale($_scale)';
+    img.style.transform = 'translate(${_tx}px, ${_ty}px) scale($_scale)';
     final zoomed = clamped > 1.0;
     if (zoomed != _reportedZoomed) {
       _reportedZoomed = zoomed;

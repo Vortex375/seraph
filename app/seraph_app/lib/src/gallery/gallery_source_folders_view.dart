@@ -23,7 +23,6 @@ import 'package:seraph_app/src/settings/settings_controller.dart';
 /// choosing the folders is configuration and lives behind the gallery rather
 /// than in front of it.
 class GallerySourceFoldersView extends StatefulWidget {
-
   static const routeName = '/gallery/folders';
 
   const GallerySourceFoldersView({super.key});
@@ -255,8 +254,7 @@ class _GallerySourceFoldersViewState extends State<GallerySourceFoldersView> {
         path: picked.path,
       );
     } on SyncPairConflictException {
-      _showMessage(
-          '$localFolderPath is already used by another Sync Pair - a '
+      _showMessage('$localFolderPath is already used by another Sync Pair - a '
           'device folder can only back up to one place.');
       return;
     } catch (e) {
@@ -444,8 +442,7 @@ class _GallerySourceFoldersViewState extends State<GallerySourceFoldersView> {
         if (!stillRunning) {
           _watchingRescan.remove(id);
           anyFinished = true;
-          final displayPath =
-              match.isNotEmpty ? match.first.displayPath : null;
+          final displayPath = match.isNotEmpty ? match.first.displayPath : null;
           _showMessage(displayPath != null
               ? 'Rescan of $displayPath finished.'
               : 'Rescan finished.');
@@ -468,7 +465,8 @@ class _GallerySourceFoldersViewState extends State<GallerySourceFoldersView> {
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -1000,7 +998,8 @@ class _BackupConstraintsSection extends StatelessWidget {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-              child: Text('Scheduled backup', style: theme.textTheme.titleSmall),
+              child:
+                  Text('Scheduled backup', style: theme.textTheme.titleSmall),
             ),
             Obx(() => SwitchListTile(
                   dense: true,

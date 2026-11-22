@@ -100,7 +100,8 @@ class GalleryEraseService {
       await localScanService!.scan();
     }
 
-    return EraseResult(erased: done.length, cancelled: cancelled, failure: failure);
+    return EraseResult(
+        erased: done.length, cancelled: cancelled, failure: failure);
   }
 
   /// Where [row]'s Seraph copy lives: its cloud identity, or - for a Device

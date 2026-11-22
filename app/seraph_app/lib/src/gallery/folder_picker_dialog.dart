@@ -70,7 +70,8 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
   void _goUp() {
     final split = _path.split('/');
     setState(() {
-      _path = split.length <= 1 ? '' : split.sublist(0, split.length - 1).join('/');
+      _path =
+          split.length <= 1 ? '' : split.sublist(0, split.length - 1).join('/');
     });
     _loadFolders();
   }
@@ -84,7 +85,8 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
     }
     final spaceProviderId = split.first;
     final rest = split.sublist(1);
-    return PickedFolder(spaceProviderId, rest.isEmpty ? '/' : '/${rest.join('/')}');
+    return PickedFolder(
+        spaceProviderId, rest.isEmpty ? '/' : '/${rest.join('/')}');
   }
 
   @override
@@ -124,8 +126,9 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton(
-          onPressed:
-              selection == null ? null : () => Navigator.of(context).pop(selection),
+          onPressed: selection == null
+              ? null
+              : () => Navigator.of(context).pop(selection),
           child: const Text('Select'),
         ),
       ],

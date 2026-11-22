@@ -367,8 +367,7 @@ Future<HeadlessSyncSession?> loadHeadlessSyncSession(
       mirror: mirror,
       holder: headlessTokenRefreshLockHolder,
       refresh: () => manager.refreshToken(),
-      readPersisted: () =>
-          readPersistedHeadlessUser(manager, issuer, clientId),
+      readPersisted: () => readPersistedHeadlessUser(manager, issuer, clientId),
     );
     if (user == null) {
       return null;
@@ -432,7 +431,8 @@ Future<HeadlessSyncSession?> loadHeadlessSyncSession(
 LockedOidcUserManager buildHeadlessOidcManager(String issuer, String clientId) {
   const secureStorage = FlutterSecureStorage();
   return LockedOidcUserManager.lazy(
-    discoveryDocumentUri: OidcUtils.getOpenIdConfigWellKnownUri(Uri.parse(issuer)),
+    discoveryDocumentUri:
+        OidcUtils.getOpenIdConfigWellKnownUri(Uri.parse(issuer)),
     clientCredentials: OidcClientAuthentication.none(clientId: clientId),
     store: OidcDefaultStore(secureStorageInstance: secureStorage),
     settings: lockedOidcSettings(
@@ -528,8 +528,7 @@ class HeadlessWebDavBackend implements GalleryUploadBackend {
   }
 
   @override
-  Future<void> put(
-      String spaceProviderId, String path, Uint8List bytes) async {
+  Future<void> put(String spaceProviderId, String path, Uint8List bytes) async {
     await withTokenRecovery<void>(
       op: () async => _client.write(_path(spaceProviderId, path), bytes),
       refreshToken: _session.refreshToken ?? () async {},

@@ -49,7 +49,8 @@ class _AndroidGalleryDataSyncService implements GalleryDataSyncService {
   Future<void> start() async {
     _ensureInitialized();
 
-    final permission = await FlutterForegroundTask.checkNotificationPermission();
+    final permission =
+        await FlutterForegroundTask.checkNotificationPermission();
     if (permission != NotificationPermission.granted) {
       await FlutterForegroundTask.requestNotificationPermission();
     }

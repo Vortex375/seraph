@@ -166,9 +166,8 @@ class GalleryUploadService {
         // server-side atomic PUT already makes this path either absent or
         // complete for every client).
         await backend.put(providerId, candidatePath, bytes);
-        final marked = await mirror.recordUploaded(
-            item, providerId, candidatePath,
-            viaPut: true);
+        final marked = await mirror
+            .recordUploaded(item, providerId, candidatePath, viaPut: true);
         return marked
             ? GalleryUploadResult.uploaded
             : GalleryUploadResult.deviceFileChanged;
@@ -181,9 +180,8 @@ class GalleryUploadService {
         // with viaPut: false - this device never wrote that file, only
         // assumed it, which matters if the feed later disagrees (ticket 20:
         // see [retryMismatchedUpload]).
-        final marked = await mirror.recordUploaded(
-            item, providerId, candidatePath,
-            viaPut: false);
+        final marked = await mirror
+            .recordUploaded(item, providerId, candidatePath, viaPut: false);
         return marked
             ? GalleryUploadResult.alreadyPresent
             : GalleryUploadResult.deviceFileChanged;
@@ -291,18 +289,16 @@ class GalleryUploadService {
 
       if (existingSize == null) {
         await backend.put(providerId, candidatePath, bytes);
-        final marked = await mirror.recordUploaded(
-            item, providerId, candidatePath,
-            viaPut: true);
+        final marked = await mirror
+            .recordUploaded(item, providerId, candidatePath, viaPut: true);
         return marked
             ? GalleryUploadResult.uploaded
             : GalleryUploadResult.deviceFileChanged;
       }
 
       if (existingSize == bytes.length) {
-        final marked = await mirror.recordUploaded(
-            item, providerId, candidatePath,
-            viaPut: false);
+        final marked = await mirror
+            .recordUploaded(item, providerId, candidatePath, viaPut: false);
         return marked
             ? GalleryUploadResult.alreadyPresent
             : GalleryUploadResult.deviceFileChanged;

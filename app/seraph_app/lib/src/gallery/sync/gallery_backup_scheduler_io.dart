@@ -146,9 +146,8 @@ Constraints _buildFullConstraints({
   required bool requireBatteryNotLow,
 }) {
   return Constraints(
-    networkType: requireUnmeteredNetwork
-        ? NetworkType.unmetered
-        : NetworkType.connected,
+    networkType:
+        requireUnmeteredNetwork ? NetworkType.unmetered : NetworkType.connected,
     requiresCharging: requireCharging,
     requiresBatteryNotLow: requireBatteryNotLow,
   );
@@ -309,7 +308,8 @@ void galleryBackupCallbackDispatcher() {
     GalleryMirrorDatabase? db;
     try {
       db = GalleryMirrorDatabase.open();
-      await runHeadlessGallerySync(db, lockHolder: syncRunLockHolderWorkManager);
+      await runHeadlessGallerySync(db,
+          lockHolder: syncRunLockHolderWorkManager);
     } catch (e) {
       // A scheduled attempt failing must never crash the WorkManager
       // executor or be treated as this app's job to retry by hand - the

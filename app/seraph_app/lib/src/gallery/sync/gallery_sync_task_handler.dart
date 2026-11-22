@@ -123,8 +123,7 @@ class _GallerySyncTaskHandler extends TaskHandler {
     try {
       final db = _db ??= GalleryMirrorDatabase.open();
 
-      _notificationTimer ??=
-          Timer.periodic(const Duration(seconds: 2), (_) {
+      _notificationTimer ??= Timer.periodic(const Duration(seconds: 2), (_) {
         unawaited(_updateNotification());
       });
 
@@ -172,9 +171,8 @@ class _GallerySyncTaskHandler extends TaskHandler {
         ((state.totalBytes - state.completedBytes) / (1024 * 1024))
             .clamp(0, double.infinity);
     final text = switch (state.status) {
-      syncStatusRunning =>
-        '$remaining photo${remaining == 1 ? '' : 's'} left '
-            '(~${remainingMb.toStringAsFixed(1)} MB)',
+      syncStatusRunning => '$remaining photo${remaining == 1 ? '' : 's'} left '
+          '(~${remainingMb.toStringAsFixed(1)} MB)',
       syncStatusCompleted => state.totalItems == 0
           ? 'Everything is backed up'
           : 'Backup complete - ${state.completedItems} photo'

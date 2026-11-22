@@ -90,7 +90,8 @@ enum LocalPermissionStatus {
 /// persist it regardless so the next incremental scan does not re-walk the
 /// same range for nothing.
 class LocalIncrementalScanResult {
-  const LocalIncrementalScanResult({required this.items, required this.generation});
+  const LocalIncrementalScanResult(
+      {required this.items, required this.generation});
 
   final List<LocalMediaItem> items;
   final int generation;

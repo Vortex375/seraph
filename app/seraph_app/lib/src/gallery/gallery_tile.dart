@@ -63,10 +63,8 @@ class GalleryTile extends StatelessWidget {
         _content(context, current),
         if (selected) ...[
           ColoredBox(
-            color: Theme.of(context)
-                .colorScheme
-                .primary
-                .withValues(alpha: 0.35),
+            color:
+                Theme.of(context).colorScheme.primary.withValues(alpha: 0.35),
           ),
           Positioned(
             top: 4,
@@ -187,7 +185,8 @@ class GalleryTile extends StatelessWidget {
   }) {
     final theme = Theme.of(context);
     final width = decodeWidth;
-    final tileSize = (width != null && width > 0) ? width : galleryThumbnailSize;
+    final tileSize =
+        (width != null && width > 0) ? width : galleryThumbnailSize;
 
     return Image(
       image: LocalGalleryImage(

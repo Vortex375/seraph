@@ -232,7 +232,8 @@ class LocalScanService {
         ),
     ]);
     if (!confirmed) {
-      return FreeUpResult(freed: 0, skipped: skipped, bytes: 0, cancelled: true);
+      return FreeUpResult(
+          freed: 0, skipped: skipped, bytes: 0, cancelled: true);
     }
 
     await scan();
