@@ -1183,14 +1183,13 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('the search field filters the grid to a text pill that can be '
-      'removed, and hides the scrubber meanwhile', (tester) async {
+  testWidgets(
+      'the search field filters the grid to a text pill that can be removed',
+      (tester) async {
     await setUpGallery(itemCount: 3);
     putSearch();
     await tester.pumpWidget(wrap());
     await tester.pumpAndSettle();
-    const handle = Key('gallery-scrubber-handle');
-    expect(find.byKey(handle), findsOneWidget);
 
     await searchFor(tester, ' sunrise ');
 
@@ -1198,7 +1197,6 @@ void main() {
     expect(controller.filter.value.ai?.text, 'sunrise');
     expect(controller.totalCount.value, 2);
     expect(find.widgetWithText(InputChip, 'sunrise'), findsOneWidget);
-    expect(find.byKey(handle), findsNothing);
 
     await tester.tap(find.widgetWithText(InputChip, 'sunrise'));
     await tester.pumpAndSettle();
@@ -1215,7 +1213,6 @@ void main() {
     await tester.pumpAndSettle();
     expect(controller.filter.value.ai, isNull);
     expect(controller.totalCount.value, 3);
-    expect(find.byKey(handle), findsOneWidget);
   });
 
   testWidgets('Tag... is not offered without AI', (tester) async {

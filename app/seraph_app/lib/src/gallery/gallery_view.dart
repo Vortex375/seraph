@@ -580,30 +580,27 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
               },
             );
           }),
-          // A ranked (text search) grid is not in date order: no date to show.
-          if (!controller.filter.value.ranked) ...[
-            Positioned(
-              top: 8,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: _DateHeading(
-                  controller: controller,
-                  index: _firstVisibleIndex,
-                ),
-              ),
-            ),
-            Positioned(
-              top: 0,
-              bottom: 0,
-              right: 0,
-              child: GalleryDateScrubber(
+          Positioned(
+            top: 8,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: _DateHeading(
                 controller: controller,
-                scrollController: _scroll,
-                indexAtFraction: (fraction) => _indexAtFraction(fraction),
+                index: _firstVisibleIndex,
               ),
             ),
-          ],
+          ),
+          Positioned(
+            top: 0,
+            bottom: 0,
+            right: 0,
+            child: GalleryDateScrubber(
+              controller: controller,
+              scrollController: _scroll,
+              indexAtFraction: (fraction) => _indexAtFraction(fraction),
+            ),
+          ),
         ],
       );
     });

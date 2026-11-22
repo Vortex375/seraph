@@ -39,7 +39,7 @@ class GalleryAiFilter {
   final String? text;
   final String? tag;
   final GalleryPerson? person;      // for the pill's avatar
-  final List<(String, String)> keys; // Space keys, in server score order
+  final List<(String, String)> keys; // Space keys of the hits
 }
 ```
 
@@ -50,30 +50,26 @@ non-null parts, using `limit: 1000` (the current maximum). It then sets
 Combining the parts on the server matters. "Sunrise" plus Anna returns the top 1000 sunrise photos *of
 Anna*, not the top 1000 sunrise photos with Anna's photos picked out afterwards.
 
-### Ordering: relevance while text is active
+### Ordering: always Capture Date, with a score cutoff for text
 
-Text search has no "no match": it returns the N nearest photos. Date order would mix weak matches in with
-good ones, so:
+Revised on 2026-11-22. The first version sorted the grid best match first while a text pill was active.
+That was dropped: recent photos are arguably the more relevant ones, and one order everywhere keeps the
+month headings and the date scrubber.
 
-- **Text pill present:** the grid is ordered by the position of each photo's key in `ai.keys` (the score
-  order). The month boundaries aren't built, and the date scrubber and month bubble are hidden.
-- **Tag or person only:** these are plain membership filters, so the grid keeps Capture Date order, as the
-  person filter does today.
+Text search has no "no match": it returns the N nearest photos. In date order, weak matches would mix in
+with good ones, so `gallery-ai` drops text hits below a minimum cosine similarity,
+`gallery.ai.search.minScore` (env `SERAPH_GALLERY_AI_SEARCH_MINSCORE`). It applies to text only; tag and
+person are exact membership already.
 
-The ordering rule lives in `GalleryFilter` (`bool get ranked => ai?.text != null`), so the mirror and the
-grid controller read the same answer.
+- `ponytail:` the default 0.23 is a guess for CLIP ViT-B/32 bare queries, next to the tags' 0.25 for
+  "a photo of …" prompts. Tune it against real photos, and again when the CLIP model changes.
 
 A user-selectable sort order is a possible later change; it isn't part of this spec.
 
 ### Mirror
 
 - `_filterPredicate`: the existing person clause (`_InJsonArray` over `providerId\u001fpath`) becomes the
-  `ai` clause, unchanged apart from where it reads the keys.
-- `queryPage`/`queryItems`: when `filter.ranked`, sort by
-  `(SELECT key FROM json_each(?) WHERE value = provider_id || '\u001f' || path)` (the `json_each` key is the
-  array index) instead of `capturedAt DESC, id DESC`. Use the same json-array binding as `_InJsonArray`, so
-  the 999-variable limit never applies.
-- `capturedAtColumn` and the month boundaries are skipped when `ranked`.
+  `ai` clause, unchanged apart from where it reads the keys. Ordering is untouched.
 
 ## User Stories
 
@@ -81,7 +77,7 @@ A user-selectable sort order is a possible later change; it isn't part of this s
    city.
 2. As a user, my search shows up as a pill that I can remove, which brings back the previous view.
 3. As a user, I can tap a search result to see it full screen, and swipe through the other results.
-4. As a user, text search results appear best match first.
+4. As a user, text search results appear newest first, without photos that barely match.
 5. As a user, I can combine text, a tag and a person, and remove each one separately.
 
 ## Implementation Decisions
@@ -109,30 +105,30 @@ A user-selectable sort order is a possible later change; it isn't part of this s
 
 ## Testing Decisions
 
-- Mirror (unit, in-memory DB): with `ai.text` set, the page order equals `ai.keys` order intersected with
-  the other filters. With only a tag or person, the order is Capture Date. A key set above 999 still works.
+- Mirror (unit, in-memory DB): an `ai` key set is membership in Capture Date order, intersected with the
+  other filters. A key set above 999 still works.
+- `gallery-ai` (integration): text hits below `SearchMinScore` are dropped; searches without text are not
+  affected.
 - `GallerySearchController.applyAi` with a fake `GalleryService`: one request containing every part. On
   failure the filter is unchanged. A newer call wins over a slower older one.
 - `gallery_view_test.dart`: submitting the search field shows a text pill and filters the grid. Removing
-  the pill restores the grid. The Tag… menu item appears only when AI is available. The scrubber is hidden
-  while the text pill is shown.
+  the pill restores the grid. The Tag… menu item appears only when AI is available.
 - Gates (AGENTS.md): `flutter analyze` must report zero issues, `flutter build web --release --base-href=/app/`
   must succeed, and `flutter test` must pass. `android/` isn't touched, so the APK build isn't required.
 
 ## Out of Scope
 
 - A user-selectable sort order.
-- A server-side similarity cutoff.
 - Sending Place or date filters to the server.
 - Paging past 1000 results.
 - Keeping the search in the URL across a reload. The filter isn't in the URL today either.
-- Changes to the server, `gallery-ai`, or the web app.
+- Server changes beyond the `gallery-ai` score cutoff, and the web app.
 
 ## Known ceilings
 
 - `ponytail:` text and person results are capped at 1000 server-side (`MaxSearchLimit`). They're then
   intersected locally with Place, date and Availability, so a narrow local filter on a large library can
-  hide matches that ranked below 1000. Fix later by sending the local filter's Space keys to the server,
+  hide matches beyond the first 1000. Fix later by sending the local filter's Space keys to the server,
   or by paging.
 - The key set is a snapshot taken when the pill was set. Photos analysed later won't appear until the pill
   is set again, the same as the person filter today.

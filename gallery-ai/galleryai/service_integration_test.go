@@ -264,11 +264,12 @@ func startSeeded(t *testing.T, seedSQL string) *env {
 }
 
 type startOpts struct {
-	seed string
-	keep bool // keep the database content of a previous start (no truncate)
-	tags []galleryai.TagConfig
-	hook func(*pgxpool.Pool) // runs once before the re-tag pass records its result
-	down bool                // ML text requests fail until fakeML.textStatus is reset
+	seed     string
+	keep     bool // keep the database content of a previous start (no truncate)
+	tags     []galleryai.TagConfig
+	hook     func(*pgxpool.Pool) // runs once before the re-tag pass records its result
+	down     bool                // ML text requests fail until fakeML.textStatus is reset
+	minScore float64             // Config.SearchMinScore
 }
 
 func startWith(t *testing.T, o startOpts) *env {
@@ -297,7 +298,7 @@ func startWith(t *testing.T, o startOpts) *env {
 	if o.down {
 		e.ml.textStatus.Store(503)
 	}
-	cfg := galleryai.Config{MLURL: e.ml.srv.URL, ClipModel: "clip-test", FaceModel: "buffalo_l", FaceMinScore: 0.7, MaxDistance: 0.5, MinFaces: 3, DeferredInterval: time.Hour, MaxAckPending: 2, Tags: o.tags}
+	cfg := galleryai.Config{MLURL: e.ml.srv.URL, ClipModel: "clip-test", FaceModel: "buffalo_l", FaceMinScore: 0.7, MaxDistance: 0.5, MinFaces: 3, DeferredInterval: time.Hour, MaxAckPending: 2, Tags: o.tags, SearchMinScore: o.minScore}
 	svc := galleryai.New(galleryai.Params{
 		Config: cfg, Pool: pool, ML: galleryai.NewMLClient(cfg), Thumbs: e.thumbs, Js: js, Nc: nc,
 		Logger: logging.New(logging.Params{}), Tracing: tracing.NewNoopTracing(),

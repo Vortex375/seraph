@@ -38,6 +38,7 @@ type Config struct {
 	MinFaces         int           // matches (itself included) a face needs to start a new person
 	DeferredInterval time.Duration // how often never-clustered and deferred faces are reprocessed
 	MaxAckPending    int
+	SearchMinScore   float64 // text search drops photos below this cosine similarity
 	Tags             []TagConfig
 }
 
@@ -50,6 +51,8 @@ func NewConfig(v *viper.Viper) (Config, error) {
 	v.SetDefault("gallery.ai.face.minFaces", 3)
 	v.SetDefault("gallery.ai.face.deferredInterval", 5*time.Minute)
 	v.SetDefault("gallery.ai.maxAckPending", 2)
+	// ponytail: a starting guess for CLIP ViT-B/32 bare-query scores, like defaultThreshold for tags; tune per model
+	v.SetDefault("gallery.ai.search.minScore", 0.23)
 
 	// gallery.ai.tags replaces the whole default list when set (config file; list of {tag, prompts, threshold})
 	tags := DefaultTags
@@ -75,6 +78,7 @@ func NewConfig(v *viper.Viper) (Config, error) {
 		MinFaces:         v.GetInt("gallery.ai.face.minFaces"),
 		DeferredInterval: v.GetDuration("gallery.ai.face.deferredInterval"),
 		MaxAckPending:    v.GetInt("gallery.ai.maxAckPending"),
+		SearchMinScore:   v.GetFloat64("gallery.ai.search.minScore"),
 		Tags:             tags,
 	}, nil
 }

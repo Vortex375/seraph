@@ -124,13 +124,14 @@ func (s *Service) search(ctx context.Context, req *SearchRequest) (*SearchRespon
 	q := `SELECT p.provider_id, p.path, `
 	order := `p.seq DESC, p.provider_id, p.path`
 	from := ` FROM photos p`
+	var dist string
 	if req.Text != "" {
 		emb, err := s.ml.EmbedText(ctx, req.Text)
 		if err != nil {
 			return nil, fmt.Errorf("embed query: %w", err)
 		}
 		args = append(args, vectorLiteral(emb))
-		dist := "e.embedding <=> $" + strconv.Itoa(len(args)) + "::text::vector"
+		dist = "e.embedding <=> $" + strconv.Itoa(len(args)) + "::text::vector"
 		q += "1 - (" + dist + ")"
 		from += ` JOIN photo_embeddings e ON e.provider_id = p.provider_id AND e.path = p.path`
 		order = dist + ", p.provider_id, p.path"
@@ -138,6 +139,11 @@ func (s *Service) search(ctx context.Context, req *SearchRequest) (*SearchRespon
 		q += "0"
 	}
 	q += from + ` WHERE NOT p.deleted AND ` + pred
+	if req.Text != "" {
+		// cosine distance = 1 - similarity: text search has no natural "no match", so weak hits are cut off
+		args = append(args, 1-s.cfg.SearchMinScore)
+		q += ` AND ` + dist + ` <= $` + strconv.Itoa(len(args))
+	}
 	if req.Tag != "" {
 		args = append(args, req.Tag)
 		q += ` AND EXISTS (SELECT 1 FROM photo_tags t WHERE t.provider_id = p.provider_id AND t.path = p.path AND t.tag = $` + strconv.Itoa(len(args)) + `)`

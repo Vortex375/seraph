@@ -153,6 +153,19 @@ func TestSearchTextRankingFiltersAndLimit(t *testing.T) {
 	assert.Len(t, call[galleryai.SearchResponse](t, e, galleryai.SearchTopic, req).Items, 2)
 }
 
+func TestSearchTextMinScore(t *testing.T) {
+	e := startWith(t, startOpts{minScore: 0.5})
+	e.seedPhoto(t, "p", "/far.jpg", 1, 80)
+	e.seedPhoto(t, "p", "/near.jpg", 2, 5)
+	e.seedPhoto(t, "p", "/mid.jpg", 3, 40)
+
+	res := call[galleryai.SearchResponse](t, e, galleryai.SearchTopic, galleryai.SearchRequest{Prefixes: pfx("p", "/"), Text: "match"})
+	require.Empty(t, res.Error)
+	assert.Equal(t, []string{"p:/near.jpg", "p:/mid.jpg"}, paths(res.Items)) // cos(80 deg) ~ 0.17 is cut
+	// the cutoff is for text only
+	assert.Len(t, call[galleryai.SearchResponse](t, e, galleryai.SearchTopic, galleryai.SearchRequest{Prefixes: pfx("p", "/")}).Items, 3)
+}
+
 func TestSearchLimitCap(t *testing.T) {
 	e := start(t)
 	_, err := e.pool.Exec(context.Background(), `INSERT INTO photos (provider_id, path, seq) SELECT 'p', '/' || g, g FROM generate_series(1, 1100) g`)

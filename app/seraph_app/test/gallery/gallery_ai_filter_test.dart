@@ -70,22 +70,15 @@ void main() {
         for (final i in await mirror.queryItems(filter: f)) i.path!,
       ];
 
-  test('text search orders by key position, intersected with other filters',
-      () async {
+  test('text search is membership in Capture Date order, intersected with '
+      'other filters', () async {
     final ai = GalleryAiFilter(
       text: 'sunrise',
       keys: [_k(3), _k(0), _k(2), _k(4)],
     );
-    expect(ai.keys.length, 4);
-    expect(await paths(GalleryFilter(ai: ai)), [_p(3), _p(0), _p(2), _p(4)]);
-    expect(
-      (await mirror.queryPage(filter: GalleryFilter(ai: ai)))
-          .items
-          .map((i) => i.path),
-      [_p(3), _p(0), _p(2), _p(4)],
-    );
+    expect(await paths(GalleryFilter(ai: ai)), [_p(0), _p(2), _p(3), _p(4)]);
 
-    // Date range: photo-0 and photo-1 only; their relative order is the keys'.
+    // Date range: photo-0 and photo-1 only.
     final newest = DateTime.fromMillisecondsSinceEpoch(
       1770000000 * 1000,
       isUtc: true,
@@ -94,12 +87,12 @@ void main() {
     expect(
       await paths(
         GalleryFilter(
-          ai: GalleryAiFilter(text: 'x', keys: [_k(1), _k(0)]),
+          ai: GalleryAiFilter(text: 'x', keys: [_k(1), _k(0), _k(3)]),
           capturedFrom: day.subtract(const Duration(days: 1)),
           capturedTo: day,
         ),
       ),
-      [_p(1), _p(0)],
+      [_p(0), _p(1)],
     );
   });
 
@@ -126,7 +119,7 @@ void main() {
     );
   });
 
-  test('ranked order works with more than 999 keys', () async {
+  test('works with more than 999 keys', () async {
     final keys = [
       for (var i = 0; i < 1200; i++) ('space-a', '/missing/$i.jpg'),
       _k(2),
@@ -138,7 +131,7 @@ void main() {
           ai: GalleryAiFilter(text: 't', keys: keys),
         ),
       ),
-      [_p(2), _p(1)],
+      [_p(1), _p(2)],
     );
   });
 
@@ -151,7 +144,6 @@ void main() {
       3,
     );
     expect(const GalleryFilter(ai: GalleryAiFilter(tag: 'x')).activeCount, 1);
-    expect(const GalleryFilter(ai: GalleryAiFilter(tag: 'x')).ranked, false);
   });
 
   group('applyAi', () {
@@ -170,7 +162,7 @@ void main() {
     });
 
     test(
-      'sends one request with every part and sets the ranked filter',
+      'sends one request with every part and sets the filter',
       () async {
         final seen = <Map<String, dynamic>>[];
         final c = GallerySearchController(
@@ -191,7 +183,6 @@ void main() {
           {'q': 'sunrise', 'tag': 'beach', 'person': 'p1', 'limit': 1000},
         ]);
         expect(grid.filter.value.ai?.keys, [_k(2), _k(0)]);
-        expect(grid.filter.value.ranked, true);
         expect(grid.totalCount.value, 2);
       },
     );
