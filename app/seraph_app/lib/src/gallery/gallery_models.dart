@@ -121,6 +121,31 @@ class GalleryPerson {
   GalleryPerson withName(String name) =>
       GalleryPerson(id: id, name: name, photoCount: photoCount, cover: cover);
 
+  /// One entry per name: clusters sharing a name are one person, shown as the
+  /// biggest of them with the photo counts summed. Unnamed clusters stay apart.
+  static List<GalleryPerson> mergeByName(List<GalleryPerson> people) {
+    final byName = <String, GalleryPerson>{};
+    final out = <GalleryPerson>[];
+    for (final p in people) {
+      final first = p.name.isEmpty ? null : byName[p.name];
+      if (first == null) {
+        if (p.name.isNotEmpty) byName[p.name] = p;
+        out.add(p);
+        continue;
+      }
+      final i = out.indexOf(first);
+      final big = p.photoCount > first.photoCount ? p : first;
+      final merged = GalleryPerson(
+          id: big.id,
+          name: p.name,
+          photoCount: first.photoCount + p.photoCount,
+          cover: big.cover);
+      byName[p.name] = merged;
+      out[i] = merged;
+    }
+    return out;
+  }
+
   /// Named people first (by name), then unnamed ones by photo count.
   static List<GalleryPerson> listFromJson(Map<String, dynamic>? json) {
     final raw = json?['people'];

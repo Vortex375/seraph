@@ -149,8 +149,11 @@ func (s *Service) search(ctx context.Context, req *SearchRequest) (*SearchRespon
 		q += ` AND EXISTS (SELECT 1 FROM photo_tags t WHERE t.provider_id = p.provider_id AND t.path = p.path AND t.tag = $` + strconv.Itoa(len(args)) + `)`
 	}
 	if req.PersonID != "" {
+		// clusters sharing a name are one person (users merge by naming them alike)
 		args = append(args, req.PersonID)
-		q += ` AND EXISTS (SELECT 1 FROM faces f WHERE f.provider_id = p.provider_id AND f.path = p.path AND f.person_id::text = $` + strconv.Itoa(len(args)) + `)`
+		q += ` AND EXISTS (SELECT 1 FROM faces f WHERE f.provider_id = p.provider_id AND f.path = p.path AND f.person_id IN (
+			SELECT id FROM persons WHERE id::text = $` + strconv.Itoa(len(args)) + `
+			   OR name = (SELECT name FROM persons WHERE id::text = $` + strconv.Itoa(len(args)) + `)))`
 	}
 	args = append(args, limit)
 	q += ` ORDER BY ` + order + ` LIMIT $` + strconv.Itoa(len(args))

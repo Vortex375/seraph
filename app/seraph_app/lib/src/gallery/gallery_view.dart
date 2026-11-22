@@ -1268,6 +1268,8 @@ class _PeopleDialog extends StatefulWidget {
 }
 
 class _PeopleDialogState extends State<_PeopleDialog> {
+  String _query = '';
+
   @override
   void initState() {
     super.initState();
@@ -1281,37 +1283,55 @@ class _PeopleDialogState extends State<_PeopleDialog> {
       content: SizedBox(
         width: 360,
         child: Obx(() {
-          final people = widget.search.people.toList();
-          if (people.isEmpty) return const Text('No people yet');
-          return GridView.builder(
-            shrinkWrap: true,
-            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: 100,
-              mainAxisSpacing: 8,
-              crossAxisSpacing: 8,
-              childAspectRatio: 0.8,
+          final all = GalleryPerson.mergeByName(widget.search.people.toList());
+          if (all.isEmpty) return const Text('No people yet');
+          final q = _query.trim().toLowerCase();
+          final people = [
+            for (final p in all)
+              if ((p.name.isEmpty ? 'unnamed' : p.name.toLowerCase())
+                  .contains(q))
+                p
+          ];
+          return Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(
+              autofocus: true,
+              decoration: const InputDecoration(
+                  hintText: 'Search people', prefixIcon: Icon(Icons.search)),
+              onChanged: (v) => setState(() => _query = v),
             ),
-            itemCount: people.length,
-            itemBuilder: (context, i) {
-              final p = people[i];
-              return InkWell(
-                onTap: () => Navigator.pop(context, p),
-                child: Column(children: [
-                  Expanded(
-                    child: AspectRatio(
-                      aspectRatio: 1,
-                      child: ClipOval(
-                          child: FaceAvatar(person: p, loader: widget.loader)),
+            const SizedBox(height: 8),
+            Flexible(
+                child: GridView.builder(
+              shrinkWrap: true,
+              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: 100,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                childAspectRatio: 0.8,
+              ),
+              itemCount: people.length,
+              itemBuilder: (context, i) {
+                final p = people[i];
+                return InkWell(
+                  onTap: () => Navigator.pop(context, p),
+                  child: Column(children: [
+                    Expanded(
+                      child: AspectRatio(
+                        aspectRatio: 1,
+                        child: ClipOval(
+                            child:
+                                FaceAvatar(person: p, loader: widget.loader)),
+                      ),
                     ),
-                  ),
-                  Text(p.name.isEmpty ? 'Unnamed' : p.name,
-                      maxLines: 1, overflow: TextOverflow.ellipsis),
-                  Text('${p.photoCount}',
-                      style: Theme.of(context).textTheme.bodySmall),
-                ]),
-              );
-            },
-          );
+                    Text(p.name.isEmpty ? 'Unnamed' : p.name,
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text('${p.photoCount}',
+                        style: Theme.of(context).textTheme.bodySmall),
+                  ]),
+                );
+              },
+            ))
+          ]);
         }),
       ),
       actions: [

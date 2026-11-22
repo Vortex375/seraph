@@ -153,6 +153,21 @@ func TestSearchTextRankingFiltersAndLimit(t *testing.T) {
 	assert.Len(t, call[galleryai.SearchResponse](t, e, galleryai.SearchTopic, req).Items, 2)
 }
 
+func TestSearchPersonCoversSameNamedClusters(t *testing.T) {
+	e := start(t)
+	e.seedPhoto(t, "p", "/a.jpg", 1, 0)
+	e.seedPhoto(t, "p", "/b.jpg", 2, 0)
+	e.seedPhoto(t, "p", "/c.jpg", 3, 0)
+	a1, a2, bob := e.newPerson(t, "Alice"), e.newPerson(t, "Alice"), e.newPerson(t, "Bob")
+	e.seedPersonFace(t, "/a.jpg", a1, 0.9)
+	e.seedPersonFace(t, "/b.jpg", a2, 0.9)
+	e.seedPersonFace(t, "/c.jpg", bob, 0.9)
+
+	res := call[galleryai.SearchResponse](t, e, galleryai.SearchTopic, galleryai.SearchRequest{Prefixes: pfx("p", "/"), PersonID: a1})
+	require.Empty(t, res.Error)
+	assert.Equal(t, []string{"p:/b.jpg", "p:/a.jpg"}, paths(res.Items))
+}
+
 func TestSearchTextMinScore(t *testing.T) {
 	e := startWith(t, startOpts{minScore: 0.5})
 	e.seedPhoto(t, "p", "/far.jpg", 1, 80)

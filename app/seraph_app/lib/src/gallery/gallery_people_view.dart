@@ -117,28 +117,48 @@ class _GalleryPeopleViewState extends State<GalleryPeopleView> {
   }
 
   Future<void> _rename(BuildContext context, GalleryPerson p) async {
-    final controller = TextEditingController(text: p.name);
+    // names already in use by other clusters: typing one makes this cluster the same person
+    final names = {
+      for (final o in search.people)
+        if (o.id != p.id && o.name.isNotEmpty) o.name
+    }.toList()
+      ..sort();
+    var text = p.name;
     final name = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Rename person'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'Name'),
-          onSubmitted: (v) => Navigator.pop(context, v),
+        content: SizedBox(
+          width: 300,
+          child: Autocomplete<String>(
+            initialValue: TextEditingValue(text: p.name),
+            optionsBuilder: (v) {
+              final q = v.text.trim().toLowerCase();
+              return q.isEmpty
+                  ? const Iterable<String>.empty()
+                  : names.where((n) => n.toLowerCase().contains(q));
+            },
+            onSelected: (v) => text = v,
+            fieldViewBuilder: (context, controller, focus, submit) => TextField(
+              controller: controller,
+              focusNode: focus,
+              autofocus: true,
+              decoration: const InputDecoration(hintText: 'Name'),
+              onChanged: (v) => text = v,
+              onSubmitted: (v) => Navigator.pop(context, v),
+            ),
+          ),
         ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context),
               child: const Text('Cancel')),
           TextButton(
-              onPressed: () => Navigator.pop(context, controller.text),
+              onPressed: () => Navigator.pop(context, text),
               child: const Text('Save')),
         ],
       ),
     );
-    controller.dispose();
     if (name == null) return;
     if (!await search.renamePerson(p.id, name) && mounted) {
       ScaffoldMessenger.of(this.context)

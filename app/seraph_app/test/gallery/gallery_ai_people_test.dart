@@ -30,6 +30,15 @@ Response<dynamic> _ok(RequestOptions o, Object data) =>
     Response(requestOptions: o, statusCode: 200, data: data);
 
 void main() {
+  test('mergeByName shows one entry per name, unnamed stay apart', () {
+    GalleryPerson p(String id, String name, int n) =>
+        GalleryPerson(id: id, name: name, photoCount: n);
+    final merged = GalleryPerson.mergeByName(
+        [p('1', 'Alice', 3), p('2', '', 5), p('3', 'Alice', 7), p('4', '', 1)]);
+    expect(merged.map((e) => (e.id, e.photoCount)),
+        [('3', 10), ('2', 5), ('4', 1)]);
+  });
+
   test('parses search, status and people responses', () {
     final hits = GallerySearchHit.listFromJson({
       'items': [
