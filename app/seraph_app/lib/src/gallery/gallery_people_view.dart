@@ -186,6 +186,22 @@ class _FaceAvatarState extends State<FaceAvatar> {
   @override
   void initState() {
     super.initState();
+    _resolve();
+  }
+
+  // the State is reused when a list reorders or filters, so follow the cover
+  @override
+  void didUpdateWidget(FaceAvatar old) {
+    super.didUpdateWidget(old);
+    final a = old.person.cover, b = widget.person.cover;
+    if (a?.providerId != b?.providerId || a?.path != b?.path) {
+      _release();
+      _image = null;
+      _resolve();
+    }
+  }
+
+  void _resolve() {
     final cover = widget.person.cover;
     if (cover == null) return;
     _stream = GalleryImage(
@@ -200,9 +216,14 @@ class _FaceAvatarState extends State<FaceAvatar> {
     _stream!.addListener(_listener!);
   }
 
+  void _release() {
+    if (_listener != null) _stream?.removeListener(_listener!);
+    _stream = _listener = null;
+  }
+
   @override
   void dispose() {
-    if (_listener != null) _stream?.removeListener(_listener!);
+    _release();
     super.dispose();
   }
 

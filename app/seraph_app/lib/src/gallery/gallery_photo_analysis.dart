@@ -162,29 +162,59 @@ class _GalleryPhotoAnalysisSectionState
 
   Future<void> _onFaceTap(GalleryPhotoFace face) async {
     final people = _search!.people.toList();
+    var query = '';
     final choice = await showModalBottomSheet<(String, String?)>(
       context: context,
-      builder: (context) => SafeArea(
-        child: ListView(shrinkWrap: true, children: [
-          ListTile(
-            leading: const Icon(Icons.person_add_alt_outlined),
-            title: const Text('New person...'),
-            onTap: () => Navigator.pop(context, ('new', null)),
+      isScrollControlled: true,
+      useSafeArea:
+          true, // a long list would otherwise reach under the status bar
+      builder: (context) => StatefulBuilder(builder: (context, setSheet) {
+        final q = query.trim().toLowerCase();
+        return SafeArea(
+          child: Padding(
+            padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom),
+            child: ListView(shrinkWrap: true, children: [
+              ListTile(
+                leading: const Icon(Icons.person_add_alt_outlined),
+                title: const Text('New person...'),
+                onTap: () => Navigator.pop(context, ('new', null)),
+              ),
+              if (face.personId != null)
+                ListTile(
+                  leading: const Icon(Icons.edit_outlined),
+                  title: Text(face.personName.isEmpty
+                      ? 'Name this person...'
+                      : 'Rename this person...'),
+                  onTap: () => Navigator.pop(context, ('name', null)),
+                ),
+              if (face.personId != null)
+                ListTile(
+                  leading: const Icon(Icons.person_remove_outlined),
+                  title: const Text('Remove from person'),
+                  onTap: () => Navigator.pop(context, ('remove', null)),
+                ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: TextField(
+                  decoration: const InputDecoration(
+                      hintText: 'Search people',
+                      prefixIcon: Icon(Icons.search)),
+                  onChanged: (v) => setSheet(() => query = v),
+                ),
+              ),
+              for (final p in people)
+                if ((p.name.isEmpty ? 'unnamed' : p.name.toLowerCase())
+                    .contains(q))
+                  ListTile(
+                    leading: const Icon(Icons.person_outline),
+                    title: Text(p.name.isEmpty ? 'Unnamed' : p.name),
+                    onTap: () => Navigator.pop(context, ('person', p.id)),
+                  ),
+            ]),
           ),
-          if (face.personId != null)
-            ListTile(
-              leading: const Icon(Icons.person_remove_outlined),
-              title: const Text('Remove from person'),
-              onTap: () => Navigator.pop(context, ('remove', null)),
-            ),
-          for (final p in people)
-            ListTile(
-              leading: const Icon(Icons.person_outline),
-              title: Text(p.name.isEmpty ? 'Unnamed' : p.name),
-              onTap: () => Navigator.pop(context, ('person', p.id)),
-            ),
-        ]),
-      ),
+        );
+      }),
     );
     if (choice == null || !mounted) return;
     switch (choice.$1) {
@@ -193,19 +223,29 @@ class _GalleryPhotoAnalysisSectionState
       case 'remove':
         await _assign(face);
       case 'new':
-        final name = await _askName();
+        final name = await _askName('New person');
         if (name != null && name.isNotEmpty) {
           await _assign(face, newPersonName: name);
+        }
+      case 'name':
+        final name = await _askName('Name person', face.personName);
+        if (name != null && name.isNotEmpty) {
+          if (await _search!.renamePerson(face.personId!, name)) {
+            await _load();
+          } else if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Could not rename')));
+          }
         }
     }
   }
 
-  Future<String?> _askName() {
-    final controller = TextEditingController();
+  Future<String?> _askName(String title, [String initial = '']) {
+    final controller = TextEditingController(text: initial);
     return showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('New person'),
+        title: Text(title),
         content: TextField(
             controller: controller,
             autofocus: true,
