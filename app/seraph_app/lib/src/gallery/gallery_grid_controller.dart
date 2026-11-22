@@ -294,9 +294,12 @@ class GalleryGridController extends GetxController {
     // synchronously for every index - including ones whose page has not
     // loaded - with no per-drag async work. See [_boundaries]'s doc for why
     // the local-time conversion happens here in Dart, not in SQL.
+    // A ranked (text search) grid is not in date order: no boundaries.
     _boundaries
       ..clear()
-      ..addAll(await _buildMonthBoundaries(filterValue));
+      ..addAll(filterValue.ranked
+          ? const <_MonthBoundary>[]
+          : await _buildMonthBoundaries(filterValue));
     summary.value = await mirror.availabilitySummary();
     localPermission.value = await localScanService?.permissionStatus() ??
         LocalPermissionStatus.unsupported;

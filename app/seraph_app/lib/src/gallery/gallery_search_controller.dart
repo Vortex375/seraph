@@ -95,7 +95,11 @@ class GallerySearchController extends GetxController {
               text: text,
               tag: tag,
               person: person,
-              keys: [for (final h in hits) (h.providerId, h.path)])));
+              keys: [for (final h in hits) (h.providerId, h.path)],
+              // the sort-order pill survives other parts changing, and goes
+              // with the text
+              byRelevance: text != null &&
+                  (grid.filter.value.ai?.byRelevance ?? false))));
       return true;
     } on GalleryAiUnavailableException {
       available.value = false;

@@ -313,16 +313,27 @@ class GalleryPlaceFilter {
 
 /// The AI half of [GalleryFilter]: the free text, tag and person the server
 /// answered together in ONE search call (it combines them), plus the Space
-/// keys (providerId, path) of the hits.
+/// keys (providerId, path) of the hits in the server's score order.
 /// [person] is kept for the pill's avatar.
 class GalleryAiFilter {
   const GalleryAiFilter(
-      {this.text, this.tag, this.person, this.keys = const []});
+      {this.text,
+      this.tag,
+      this.person,
+      this.keys = const [],
+      this.byRelevance = false});
 
   final String? text;
   final String? tag;
   final GalleryPerson? person;
   final List<(String, String)> keys;
+
+  /// The sort-order pill: with [text], order by [keys] (best match first)
+  /// instead of Capture Date. Meaningless without text.
+  final bool byRelevance;
+
+  GalleryAiFilter withRelevance(bool value) => GalleryAiFilter(
+      text: text, tag: tag, person: person, keys: keys, byRelevance: value);
 
   @override
   bool operator ==(Object other) =>
@@ -330,10 +341,12 @@ class GalleryAiFilter {
       other.text == text &&
       other.tag == tag &&
       other.person?.id == person?.id &&
+      other.byRelevance == byRelevance &&
       listEquals(other.keys, keys);
 
   @override
-  int get hashCode => Object.hash(text, tag, person?.id, keys.length);
+  int get hashCode =>
+      Object.hash(text, tag, person?.id, byRelevance, keys.length);
 }
 
 /// `lhs IN (SELECT value FROM json_each(?))`: membership in a JSON array
@@ -358,10 +371,35 @@ class _InJsonArray extends Expression<bool> {
   }
 }
 
+/// `(SELECT key FROM json_each(?) WHERE value = provider_id || '\u001f' || path)`:
+/// the position of a row's Space key in a JSON array bound as ONE parameter
+/// (json_each's `key` is the array index) - its relevance rank. NULL when
+/// absent. The columns are table-qualified: json_each has its own `path` and
+/// `id` columns that would otherwise shadow ours.
+class _SpaceKeyRank extends Expression<int> {
+  _SpaceKeyRank(this.t, this.json);
+
+  final $GalleryItemsTable t;
+  final String json;
+
+  @override
+  Precedence get precedence => Precedence.primary;
+
+  @override
+  void writeInto(GenerationContext context) {
+    final table = t.aliasedName;
+    context.buffer.write('(SELECT key FROM json_each(');
+    Variable<String>(json).writeInto(context);
+    context.buffer.write(') WHERE value = $table.${t.providerId.name} || '
+        "'\u001f'"
+        ' || $table.${t.path.name})');
+  }
+}
+
 /// The ONE filter value object the gallery's read path takes
 /// (the gallery-metadata feature): Availability, an optional inclusive date
 /// range in capture wall time, and an optional Place - combinable in any
-/// mix, always membership-only (ordering never changes). Replaces the bare
+/// mix, membership-only (ordering stays Capture Date unless [ranked]). Replaces the bare
 /// [GalleryAvailabilityFilter] the read path took before.
 class GalleryFilter {
   const GalleryFilter({
@@ -385,6 +423,12 @@ class GalleryFilter {
   final GalleryPlaceFilter? place;
 
   final GalleryAiFilter? ai;
+
+  /// True while a free-text search is sorted by relevance
+  /// ([GalleryAiFilter.byRelevance]): the grid is then ordered by the
+  /// server's score ([GalleryAiFilter.keys]) instead of Capture Date, and
+  /// has no month boundaries. Tag and person are plain membership.
+  bool get ranked => ai?.text != null && ai!.byRelevance;
 
   /// True when anything at all is being filtered - what the UI uses to
   /// switch to the "no photos match this filter" empty state and to decide
@@ -2209,6 +2253,27 @@ class GalleryMirror {
     return _countMatching((t) => t.localRelativePath.isIn(covered));
   }
 
+  /// The page order: Capture Date descending, or - while [GalleryFilter.ranked]
+  /// - the position of each row's Space key in the AI hits' score order.
+  List<OrderClauseGenerator<$GalleryItemsTable>> _pageOrder(
+          GalleryFilter filter) =>
+      filter.ranked
+          ? [
+              (t) => OrderingTerm(
+                  expression: _SpaceKeyRank(
+                      t,
+                      jsonEncode([
+                        for (final k in filter.ai!.keys)
+                          '${k.$1}\u001f${k.$2}'
+                      ]))),
+              (t) => OrderingTerm(expression: t.id, mode: OrderingMode.desc),
+            ]
+          : [
+              (t) => OrderingTerm(
+                  expression: t.capturedAt, mode: OrderingMode.desc),
+              (t) => OrderingTerm(expression: t.id, mode: OrderingMode.desc),
+            ];
+
   /// One page of the mirror, Capture Date descending (newest first, matching
   /// the server listing's order), with a total row count. Works with no
   /// network - it is a plain local query.
@@ -2230,10 +2295,7 @@ class GalleryMirror {
     final unselectedFolders = await _unselectedFolders();
 
     final query = _db.select(_db.galleryItems)
-      ..orderBy([
-        (t) => OrderingTerm(expression: t.capturedAt, mode: OrderingMode.desc),
-        (t) => OrderingTerm(expression: t.id, mode: OrderingMode.desc),
-      ])
+      ..orderBy(_pageOrder(filter))
       ..limit(limit, offset: offset)
       ..where((t) => _filterPredicate(t, unselectedFolders, filter));
 
@@ -2383,10 +2445,7 @@ class GalleryMirror {
     final unselectedFolders = await _unselectedFolders();
 
     final query = _db.select(_db.galleryItems)
-      ..orderBy([
-        (t) => OrderingTerm(expression: t.capturedAt, mode: OrderingMode.desc),
-        (t) => OrderingTerm(expression: t.id, mode: OrderingMode.desc),
-      ])
+      ..orderBy(_pageOrder(filter))
       ..limit(limit, offset: offset)
       ..where((t) => _filterPredicate(t, unselectedFolders, filter));
 

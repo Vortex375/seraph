@@ -50,26 +50,36 @@ non-null parts, using `limit: 1000` (the current maximum). It then sets
 Combining the parts on the server matters. "Sunrise" plus Anna returns the top 1000 sunrise photos *of
 Anna*, not the top 1000 sunrise photos with Anna's photos picked out afterwards.
 
-### Ordering: always Capture Date, with a score cutoff for text
+### Ordering: date by default, relevance on request
 
-Revised on 2026-11-22. The first version sorted the grid best match first while a text pill was active.
-That was dropped: recent photos are arguably the more relevant ones, and one order everywhere keeps the
-month headings and the date scrubber.
+Revised twice. The first version always sorted text search best match first; the second always kept
+Capture Date. The final rule (2026-11-22) offers both:
+
+- While a text pill is shown, a **sort-order pill** sits next to it: "Newest first" (the default) or
+  "Best match". Tapping it toggles. It needs no new search: `ai.keys` are already in score order.
+- `GalleryAiFilter.byRelevance` holds the choice; `GalleryFilter.ranked` is
+  `ai.text != null && ai.byRelevance`, read by the mirror (order), the grid controller (no month
+  boundaries) and the view (no date heading or scrubber).
+- The choice survives the tag or person changing. Removing the text pill removes the sort pill and
+  goes back to date order; a later text search starts at "Newest first".
+- The sort pill isn't counted in the filter badge.
 
 Text search has no "no match": it returns the N nearest photos. In date order, weak matches would mix in
 with good ones, so `gallery-ai` drops text hits below a minimum cosine similarity,
-`gallery.ai.search.minScore` (env `SERAPH_GALLERY_AI_SEARCH_MINSCORE`). It applies to text only; tag and
-person are exact membership already.
+`gallery.ai.search.minScore` (env `SERAPH_GALLERY_AI_SEARCH_MINSCORE`), in both orders. It applies to text
+only; tag and person are exact membership already.
 
 - `ponytail:` the default 0.23 is a guess for CLIP ViT-B/32 bare queries, next to the tags' 0.25 for
   "a photo of …" prompts. Tune it against real photos, and again when the CLIP model changes.
 
-A user-selectable sort order is a possible later change; it isn't part of this spec.
-
 ### Mirror
 
 - `_filterPredicate`: the existing person clause (`_InJsonArray` over `providerId\u001fpath`) becomes the
-  `ai` clause, unchanged apart from where it reads the keys. Ordering is untouched.
+  `ai` clause, unchanged apart from where it reads the keys.
+- `queryPage`/`queryItems`: when `filter.ranked`, sort by
+  `(SELECT key FROM json_each(?) WHERE value = provider_id || '\u001f' || path)` (the `json_each` key is the
+  array index), then `id DESC`, instead of `capturedAt DESC, id DESC`. The keys are bound as one JSON
+  array, so the 999-variable limit never applies.
 
 ## User Stories
 
@@ -77,7 +87,8 @@ A user-selectable sort order is a possible later change; it isn't part of this s
    city.
 2. As a user, my search shows up as a pill that I can remove, which brings back the previous view.
 3. As a user, I can tap a search result to see it full screen, and swipe through the other results.
-4. As a user, text search results appear newest first, without photos that barely match.
+4. As a user, text search results appear newest first, without photos that barely match, and I can
+   switch them to best match first.
 5. As a user, I can combine text, a tag and a person, and remove each one separately.
 
 ## Implementation Decisions
@@ -118,7 +129,6 @@ A user-selectable sort order is a possible later change; it isn't part of this s
 
 ## Out of Scope
 
-- A user-selectable sort order.
 - Sending Place or date filters to the server.
 - Paging past 1000 results.
 - Keeping the search in the URL across a reload. The filter isn't in the URL today either.

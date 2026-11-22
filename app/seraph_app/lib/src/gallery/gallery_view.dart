@@ -580,27 +580,32 @@ class _GalleryViewState extends State<GalleryView> with WidgetsBindingObserver {
               },
             );
           }),
-          Positioned(
-            top: 8,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: _DateHeading(
-                controller: controller,
-                index: _firstVisibleIndex,
-              ),
-            ),
-          ),
-          Positioned(
-            top: 0,
-            bottom: 0,
-            right: 0,
-            child: GalleryDateScrubber(
-              controller: controller,
-              scrollController: _scroll,
-              indexAtFraction: (fraction) => _indexAtFraction(fraction),
-            ),
-          ),
+          // A ranked (text search) grid is not in date order: no date to show.
+          Obx(() => controller.filter.value.ranked
+              ? const SizedBox.shrink()
+              : Positioned(
+                  top: 8,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: _DateHeading(
+                      controller: controller,
+                      index: _firstVisibleIndex,
+                    ),
+                  ),
+                )),
+          Obx(() => controller.filter.value.ranked
+              ? const SizedBox.shrink()
+              : Positioned(
+                  top: 0,
+                  bottom: 0,
+                  right: 0,
+                  child: GalleryDateScrubber(
+                    controller: controller,
+                    scrollController: _scroll,
+                    indexAtFraction: (fraction) => _indexAtFraction(fraction),
+                  ),
+                )),
         ],
       );
     });
@@ -1177,6 +1182,16 @@ class _FilterChipsBar extends StatelessWidget {
           onPressed: onEditText,
           onDeleted: () =>
               search?.applyAi(controller, tag: ai!.tag, person: ai.person),
+        ));
+        // The sort-order pill: only with text, toggled by tapping; the hits
+        // are already in score order, so no new search is needed.
+        chips.add(ActionChip(
+          avatar: Icon(ai!.byRelevance ? Icons.auto_awesome : Icons.schedule,
+              size: 18),
+          label: Text(ai.byRelevance ? 'Best match' : 'Newest first'),
+          tooltip: 'Change sort order',
+          onPressed: () => controller.setFilter(
+              filter.copyWith(ai: ai.withRelevance(!ai.byRelevance))),
         ));
       }
       final tag = ai?.tag;

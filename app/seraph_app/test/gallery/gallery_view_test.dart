@@ -1215,6 +1215,42 @@ void main() {
     expect(controller.totalCount.value, 3);
   });
 
+  testWidgets(
+      'the sort-order pill toggles relevance order and goes with the text',
+      (tester) async {
+    await setUpGallery(itemCount: 3);
+    putSearch();
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+    const handle = Key('gallery-scrubber-handle');
+    expect(find.widgetWithText(ActionChip, 'Newest first'), findsNothing);
+
+    await searchFor(tester, 'sunrise');
+    expect(find.widgetWithText(ActionChip, 'Newest first'), findsOneWidget);
+    expect(controller.filter.value.ranked, false);
+
+    await tester.tap(find.widgetWithText(ActionChip, 'Newest first'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(ActionChip, 'Best match'), findsOneWidget);
+    expect(controller.filter.value.ranked, true);
+    expect(find.byKey(handle), findsNothing);
+
+    await tester.tap(find.widgetWithText(ActionChip, 'Best match'));
+    await tester.pumpAndSettle();
+    expect(controller.filter.value.ranked, false);
+    await tester.tap(find.widgetWithText(ActionChip, 'Newest first'));
+    await tester.pumpAndSettle();
+    expect(controller.filter.value.ranked, true);
+
+    await tester.tap(find.descendant(
+        of: find.widgetWithText(InputChip, 'sunrise'),
+        matching: find.byTooltip('Delete')));
+    await tester.pumpAndSettle();
+    expect(find.byType(ActionChip), findsNothing);
+    expect(controller.filter.value.ranked, false);
+    expect(find.byKey(handle), findsOneWidget);
+  });
+
   testWidgets('Tag... is not offered without AI', (tester) async {
     await setUpGallery(itemCount: 3);
     await tester.pumpWidget(wrap());

@@ -135,6 +135,43 @@ void main() {
     );
   });
 
+  test('sorted by relevance, text orders by key position', () async {
+    final ai = GalleryAiFilter(
+      text: 'sunrise',
+      keys: [_k(3), _k(0), _k(2), _k(4)],
+      byRelevance: true,
+    );
+    expect(GalleryFilter(ai: ai).ranked, true);
+    expect(await paths(GalleryFilter(ai: ai)), [_p(3), _p(0), _p(2), _p(4)]);
+    expect(
+      (await mirror.queryPage(filter: GalleryFilter(ai: ai)))
+          .items
+          .map((i) => i.path),
+      [_p(3), _p(0), _p(2), _p(4)],
+    );
+    // without text the flag means nothing: Capture Date order
+    final tagOnly =
+        GalleryAiFilter(tag: 'x', keys: [_k(3), _k(0)], byRelevance: true);
+    expect(GalleryFilter(ai: tagOnly).ranked, false);
+    expect(await paths(GalleryFilter(ai: tagOnly)), [_p(0), _p(3)]);
+  });
+
+  test('relevance order works with more than 999 keys', () async {
+    final keys = [
+      for (var i = 0; i < 1200; i++) ('space-a', '/missing/$i.jpg'),
+      _k(2),
+      _k(1),
+    ];
+    expect(
+      await paths(
+        GalleryFilter(
+          ai: GalleryAiFilter(text: 't', keys: keys, byRelevance: true),
+        ),
+      ),
+      [_p(2), _p(1)],
+    );
+  });
+
   test('activeCount counts text, tag and person separately', () {
     const anna = GalleryPerson(id: 'p', name: 'A', photoCount: 1);
     expect(
@@ -186,6 +223,27 @@ void main() {
         expect(grid.totalCount.value, 2);
       },
     );
+
+    test('keeps the sort order while text stays, and drops it with the text',
+        () async {
+      final c = GallerySearchController(
+        _service((q) async => [_p(2), _p(0)]),
+        mirror,
+      );
+      await c.applyAi(grid, text: 'sunrise');
+      expect(grid.filter.value.ai?.byRelevance, false, reason: 'date default');
+      await grid.setFilter(grid.filter.value
+          .copyWith(ai: grid.filter.value.ai!.withRelevance(true)));
+      expect(grid.filter.value.ranked, true);
+
+      await c.applyAi(grid, text: 'sunrise', tag: 'beach');
+      expect(grid.filter.value.ranked, true);
+
+      await c.applyAi(grid, tag: 'beach');
+      expect(grid.filter.value.ai?.byRelevance, false);
+      await c.applyAi(grid, text: 'dawn', tag: 'beach');
+      expect(grid.filter.value.ranked, false);
+    });
 
     test('leaves the filter unchanged on failure', () async {
       final c = GallerySearchController(
