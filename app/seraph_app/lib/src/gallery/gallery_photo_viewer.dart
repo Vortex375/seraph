@@ -243,9 +243,23 @@ class _GalleryPhotoViewerViewState extends State<GalleryPhotoViewerView> {
                         : month == null
                             ? ''
                             : galleryMonthLabel(month);
-                    return Text(
-                      label,
-                      style: const TextStyle(fontSize: 16),
+                    final place = item == null ? null : _placeLabel(item);
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(label, style: const TextStyle(fontSize: 16)),
+                        if (place != null)
+                          Text(
+                            place,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.white70,
+                            ),
+                          ),
+                      ],
                     );
                   }),
                 ),
