@@ -1,4 +1,10 @@
-# Seraph
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/seraph-wordmark-dark.svg">
+    <img alt="Seraph" src="docs/images/seraph-wordmark.svg" height="64">
+  </picture>
+</h1>
+
 Seraph is a WebDAV, CardDAV, CalDAV (and Subsonic) server with a distributed microservice architecture. It is written in Go (with a mobile app developed with Flutter/Dart, probably).
 
 This project is in very early development. It is mostly a fun side-project for me to learn more about distributed architectures.

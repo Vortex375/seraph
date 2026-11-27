@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:seraph_app/src/app_bar/app_bar.dart';
 import 'package:seraph_app/src/login/login_controller.dart';
 import 'package:seraph_app/src/settings/settings_controller.dart';
 
@@ -55,7 +56,7 @@ class LoginView extends StatelessWidget {
     final urlController = TextEditingController(text: settings.serverUrl.value);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Seraph'),
+        title: const SeraphWordmark(),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16),
@@ -96,7 +97,7 @@ class LoginView extends StatelessWidget {
     SettingsController settings = Get.find();
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Seraph'),
+        title: const SeraphWordmark(),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16),

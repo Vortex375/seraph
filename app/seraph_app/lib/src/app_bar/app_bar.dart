@@ -10,6 +10,22 @@ import 'package:seraph_app/src/share/share_controller.dart';
 import 'package:seraph_app/src/spaces_admin/spaces_list_view.dart';
 import '../settings/settings_view.dart';
 
+/// The "Seraph" word mark, tinted with the surrounding text color so it
+/// follows the app bar's foreground in light and dark themes.
+class SeraphWordmark extends StatelessWidget {
+  const SeraphWordmark({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Image.asset(
+      'assets/images/seraph_wordmark.png',
+      height: 28,
+      color: DefaultTextStyle.of(context).style.color,
+      semanticLabel: 'Seraph',
+    );
+  }
+}
+
 AppBar seraphAppBar(
   BuildContext context, {
   String name = '',
@@ -26,10 +42,7 @@ AppBar seraphAppBar(
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            const Flexible(
-              fit: FlexFit.loose,
-              child: Text('Seraph', overflow: TextOverflow.ellipsis),
-            ),
+            const SeraphWordmark(),
             const SizedBox(width: 12),
             if (!shareController.shareMode.value)
               Expanded(
