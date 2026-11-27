@@ -9,23 +9,17 @@ authors = [{ name = "Seraph" }]
 dependencies = [
   # API
   "fastapi[standard]",
-  "sse-starlette",
   "pydantic-settings",
   # Models
-  "agentscope==2.0.1",
+  "pydantic-ai-slim[openai]",
   "openai",
   # Database
-  "alembic",
   "pgvector",
   "psycopg[binary]",
   "sqlalchemy",
   "aiosqlite",
-  "duckdb",
-  # Tools
-  "mcp",
-  "reportlab",
+  # Document parsing
   "pypdf",
-  "duckduckgo-search",
   # Messaging
   "nats-py",
   # Serialization
@@ -72,7 +66,7 @@ plugins = ["pydantic.mypy"]
 exclude = [".venv*"]
 
 [[tool.mypy.overrides]]
-module = ["pgvector.*", "setuptools.*", "agentscope.*", "duckdb.*"]
+module = ["pgvector.*", "setuptools.*"]
 ignore_missing_imports = true
 
 [tool.uv.pip]

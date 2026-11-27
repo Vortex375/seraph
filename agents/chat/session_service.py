@@ -1,12 +1,12 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Protocol
+from typing import Any
 
-from agentscope.message import Msg
-from agentscope.state import AgentState
+from pydantic_ai import ModelMessage, ModelRequest, TextPart, UserPromptPart
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from chat.agent_state_store import load_history
 from chat.file_models import FileCitation
 from documents.models import ChatSession, ChatTurnFailure, ChatTurnSource, ChatTurnState
 
@@ -38,17 +38,6 @@ class ChatSessionSummary:
 DEFAULT_SESSION_TITLE = "New conversation"
 
 
-class SessionTitleSummarizer(Protocol):
-    async def summarize(self, message: str) -> str: ...
-
-
-def summarize_session_title(message: str) -> str:
-    normalized = " ".join(message.strip().split())
-    if not normalized:
-        return DEFAULT_SESSION_TITLE
-    return normalized[:80].rstrip()
-
-
 def _message_text_preview(content: object) -> str:
     if isinstance(content, str):
         text = content
@@ -63,26 +52,10 @@ def _message_text_preview(content: object) -> str:
     return lines[-1] if lines else text.strip()
 
 
-def _msg_text(msg: Msg) -> str:
-    text = msg.get_text_content()
-    return text or ""
-
-
 def _normalize_created_at(created_at: datetime) -> datetime:
     if created_at.tzinfo is None:
         return created_at.replace(tzinfo=timezone.utc)
     return created_at.astimezone(timezone.utc)
-
-
-def _parse_iso_timestamp(value: object, fallback: datetime) -> datetime:
-    if isinstance(value, datetime):
-        return _normalize_created_at(value)
-    if isinstance(value, str):
-        try:
-            return _normalize_created_at(datetime.fromisoformat(value))
-        except ValueError:
-            return fallback
-    return fallback
 
 
 class SessionService:
@@ -160,41 +133,47 @@ class SessionService:
         if session_row is None:
             return []
 
-        chat_session = session_row[0]
-        agent_state = session_row[1]
+        history = session_row[1] or []
 
         citations_by_message = await self._citations_by_message(session_id)
         states_by_message = await self._states_by_message(user_id, session_id)
 
         messages: list[ChatHistoryMessage] = []
-        if agent_state is not None:
-            for msg in agent_state.context:
-                text = _msg_text(msg)
-                created_at = _parse_iso_timestamp(msg.created_at, chat_session.created_at)
-                if msg.role == "assistant":
-                    state = states_by_message.get(msg.id)
-                    text = str(state["content"]) if state and state.get("content") else text
-                    messages.append(
-                        ChatHistoryMessage(
-                            id=msg.id,
-                            role="assistant",
-                            content=text,
-                            created_at=created_at,
-                            citations=citations_by_message.get(msg.id, []),
-                            status=state["status"] if state else "finished",
-                            error=state.get("error") if state else None,
+        # One run per turn; its run_id is the assistant message id that turn state and citations are keyed by.
+        assistant_by_run: dict[str, tuple[datetime, str]] = {}
+        for msg in history:
+            run_id = msg.run_id or ""
+            if isinstance(msg, ModelRequest):
+                for part in msg.parts:
+                    if isinstance(part, UserPromptPart) and isinstance(part.content, str):
+                        messages.append(
+                            ChatHistoryMessage(
+                                id=f"{run_id}-user",
+                                role="user",
+                                content=part.content,
+                                created_at=_normalize_created_at(part.timestamp),
+                                citations=[],
+                            )
                         )
-                    )
-                elif msg.role == "user":
-                    messages.append(
-                        ChatHistoryMessage(
-                            id=msg.id,
-                            role="user",
-                            content=text,
-                            created_at=created_at,
-                            citations=[],
-                        )
-                    )
+                continue
+            text = "".join(part.content for part in msg.parts if isinstance(part, TextPart))
+            if text:
+                created_at, prior = assistant_by_run.get(run_id, (_normalize_created_at(msg.timestamp), ""))
+                assistant_by_run[run_id] = (created_at, prior + text)
+
+        for run_id, (created_at, text) in assistant_by_run.items():
+            state = states_by_message.get(run_id)
+            messages.append(
+                ChatHistoryMessage(
+                    id=run_id,
+                    role="assistant",
+                    content=str(state["content"]) if state and state.get("content") else text,
+                    created_at=created_at,
+                    citations=citations_by_message.get(run_id, []),
+                    status=state["status"] if state else "finished",
+                    error=state.get("error") if state else None,
+                )
+            )
 
         known_ids = {message.id for message in messages}
         for assistant_message_id, state in states_by_message.items():
@@ -216,20 +195,14 @@ class SessionService:
 
     async def _get_session_with_state(
         self, user_id: str, session_id: str
-    ) -> tuple[ChatSession, AgentState | None] | None:
+    ) -> tuple[ChatSession, list[ModelMessage] | None] | None:
         result = await self._session.execute(
             select(ChatSession).where(ChatSession.id == session_id, ChatSession.user_id == user_id)
         )
         chat_session = result.scalar_one_or_none()
         if chat_session is None:
             return None
-        raw_state = chat_session.agent_state
-        if not raw_state:
-            return chat_session, None
-        try:
-            return chat_session, AgentState.model_validate(raw_state)
-        except Exception:
-            return chat_session, None
+        return chat_session, load_history(chat_session.agent_state)
 
     async def _citations_by_message(self, session_id: str) -> dict[str, list[dict[str, str]]]:
         history_rows = await self._session.execute(

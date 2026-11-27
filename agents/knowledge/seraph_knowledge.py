@@ -26,10 +26,9 @@ class SeraphKnowledgeDocument:
 class SeraphKnowledgeBase:
     """Plain search adapter over RetrievalService and spaces authorization.
 
-    This class is *not* an AgentScope KnowledgeBase; in AgentScope 2.x the
-    ``agentscope.rag`` module was removed. It only exposes ``search`` so the
-    chat agent's ``search_knowledge_base`` tool can perform scoped semantic
-    retrieval when the model decides to look up documents.
+    It only exposes ``search`` so the chat agent's ``search_knowledge_base``
+    tool can perform scoped semantic retrieval when the model decides to look
+    up documents.
     """
 
     def __init__(self, retrieval_service: Any, spaces_client: Any, user_id: str) -> None:

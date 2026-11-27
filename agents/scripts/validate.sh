@@ -2,7 +2,7 @@
 
 ############################################################################
 #
-#    Agno Workspace Validator
+#    Seraph Agents Workspace Validator
 #
 #    Usage: ./scripts/validate.sh
 #

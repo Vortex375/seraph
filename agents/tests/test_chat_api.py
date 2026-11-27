@@ -273,8 +273,8 @@ async def test_list_session_messages_returns_visible_history_with_citations(monk
 
 @pytest.mark.asyncio
 async def test_session_service_uses_persisted_message_payload_id_for_citations() -> None:
-    from agentscope.message import Msg, TextBlock
-    from agentscope.state import AgentState
+    from pydantic_ai import ModelMessage, ModelMessagesTypeAdapter, ModelResponse, TextPart
+
     from chat.session_service import SessionService
     from documents.models import Base, ChatSession, ChatTurnSource
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -285,22 +285,13 @@ async def test_session_service_uses_persisted_message_payload_id_for_citations()
 
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     async with session_factory() as db:
-        agent_state = AgentState(
-            context=[
-                Msg(
-                    name="seraph-documents",
-                    role="assistant",
-                    id="assistant-1",
-                    content=[TextBlock(text="hello")],
-                ),
-            ]
-        )
+        agent_state: list[ModelMessage] = [ModelResponse(parts=[TextPart("hello")], run_id="assistant-1")]
         db.add(
             ChatSession(
                 id="session-1",
                 user_id="alice",
                 title="Inbox",
-                agent_state=agent_state.model_dump(mode="json"),
+                agent_state=ModelMessagesTypeAdapter.dump_python(agent_state, mode="json"),
             )
         )
         db.add(

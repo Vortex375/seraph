@@ -6,11 +6,8 @@ import os
 from pathlib import Path
 from typing import Any, Protocol, cast
 
-from agentscope.credential import OpenAICredential
-from agentscope.message import Msg, TextBlock
-from agentscope.model import OpenAIChatModel
 from openai import AsyncOpenAI
-from pydantic import BaseModel
+import pydantic_ai
 import uvicorn
 from fastapi import FastAPI, Response
 from fastapi.responses import FileResponse, RedirectResponse
@@ -32,6 +29,7 @@ from spaces.client import SpacesClient
 
 
 logger = logging.getLogger(__name__)
+pydantic_ai.BANNER_ENABLED = False
 DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
 
 
@@ -157,7 +155,6 @@ class RuntimeAgentFactory:
             base_url=openai_base_url,
             retrieval_service=_LazyRetrievalService(embedder),
             spaces_client=self._spaces_client,
-            search_client=None,
             file_access_service_factory=self._create_file_access_service,
         )
 
@@ -168,7 +165,8 @@ class RuntimeAgentFactory:
         await self._factory.save_state(user_id, session_id, state)
 
     def create(self, user_id: str, session_id: str, state: Any = None, **kwargs: Any):
-        return self._factory.create(user_id, session_id, state=state, **kwargs)
+        del session_id
+        return self._factory.create(user_id, state=state, **kwargs)
 
     def _create_file_access_service(self, user_id: str) -> AgentFileAccessService:
         del user_id
@@ -201,54 +199,6 @@ class RuntimeAgentFactory:
     async def aclose(self) -> None:
         await self._spaces_client.aclose()
         await self._nats.aclose()
-
-
-class _SessionTitleSummary(BaseModel):
-    title: str
-
-
-class RuntimeSessionTitleSummarizer:
-    def __init__(self, settings: Settings) -> None:
-        self._enabled = bool(settings.openai_api_key)
-        self._model: OpenAIChatModel | None = None
-        if not self._enabled:
-            return
-        credential = OpenAICredential(
-            api_key=settings.openai_api_key or "",
-            base_url=_normalize_openai_base_url(settings.openai_base_url) or DEFAULT_OPENAI_BASE_URL,
-        )
-        self._model = OpenAIChatModel(
-            credential=credential,
-            model=settings.chat_model_name,
-            stream=False,
-        )
-
-    async def summarize(self, message: str) -> str:
-        if not self._enabled or self._model is None:
-            raise RuntimeError("session title summarizer is disabled")
-        response = await self._model(
-            [
-                Msg(
-                    name="system",
-                    role="system",
-                    content=[
-                        TextBlock(
-                            text=(
-                                "Generate a concise conversation title for a chat sidebar. "
-                                "Return 3 to 7 words, plain text, no quotes, no punctuation unless required."
-                            )
-                        )
-                    ],
-                ),
-                Msg(name="user", role="user", content=[TextBlock(text=message)]),
-            ],
-            structured_model=_SessionTitleSummary,
-        )
-        metadata = cast(Any, response).metadata or {}
-        title = metadata.get("title")
-        if not isinstance(title, str):
-            raise ValueError("title summary missing")
-        return title.strip()
 
 
 class _ManagedIngestionService:
@@ -331,7 +281,6 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Seraph Agents", lifespan=lifespan)
     setup_telemetry(app)
     app.state.agent_factory = RuntimeAgentFactory(settings)
-    app.state.session_title_summarizer = RuntimeSessionTitleSummarizer(settings)
     app.state.spaces_client = app.state.agent_factory._spaces_client
 
     @app.get("/healthz")

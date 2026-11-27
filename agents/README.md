@@ -1,11 +1,11 @@
 # Seraph Agents
 
-Seraph Agents is a FastAPI service built around an AgentScope runtime. It indexes canonical Seraph documents into Postgres/pgvector, applies spaces-aware retrieval before documents reach the model, and serves a React/Vite chat UI directly from the API process.
+Seraph Agents is a FastAPI service built around a Pydantic AI agent. It indexes canonical Seraph documents into Postgres/pgvector, applies spaces-aware retrieval before documents reach the model, and serves a React/Vite chat UI directly from the API process.
 
 ## Runtime Overview
 
 - `app/main.py` exposes the FastAPI entrypoint via `create_app()` and the module-level `app`
-- AgentScope powers the conversational runtime, memory, and tool orchestration used by the chat API
+- Pydantic AI powers the conversational runtime and tool calls; each session's message history is stored as JSON in `chat_sessions.agent_state`
 - ingestion consumers persist canonical document records and chunks for retrieval
 - retrieval filters results against Seraph spaces before grounding model responses
 - the FastAPI app also mounts the production React/Vite UI used for multi-session chat
@@ -96,7 +96,7 @@ If the canonical `documents` and `document_chunks` tables are empty because hist
 already acknowledged before this storage path existed, run the one-shot repair command inside the agents container:
 
 ```sh
-docker exec -w /app agentscope-refactor-agents-api-1 uv run python -m app.repair backfill-documents
+docker exec -w /app seraph-agents-api-1 uv run python -m app.repair backfill-documents
 ```
 
 The command replays the current `SERAPH_FILE_CHANGED` JetStream history into canonical document storage and prints a short
@@ -106,7 +106,7 @@ The command replays the current `SERAPH_FILE_CHANGED` JetStream history into can
 
 ```text
 app/main.py                  FastAPI entrypoint and UI mounting/dev redirect
-chat/agent_factory.py        AgentScope runtime assembly
+chat/agent_factory.py        Pydantic AI agent assembly (model, tools, deps)
 documents/repository.py      Canonical document indexing persistence
 retrieval/service.py         Spaces-aware retrieval orchestration
 ui/                          React/Vite frontend served by FastAPI

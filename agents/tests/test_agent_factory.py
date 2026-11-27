@@ -1,258 +1,97 @@
 import importlib
-import json
 import sys
 from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 
-def test_agent_factory_uses_default_openai_base_url_when_blank(monkeypatch: pytest.MonkeyPatch) -> None:
+def _factory(**kwargs: Any) -> Any:
     agent_factory_module = importlib.import_module("chat.agent_factory")
-    recorded: dict[str, Any] = {}
-
-    class StubCredential:
-        def __init__(self, **kwargs: object) -> None:
-            recorded.update(kwargs)
-
-    class StubOpenAIChatModel:
-        def __init__(self, **kwargs: object) -> None:
-            recorded["model_kwargs"] = kwargs
-
-    class StubToolkit:
-        def __init__(self, tools: list[object] | None = None) -> None:
-            self.tools = tools or []
-
-    class StubAgent:
-        def __init__(self, **kwargs: object) -> None:
-            recorded["agent_kwargs"] = kwargs
-
-    monkeypatch.setattr(agent_factory_module, "OpenAICredential", StubCredential)
-    monkeypatch.setattr(agent_factory_module, "OpenAIChatModel", StubOpenAIChatModel)
-    monkeypatch.setattr(agent_factory_module, "Toolkit", StubToolkit)
-    monkeypatch.setattr(agent_factory_module, "Agent", StubAgent)
-    monkeypatch.setattr(agent_factory_module, "SeraphKnowledgeBase", lambda **kwargs: object())
-
-    factory = agent_factory_module.AgentFactory(
-        chat_model_name="gpt-5.4",
-        api_key="test-key",
-        base_url=None,
-        retrieval_service=object(),
-        spaces_client=object(),
-    )
-
-    factory.create(user_id="alice", session_id="session-1")
-
-    assert recorded["api_key"] == "test-key"
-    assert recorded["base_url"] == "https://api.openai.com/v1"
-    assert recorded["model_kwargs"]["model"] == "gpt-5.4"
+    defaults: dict[str, Any] = {
+        "chat_model_name": "gpt-test",
+        "api_key": "test-key",
+        "base_url": None,
+        "retrieval_service": object(),
+        "spaces_client": object(),
+    }
+    return agent_factory_module.AgentFactory(**(defaults | kwargs))
 
 
-def test_agent_factory_uses_default_openai_base_url_when_whitespace_only(monkeypatch: pytest.MonkeyPatch) -> None:
-    agent_factory_module = importlib.import_module("chat.agent_factory")
-    recorded: dict[str, Any] = {}
+async def _agent_info(chat_agent: Any) -> AgentInfo:
+    """Run the agent once against a FunctionModel and return what the model was offered."""
+    captured: list[AgentInfo] = []
 
-    class StubCredential:
-        def __init__(self, **kwargs: object) -> None:
-            recorded.update(kwargs)
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> Any:
+        from pydantic_ai.messages import ModelResponse, TextPart
 
-    class StubOpenAIChatModel:
-        def __init__(self, **kwargs: object) -> None:
-            recorded["model_kwargs"] = kwargs
+        captured.append(info)
+        return ModelResponse(parts=[TextPart("ok")])
 
-    class StubToolkit:
-        def __init__(self, tools: list[object] | None = None) -> None:
-            self.tools = tools or []
-
-    class StubAgent:
-        def __init__(self, **kwargs: object) -> None:
-            recorded["agent_kwargs"] = kwargs
-
-    monkeypatch.setattr(agent_factory_module, "OpenAICredential", StubCredential)
-    monkeypatch.setattr(agent_factory_module, "OpenAIChatModel", StubOpenAIChatModel)
-    monkeypatch.setattr(agent_factory_module, "Toolkit", StubToolkit)
-    monkeypatch.setattr(agent_factory_module, "Agent", StubAgent)
-    monkeypatch.setattr(agent_factory_module, "SeraphKnowledgeBase", lambda **kwargs: object())
-
-    factory = agent_factory_module.AgentFactory(
-        chat_model_name="gpt-5.4",
-        api_key="test-key",
-        base_url="   ",
-        retrieval_service=object(),
-        spaces_client=object(),
-    )
-
-    factory.create(user_id="alice", session_id="session-1")
-
-    assert recorded["api_key"] == "test-key"
-    assert recorded["base_url"] == "https://api.openai.com/v1"
+    with chat_agent.agent.override(model=FunctionModel(respond)):
+        await chat_agent.agent.run("hi", deps=chat_agent.deps)
+    return captured[0]
 
 
-def test_agent_factory_builds_knowledge_tool_and_file_tools(monkeypatch: pytest.MonkeyPatch) -> None:
-    importlib.import_module("chat.tools")
-    agent_factory_module = importlib.import_module("chat.agent_factory")
-    tools_module = importlib.import_module("chat.tools")
-    recorded: dict[str, Any] = {}
+@pytest.mark.parametrize("base_url", [None, "   "])
+def test_agent_factory_uses_default_openai_base_url_when_blank(base_url: str | None) -> None:
+    chat_agent = _factory(chat_model_name="gpt-5.4", base_url=base_url).create(user_id="alice")
 
-    class StubOpenAIChatModel:
-        def __init__(self, **kwargs: object) -> None:
-            recorded["model_kwargs"] = kwargs
-
-    class StubToolkit:
-        def __init__(self, tools: list[object] | None = None) -> None:
-            self.tools = tools or []
-
-    class StubAgent:
-        def __init__(self, **kwargs: object) -> None:
-            recorded["agent_kwargs"] = kwargs
-
-    monkeypatch.setattr(agent_factory_module, "OpenAIChatModel", StubOpenAIChatModel)
-    monkeypatch.setattr(agent_factory_module, "Toolkit", StubToolkit)
-    monkeypatch.setattr(agent_factory_module, "Agent", StubAgent)
-
-    def file_access_factory(user_id: str):
-        class DummyFileAccess:
-            pass
-
-        return DummyFileAccess()
-
-    factory = agent_factory_module.AgentFactory(
-        chat_model_name="gpt-test",
-        api_key="test-key",
-        base_url=None,
-        retrieval_service=object(),
-        spaces_client=object(),
-        file_access_service_factory=file_access_factory,
-    )
-
-    factory.create(user_id="alice", session_id="session-1")
-
-    toolkit = recorded["agent_kwargs"]["toolkit"]
-    tool_types = {type(tool) for tool in toolkit.tools}
-    assert len(toolkit.tools) == 6
-    assert tools_module.SearchKnowledgeBaseTool in tool_types
-    assert tools_module.GetCurrentDateTimeTool in tool_types
-    assert tools_module.SearchFilesTool in tool_types
-    assert tools_module.ListDirectoryTool in tool_types
-    assert tools_module.StatFileTool in tool_types
-    assert tools_module.ReadFileExcerptTool in tool_types
-
-
-def test_agent_factory_injects_current_datetime_for_new_session(monkeypatch: pytest.MonkeyPatch) -> None:
-    agent_factory_module = importlib.import_module("chat.agent_factory")
-    tools_module = importlib.import_module("chat.tools")
-    recorded: dict[str, Any] = {}
-
-    monkeypatch.setattr(
-        tools_module,
-        "format_current_datetime",
-        lambda: "2026-06-14T12:34:56+00:00",
-    )
-
-    class StubToolkit:
-        def __init__(self, tools: list[object] | None = None) -> None:
-            self.tools = tools or []
-
-    class StubAgent:
-        def __init__(self, **kwargs: object) -> None:
-            recorded["agent_kwargs"] = kwargs
-
-    monkeypatch.setattr(agent_factory_module, "OpenAIChatModel", lambda **kwargs: object())
-    monkeypatch.setattr(agent_factory_module, "Toolkit", StubToolkit)
-    monkeypatch.setattr(agent_factory_module, "Agent", StubAgent)
-    monkeypatch.setattr(agent_factory_module, "SeraphKnowledgeBase", lambda **kwargs: object())
-
-    factory = agent_factory_module.AgentFactory(
-        chat_model_name="gpt-test",
-        api_key="test-key",
-        base_url=None,
-        retrieval_service=object(),
-        spaces_client=object(),
-    )
-
-    factory.create(user_id="alice", session_id="session-1", is_new_session=True)
-
-    system_prompt = recorded["agent_kwargs"]["system_prompt"]
-    assert "Current date/time: 2026-06-14T12:34:56+00:00" in system_prompt
-    assert "prefer information from more recent documents" in system_prompt
-
-
-def test_agent_factory_reuses_provided_system_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
-    agent_factory_module = importlib.import_module("chat.agent_factory")
-    recorded: dict[str, Any] = {}
-
-    class StubToolkit:
-        def __init__(self, tools: list[object] | None = None) -> None:
-            self.tools = tools or []
-
-    class StubAgent:
-        def __init__(self, **kwargs: object) -> None:
-            recorded["agent_kwargs"] = kwargs
-
-    monkeypatch.setattr(agent_factory_module, "OpenAIChatModel", lambda **kwargs: object())
-    monkeypatch.setattr(agent_factory_module, "Toolkit", StubToolkit)
-    monkeypatch.setattr(agent_factory_module, "Agent", StubAgent)
-    monkeypatch.setattr(agent_factory_module, "SeraphKnowledgeBase", lambda **kwargs: object())
-
-    factory = agent_factory_module.AgentFactory(
-        chat_model_name="gpt-test",
-        api_key="test-key",
-        base_url=None,
-        retrieval_service=object(),
-        spaces_client=object(),
-    )
-
-    provided = "Custom system prompt"
-    factory.create(user_id="alice", session_id="session-1", system_prompt=provided)
-
-    assert recorded["agent_kwargs"]["system_prompt"] == provided
-
-
-def test_agent_factory_omits_datetime_when_not_new_session(monkeypatch: pytest.MonkeyPatch) -> None:
-    agent_factory_module = importlib.import_module("chat.agent_factory")
-    prompts_module = importlib.import_module("chat.prompts")
-    recorded: dict[str, Any] = {}
-
-    class StubToolkit:
-        def __init__(self, tools: list[object] | None = None) -> None:
-            self.tools = tools or []
-
-    class StubAgent:
-        def __init__(self, **kwargs: object) -> None:
-            recorded["agent_kwargs"] = kwargs
-
-    monkeypatch.setattr(agent_factory_module, "OpenAIChatModel", lambda **kwargs: object())
-    monkeypatch.setattr(agent_factory_module, "Toolkit", StubToolkit)
-    monkeypatch.setattr(agent_factory_module, "Agent", StubAgent)
-    monkeypatch.setattr(agent_factory_module, "SeraphKnowledgeBase", lambda **kwargs: object())
-
-    factory = agent_factory_module.AgentFactory(
-        chat_model_name="gpt-test",
-        api_key="test-key",
-        base_url=None,
-        retrieval_service=object(),
-        spaces_client=object(),
-    )
-
-    factory.create(user_id="alice", session_id="session-1", is_new_session=False)
-
-    system_prompt = recorded["agent_kwargs"]["system_prompt"]
-    assert "Current date/time:" not in system_prompt
-    assert prompts_module.render_system_prompt() == system_prompt
+    model = chat_agent.agent.model
+    assert model.model_name == "gpt-5.4"
+    assert str(model.client.base_url) == "https://api.openai.com/v1/"
+    assert model.client.api_key == "test-key"
 
 
 @pytest.mark.asyncio
-async def test_get_current_datetime_tool_returns_iso_datetime(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_agent_factory_registers_file_tools_only_with_file_access() -> None:
+    without_files = await _agent_info(_factory().create(user_id="alice"))
+    with_files = await _agent_info(_factory(file_access_service_factory=lambda user_id: object()).create("alice"))
+
+    assert {tool.name for tool in without_files.function_tools} == {"search_knowledge_base", "get_current_datetime"}
+    assert {tool.name for tool in with_files.function_tools} == {
+        "search_knowledge_base",
+        "get_current_datetime",
+        "search_files",
+        "list_directory",
+        "stat_file",
+        "read_file_excerpt",
+    }
+
+
+@pytest.mark.asyncio
+async def test_agent_factory_injects_current_datetime_for_new_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    agent_factory_module = importlib.import_module("chat.agent_factory")
+    monkeypatch.setattr(agent_factory_module, "format_current_datetime", lambda: "2026-06-14T12:34:56+00:00")
+
+    info = await _agent_info(_factory().create(user_id="alice", is_new_session=True))
+
+    assert "Current date/time: 2026-06-14T12:34:56+00:00" in (info.instructions or "")
+    assert "prefer information from more recent documents" in (info.instructions or "")
+
+
+@pytest.mark.asyncio
+async def test_agent_factory_reuses_provided_system_prompt() -> None:
+    info = await _agent_info(_factory().create(user_id="alice", system_prompt="Custom system prompt"))
+
+    assert info.instructions == "Custom system prompt"
+
+
+@pytest.mark.asyncio
+async def test_agent_factory_omits_datetime_when_not_new_session() -> None:
+    prompts_module = importlib.import_module("chat.prompts")
+
+    info = await _agent_info(_factory().create(user_id="alice", is_new_session=False))
+
+    assert info.instructions == prompts_module.render_system_prompt().strip()
+
+
+def test_get_current_datetime_tool_returns_iso_datetime(monkeypatch: pytest.MonkeyPatch) -> None:
     tools_module = importlib.import_module("chat.tools")
     monkeypatch.setattr(tools_module, "format_current_datetime", lambda: "2026-06-14T12:00:00+00:00")
-    tool = tools_module.GetCurrentDateTimeTool()
 
-    decision = await tool.check_permissions({}, object())  # type: ignore[arg-type]
-    assert decision.behavior.value == "allow"
-
-    chunk = await tool()
-    assert chunk.metadata == {"citations": []}
-    payload = json.loads(chunk.content[0].text)
-    assert payload == {"current_datetime": "2026-06-14T12:00:00+00:00"}
+    assert tools_module.get_current_datetime() == {"current_datetime": "2026-06-14T12:00:00+00:00"}

@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import json
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from agentscope.message import TextBlock
-from agentscope.permission import PermissionBehavior, PermissionContext, PermissionDecision
-from agentscope.tool import ToolBase
-from agentscope.tool._response import ToolChunk
+from pydantic_ai import RunContext
 
 from chat.file_access import AgentFileAccessService
 from knowledge.seraph_knowledge import SeraphKnowledgeBase, SeraphKnowledgeDocument
@@ -16,6 +14,21 @@ from knowledge.seraph_knowledge import SeraphKnowledgeBase, SeraphKnowledgeDocum
 def format_current_datetime() -> str:
     """Return the current system date and time as an ISO-8601 string with timezone offset."""
     return datetime.now(timezone.utc).astimezone().isoformat()
+
+
+@dataclass
+class ChatDeps:
+    """Per-turn dependencies shared by the chat tools; tools append the files they surface to ``citations``."""
+
+    user_id: str
+    knowledge: SeraphKnowledgeBase
+    file_access: AgentFileAccessService | None = None
+    citations: list[dict[str, str]] = field(default_factory=list)
+
+    def files(self) -> AgentFileAccessService:
+        if self.file_access is None:
+            raise RuntimeError("file tools are not configured")
+        return self.file_access
 
 
 def _citation_from_hit(hit: dict[str, Any]) -> dict[str, str]:
@@ -44,244 +57,85 @@ def _citations_from_hits(hits: list[dict[str, Any]]) -> list[dict[str, str]]:
     return citations
 
 
-class SearchFilesTool(ToolBase):
-    name = "search_files"
-    description = "Search accessible files by name or content fragment. Returns file paths the assistant can read."
-    input_schema = {
-        "type": "object",
-        "properties": {
-            "query": {
-                "type": "string",
-                "description": "Search query for matching files.",
-            },
-        },
-        "required": ["query"],
-    }
-    is_concurrency_safe = True
-    is_read_only = True
+async def search_files(ctx: RunContext[ChatDeps], query: str) -> Any:
+    """Search accessible files by name or content fragment. Returns file paths the assistant can read.
 
-    def __init__(self, file_access: AgentFileAccessService, user_id: str) -> None:
-        self._file_access = file_access
-        self._user_id = user_id
-        self._citations: list[dict[str, str]] = []
-
-    async def check_permissions(self, tool_input: dict[str, Any], context: PermissionContext) -> PermissionDecision:
-        del tool_input, context
-        return PermissionDecision(
-            behavior=PermissionBehavior.ALLOW,
-            message="File search is read-only.",
-        )
-
-    async def __call__(self, query: str) -> ToolChunk:
-        hits = await self._file_access.search_files(user_id=self._user_id, query=query)
-        self._citations = _citations_from_hits(hits)
-        return ToolChunk(
-            content=[TextBlock(text=json.dumps(hits, ensure_ascii=False))],
-            metadata={"citations": self._citations},
-        )
+    Args:
+        query: Search query for matching files.
+    """
+    hits = await ctx.deps.files().search_files(user_id=ctx.deps.user_id, query=query)
+    ctx.deps.citations.extend(_citations_from_hits(hits))
+    return hits
 
 
-class ListDirectoryTool(ToolBase):
-    name = "list_directory"
-    description = "List entries in an accessible directory."
-    input_schema = {
-        "type": "object",
-        "properties": {
-            "provider_id": {
-                "type": "string",
-                "description": "Space/provider identifier.",
-            },
-            "path": {
-                "type": "string",
-                "description": "Directory path to list.",
-            },
-        },
-        "required": ["provider_id", "path"],
-    }
-    is_concurrency_safe = True
-    is_read_only = True
+async def list_directory(ctx: RunContext[ChatDeps], provider_id: str, path: str) -> Any:
+    """List entries in an accessible directory.
 
-    def __init__(self, file_access: AgentFileAccessService, user_id: str) -> None:
-        self._file_access = file_access
-        self._user_id = user_id
-        self._citations: list[dict[str, str]] = []
-
-    async def check_permissions(self, tool_input: dict[str, Any], context: PermissionContext) -> PermissionDecision:
-        del tool_input, context
-        return PermissionDecision(
-            behavior=PermissionBehavior.ALLOW,
-            message="Directory listing is read-only.",
-        )
-
-    async def __call__(self, provider_id: str, path: str) -> ToolChunk:
-        entries = await self._file_access.list_directory(user_id=self._user_id, provider_id=provider_id, path=path)
-        self._citations = []
-        return ToolChunk(
-            content=[TextBlock(text=json.dumps(entries, ensure_ascii=False))],
-            metadata={"citations": []},
-        )
+    Args:
+        provider_id: Space/provider identifier.
+        path: Directory path to list.
+    """
+    return await ctx.deps.files().list_directory(user_id=ctx.deps.user_id, provider_id=provider_id, path=path)
 
 
-class StatFileTool(ToolBase):
-    name = "stat_file"
-    description = "Inspect accessible file metadata (size, modification time, type)."
-    input_schema = {
-        "type": "object",
-        "properties": {
-            "provider_id": {
-                "type": "string",
-                "description": "Space/provider identifier.",
-            },
-            "path": {
-                "type": "string",
-                "description": "File or directory path to inspect.",
-            },
-        },
-        "required": ["provider_id", "path"],
-    }
-    is_concurrency_safe = True
-    is_read_only = True
+async def stat_file(ctx: RunContext[ChatDeps], provider_id: str, path: str) -> Any:
+    """Inspect accessible file metadata (size, modification time, type).
 
-    def __init__(self, file_access: AgentFileAccessService, user_id: str) -> None:
-        self._file_access = file_access
-        self._user_id = user_id
-        self._citations: list[dict[str, str]] = []
-
-    async def check_permissions(self, tool_input: dict[str, Any], context: PermissionContext) -> PermissionDecision:
-        del tool_input, context
-        return PermissionDecision(
-            behavior=PermissionBehavior.ALLOW,
-            message="File metadata lookup is read-only.",
-        )
-
-    async def __call__(self, provider_id: str, path: str) -> ToolChunk:
-        info = await self._file_access.stat_file(user_id=self._user_id, provider_id=provider_id, path=path)
-        self._citations = _citations_from_hits([info])
-        return ToolChunk(
-            content=[TextBlock(text=json.dumps(info, ensure_ascii=False))],
-            metadata={"citations": self._citations},
-        )
+    Args:
+        provider_id: Space/provider identifier.
+        path: File or directory path to inspect.
+    """
+    info = await ctx.deps.files().stat_file(user_id=ctx.deps.user_id, provider_id=provider_id, path=path)
+    ctx.deps.citations.extend(_citations_from_hits([info]))
+    return info
 
 
-class ReadFileExcerptTool(ToolBase):
-    name = "read_file_excerpt"
-    description = "Read a bounded text excerpt from an accessible file."
-    input_schema = {
-        "type": "object",
-        "properties": {
-            "provider_id": {
-                "type": "string",
-                "description": "Space/provider identifier.",
-            },
-            "path": {
-                "type": "string",
-                "description": "File path to read.",
-            },
-            "start_line": {
-                "type": "integer",
-                "description": "First line to include (1-based).",
-                "default": 1,
-            },
-            "max_lines": {
-                "type": "integer",
-                "description": "Maximum number of lines to read.",
-                "default": 80,
-            },
-            "max_chars": {
-                "type": "integer",
-                "description": "Maximum characters to return.",
-                "default": 12000,
-            },
-        },
-        "required": ["provider_id", "path"],
-    }
-    is_concurrency_safe = True
-    is_read_only = True
+async def read_file_excerpt(
+    ctx: RunContext[ChatDeps],
+    provider_id: str,
+    path: str,
+    start_line: int = 1,
+    max_lines: int = 80,
+    max_chars: int = 12000,
+) -> Any:
+    """Read a bounded text excerpt from an accessible file.
 
-    def __init__(self, file_access: AgentFileAccessService, user_id: str) -> None:
-        self._file_access = file_access
-        self._user_id = user_id
-        self._citations: list[dict[str, str]] = []
-
-    async def check_permissions(self, tool_input: dict[str, Any], context: PermissionContext) -> PermissionDecision:
-        del tool_input, context
-        return PermissionDecision(
-            behavior=PermissionBehavior.ALLOW,
-            message="Reading file excerpts is read-only.",
-        )
-
-    async def __call__(
-        self,
-        provider_id: str,
-        path: str,
-        start_line: int = 1,
-        max_lines: int = 80,
-        max_chars: int = 12000,
-    ) -> ToolChunk:
-        excerpt = await self._file_access.read_file_excerpt(
-            user_id=self._user_id,
-            provider_id=provider_id,
-            path=path,
-            start_line=start_line,
-            max_lines=max_lines,
-            max_chars=max_chars,
-        )
-        self._citations = _citations_from_hits([excerpt.get("reference", {})])
-        return ToolChunk(
-            content=[TextBlock(text=json.dumps(excerpt, ensure_ascii=False))],
-            metadata={"citations": self._citations},
-        )
-
-
-class SearchKnowledgeBaseTool(ToolBase):
-    name = "search_knowledge_base"
-    description = (
-        "Search the user's indexed documents for semantically relevant chunks. "
-        "Use this when the user's question depends on document content. "
-        "Do not use this for greetings or off-document small talk."
+    Args:
+        provider_id: Space/provider identifier.
+        path: File path to read.
+        start_line: First line to include (1-based).
+        max_lines: Maximum number of lines to read.
+        max_chars: Maximum characters to return.
+    """
+    excerpt = await ctx.deps.files().read_file_excerpt(
+        user_id=ctx.deps.user_id,
+        provider_id=provider_id,
+        path=path,
+        start_line=start_line,
+        max_lines=max_lines,
+        max_chars=max_chars,
     )
-    input_schema = {
-        "type": "object",
-        "properties": {
-            "query": {
-                "type": "string",
-                "description": "Search query in natural language.",
-            },
-            "limit": {
-                "type": "integer",
-                "description": "Maximum number of chunks to retrieve.",
-                "default": 5,
-            },
-            "min_score": {
-                "type": "number",
-                "description": "Minimum relevance score (0..1). Lower values return more results.",
-                "default": 0.0,
-            },
-        },
-        "required": ["query"],
-    }
-    is_concurrency_safe = True
-    is_read_only = True
+    ctx.deps.citations.extend(_citations_from_hits([excerpt.get("reference", {})]))
+    return excerpt
 
-    def __init__(self, knowledge: SeraphKnowledgeBase) -> None:
-        self._knowledge = knowledge
-        self._citations: list[dict[str, str]] = []
 
-    async def check_permissions(self, tool_input: dict[str, Any], context: PermissionContext) -> PermissionDecision:
-        del tool_input, context
-        return PermissionDecision(
-            behavior=PermissionBehavior.ALLOW,
-            message="Knowledge base search is read-only.",
-        )
+async def search_knowledge_base(
+    ctx: RunContext[ChatDeps], query: str, limit: int = 5, min_score: float = 0.0
+) -> list[dict[str, Any]]:
+    """Search the user's indexed documents for semantically relevant chunks.
 
-    async def __call__(self, query: str, limit: int = 5, min_score: float = 0.0) -> ToolChunk:
-        documents = await self._knowledge.search(query=query, limit=limit, min_score=min_score)
-        hits = [_document_to_hit(doc) for doc in documents]
-        self._citations = _citations_from_hits(hits)
-        return ToolChunk(
-            content=[TextBlock(text=json.dumps(hits, ensure_ascii=False))],
-            metadata={"citations": self._citations},
-        )
+    Use this when the user's question depends on document content.
+    Do not use this for greetings or off-document small talk.
+
+    Args:
+        query: Search query in natural language.
+        limit: Maximum number of chunks to retrieve.
+        min_score: Minimum relevance score (0..1). Lower values return more results.
+    """
+    documents = await ctx.deps.knowledge.search(query=query, limit=limit, min_score=min_score)
+    hits = [_document_to_hit(doc) for doc in documents]
+    ctx.deps.citations.extend(_citations_from_hits(hits))
+    return hits
 
 
 def _document_to_hit(document: SeraphKnowledgeDocument) -> dict[str, Any]:
@@ -296,26 +150,10 @@ def _document_to_hit(document: SeraphKnowledgeDocument) -> dict[str, Any]:
     }
 
 
-class GetCurrentDateTimeTool(ToolBase):
-    name = "get_current_datetime"
-    description = "Return the current date and time. Use this when the user's question depends on the current moment."
-    input_schema = {
-        "type": "object",
-        "properties": {},
-        "required": [],
-    }
-    is_concurrency_safe = True
-    is_read_only = True
+def get_current_datetime() -> dict[str, str]:
+    """Return the current date and time. Use this when the user's question depends on the current moment."""
+    return {"current_datetime": format_current_datetime()}
 
-    async def check_permissions(self, tool_input: dict[str, Any], context: PermissionContext) -> PermissionDecision:
-        del tool_input, context
-        return PermissionDecision(
-            behavior=PermissionBehavior.ALLOW,
-            message="Current date/time lookup is read-only.",
-        )
 
-    async def __call__(self) -> ToolChunk:
-        return ToolChunk(
-            content=[TextBlock(text=json.dumps({"current_datetime": format_current_datetime()}, ensure_ascii=False))],
-            metadata={"citations": []},
-        )
+BASE_TOOLS: list[Callable[..., Any]] = [search_knowledge_base, get_current_datetime]
+FILE_TOOLS: list[Callable[..., Any]] = [search_files, list_directory, stat_file, read_file_excerpt]

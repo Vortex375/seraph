@@ -2,10 +2,15 @@ import asyncio
 import importlib
 import sys
 from pathlib import Path
-from typing import Any
+import json
+from collections.abc import AsyncIterator
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic_ai import Agent, ModelMessage, ToolReturnPart, UserPromptPart
+from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
@@ -16,139 +21,79 @@ def _app() -> Any:
     return create_app()
 
 
-class _StubReplyStart:
-    def __init__(self, reply_id: str) -> None:
-        self.reply_id = reply_id
-
-
-class _StubTextDelta:
-    def __init__(self, delta: str) -> None:
-        self.delta = delta
-
-
-class _StubToolResult:
-    def __init__(self, state: Any) -> None:
-        self.state = state
-
-
-class _StubReplyEnd:
-    pass
-
-
 async def _async_noop(**kwargs: Any) -> None:
     return None
 
 
-@pytest.mark.asyncio
-async def test_stream_agent_reply_formats_sse_payload(monkeypatch: pytest.MonkeyPatch) -> None:
-    streaming = importlib.import_module("chat.streaming")
-    monkeypatch.setattr(streaming, "ReplyStartEvent", _StubReplyStart)
-    monkeypatch.setattr(streaming, "TextBlockDeltaEvent", _StubTextDelta)
-    monkeypatch.setattr(streaming, "ReplyEndEvent", _StubReplyEnd)
-
-    class StubAgent:
-        async def reply_stream(self, _msg: object) -> Any:
-            yield _StubReplyStart(reply_id="assistant-1")
-            yield _StubTextDelta(delta="hello")
-            yield _StubReplyEnd()
-
-    chunks: list[str] = []
-    async for chunk in streaming.stream_agent_reply(agent=StubAgent(), user_input="Hi"):
-        chunks.append(chunk)
-
-    assert chunks == [
-        'data: {"id": "assistant-1", "role": "assistant", "type": "delta", "content": "hello"}\n\n',
-        'data: {"id": "assistant-1", "role": "assistant", "type": "done"}\n\n',
-    ]
+def _stub_agent(citations: list[dict[str, str]] | None = None) -> Any:
+    return SimpleNamespace(deps=SimpleNamespace(citations=citations if citations is not None else []))
 
 
-@pytest.mark.asyncio
-async def test_stream_agent_reply_emits_each_chunk_during_generation(monkeypatch: pytest.MonkeyPatch) -> None:
-    streaming = importlib.import_module("chat.streaming")
-    monkeypatch.setattr(streaming, "ReplyStartEvent", _StubReplyStart)
-    monkeypatch.setattr(streaming, "TextBlockDeltaEvent", _StubTextDelta)
-    monkeypatch.setattr(streaming, "ReplyEndEvent", _StubReplyEnd)
+def _chat_agent(stream_function: Any) -> Any:
+    from chat.agent_factory import ChatAgent
+    from chat.tools import BASE_TOOLS, ChatDeps
 
-    class StubAgent:
-        async def reply_stream(self, _msg: object) -> Any:
-            yield _StubReplyStart(reply_id="assistant-1")
-            yield _StubTextDelta(delta="p")
-            yield _StubTextDelta(delta="po")
-            yield _StubTextDelta(delta="pon")
-            yield _StubReplyEnd()
+    class StubKnowledge:
+        async def search(self, query: str, limit: int, min_score: float) -> list[Any]:
+            from knowledge.seraph_knowledge import SeraphChunkProvenance, SeraphKnowledgeDocument
 
-    chunks: list[str] = []
-    async for chunk in streaming.stream_agent_reply(agent=StubAgent(), user_input="say pong"):
-        chunks.append(chunk)
+            return [
+                SeraphKnowledgeDocument(
+                    id="chunk-1",
+                    score=0.9,
+                    provenance=SeraphChunkProvenance(provider_id="space-a", path="/team/spec.md"),
+                    content=query,
+                )
+            ]
 
-    assert chunks == [
-        'data: {"id": "assistant-1", "role": "assistant", "type": "delta", "content": "p"}\n\n',
-        'data: {"id": "assistant-1", "role": "assistant", "type": "delta", "content": "po"}\n\n',
-        'data: {"id": "assistant-1", "role": "assistant", "type": "delta", "content": "pon"}\n\n',
-        'data: {"id": "assistant-1", "role": "assistant", "type": "done"}\n\n',
-    ]
+    agent = Agent(FunctionModel(stream_function=stream_function), deps_type=ChatDeps, tools=BASE_TOOLS)
+    return ChatAgent(agent=agent, deps=ChatDeps(user_id="alice", knowledge=cast(Any, StubKnowledge())))
 
 
 @pytest.mark.asyncio
-async def test_stream_agent_reply_collects_tool_citations_from_toolkit(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_stream_agent_reply_streams_deltas_and_collects_tool_citations() -> None:
     streaming = importlib.import_module("chat.streaming")
-    monkeypatch.setattr(streaming, "ReplyStartEvent", _StubReplyStart)
-    monkeypatch.setattr(streaming, "TextBlockDeltaEvent", _StubTextDelta)
-    monkeypatch.setattr(streaming, "ToolResultEndEvent", _StubToolResult)
-    monkeypatch.setattr(streaming, "ReplyEndEvent", _StubReplyEnd)
 
-    class _ToolResultState:
-        SUCCESS = 0
+    async def stream_fn(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[Any]:
+        del info
+        if not any(isinstance(part, ToolReturnPart) for message in messages for part in message.parts):
+            yield {0: DeltaToolCall(name="search_knowledge_base", json_args='{"query": "spec"}')}
+            return
+        yield "hel"
+        yield "lo"
 
-    monkeypatch.setattr(streaming, "ToolResultState", _ToolResultState)
+    chat_agent = _chat_agent(stream_fn)
+    chunks = [chunk async for chunk in streaming.stream_agent_reply(agent=chat_agent, user_input="Hi")]
 
-    class StubTool:
-        def __init__(self, citations: list[dict[str, str]]) -> None:
-            self._citations = citations
-
-    class StubToolGroup:
-        def __init__(self, tools: list[StubTool]) -> None:
-            self.tools = tools
-
-    class StubToolkit:
-        def __init__(self, groups: list[StubToolGroup]) -> None:
-            self.tool_groups = groups
-
-    class StubAgent:
-        def __init__(self) -> None:
-            self.toolkit = StubToolkit(
-                [
-                    StubToolGroup(
-                        [
-                            StubTool(
-                                [
-                                    {
-                                        "provider_id": "space-a",
-                                        "path": "/team/spec.md",
-                                        "label": "/team/spec.md",
-                                    }
-                                ]
-                            )
-                        ]
-                    ),
-                ]
-            )
-
-        async def reply_stream(self, _msg: object) -> Any:
-            yield _StubReplyStart(reply_id="assistant-1")
-            yield _StubTextDelta(delta="hi")
-            yield _StubToolResult(state=_ToolResultState.SUCCESS)
-            yield _StubReplyEnd()
-
-    agent = StubAgent()
-    chunks: list[str] = []
-    async for chunk in streaming.stream_agent_reply(agent=agent, user_input="Hi"):
-        chunks.append(chunk)
-
-    assert len(chunks) == 2
-    assert getattr(agent, "_seraph_tool_citations", []) == [
+    payloads = [json.loads(chunk.removeprefix("data: ")) for chunk in chunks]
+    reply_id = payloads[0]["id"]
+    assert [(p["type"], p.get("content")) for p in payloads] == [("delta", "hel"), ("delta", "lo"), ("done", None)]
+    assert all(p["id"] == reply_id for p in payloads)
+    assert chat_agent.deps.citations == [
         {"provider_id": "space-a", "path": "/team/spec.md", "label": "/team/spec.md"},
     ]
+    assert {message.run_id for message in chat_agent.state} == {reply_id}
+
+
+@pytest.mark.asyncio
+async def test_stream_agent_reply_sends_prior_history_to_the_model() -> None:
+    streaming = importlib.import_module("chat.streaming")
+    seen_prompts: list[list[str]] = []
+
+    async def stream_fn(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del info
+        seen_prompts.append(
+            [str(part.content) for message in messages for part in message.parts if isinstance(part, UserPromptPart)]
+        )
+        yield "ok"
+
+    chat_agent = _chat_agent(stream_fn)
+    async for _chunk in streaming.stream_agent_reply(agent=chat_agent, user_input="first"):
+        pass
+    async for _chunk in streaming.stream_agent_reply(agent=chat_agent, user_input="second"):
+        pass
+
+    assert seen_prompts == [["first"], ["first", "second"]]
 
 
 def test_legacy_message_stream_route_is_removed() -> None:
@@ -660,12 +605,9 @@ async def test_stream_chat_events_records_tool_citations(monkeypatch: pytest.Mon
     chat_module = importlib.import_module("api.chat")
     recorded: dict[str, Any] = {}
 
-    class StubAgent:
-        pass
-
     async def fake_stream_agent_reply(*, agent: Any, user_input: str):
         del user_input
-        agent._seraph_tool_citations = [
+        agent.deps.citations[:] = [
             {
                 "provider_id": "space-a",
                 "path": "/team/spec.md",
@@ -696,7 +638,7 @@ async def test_stream_chat_events_records_tool_citations(monkeypatch: pytest.Mon
 
     chunks: list[str] = []
     async for chunk in chat_module._stream_chat_events(
-        db=object(), session_id="session-1", agent=StubAgent(), user_input="hello"
+        db=object(), session_id="session-1", agent=_stub_agent(), user_input="hello"
     ):
         chunks.append(chunk)
 
@@ -712,9 +654,6 @@ async def test_stream_chat_events_records_tool_citations(monkeypatch: pytest.Mon
 async def test_stream_chat_events_ignores_untrusted_stream_citations(monkeypatch: pytest.MonkeyPatch) -> None:
     chat_module = importlib.import_module("api.chat")
     recorded: dict[str, Any] = {}
-
-    class StubAgent:
-        pass
 
     async def fake_stream_agent_reply(*, agent: Any, user_input: str):
         del agent, user_input
@@ -743,7 +682,7 @@ async def test_stream_chat_events_ignores_untrusted_stream_citations(monkeypatch
 
     chunks: list[str] = []
     async for chunk in chat_module._stream_chat_events(
-        db=object(), session_id="session-1", agent=StubAgent(), user_input="hello"
+        db=object(), session_id="session-1", agent=_stub_agent(), user_input="hello"
     ):
         chunks.append(chunk)
 
@@ -756,12 +695,9 @@ async def test_stream_chat_events_persists_validated_tool_citations(monkeypatch:
     chat_module = importlib.import_module("api.chat")
     recorded: dict[str, Any] = {}
 
-    class StubAgent:
-        pass
-
     async def fake_stream_agent_reply(*, agent: Any, user_input: str):
         del user_input
-        agent._seraph_tool_citations = [
+        agent.deps.citations[:] = [
             {
                 "provider_id": "space-a",
                 "path": "/team/spec.md",
@@ -787,7 +723,7 @@ async def test_stream_chat_events_persists_validated_tool_citations(monkeypatch:
 
     monkeypatch.setattr(chat_module, "SessionLocal", lambda: StubContextManager())
 
-    agent = StubAgent()
+    agent = _stub_agent()
     chunks: list[str] = []
     async for chunk in chat_module._stream_chat_events(
         db=object(), session_id="session-1", agent=agent, user_input="hello"
@@ -801,46 +737,15 @@ async def test_stream_chat_events_persists_validated_tool_citations(monkeypatch:
 
 
 @pytest.mark.asyncio
-async def test_stream_chat_events_restores_preexisting_tool_citations_after_turn(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    chat_module = importlib.import_module("api.chat")
-
-    class StubAgent:
-        def __init__(self) -> None:
-            self._seraph_tool_citations = [{"provider_id": "space-a", "path": "/stale.md"}]
-
-    async def fake_stream_agent_reply(*, agent: Any, user_input: str):
-        del user_input
-        agent._seraph_tool_citations = [{"provider_id": "space-a", "path": "/team/spec.md"}]
-        yield 'data: {"id":"assistant-1","content":"answer","citations":[]}\n\n'
-
-    monkeypatch.setattr(chat_module, "stream_agent_reply", fake_stream_agent_reply)
-    monkeypatch.setattr(chat_module, "_record_sources_with_isolated_session", _async_noop)
-    monkeypatch.setattr(chat_module, "_record_failure_with_isolated_session", _async_noop)
-
-    agent = StubAgent()
-    async for _chunk in chat_module._stream_chat_events(
-        db=object(), session_id="session-1", agent=agent, user_input="hello"
-    ):
-        pass
-
-    assert agent._seraph_tool_citations == [{"provider_id": "space-a", "path": "/stale.md"}]
-
-
-@pytest.mark.asyncio
 async def test_stream_chat_events_records_sources_again_when_message_id_changes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     chat_module = importlib.import_module("api.chat")
     recorded: dict[str, Any] = {}
 
-    class StubAgent:
-        pass
-
     async def fake_stream_agent_reply(*, agent: Any, user_input: str):
         del user_input
-        agent._seraph_tool_citations = [{"provider_id": "space-a", "path": "/team/spec.md"}]
+        agent.deps.citations[:] = [{"provider_id": "space-a", "path": "/team/spec.md"}]
         yield 'data: {"id":"assistant-1","content":"first","citations":[]}\n\n'
         yield 'data: {"id":"assistant-2","content":"second","citations":[]}\n\n'
 
@@ -865,7 +770,7 @@ async def test_stream_chat_events_records_sources_again_when_message_id_changes(
 
     chunks: list[str] = []
     async for chunk in chat_module._stream_chat_events(
-        db=object(), session_id="session-1", agent=StubAgent(), user_input="hello"
+        db=object(), session_id="session-1", agent=_stub_agent(), user_input="hello"
     ):
         chunks.append(chunk)
 
@@ -874,55 +779,6 @@ async def test_stream_chat_events_records_sources_again_when_message_id_changes(
         ("assistant-1", [{"provider_id": "space-a", "path": "/team/spec.md"}]),
         ("assistant-2", [{"provider_id": "space-a", "path": "/team/spec.md"}]),
     ]
-
-
-@pytest.mark.asyncio
-async def test_stream_chat_events_ignores_stale_tool_citations_when_agent_attribute_is_not_writable(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    chat_module = importlib.import_module("api.chat")
-    recorded: dict[str, Any] = {}
-
-    class StubAgent:
-        def __init__(self) -> None:
-            object.__setattr__(self, "_seraph_tool_citations", [{"provider_id": "space-a", "path": "/stale.md"}])
-
-        def __setattr__(self, name: str, value: object) -> None:
-            if name == "_seraph_tool_citations":
-                raise AttributeError("read only")
-            object.__setattr__(self, name, value)
-
-    async def fake_stream_agent_reply(*, agent: object, user_input: str):
-        del agent, user_input
-        yield 'data: {"id":"assistant-1","content":"answer","citations":[]}\n\n'
-
-    async def fake_record_sources(
-        db: object, *, session_id: str, assistant_message_id: str, sources: list[dict[str, str]]
-    ) -> None:
-        del db, session_id, assistant_message_id
-        recorded.setdefault("sources", []).append(sources)
-
-    monkeypatch.setattr(chat_module, "stream_agent_reply", fake_stream_agent_reply)
-    monkeypatch.setattr(chat_module, "record_sources", fake_record_sources)
-
-    class StubContextManager:
-        async def __aenter__(self) -> object:
-            return object()
-
-        async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
-            del exc_type, exc, tb
-            return None
-
-    monkeypatch.setattr(chat_module, "SessionLocal", lambda: StubContextManager())
-
-    chunks: list[str] = []
-    async for chunk in chat_module._stream_chat_events(
-        db=object(), session_id="session-1", agent=StubAgent(), user_input="hello"
-    ):
-        chunks.append(chunk)
-
-    assert chunks == ['data: {"id": "assistant-1", "content": "answer", "citations": []}\n\n']
-    assert "sources" not in recorded
 
 
 @pytest.mark.asyncio
@@ -958,7 +814,7 @@ async def test_stream_chat_events_records_failures(monkeypatch: pytest.MonkeyPat
 
     with pytest.raises(RuntimeError, match="assistant id=assistant-9 boom"):
         async for _chunk in chat_module._stream_chat_events(
-            db=object(), session_id="session-1", agent=object(), user_input="hello"
+            db=object(), session_id="session-1", agent=_stub_agent(), user_input="hello"
         ):
             pass
 
@@ -1004,7 +860,7 @@ async def test_stream_chat_events_yields_error_chunk_for_missing_api_key(monkeyp
 
     chunks: list[str] = []
     async for chunk in chat_module._stream_chat_events(
-        db=object(), session_id="session-1", agent=object(), user_input="hello"
+        db=object(), session_id="session-1", agent=_stub_agent(), user_input="hello"
     ):
         chunks.append(chunk)
 

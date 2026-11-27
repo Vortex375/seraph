@@ -145,29 +145,6 @@ def _citation_sources(citations: list[dict[str, str]]) -> list[dict[str, str]]:
     return [{"provider_id": citation["provider_id"], "path": citation["path"]} for citation in citations]
 
 
-def _install_turn_tool_citations(agent: Any) -> tuple[bool, Any] | None:
-    had_attr = hasattr(agent, "_seraph_tool_citations")
-    original = getattr(agent, "_seraph_tool_citations", None) if had_attr else None
-    try:
-        setattr(agent, "_seraph_tool_citations", [])
-    except Exception:
-        return None
-    return had_attr, original
-
-
-def _restore_turn_tool_citations(agent: Any, state: tuple[bool, Any] | None) -> None:
-    if state is None:
-        return
-    had_attr, original = state
-    try:
-        if had_attr:
-            setattr(agent, "_seraph_tool_citations", original)
-            return
-        delattr(agent, "_seraph_tool_citations")
-    except Exception:
-        return None
-
-
 async def _record_sources_with_isolated_session(
     *, session_id: str, assistant_message_id: str, sources: list[dict[str, str]]
 ) -> None:
@@ -392,7 +369,6 @@ async def _stream_message_create(
 
 async def _stream_chat_events(db: Any, session_id: str, agent: Any, user_input: str) -> AsyncIterator[str]:
     assistant_message_id = str(uuid4())
-    tool_citation_state = _install_turn_tool_citations(agent)
     try:
         pending_sources: list[dict[str, str]] = []
         persisted_sources_by_message: dict[str, set[tuple[str, str]]] = {}
@@ -402,9 +378,7 @@ async def _stream_chat_events(db: Any, session_id: str, agent: Any, user_input: 
             if payload is not None:
                 trusted_citations = _trusted_turn_citations(
                     retrieval_sources=pending_sources,
-                    tool_citations=getattr(agent, "_seraph_tool_citations", [])
-                    if tool_citation_state is not None
-                    else [],
+                    tool_citations=agent.deps.citations,
                 )
                 trusted_sources = _citation_sources(trusted_citations)
                 payload["citations"] = trusted_citations
@@ -428,7 +402,7 @@ async def _stream_chat_events(db: Any, session_id: str, agent: Any, user_input: 
             yield chunk
         trusted_citations = _trusted_turn_citations(
             retrieval_sources=pending_sources,
-            tool_citations=getattr(agent, "_seraph_tool_citations", []) if tool_citation_state is not None else [],
+            tool_citations=agent.deps.citations,
         )
         trusted_sources = _citation_sources(trusted_citations)
         persisted_sources = persisted_sources_by_message.setdefault(assistant_message_id, set())
@@ -455,8 +429,6 @@ async def _stream_chat_events(db: Any, session_id: str, agent: Any, user_input: 
             return
         setattr(exc, "_seraph_failure_recorded", True)
         raise
-    finally:
-        _restore_turn_tool_citations(agent, tool_citation_state)
 
 
 @router.get("/sessions", response_model=list[SessionResponse])

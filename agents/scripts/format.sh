@@ -2,7 +2,7 @@
 
 ############################################################################
 #
-#    Agno Workspace Formatter
+#    Seraph Agents Workspace Formatter
 #
 #    Usage: ./scripts/format.sh
 #

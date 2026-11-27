@@ -1,36 +1,48 @@
 # Repository Overview
 
 Seraph is a WebDAV/CardDAV/CalDAV/Subsonic server with a distributed microservice architecture.
-Backend services are Go microservices; the mobile app is Flutter/Dart; the web UI is Angular/TypeScript.
+Backend services are Go microservices; the mobile app is Flutter/Dart; the web UI is Angular/TypeScript;
+the document-chat agent (`agents/`) is a Python/FastAPI service.
 
-Each folder (except `app` and `webapp`) is a Go module hosting a microservice.
+Most top-level folders are Go modules (a microservice or a shared library), all listed in `go.work`.
+The exceptions are `agents/`, `app/`, `webapp/`, `docs/`, `openspec/`, `scripts/`, `test/` and `vendor-forks/`.
 Services communicate over NATS (JetStream) and use `fx` for dependency injection.
 
 # Tech Stack
 
-- Backend microservices: Go `1.25.4` with multi-module workspace via `go.work`
+- Backend microservices: Go `1.26.5` with multi-module workspace via `go.work`
 - Backend architecture: distributed microservices with Uber `fx` dependency injection
 - Messaging/eventing: NATS with JetStream
-- Backend data storage: MongoDB
+- Backend data storage: MongoDB; `gallery-ai` stores embeddings in PostgreSQL with `pgvector`
+- Gallery ML inference: Immich's `immich-machine-learning` container (CLIP embeddings, faces), called by `gallery-ai`
 - Observability: `slog`-based logging and OpenTelemetry tracing
 - Schema/code generation: Avro schemas with generated Go sources (`avrogen`/`fastavro` related workflow)
 - Web app: Angular `18`, TypeScript `5.5`, RxJS, Jasmine/Karma
 - Mobile app: Flutter with Dart `>=3.4.3 <4.0.0`
 - Mobile libraries in use: Dio, Get/GetX, Provider, OIDC, WebDAV client, media_kit/audio packages
-- Agents app: Python `3.12` with FastAPI and Agno/AgentOS
-- Agents data/storage: PostgreSQL with `pgvector`, DuckDB
-- Agents tooling/integration: NATS (`nats-py`), OpenTelemetry, `mypy`, `ruff`, `pytest`
+- Agents app: Python `3.12` with FastAPI and Pydantic AI (`pydantic-ai-slim[openai]`), any OpenAI-compatible
+  chat/embedding endpoint (`OPENAI_BASE_URL`; the dev stack uses OpenRouter); React/Vite chat UI in `agents/ui/`
+- Agents data/storage: PostgreSQL with `pgvector` (SQLAlchemy async + psycopg)
+- Agents tooling/integration: NATS (`nats-py`), Avro (`fastavro`), OpenTelemetry, `uv`, `mypy`, `ruff`, `pytest`
 - Native/media integration: TagLib via SWIG wrapper
 
 # Repository Layout
 
-- `api-gateway/`, `spaces/`, `shares/`, `file-indexer/`, `jobs/`, etc.: Go microservices (each has its own `go.mod`).
-- `entities/`, `messaging/`, `logging/`, `tracing/`, `config/`, `mongodb/`: shared Go libraries.
+- Go microservices (each has its own `go.mod`): `api-gateway/`, `spaces/`, `shares/`, `file-indexer/`, `jobs/`,
+  `thumbnailer/`, `audio-metadata/`, `gallery/`, `gallery-ai/`, `file-provider-dir/`, `file-provider-smb/`,
+  `log-viewer/`.
+- Shared Go libraries: `entities/`, `events/`, `messaging/`, `logging/`, `tracing/`, `config/`, `mongodb/`,
+  `service-discovery/`, `file-provider/` (file-provider protocol, plus `cmd/fileprovider-testserver` used by
+  agents integration tests), `util/`, `taglib/`.
+- `vendor-forks/go-smb2/`: patched fork wired in via a `replace` in `go.work`.
 - `webapp/seraph-web-app/`: Angular web app (Angular CLI 18.x).
 - `app/seraph_app/`: Flutter mobile app.
-- `agents/`: Agno/AgentOS multi-agent app (Python/FastAPI + Postgres + DuckDB).
-- `events/`, `service-discovery/`, `thumbnailer/thumbnailer/`: codegen Makefiles (avrogen for NATS schemas).
+- `agents/`: Pydantic AI document-chat service (Python/FastAPI + Postgres/pgvector, React/Vite UI).
+- `events/`, `service-discovery/`, `thumbnailer/thumbnailer/`, `audio-metadata/audiometadata/`: codegen Makefiles
+  (avrogen for NATS schemas); see Code Generation.
 - `taglib/`: SWIG wrapper for TagLib; see `taglib/README.md` for build notes.
+- `docs/` (ADRs, agent docs, research), `openspec/` (OpenSpec changes and specs), `CONTEXT.md` (domain context).
+- `docker-compose.yml` / `docker-compose.dev.yml`: full stack (NATS, MongoDB, `agents-db`, all services).
 
 # Build, Lint, Test Commands
 
@@ -91,22 +103,32 @@ necessary but not sufficient: a zero-issue `flutter analyze` still does not mean
 code builds (see above) — separately run the web release build, and the APK build
 when `android/` is touched, before accepting the change.
 
-## Agents app (Agno/AgentOS)
+## Agents app (Pydantic AI)
 
 Location: `agents/`
 
 - Docker dev: `docker compose up -d --build`
-- Run API locally: `python -m app.main`
-- Setup venv (uv): `./scripts/venv_setup.sh`
-- Generate requirements: `./scripts/generate_requirements.sh`
-- Lint: `ruff check .`
-- Type check: `mypy .`
+- Run API locally: `uv run python -m app.main`
+- Setup venv (uv): `./scripts/venv_setup.sh` (or `uv sync`)
+- Add/change a dependency: edit `pyproject.toml`, run `uv lock`, then `./scripts/generate_requirements.sh`
+  (the Docker image installs from `requirements.txt`, so both lockfiles must be updated)
+- Lint: `uv run ruff check .`
+- Type check: `uv run mypy .`
+- Both at once: `uv run ./scripts/validate.sh`; format: `uv run ./scripts/format.sh`
 
 Agents structure:
-- `agents/agents/`: individual agent definitions (Pal, knowledge, MCP).
-- `agents/app/main.py`: AgentOS entry point.
-- `agents/app/config.yaml`: agent prompt/config file.
-- `agents/db/`: database session and URL helpers.
+- `app/main.py`: FastAPI entry point (`create_app()`), runtime wiring (embedder, NATS, spaces client,
+  `RuntimeAgentFactory`), UI mounting.
+- `app/settings.py`: settings from env (`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `CHAT_MODEL_NAME`, `NATS_URL`, ...).
+- `api/`: HTTP routes. `api/chat.py` runs a turn, streams SSE, persists turn state and citations.
+- `chat/`: the agent. `agent_factory.py` builds the Pydantic AI `Agent` per turn (`ChatAgent` = agent + deps +
+  message history); `tools.py` holds the tools and `ChatDeps`; `streaming.py` maps Pydantic AI events to SSE;
+  `prompts.py` the system prompt; `agent_state_store.py` / `session_service.py` load and save history.
+- `knowledge/`, `retrieval/`: spaces-aware semantic search over pgvector chunks.
+- `ingestion/`, `documents/`: consume `SERAPH_FILE_CHANGED` events and index documents/chunks.
+- `fileprovider/`, `spaces/`: NATS clients for file providers and space scopes.
+- `auth/`: current-user resolution. `db/`: async engine/session, URL helpers, additive migrations.
+- `ui/`: React/Vite chat UI, built to `ui/dist` and served by FastAPI.
 
 ### Test infrastructure (agents)
 
@@ -136,6 +158,9 @@ uv run pytest tests/test_chat_api.py -k test_create_message -v
 Notes:
 - The ingestion integration tests (`test_ingestion_integration.py`) additionally
   require `OPENAI_API_KEY` to be set; they are skipped otherwise.
+- `test_ingestion_integration.py` and `test_fileprovider_client_integration.py` start the Go
+  `file-provider/cmd/fileprovider-testserver` via `go run`, so a Go toolchain must be on `PATH`.
+- `test_retrieval_repository.py` skips itself when Postgres is unreachable.
 - The DB credentials above match the defaults defined in
   `docker-compose.dev.yml` under the `agents-db` service.
 
@@ -192,6 +217,10 @@ Run them in the listed directories when changing the schema files.
 - `events/`: `make` (generates `events.go` from `schema.avsc`)
 - `service-discovery/`: `make` (generates `messages.go` from `messages_schema.avsc`)
 - `thumbnailer/thumbnailer/`: `make` (generates `messages.go` from `messages_schema.avsc`)
+- `audio-metadata/audiometadata/`: `make` (generates `messages.go` from `messages_schema.avsc`)
+
+`gallery/geo/`: `make generate` downloads GeoNames/Natural Earth data and regenerates the committed
+`data/geodata.bin.gz`. Run it only when refreshing the dataset, never as part of a build.
 
 # Code Style Guidelines
 
@@ -257,7 +286,7 @@ Formatting:
 Testing:
 - `flutter test` for all tests; pass a specific file for single tests.
 
-## Python / Agno
+## Python / Pydantic AI
 
 Formatting and linting:
 - Use Ruff (line length 120) and keep configs in `agents/pyproject.toml`.
@@ -265,7 +294,19 @@ Formatting and linting:
 
 Typing:
 - Prefer type hints on public functions.
-- `mypy` uses strict-ish settings (`check_untyped_defs`, `no_implicit_optional`).
+- `mypy` uses strict-ish settings (`check_untyped_defs`, `no_implicit_optional`) with the pydantic plugin.
+
+Pydantic AI patterns:
+- Tools are plain async functions taking `RunContext[ChatDeps]`, registered in `BASE_TOOLS` / `FILE_TOOLS`
+  in `chat/tools.py`. The docstring (with an `Args:` section) becomes the tool and parameter descriptions.
+- Tools that surface files append them to `ctx.deps.citations`; `api/chat.py` validates and persists those.
+  Never trust citations from the model's text.
+- The per-session system prompt is persisted in `chat_sessions.system_prompt` and passed as `instructions`.
+- Message history is stored in `chat_sessions.agent_state` as `ModelMessagesTypeAdapter` JSON. Each turn's
+  assistant message id is the Pydantic AI `run_id`, which links history to `ChatTurnState` and
+  `ChatTurnSource` rows. Unreadable (legacy) history loads as `None` instead of failing.
+- Test agents with `pydantic_ai.models.function.FunctionModel` (or `agent.override(model=...)`), not by
+  stubbing framework classes.
 
 # Agent Notes
 

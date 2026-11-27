@@ -3,19 +3,24 @@ from datetime import datetime, timezone
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from agentscope.message import Msg, TextBlock
-from agentscope.state import AgentState
+from pydantic_ai import ModelMessagesTypeAdapter, ModelRequest, ModelResponse, TextPart, UserPromptPart
+
 from chat.session_service import SessionService
 from documents.models import Base, ChatSession, ChatTurnState
 
 
-def _build_state_with_messages(*messages: tuple[str, str]) -> dict:
-    """Build a serialized AgentState with user/assistant text messages.
+def _build_state_with_messages(*messages: tuple[str, str]) -> list:
+    """Build a serialized Pydantic AI history of one run with user/assistant text messages.
 
     Each tuple is (role, text).
     """
-    context = [Msg(name=role, role=role, content=[TextBlock(text=text)]) for role, text in messages]
-    return AgentState(context=context).model_dump(mode="json")
+    history = [
+        ModelRequest(parts=[UserPromptPart(text)], run_id="run-1")
+        if role == "user"
+        else ModelResponse(parts=[TextPart(text)], run_id="run-1")
+        for role, text in messages
+    ]
+    return ModelMessagesTypeAdapter.dump_python(history, mode="json")
 
 
 @pytest.mark.asyncio
@@ -167,6 +172,7 @@ async def test_list_messages_reads_user_and_assistant_messages_from_agent_state(
     assert len(messages) == 2
     assert messages[0].role == "user"
     assert messages[0].content == "hello"
+    assert messages[1].id == "run-1"
     assert messages[1].role == "assistant"
     assert messages[1].content == "Hi there!"
 
@@ -212,5 +218,24 @@ async def test_list_sessions_uses_latest_turn_state_preview_for_multi_turn_sessi
     assert len(sessions) == 1
     assert sessions[0].preview == "Latest streamed reply"
     assert sessions[0].status == "running"
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_list_messages_ignores_unreadable_legacy_agent_state() -> None:
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as db_session:
+        legacy_state = {"session_id": "session-1", "context": [{"role": "user", "content": "hello"}]}
+        db_session.add(ChatSession(id="session-1", user_id="alice", title="Inbox", agent_state=legacy_state))
+        await db_session.commit()
+
+        messages = await SessionService(db_session).list_messages("alice", "session-1")
+
+    assert messages == []
 
     await engine.dispose()

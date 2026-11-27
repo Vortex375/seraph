@@ -2,7 +2,7 @@
 
 ############################################################################
 #
-#    Agno Requirements Generator
+#    Seraph Agents Requirements Generator
 #
 #    Usage:
 #      ./scripts/generate_requirements.sh           # Generate

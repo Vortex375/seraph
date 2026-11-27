@@ -2,7 +2,7 @@
 
 ############################################################################
 #
-#    Agno Docker Image Builder
+#    Seraph Agents Docker Image Builder
 #
 #    Usage: ./scripts/build_image.sh
 #
