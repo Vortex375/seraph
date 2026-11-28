@@ -2,7 +2,7 @@ from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 import pytest
-from pydantic_ai import ModelAuthenticationError, ModelMessage, ToolReturnPart, UserPromptPart
+from pydantic_ai import ModelAuthenticationError, ModelMessage, ModelResponse, TextPart, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -14,9 +14,11 @@ from documents.models import ChatSession, ChatTurnFailure, ChatTurnSource, ChatT
 from tests.support import SPEC_CITATION, search_then_answer
 
 
-async def _seed_session(session_factory: async_sessionmaker[AsyncSession], user_id: str = "alice") -> None:
+async def _seed_session(
+    session_factory: async_sessionmaker[AsyncSession], user_id: str = "alice", title: str = "Inbox"
+) -> None:
     async with session_factory() as db:
-        db.add(ChatSession(id="session-1", user_id=user_id, title="Inbox"))
+        db.add(ChatSession(id="session-1", user_id=user_id, title=title))
         await db.commit()
 
 
@@ -176,3 +178,66 @@ async def test_tool_failure_is_reported_to_the_model_not_the_user(
     assert [(e.type, e.content) for e in events] == [("delta", "Search is unavailable."), ("done", None)]
     assert tool_results == [("no spaces found", "failed")]
     assert tool_schemas[0]["properties"]["query"]["description"] == "Search query in natural language."
+
+
+async def _title(session_factory: async_sessionmaker[AsyncSession]) -> str:
+    async with session_factory() as db:
+        chat_session = await db.get(ChatSession, "session-1")
+    assert chat_session is not None
+    return chat_session.title
+
+
+@pytest.mark.asyncio
+async def test_first_turn_names_a_placeholder_titled_session_once(
+    session_factory: async_sessionmaker[AsyncSession], make_factory: Callable[..., AgentFactory]
+) -> None:
+    title_requests: list[list[str]] = []
+
+    def name_it(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        title_requests.append([str(p.content) for m in messages for p in m.parts if isinstance(p, UserPromptPart)])
+        return ModelResponse(parts=[TextPart('  "Launch  date question."  ')])
+
+    await _seed_session(session_factory, title="New chat")
+    factory = make_factory(search_then_answer, title_function=name_it)
+
+    first = await _run(session_factory, factory, "When is launch?")
+    await _run(session_factory, factory, "And the beta?")
+
+    assert first[-1].type == "done"
+    assert await _title(session_factory) == "Launch date question"
+    assert title_requests == [["When is launch?"]], "only the first turn names the session"
+
+
+@pytest.mark.asyncio
+async def test_title_failure_keeps_the_placeholder_and_the_turn(
+    session_factory: async_sessionmaker[AsyncSession], make_factory: Callable[..., AgentFactory]
+) -> None:
+    def broken(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        raise RuntimeError("title model down")
+
+    await _seed_session(session_factory, title="New conversation")
+
+    events = await _run(session_factory, make_factory(search_then_answer, title_function=broken))
+
+    assert events[-1].type == "done"
+    assert await _title(session_factory) == "New conversation"
+    async with session_factory() as db:
+        assert (await db.scalar(select(ChatTurnState.status))) == "finished"
+
+
+@pytest.mark.asyncio
+async def test_custom_titles_are_never_replaced(
+    session_factory: async_sessionmaker[AsyncSession], make_factory: Callable[..., AgentFactory]
+) -> None:
+    calls: list[object] = []
+
+    def name_it(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        calls.append(messages)
+        return ModelResponse(parts=[TextPart("Something else")])
+
+    await _seed_session(session_factory, title="Roadmap Review")
+
+    await _run(session_factory, make_factory(search_then_answer, title_function=name_it))
+
+    assert await _title(session_factory) == "Roadmap Review"
+    assert calls == []

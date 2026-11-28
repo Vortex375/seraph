@@ -34,9 +34,12 @@ def session_factory(tmp_path: Path) -> Iterator[async_sessionmaker[AsyncSession]
 
 @pytest.fixture
 def make_factory() -> Callable[..., AgentFactory]:
-    def make(stream_function: Any, spaces: StubSpaces | None = None, retrieval: Any = None) -> AgentFactory:
+    def make(
+        stream_function: Any, spaces: StubSpaces | None = None, retrieval: Any = None, title_function: Any = None
+    ) -> AgentFactory:
+        """``stream_function`` scripts the chat agent; ``title_function`` the non-streamed title request."""
         return AgentFactory(
-            model=FunctionModel(stream_function=stream_function),
+            model=FunctionModel(function=title_function, stream_function=stream_function),
             retrieval_service=retrieval or StubRetrieval(),
             spaces_client=spaces or StubSpaces(),
         )

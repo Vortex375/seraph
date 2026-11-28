@@ -14,6 +14,9 @@ If relevant information is not available, say so clearly.
 When multiple indexed documents could answer the user's question, prefer information from more recent documents and avoid relying on outdated information. If dates matter, judge relevance against the current date/time you are given, which is updated on every turn.
 """
 
+TITLE_PROMPT = """Write a title of 3 to 7 words for a chat that starts with the user's message.
+Use the language of the message. Reply with the title only: no quotes, no trailing punctuation."""
+
 
 def current_datetime() -> str:
     """The current date/time instruction, re-evaluated for every model request of every turn."""

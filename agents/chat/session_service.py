@@ -36,6 +36,8 @@ class ChatSessionSummary:
 
 
 DEFAULT_SESSION_TITLE = "New conversation"
+# Titles a session starts with before it is named after its first turn ("New chat" is what the Flutter app sends).
+PLACEHOLDER_TITLES = {DEFAULT_SESSION_TITLE.lower(), "new chat"}
 
 
 def _message_text_preview(content: object) -> str:

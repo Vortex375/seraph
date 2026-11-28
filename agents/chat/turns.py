@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -13,8 +14,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from chat.agent_factory import AgentFactory, dump_history, load_history
+from chat.session_service import PLACEHOLDER_TITLES
 from documents.models import ChatSession, ChatTurnFailure, ChatTurnSource, ChatTurnState
 
+
+logger = logging.getLogger(__name__)
 
 MISSING_CREDENTIALS_MESSAGE = "Chat streaming is unavailable until OPENAI_API_KEY is configured for agents-api."
 
@@ -43,7 +47,8 @@ async def run_turn(
 
     Progress is committed after every delta, so the session list and history show the turn even if the client
     disconnects. The assistant message id is the Pydantic AI ``run_id``, which links the saved history to the
-    ``ChatTurnState`` and ``ChatTurnSource`` rows.
+    ``ChatTurnState`` and ``ChatTurnSource`` rows. After a session's first successful turn, the session is named
+    (see ``_title_new_session``); the ``done`` event is sent before that, so naming never delays the reply.
     """
     turn_id = str(uuid4())
     content = ""
@@ -52,13 +57,15 @@ async def run_turn(
     if chat_session is None or chat_session.user_id != user_id:
         yield TurnEvent("error", turn_id, "chat session not found")
         return
+    history = load_history(chat_session.agent_state) or []
+    finished = False
     try:
         turn = ChatTurnState(session_id=session_id, user_id=user_id, assistant_message_id=turn_id, content="")
         db.add(turn)
         _touch(chat_session)
         await db.commit()
 
-        agent = factory.create(user_id, load_history(chat_session.agent_state) or [])
+        agent = factory.create(user_id, history)
         async for delta in agent.stream(message, run_id=turn_id):
             content += delta
             turn.content = content
@@ -71,6 +78,7 @@ async def run_turn(
         chat_session.agent_state = dump_history(agent.history)
         _touch(chat_session)
         await db.commit()
+        finished = True
         yield TurnEvent("done", turn_id, citations=list(citations))
     except asyncio.CancelledError:
         await _record_failure(db, session_id, user_id, turn_id, content, error="turn cancelled")
@@ -79,6 +87,28 @@ async def run_turn(
         error = MISSING_CREDENTIALS_MESSAGE if isinstance(exc, ModelAuthenticationError) else str(exc)
         await _record_failure(db, session_id, user_id, turn_id, content, error=error, cause=str(exc))
         yield TurnEvent("error", turn_id, error, list(citations))
+
+    if finished and not history:
+        await _title_new_session(db, factory, chat_session, message)
+
+
+async def _title_new_session(db: AsyncSession, factory: AgentFactory, chat_session: ChatSession, message: str) -> None:
+    """Replace a placeholder title with one generated from the first message; on failure the placeholder stays."""
+    if chat_session.title.strip().lower() not in PLACEHOLDER_TITLES:
+        return
+    try:
+        title = _clean_title(await factory.title(message))
+    except Exception:
+        logger.warning("could not title chat session %s", chat_session.id, exc_info=True)
+        return
+    if title:
+        chat_session.title = title
+        await db.commit()
+
+
+def _clean_title(raw: str) -> str:
+    title = " ".join(raw.split()).strip("\"'`“”‘’*#").rstrip(".!?:;,").strip()
+    return title[:80].rstrip()
 
 
 def _touch(chat_session: ChatSession) -> None:

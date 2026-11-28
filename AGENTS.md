@@ -313,6 +313,9 @@ Pydantic AI patterns:
   appended to history as an `InstructionDeltaPart` instead of rewriting the cached prompt prefix, so the model
   always has the current time and sees when earlier turns happened. The `chat_sessions.system_prompt` column
   is legacy and unused.
+- Sessions still carrying a placeholder title (`PLACEHOLDER_TITLES` in `chat/session_service.py`, e.g. the
+  Flutter app's "New chat") are named after their first successful turn by `AgentFactory.title()`, a separate
+  small agent with `TITLE_PROMPT`. It runs after the `done` event, and a failure keeps the placeholder.
 - Every tool docstring states what the tool does, when to use it, and when not to (naming the tool to use
   instead). Keep them to one line each; `test_every_tool_says_what_it_does_when_to_use_it_and_when_not` checks it.
 - Message history is stored in `chat_sessions.agent_state` as `ModelMessagesTypeAdapter` JSON. Each turn's

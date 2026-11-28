@@ -20,7 +20,7 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from chat.file_access import AgentFileAccessService
-from chat.prompts import DOCUMENT_CHAT_PROMPT, current_datetime
+from chat.prompts import DOCUMENT_CHAT_PROMPT, TITLE_PROMPT, current_datetime
 from chat.tools import BASE_TOOLS, FILE_TOOLS, ChatDeps
 from knowledge.seraph_knowledge import Retriever, ScopeProvider, SeraphKnowledgeBase
 
@@ -82,6 +82,11 @@ class AgentFactory:
         self._retrieval_service = retrieval_service
         self._spaces_client = spaces_client
         self._file_access = file_access
+        self._title_agent = Agent(model, name="seraph-titles", instructions=TITLE_PROMPT)
+
+    async def title(self, first_message: str) -> str:
+        """A short title for a chat, from its first user message."""
+        return (await self._title_agent.run(first_message)).output
 
     def create(self, user_id: str, history: list[ModelMessage]) -> ChatAgent:
         agent = Agent(
