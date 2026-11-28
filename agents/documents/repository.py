@@ -63,7 +63,10 @@ class DocumentsRepository:
             )
             document = result.scalar_one_or_none()
 
-            if document is not None and self._is_stale(document, mod_time):
+            # A failed document at the same mod_time is a retry of that version and gets indexed.
+            if document is not None and (
+                document.mod_time > mod_time or (document.mod_time == mod_time and document.ingest_status != "failed")
+            ):
                 return document
 
             if document is None:

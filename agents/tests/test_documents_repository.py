@@ -181,6 +181,45 @@ async def test_record_ingest_failure_updates_document_status() -> None:
 
 
 @pytest.mark.asyncio
+async def test_upsert_document_retries_failed_document_with_equal_mod_time() -> None:
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as db_session:
+        repo = DocumentsRepository(db_session)
+
+        await repo.record_ingest_failure(
+            provider_id="provider-a",
+            file_id="file-3",
+            path="/team/retry.txt",
+            mime="text/plain",
+            size=5,
+            mod_time=4,
+            error="transient",
+        )
+        await repo.upsert_document(
+            provider_id="provider-a",
+            file_id="file-3",
+            path="/team/retry.txt",
+            mime="text/plain",
+            size=5,
+            mod_time=4,
+            text="hello",
+        )
+
+        document, chunks = await repo.get_document_with_chunks("provider-a", "/team/retry.txt")
+
+    assert document is not None
+    assert document.ingest_status == "indexed"
+    assert document.last_error is None
+    assert [chunk.content for chunk in chunks] == ["hello"]
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_upsert_document_ignores_stale_mod_time() -> None:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
