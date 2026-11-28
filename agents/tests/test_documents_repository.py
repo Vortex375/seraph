@@ -404,7 +404,7 @@ async def test_delete_document_ignores_stale_mod_time() -> None:
 
 
 @pytest.mark.asyncio
-async def test_delete_document_ignores_equal_mod_time() -> None:
+async def test_delete_document_removes_document_with_equal_mod_time() -> None:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -426,9 +426,8 @@ async def test_delete_document_ignores_equal_mod_time() -> None:
 
         document, chunks = await repo.get_document_with_chunks("provider-a", "/team/delete.txt")
 
-    assert document is not None
-    assert document.mod_time == 5
-    assert [chunk.content for chunk in chunks] == ["keep me"]
+    assert document is None
+    assert chunks == []
 
     await engine.dispose()
 

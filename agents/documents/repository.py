@@ -165,9 +165,9 @@ class DocumentsRepository:
             )
         )
         document = result.scalar_one_or_none()
-        if document is None:
-            return
-        if self._is_stale(document, mod_time):
+        # A delete carries the file's last known mod_time, which equals the indexed one;
+        # skip only when the document was re-indexed from a strictly newer version.
+        if document is None or document.mod_time > mod_time:
             return
 
         await self._session.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document.id))
