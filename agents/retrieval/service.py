@@ -6,7 +6,8 @@ from spaces.access import SpaceScope
 
 
 class EmbeddingResponse(Protocol):
-    embeddings: Sequence[Sequence[float]]
+    @property
+    def embeddings(self) -> Sequence[Sequence[float]]: ...
 
 
 class RetrievalService:

@@ -1,9 +1,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Protocol
 
 from retrieval.repository import RetrievalResult
+from spaces.access import SpaceScope
+
+
+class Retriever(Protocol):
+    async def retrieve(self, query: str, scopes: list[SpaceScope], limit: int = 5) -> list[RetrievalResult]: ...
+
+
+class ScopeProvider(Protocol):
+    async def get_scopes_for_user(self, user_id: str) -> list[SpaceScope]: ...
 
 
 @dataclass(frozen=True)
@@ -31,7 +40,7 @@ class SeraphKnowledgeBase:
     up documents.
     """
 
-    def __init__(self, retrieval_service: Any, spaces_client: Any, user_id: str) -> None:
+    def __init__(self, retrieval_service: Retriever, spaces_client: ScopeProvider, user_id: str) -> None:
         self._retrieval_service = retrieval_service
         self._spaces_client = spaces_client
         self._user_id = user_id

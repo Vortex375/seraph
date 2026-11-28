@@ -6,7 +6,7 @@ from pydantic_ai import ModelMessage, ModelRequest, TextPart, UserPromptPart
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from chat.agent_state_store import load_history
+from chat.agent_factory import load_history
 from chat.file_models import FileCitation
 from documents.models import ChatSession, ChatTurnFailure, ChatTurnSource, ChatTurnState
 
@@ -62,13 +62,23 @@ class SessionService:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def create_session(self, user_id: str, title: str) -> ChatSession:
+    async def create_session(self, user_id: str, title: str) -> ChatSessionSummary:
         normalized_title = title.strip() or DEFAULT_SESSION_TITLE
         chat_session = ChatSession(user_id=user_id, title=normalized_title)
         self._session.add(chat_session)
         await self._session.commit()
         await self._session.refresh(chat_session)
-        return chat_session
+        return ChatSessionSummary(
+            id=chat_session.id,
+            user_id=chat_session.user_id,
+            title=chat_session.title,
+            headline=chat_session.title,
+            preview="",
+            status="finished",
+            created_at=chat_session.created_at,
+            updated_at=chat_session.updated_at,
+            last_message_at=chat_session.last_message_at,
+        )
 
     async def list_sessions(self, user_id: str) -> list[ChatSessionSummary]:
         result = await self._session.execute(

@@ -18,6 +18,11 @@ engine = create_async_engine(_build_async_db_url(db_url), future=True)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 
+def get_session_factory() -> async_sessionmaker[AsyncSession]:
+    """Session factory for work that outlives a request, such as a streaming chat turn."""
+    return SessionLocal
+
+
 async def get_db_session() -> AsyncIterator[AsyncSession]:
     async with SessionLocal() as session:
         yield session

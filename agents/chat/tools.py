@@ -1,14 +1,18 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+import functools
+import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from pydantic_ai import RunContext
+from pydantic_ai import RunContext, ToolFailed
 
 from chat.file_access import AgentFileAccessService
 from knowledge.seraph_knowledge import SeraphKnowledgeBase, SeraphKnowledgeDocument
+
+logger = logging.getLogger(__name__)
 
 
 def format_current_datetime() -> str:
@@ -155,5 +159,23 @@ def get_current_datetime() -> dict[str, str]:
     return {"current_datetime": format_current_datetime()}
 
 
-BASE_TOOLS: list[Callable[..., Any]] = [search_knowledge_base, get_current_datetime]
-FILE_TOOLS: list[Callable[..., Any]] = [search_files, list_directory, stat_file, read_file_excerpt]
+def _errors_to_model(tool: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
+    """Report a tool's exception to the model as a failed tool call, so it can explain it instead of the turn aborting."""
+
+    @functools.wraps(tool)
+    async def wrapper(*args: Any, **kwargs: Any) -> Any:
+        try:
+            return await tool(*args, **kwargs)
+        except ToolFailed:
+            raise
+        except Exception as exc:
+            logger.warning("tool %s failed: %s", tool.__name__, exc)
+            raise ToolFailed(str(exc)) from exc
+
+    return wrapper
+
+
+BASE_TOOLS: list[Callable[..., Any]] = [_errors_to_model(search_knowledge_base), get_current_datetime]
+FILE_TOOLS: list[Callable[..., Any]] = [
+    _errors_to_model(tool) for tool in (search_files, list_directory, stat_file, read_file_excerpt)
+]

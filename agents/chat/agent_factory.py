@@ -1,96 +1,95 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 
-from pydantic_ai import Agent, ModelMessage
+from pydantic import ValidationError
+from pydantic_ai import (
+    Agent,
+    AgentRunResultEvent,
+    ModelMessage,
+    ModelMessagesTypeAdapter,
+    PartDeltaEvent,
+    PartStartEvent,
+    TextPart,
+    TextPartDelta,
+)
+from pydantic_ai.models import Model
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
-from chat.agent_state_store import AgentStateStore
-from chat.prompts import render_system_prompt
-from chat.tools import BASE_TOOLS, FILE_TOOLS, ChatDeps, format_current_datetime
-from knowledge.seraph_knowledge import SeraphKnowledgeBase
+from chat.file_access import AgentFileAccessService
+from chat.tools import BASE_TOOLS, FILE_TOOLS, ChatDeps
+from knowledge.seraph_knowledge import Retriever, ScopeProvider, SeraphKnowledgeBase
 
 
 DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
 
 
-def _normalize_openai_base_url(base_url: str | None) -> str | None:
-    if base_url is None:
+def build_chat_model(model_name: str, api_key: str | None, base_url: str | None) -> OpenAIChatModel:
+    """Chat model on any OpenAI-compatible endpoint; a blank base URL means OpenAI itself."""
+    provider = OpenAIProvider(base_url=(base_url or "").strip() or DEFAULT_OPENAI_BASE_URL, api_key=api_key or None)
+    return OpenAIChatModel(model_name, provider=provider)
+
+
+def load_history(raw_state: Any) -> list[ModelMessage] | None:
+    """Parse a persisted message history; unreadable state (e.g. pre-Pydantic-AI) yields ``None``."""
+    if not raw_state:
         return None
-    normalized = base_url.strip()
-    return normalized or None
+    try:
+        return ModelMessagesTypeAdapter.validate_python(raw_state)
+    except ValidationError:
+        return None
+
+
+def dump_history(history: list[ModelMessage]) -> Any:
+    return ModelMessagesTypeAdapter.dump_python(history, mode="json")
 
 
 @dataclass
 class ChatAgent:
-    """One chat turn: the agent, its tool deps, and the session's message history (updated after the run)."""
+    """One chat turn: the agent, its tool deps, and the session's message history (extended by ``stream``)."""
 
     agent: Agent[ChatDeps, str]
     deps: ChatDeps
-    state: list[ModelMessage] = field(default_factory=list)
+    history: list[ModelMessage] = field(default_factory=list)
+
+    async def stream(self, user_input: str, run_id: str) -> AsyncIterator[str]:
+        """Run the turn and yield the reply's text deltas; ``run_id`` tags every message the run adds."""
+        async with self.agent.run_stream_events(
+            user_input, message_history=self.history, deps=self.deps, run_id=run_id
+        ) as events:
+            async for event in events:
+                if isinstance(event, PartStartEvent) and isinstance(event.part, TextPart) and event.part.content:
+                    yield event.part.content
+                elif isinstance(event, PartDeltaEvent) and isinstance(event.delta, TextPartDelta):
+                    yield event.delta.content_delta
+                elif isinstance(event, AgentRunResultEvent):
+                    self.history = event.result.all_messages()
 
 
 class AgentFactory:
     def __init__(
         self,
-        chat_model_name: str,
-        api_key: str | None,
-        base_url: str | None,
-        retrieval_service: Any,
-        spaces_client: Any,
-        file_access_service_factory: Any = None,
-        state_store: AgentStateStore | None = None,
+        model: Model,
+        retrieval_service: Retriever,
+        spaces_client: ScopeProvider,
+        file_access: AgentFileAccessService | None = None,
     ) -> None:
-        self._chat_model_name = chat_model_name
-        self._api_key = api_key
-        self._base_url = _normalize_openai_base_url(base_url)
+        self._model = model
         self._retrieval_service = retrieval_service
         self._spaces_client = spaces_client
-        self._file_access_service_factory = file_access_service_factory
-        self._state_store = state_store or AgentStateStore()
+        self._file_access = file_access
 
-    def create(
-        self,
-        user_id: str,
-        state: list[ModelMessage] | None = None,
-        *,
-        is_new_session: bool = False,
-        system_prompt: str | None = None,
-    ) -> ChatAgent:
-        model = OpenAIChatModel(
-            self._chat_model_name,
-            provider=OpenAIProvider(base_url=self._base_url or DEFAULT_OPENAI_BASE_URL, api_key=self._api_key or None),
-        )
-
-        file_access = None
-        if self._file_access_service_factory is not None:
-            file_access = self._file_access_service_factory(user_id)
-
-        if system_prompt is None:
-            system_prompt = render_system_prompt(current_datetime=format_current_datetime() if is_new_session else None)
-
-        knowledge = SeraphKnowledgeBase(
-            retrieval_service=self._retrieval_service,
-            spaces_client=self._spaces_client,
-            user_id=user_id,
-        )
+    def create(self, user_id: str, history: list[ModelMessage], instructions: str) -> ChatAgent:
         agent = Agent(
-            model,
+            self._model,
             name="seraph-documents",
-            instructions=system_prompt,
+            instructions=instructions,
             deps_type=ChatDeps,
-            tools=[*BASE_TOOLS, *(FILE_TOOLS if file_access is not None else [])],
+            tools=[*BASE_TOOLS, *(FILE_TOOLS if self._file_access is not None else [])],
         )
-        return ChatAgent(
-            agent=agent,
-            deps=ChatDeps(user_id=user_id, knowledge=knowledge, file_access=file_access),
-            state=state or [],
-        )
-
-    async def load_state(self, user_id: str, session_id: str) -> list[ModelMessage] | None:
-        return await self._state_store.load(user_id=user_id, session_id=session_id)
-
-    async def save_state(self, user_id: str, session_id: str, state: list[ModelMessage]) -> None:
-        await self._state_store.save(user_id=user_id, session_id=session_id, state=state)
+        knowledge = SeraphKnowledgeBase(self._retrieval_service, self._spaces_client, user_id)
+        deps = ChatDeps(user_id=user_id, knowledge=knowledge, file_access=self._file_access)
+        return ChatAgent(agent=agent, deps=deps, history=history)

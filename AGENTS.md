@@ -117,13 +117,16 @@ Location: `agents/`
 - Both at once: `uv run ./scripts/validate.sh`; format: `uv run ./scripts/format.sh`
 
 Agents structure:
-- `app/main.py`: FastAPI entry point (`create_app()`), runtime wiring (embedder, NATS, spaces client,
-  `RuntimeAgentFactory`), UI mounting.
+- `app/main.py`: FastAPI entry point (`create_app()`); the lifespan connects NATS once and builds the
+  `AgentFactory` (model, retrieval, spaces, file access) into `app.state`; UI mounting.
 - `app/settings.py`: settings from env (`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `CHAT_MODEL_NAME`, `NATS_URL`, ...).
-- `api/`: HTTP routes. `api/chat.py` runs a turn, streams SSE, persists turn state and citations.
+- `api/`: HTTP routes with typed `Depends` (`get_db_session`, `get_session_factory`, `get_agent_factory`,
+  `get_spaces_client`). `api/chat.py` starts each turn as a background task and relays its events as SSE.
 - `chat/`: the agent. `agent_factory.py` builds the Pydantic AI `Agent` per turn (`ChatAgent` = agent + deps +
-  message history); `tools.py` holds the tools and `ChatDeps`; `streaming.py` maps Pydantic AI events to SSE;
-  `prompts.py` the system prompt; `agent_state_store.py` / `session_service.py` load and save history.
+  message history, `ChatAgent.stream()` yields text deltas) plus history (de)serialization; `turns.py` runs one
+  turn on one DB session, yielding typed `TurnEvent`s and persisting turn state, citations, failures and
+  history; `tools.py` holds the tools and `ChatDeps`; `prompts.py` the system prompt; `session_service.py`
+  reads sessions and history for the API.
 - `knowledge/`, `retrieval/`: spaces-aware semantic search over pgvector chunks.
 - `ingestion/`, `documents/`: consume `SERAPH_FILE_CHANGED` events and index documents/chunks.
 - `fileprovider/`, `spaces/`: NATS clients for file providers and space scopes.
@@ -299,14 +302,20 @@ Typing:
 Pydantic AI patterns:
 - Tools are plain async functions taking `RunContext[ChatDeps]`, registered in `BASE_TOOLS` / `FILE_TOOLS`
   in `chat/tools.py`. The docstring (with an `Args:` section) becomes the tool and parameter descriptions.
-- Tools that surface files append them to `ctx.deps.citations`; `api/chat.py` validates and persists those.
-  Never trust citations from the model's text.
+- Tools that surface files append them to `ctx.deps.citations`; `chat/turns.py` de-duplicates and persists
+  those. Never trust citations from the model's text.
+- Tools are wrapped with `_errors_to_model`, which turns any exception into `ToolFailed(str(exc))`: the model
+  gets a failed tool result (`outcome='failed'`) it can explain, instead of the user's turn aborting (Pydantic AI
+  aborts the run on any other exception raised inside a tool). Raise `ToolFailed` yourself for expected
+  terminal failures, and `ModelRetry` only when the model should retry with different arguments.
 - The per-session system prompt is persisted in `chat_sessions.system_prompt` and passed as `instructions`.
 - Message history is stored in `chat_sessions.agent_state` as `ModelMessagesTypeAdapter` JSON. Each turn's
   assistant message id is the Pydantic AI `run_id`, which links history to `ChatTurnState` and
   `ChatTurnSource` rows. Unreadable (legacy) history loads as `None` instead of failing.
 - Test agents with `pydantic_ai.models.function.FunctionModel` (or `agent.override(model=...)`), not by
-  stubbing framework classes.
+  stubbing framework classes. `tests/conftest.py` provides a SQLite `session_factory`, `make_factory` and an
+  `app`/`client` with dependencies overridden (no lifespan, so no Postgres/NATS); doubles live in
+  `tests/support.py`. Do not monkeypatch private functions.
 
 # Agent Notes
 
