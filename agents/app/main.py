@@ -2,19 +2,15 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
-from pathlib import Path
 
 import pydantic_ai
 import uvicorn
-from fastapi import FastAPI, Response
-from fastapi.responses import FileResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi import FastAPI
 from nats.aio.client import Client as NatsClient
 from openai import AsyncOpenAI
 
 from api import chat as chat_api
 from api import documents as documents_api
-from api.ui_dev_proxy import create_ui_dev_proxy
 from app.otel import setup_telemetry
 from app.settings import Settings, get_settings
 from chat.agent_factory import DEFAULT_OPENAI_BASE_URL, AgentFactory, build_chat_model
@@ -33,10 +29,6 @@ from spaces.client import SpacesClient
 
 
 pydantic_ai.BANNER_ENABLED = False
-
-UI_DIR = Path(__file__).resolve().parents[1] / "ui"
-UI_DIST_DIR = UI_DIR / "dist"
-UI_INDEX_FILE = UI_DIST_DIR / "index.html"
 
 
 @dataclass(frozen=True)
@@ -114,30 +106,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
-    settings = settings or get_settings()
-    dev_ui_url = settings.ui_dev_server_url if settings.runtime_env == "dev" else None
-
     app = FastAPI(title="Seraph Agents", lifespan=lifespan)
-    app.state.settings = settings
+    app.state.settings = settings or get_settings()
     setup_telemetry(app)
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
-    @app.get("/")
-    async def root() -> Response:
-        if dev_ui_url:
-            return RedirectResponse(url="/ui-dev/", status_code=307)
-        return FileResponse(UI_INDEX_FILE if UI_INDEX_FILE.exists() else (UI_DIR / "index.html"))
-
-    if dev_ui_url:
-        app.mount("/ui-dev", create_ui_dev_proxy(dev_ui_url), name="ui-dev")
-
     app.include_router(chat_api.router)
     app.include_router(documents_api.router)
-    app.mount("/ui", StaticFiles(directory=UI_DIST_DIR if UI_DIST_DIR.exists() else UI_DIR), name="ui")
-
     return app
 
 

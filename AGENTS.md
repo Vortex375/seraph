@@ -21,7 +21,8 @@ Services communicate over NATS (JetStream) and use `fx` for dependency injection
 - Mobile app: Flutter with Dart `>=3.4.3 <4.0.0`
 - Mobile libraries in use: Dio, Get/GetX, Provider, OIDC, WebDAV client, media_kit/audio packages
 - Agents app: Python `3.12` with FastAPI and Pydantic AI (`pydantic-ai-slim[openai]`), any OpenAI-compatible
-  chat/embedding endpoint (`OPENAI_BASE_URL`; the dev stack uses OpenRouter); React/Vite chat UI in `agents/ui/`
+  chat/embedding endpoint (`OPENAI_BASE_URL`; the dev stack uses OpenRouter); no UI of its own, the Flutter app
+  is the chat client via the api-gateway
 - Agents data/storage: PostgreSQL with `pgvector` (SQLAlchemy async + psycopg)
 - Agents tooling/integration: NATS (`nats-py`), Avro (`fastavro`), OpenTelemetry, `uv`, `mypy`, `ruff`, `pytest`
 - Native/media integration: TagLib via SWIG wrapper
@@ -37,7 +38,7 @@ Services communicate over NATS (JetStream) and use `fx` for dependency injection
 - `vendor-forks/go-smb2/`: patched fork wired in via a `replace` in `go.work`.
 - `webapp/seraph-web-app/`: Angular web app (Angular CLI 18.x).
 - `app/seraph_app/`: Flutter mobile app.
-- `agents/`: Pydantic AI document-chat service (Python/FastAPI + Postgres/pgvector, React/Vite UI).
+- `agents/`: Pydantic AI document-chat service (Python/FastAPI + Postgres/pgvector).
 - `events/`, `service-discovery/`, `thumbnailer/thumbnailer/`, `audio-metadata/audiometadata/`: codegen Makefiles
   (avrogen for NATS schemas); see Code Generation.
 - `taglib/`: SWIG wrapper for TagLib; see `taglib/README.md` for build notes.
@@ -118,7 +119,7 @@ Location: `agents/`
 
 Agents structure:
 - `app/main.py`: FastAPI entry point (`create_app()`); the lifespan connects NATS once and builds the
-  `AgentFactory` (model, retrieval, spaces, file access) into `app.state`; UI mounting.
+  `AgentFactory` (model, retrieval, spaces, file access) into `app.state`.
 - `app/settings.py`: settings from env (`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `CHAT_MODEL_NAME`, `NATS_URL`, ...).
 - `api/`: HTTP routes with typed `Depends` (`get_db_session`, `get_session_factory`, `get_agent_factory`,
   `get_spaces_client`). `api/chat.py` starts each turn as a background task and relays its events as SSE.
@@ -131,7 +132,6 @@ Agents structure:
 - `ingestion/`, `documents/`: consume `SERAPH_FILE_CHANGED` events and index documents/chunks.
 - `fileprovider/`, `spaces/`: NATS clients for file providers and space scopes.
 - `auth/`: current-user resolution. `db/`: async engine/session, URL helpers, additive migrations.
-- `ui/`: React/Vite chat UI, built to `ui/dist` and served by FastAPI.
 
 ### Test infrastructure (agents)
 

@@ -1,6 +1,6 @@
 # Seraph Agents
 
-Seraph Agents is a FastAPI service built around a Pydantic AI agent. It indexes canonical Seraph documents into Postgres/pgvector, applies spaces-aware retrieval before documents reach the model, and serves a React/Vite chat UI directly from the API process.
+Seraph Agents is a FastAPI service built around a Pydantic AI agent. It indexes canonical Seraph documents into Postgres/pgvector and applies spaces-aware retrieval before documents reach the model. Clients (the Flutter app) reach its chat API through the api-gateway.
 
 ## Runtime Overview
 
@@ -8,7 +8,6 @@ Seraph Agents is a FastAPI service built around a Pydantic AI agent. It indexes 
 - Pydantic AI powers the conversational runtime and tool calls; each session's message history is stored as JSON in `chat_sessions.agent_state`
 - ingestion consumers persist canonical document records and chunks for retrieval
 - retrieval filters results against Seraph spaces before grounding model responses
-- the FastAPI app also mounts the production React/Vite UI used for multi-session chat
 
 ## Local Development
 
@@ -20,61 +19,23 @@ source .venv/bin/activate
 # Start the local NATS dependency, or disable ingestion with KB_INGEST_ENABLED=false.
 ```
 
-### Backend with built UI assets
-
-Build the frontend once, then run FastAPI directly:
+Run the API:
 
 ```sh
-cd ui
-npm install
-npm run build
-cd ..
 python -m app.main
 ```
-
-Open `http://localhost:8000/`.
-
-### Backend with Vite dev mode
-
-Run the React dev server in one shell:
-
-```sh
-cd ui
-npm install
-npm run dev
-```
-
-Run FastAPI in another shell with the UI dev server configured:
-
-```sh
-RUNTIME_ENV=dev UI_DEV_SERVER_URL=http://127.0.0.1:5173 python -m app.main
-```
-
-Open `http://localhost:8000/`.
-
-In this mode the backend still serves the API, while `/` redirects to `/ui-dev/` and hands the browser off to the Vite dev server.
 
 Useful checks:
 
 ```sh
-./.venv/bin/pytest tests/test_dependency_cleanup.py -v
-./.venv/bin/pytest tests/test_fileprovider_client_integration.py -v
-./.venv/bin/pytest tests/test_ingestion_integration.py tests/test_chat_api.py tests/test_chat_streaming.py -v
-./.venv/bin/pytest tests/test_ui_static.py tests/test_docker_assets.py -v
-./.venv/bin/ruff check .
-./.venv/bin/mypy .
-cd ui && npm test
+./scripts/validate.sh
+./.venv/bin/pytest tests/ -v
 ```
 
 The ingestion service starts with the FastAPI lifespan. For local runs without NATS, export `KB_INGEST_ENABLED=false`
 before running `python -m app.main`.
 
 ## Docker
-
-The production image uses a multi-stage build:
-
-- a Node stage runs `npm ci` and `npm run build` in `ui/`
-- the final Python image copies `ui/dist` and serves it from FastAPI
 
 Build the image manually:
 
@@ -88,7 +49,7 @@ Run the compose stack:
 docker compose up -d --build
 ```
 
-`compose.yaml` still bind-mounts the repository into `/app` for local container development. If you set `UI_DEV_SERVER_URL`, the backend will redirect `/` to the external Vite dev server while continuing to serve API traffic from the container.
+`compose.yaml` bind-mounts the repository into `/app` for local container development.
 
 ## Repair Existing Documents
 
@@ -105,10 +66,10 @@ The command replays the current `SERAPH_FILE_CHANGED` JetStream history into can
 ## Key Files
 
 ```text
-app/main.py                  FastAPI entrypoint and UI mounting/dev redirect
+app/main.py                  FastAPI entrypoint and runtime wiring (lifespan)
 chat/agent_factory.py        Pydantic AI agent assembly (model, tools, deps)
+chat/turns.py                One chat turn: streaming and persistence
 documents/repository.py      Canonical document indexing persistence
 retrieval/service.py         Spaces-aware retrieval orchestration
-ui/                          React/Vite frontend served by FastAPI
 tests/                       Regression, API, and ingestion coverage
 ```

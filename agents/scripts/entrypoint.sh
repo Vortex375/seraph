@@ -13,16 +13,8 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 echo ""
-echo -e "${ORANGE}"
-cat << 'BANNER'
-     █████╗  ██████╗ ███╗   ██╗ ██████╗
-    ██╔══██╗██╔════╝ ████╗  ██║██╔═══██╗
-    ███████║██║  ███╗██╔██╗ ██║██║   ██║
-    ██╔══██║██║   ██║██║╚██╗██║██║   ██║
-    ██║  ██║╚██████╔╝██║ ╚████║╚██████╔╝
-    ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝ ╚═════╝
-BANNER
-echo -e "${NC}"
+echo -e "    ${ORANGE}${BOLD}Seraph Agents${NC}"
+echo ""
 
 if [[ "$PRINT_ENV_ON_LOAD" = true || "$PRINT_ENV_ON_LOAD" = True ]]; then
     echo -e "    ${DIM}Environment:${NC}"

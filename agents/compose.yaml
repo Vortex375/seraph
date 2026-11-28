@@ -26,11 +26,9 @@ services:
       - "8000:8000"
     volumes:
       - .:/app
-      - agents-ui-dist:/app/ui/dist
       - agents-data:/data
     environment:
       RUNTIME_ENV: dev
-      UI_DEV_SERVER_URL: ${UI_DEV_SERVER_URL:-}
       DB_HOST: agents-db
       DB_PORT: 5432
       DB_USER: ${DB_USER:-ai}
@@ -66,4 +64,3 @@ networks:
 volumes:
   pgdata:
   agents-data:
-  agents-ui-dist:
