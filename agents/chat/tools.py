@@ -4,7 +4,6 @@ import functools
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from typing import Any
 
 from pydantic_ai import RunContext, ToolFailed
@@ -13,11 +12,6 @@ from chat.file_access import AgentFileAccessService
 from knowledge.seraph_knowledge import SeraphKnowledgeBase, SeraphKnowledgeDocument
 
 logger = logging.getLogger(__name__)
-
-
-def format_current_datetime() -> str:
-    """Return the current system date and time as an ISO-8601 string with timezone offset."""
-    return datetime.now(timezone.utc).astimezone().isoformat()
 
 
 @dataclass
@@ -62,10 +56,13 @@ def _citations_from_hits(hits: list[dict[str, Any]]) -> list[dict[str, str]]:
 
 
 async def search_files(ctx: RunContext[ChatDeps], query: str) -> Any:
-    """Search accessible files by name or content fragment. Returns file paths the assistant can read.
+    """Find files whose path contains the given words; returns their paths, not their content.
+
+    Use to locate a file by name, or a file that may not be indexed.
+    Do not use for questions about what documents say; use search_knowledge_base.
 
     Args:
-        query: Search query for matching files.
+        query: Words from the file or folder name.
     """
     hits = await ctx.deps.files().search_files(user_id=ctx.deps.user_id, query=query)
     ctx.deps.citations.extend(_citations_from_hits(hits))
@@ -73,7 +70,10 @@ async def search_files(ctx: RunContext[ChatDeps], query: str) -> Any:
 
 
 async def list_directory(ctx: RunContext[ChatDeps], provider_id: str, path: str) -> Any:
-    """List entries in an accessible directory.
+    """List the files and folders in a directory.
+
+    Use when the user asks what a folder contains, or to browse towards a file.
+    Do not use to find a file whose location is unknown; use search_files.
 
     Args:
         provider_id: Space/provider identifier.
@@ -83,7 +83,10 @@ async def list_directory(ctx: RunContext[ChatDeps], provider_id: str, path: str)
 
 
 async def stat_file(ctx: RunContext[ChatDeps], provider_id: str, path: str) -> Any:
-    """Inspect accessible file metadata (size, modification time, type).
+    """Get a file's or folder's metadata: size, modification time, and whether it is a folder.
+
+    Use for questions about size, age, or existence of a known path.
+    Do not use to read content; use read_file_excerpt.
 
     Args:
         provider_id: Space/provider identifier.
@@ -102,7 +105,10 @@ async def read_file_excerpt(
     max_lines: int = 80,
     max_chars: int = 12000,
 ) -> Any:
-    """Read a bounded text excerpt from an accessible file.
+    """Read lines of text from a file at a known path.
+
+    Use when you need a file's exact wording, or a file that search_knowledge_base does not cover.
+    Do not use to search across documents, or on folders or binary files.
 
     Args:
         provider_id: Space/provider identifier.
@@ -126,10 +132,10 @@ async def read_file_excerpt(
 async def search_knowledge_base(
     ctx: RunContext[ChatDeps], query: str, limit: int = 5, min_score: float = 0.0
 ) -> list[dict[str, Any]]:
-    """Search the user's indexed documents for semantically relevant chunks.
+    """Semantic search over the content of the user's indexed documents; returns matching passages.
 
-    Use this when the user's question depends on document content.
-    Do not use this for greetings or off-document small talk.
+    Use when the answer depends on what the user's documents say.
+    Do not use for greetings, small talk, general knowledge, or finding files by name; use search_files.
 
     Args:
         query: Search query in natural language.
@@ -154,11 +160,6 @@ def _document_to_hit(document: SeraphKnowledgeDocument) -> dict[str, Any]:
     }
 
 
-def get_current_datetime() -> dict[str, str]:
-    """Return the current date and time. Use this when the user's question depends on the current moment."""
-    return {"current_datetime": format_current_datetime()}
-
-
 def _errors_to_model(tool: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
     """Report a tool's exception to the model as a failed tool call, so it can explain it instead of the turn aborting."""
 
@@ -175,7 +176,7 @@ def _errors_to_model(tool: Callable[..., Awaitable[Any]]) -> Callable[..., Await
     return wrapper
 
 
-BASE_TOOLS: list[Callable[..., Any]] = [_errors_to_model(search_knowledge_base), get_current_datetime]
+BASE_TOOLS: list[Callable[..., Any]] = [_errors_to_model(search_knowledge_base)]
 FILE_TOOLS: list[Callable[..., Any]] = [
     _errors_to_model(tool) for tool in (search_files, list_directory, stat_file, read_file_excerpt)
 ]

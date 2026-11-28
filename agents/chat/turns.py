@@ -13,8 +13,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from chat.agent_factory import AgentFactory, dump_history, load_history
-from chat.prompts import render_system_prompt
-from chat.tools import format_current_datetime
 from documents.models import ChatSession, ChatTurnFailure, ChatTurnSource, ChatTurnState
 
 
@@ -55,14 +53,12 @@ async def run_turn(
         yield TurnEvent("error", turn_id, "chat session not found")
         return
     try:
-        if not chat_session.system_prompt:
-            chat_session.system_prompt = render_system_prompt(current_datetime=format_current_datetime())
         turn = ChatTurnState(session_id=session_id, user_id=user_id, assistant_message_id=turn_id, content="")
         db.add(turn)
         _touch(chat_session)
         await db.commit()
 
-        agent = factory.create(user_id, load_history(chat_session.agent_state) or [], chat_session.system_prompt)
+        agent = factory.create(user_id, load_history(chat_session.agent_state) or [])
         async for delta in agent.stream(message, run_id=turn_id):
             content += delta
             turn.content = content

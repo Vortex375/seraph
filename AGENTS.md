@@ -308,7 +308,13 @@ Pydantic AI patterns:
   gets a failed tool result (`outcome='failed'`) it can explain, instead of the user's turn aborting (Pydantic AI
   aborts the run on any other exception raised inside a tool). Raise `ToolFailed` yourself for expected
   terminal failures, and `ModelRetry` only when the model should retry with different arguments.
-- The per-session system prompt is persisted in `chat_sessions.system_prompt` and passed as `instructions`.
+- The system prompt is the static `DOCUMENT_CHAT_PROMPT` (`chat/prompts.py`). The current date/time is a separate
+  instruction block registered with `on_change="append"`: it is re-evaluated on every request, and a change is
+  appended to history as an `InstructionDeltaPart` instead of rewriting the cached prompt prefix, so the model
+  always has the current time and sees when earlier turns happened. The `chat_sessions.system_prompt` column
+  is legacy and unused.
+- Every tool docstring states what the tool does, when to use it, and when not to (naming the tool to use
+  instead). Keep them to one line each; `test_every_tool_says_what_it_does_when_to_use_it_and_when_not` checks it.
 - Message history is stored in `chat_sessions.agent_state` as `ModelMessagesTypeAdapter` JSON. Each turn's
   assistant message id is the Pydantic AI `run_id`, which links history to `ChatTurnState` and
   `ChatTurnSource` rows. Unreadable (legacy) history loads as `None` instead of failing.

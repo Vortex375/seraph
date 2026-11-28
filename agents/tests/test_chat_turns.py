@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from chat.agent_factory import AgentFactory, load_history
+from chat.session_service import SessionService
 from chat.turns import MISSING_CREDENTIALS_MESSAGE, TurnEvent, run_turn
 from documents.models import ChatSession, ChatTurnFailure, ChatTurnSource, ChatTurnState
 from tests.support import SPEC_CITATION, search_then_answer
@@ -48,21 +49,28 @@ async def test_run_turn_streams_reply_and_persists_turn(
         "July first",
     )
     assert [(s.assistant_message_id, s.provider_id, s.path) for s in sources] == [(turn_id, "space-a", "/team/spec.md")]
-    assert chat_session is not None and chat_session.system_prompt
-    assert "Current date/time:" in chat_session.system_prompt
+    assert chat_session is not None
     history = load_history(chat_session.agent_state)
     assert history is not None and {m.run_id for m in history} == {turn_id}
 
 
 @pytest.mark.asyncio
-async def test_run_turn_sends_saved_history_and_prompt_to_the_model(
-    session_factory: async_sessionmaker[AsyncSession], make_factory: Callable[..., AgentFactory]
+async def test_each_turn_sends_history_and_the_current_time(
+    session_factory: async_sessionmaker[AsyncSession],
+    make_factory: Callable[..., AgentFactory],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    seen: list[tuple[list[str], str | None]] = []
+    clock = iter(["Current date/time: 2026-11-28T09:00+01:00", "Current date/time: 2026-12-03T18:30+01:00"])
+    monkeypatch.setattr("chat.agent_factory.current_datetime", lambda: next(clock))
+    seen: list[tuple[list[str], str]] = []
 
     async def record(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
-        prompts = [str(p.content) for m in messages for p in m.parts if isinstance(p, UserPromptPart)]
-        seen.append((prompts, info.instructions))
+        seen.append(
+            (
+                [str(p.content) for m in messages for p in m.parts if isinstance(p, UserPromptPart)],
+                info.instructions or "",
+            )
+        )
         yield "ok"
 
     await _seed_session(session_factory)
@@ -71,8 +79,18 @@ async def test_run_turn_sends_saved_history_and_prompt_to_the_model(
     await _run(session_factory, factory, "first")
     await _run(session_factory, factory, "second")
 
-    assert [prompts for prompts, _ in seen] == [["first"], ["first", "second"]]
-    assert seen[0][1] == seen[1][1], "the system prompt is created once and reused"
+    (first_prompts, first_instructions), (second_prompts, second_instructions) = seen
+    assert first_prompts == ["first"] and "2026-11-28T09:00" in first_instructions
+    assert second_instructions == first_instructions, "the cached prefix is not rewritten when the time changes"
+    assert second_prompts[:2] == ["first", "second"] and "2026-12-03T18:30" in second_prompts[2]
+    async with session_factory() as db:
+        listed = await SessionService(db).list_messages("alice", "session-1")
+    assert [(m.role, m.content) for m in listed] == [
+        ("user", "first"),
+        ("assistant", "ok"),
+        ("user", "second"),
+        ("assistant", "ok"),
+    ]
 
 
 @pytest.mark.asyncio

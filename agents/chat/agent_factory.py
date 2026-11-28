@@ -20,6 +20,7 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from chat.file_access import AgentFileAccessService
+from chat.prompts import DOCUMENT_CHAT_PROMPT, current_datetime
 from chat.tools import BASE_TOOLS, FILE_TOOLS, ChatDeps
 from knowledge.seraph_knowledge import Retriever, ScopeProvider, SeraphKnowledgeBase
 
@@ -82,14 +83,16 @@ class AgentFactory:
         self._spaces_client = spaces_client
         self._file_access = file_access
 
-    def create(self, user_id: str, history: list[ModelMessage], instructions: str) -> ChatAgent:
+    def create(self, user_id: str, history: list[ModelMessage]) -> ChatAgent:
         agent = Agent(
             self._model,
             name="seraph-documents",
-            instructions=instructions,
+            instructions=DOCUMENT_CHAT_PROMPT,
             deps_type=ChatDeps,
             tools=[*BASE_TOOLS, *(FILE_TOOLS if self._file_access is not None else [])],
         )
+        # Appended to history when it changes, so the time stays current without invalidating the cached prefix.
+        agent.instructions(name="current_datetime", on_change="append")(current_datetime)
         knowledge = SeraphKnowledgeBase(self._retrieval_service, self._spaces_client, user_id)
         deps = ChatDeps(user_id=user_id, knowledge=knowledge, file_access=self._file_access)
         return ChatAgent(agent=agent, deps=deps, history=history)
