@@ -19,10 +19,12 @@ from fileprovider.client import FileProviderClient
 from fileprovider.nats_client import connect_nats_from_env
 from ingestion.content import extract_text
 from ingestion.file_changed_events import FileChangedEvent, decode_file_changed_event
+from ingestion.job_progress import QueueJob
 
 FILE_CHANGED_STREAM = "SERAPH_FILE_CHANGED"
 FILE_CHANGED_SUBJECT = "seraph.file.*.changed"
 DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
+PROGRESS_INTERVAL_SECONDS = 2.0
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -100,6 +102,7 @@ class FileChangedIngestionService:
         self._js: Any | None = None
         self._sub: Any | None = None
         self._task: asyncio.Task[None] | None = None
+        self._progress_task: asyncio.Task[None] | None = None
         self._stop_event = asyncio.Event()
         self._semaphore = asyncio.Semaphore(config.parallelism)
         self._tasks: set[asyncio.Task[Any]] = set()
@@ -172,6 +175,9 @@ class FileChangedIngestionService:
         )
 
         self._task = asyncio.create_task(self._run_loop())
+        self._progress_task = asyncio.create_task(
+            self._report_progress(self._sub, QueueJob(self._nc, "knowledge-indexer", "Indexing knowledge"))
+        )
         self._log.info("Started FileChangedEvent ingestion")
 
     async def stop(self) -> None:
@@ -180,6 +186,10 @@ class FileChangedIngestionService:
         self._stop_event.set()
         await self._task
         self._task = None
+        if self._progress_task is not None:
+            self._progress_task.cancel()
+            await asyncio.gather(self._progress_task, return_exceptions=True)
+            self._progress_task = None
 
         if self._sub is not None:
             await self._sub.unsubscribe()
@@ -217,6 +227,18 @@ class FileChangedIngestionService:
 
         if self._tasks:
             await asyncio.gather(*self._tasks, return_exceptions=True)
+
+    async def _report_progress(self, sub: Any, job: QueueJob) -> None:
+        # ponytail: polls consumer info every PROGRESS_INTERVAL_SECONDS, also while idle; one small NATS request each.
+        while not self._stop_event.is_set():
+            try:
+                info = await sub.consumer_info()
+                remaining = (info.num_pending or 0) + (info.num_ack_pending or 0)
+                message = f"Knowledge index: {remaining} remaining" if remaining else "Knowledge index up to date."
+                await job.pending(remaining, message)
+            except Exception:
+                self._log.warning("Failed to report ingestion progress", exc_info=True)
+            await asyncio.sleep(PROGRESS_INTERVAL_SECONDS)
 
     def _task_done(self, task: asyncio.Task[Any]) -> None:
         self._tasks.discard(task)
